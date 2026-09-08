@@ -2,15 +2,24 @@
   "name": "devflow-web-terminal",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["shared", "server", "web"],
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
   "scripts": {
     "dev:server": "node --watch server/index.js",
     "dev:web": "npm --prefix web run dev",
     "build:web": "npm --prefix web run build",
-    "test:server": "node --test server/test/",
+    "test:server": "node --test \"server/test/*.test.js\"",
     "test:web": "npm --prefix web run test",
     "test": "npm run test:server && npm run test:web",
     "typecheck": "npm --prefix web run typecheck"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true
+  }
 }

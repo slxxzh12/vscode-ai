@@ -14,6 +14,7 @@ export class SessionManager extends EventEmitter {
     this.log = logger;
     this.projectResolver = projectResolver; // (projectId) => root|null
     this.sessions = new Map();
+    this._seq = 0;
   }
   async create({ projectId = null, cwd = null, name = null, cols = 80, rows = 24 } = {}) {
     const projRoot = projectId && this.projectResolver ? (this.projectResolver(projectId) || null) : null;
@@ -24,7 +25,7 @@ export class SessionManager extends EventEmitter {
       projectId, cwd: workdir, pty, alive: true,
       ring: new RingBuffer(this.ringMaxBytes), clients: new Set(),
       cols, rows, state: 'running', exitCode: null,
-      createdAt: Date.now(), ptyExited: false,
+      createdAt: Date.now(), seq: ++this._seq, ptyExited: false,
     };
     pty.onData((chunk) => this._onData(session, chunk));
     pty.onExit((code) => this._onExit(session, code));
@@ -46,7 +47,7 @@ export class SessionManager extends EventEmitter {
   get(id) { return this.sessions.get(id) || null; }
   list() {
     return [...this.sessions.values()]
-      .sort((a, b) => b.createdAt - a.createdAt)
+      .sort((a, b) => (b.createdAt - a.createdAt) || (b.seq - a.seq))
       .map((s) => this.summary(s));
   }
   summary(s) {
