@@ -177,7 +177,7 @@ git commit -m "chore: monorepo 骨架 + shared 协议常量包"
   "type": "module",
   "main": "index.js",
   "dependencies": {
-    "node-pty": "^1.0.0",
+    "node-pty": "^1.1.0",
     "ws": "^8.18.0"
   }
 }
@@ -196,6 +196,17 @@ node -e "const p=require('node-pty');const x=p.spawn(process.platform==='win32'?
 
 Expected: 输出含 `df-pty-ok`。
 **降级路径（如编译失败）**：安装 VS 2019+ Build Tools（勾选 C++ 桌面工作负载）后重跑 `npm install`；或换 Node LTS（node-pty 官方预编译范围）。本任务通过前不继续。
+
+- [ ] **Step 3b: Windows 标记回传探针（验证 conpty 是否透传 OSC 完成标记）**
+
+本步骤只影响 workflow auto 步在 Windows 本地开发机的可靠性（Linux 部署不受影响，见 Task 10 注）。用真实 node-pty 起 powershell，写入 `[Console]::Write(([char]27) + ']777;dfdone;probe' + ([char]7))` 后跟一条可见 `Write-Output 'MKR_END'`，判断 pty 输出里是否捕获到 `dfdone`：
+
+```bash
+node -e "const p=require('node-pty');const x=p.spawn('powershell.exe',[],{name:'xterm-256color',cols:80,rows:24,cwd:process.cwd(),env:process.env});let s='';x.onData(d=>{s+=d;if(s.includes('MKR_END')){console.log('PASS_OSC_PASSTHROUGH:',s.includes('dfdone'));x.kill();process.exit(0)}});x.write(`[Console]::Write(([char]27) + ']777;dfdone;probe' + ([char]7)); Write-Output 'MKR_END'\r`);setTimeout(()=>{console.log('TIMEOUT tail=',JSON.stringify(s.slice(-80)));process.exit(1)},6000)"
+```
+
+- `PASS_OSC_PASSTHROUGH: true` → Windows 上 auto 步可用，无额外工作。
+- `PASS_OSC_PASSTHROUGH: false`（conhost 吞掉未知 OSC）→ **已知限制**：Windows 本地 auto 步会等不到标记；用户用 UI「下一步」强推即可（runner 已支持 running 中 advance）。把结果记入 Task 19 冒烟报告与 README 注意事项，Linux 部署不受影响。
 
 - [ ] **Step 4: fake pty 助手（后续所有 server 单测共用）**
 
@@ -560,10 +571,12 @@ test('buildMarkerCmd: unix 用 printf OSC', () => {
   assert.ok(cmd.includes('\\x1b]777;dfdone;run_ab_0_1\\x07'));
 });
 
-test('buildMarkerCmd: win 用 [Console]::Write', () => {
+test('buildMarkerCmd: win 用 [Console]::Write + [char]27（PS 不解析 \\u 转义）', () => {
   const cmd = buildMarkerCmd('dir', 'run_x_9', 0, 'win');
   assert.ok(cmd.includes('[Console]::Write'));
+  assert.ok(cmd.includes('[char]27'));
   assert.ok(cmd.includes('dfdone;run_x_9_0'));
+  assert.ok(!cmd.includes('\\u001b'));
 });
 ```
 
@@ -607,10 +620,9 @@ export async function createPty({ cwd = process.cwd(), cols = 80, rows = 24 } = 
 }
 
 export function buildMarkerCmd(cmd, runId, idx, shell) {
-  const marker = `\x1b]777;dfdone;${runId}_${idx}\x07`;
+  // 注意：PowerShell 5.1 不解析 "\u001b"，必须用 [char]27 构造真正的 ESC。
   if (shell === 'win') {
-    const esc = marker.replace(/\x1b/g, '\\u001b').replace(/\x07/g, '\\u0007');
-    return `${cmd}; [Console]::Write("${esc}")`;
+    return `${cmd}; [Console]::Write(([char]27) + ']777;dfdone;${runId}_${idx}' + ([char]7))`;
   }
   return `${cmd}; printf '\\x1b]777;dfdone;${runId}_${idx}\\x07'`;
 }
@@ -895,6 +907,24 @@ test('list 返回概要并按创建倒序', async () => {
   assert.equal(l[1].id, a.id);
   assert.equal(typeof l[0].state, 'string');
 });
+
+test('projectResolver 决定默认 cwd；缺省回退 process.cwd()', async () => {
+  const instances = [];
+  const root = 'D:\\projects\\devflow';
+  const sm = new SessionManager({
+    ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }),
+    projectResolver: (id) => (id === 'devflow' ? root : null),
+  });
+  const withProj = await sm.create({ projectId: 'devflow' });
+  assert.equal(withProj.cwd, root);
+  const noProj = await sm.create({});
+  assert.equal(noProj.cwd, process.cwd());
+  const unknown = await sm.create({ projectId: 'ghost' });
+  assert.equal(unknown.cwd, process.cwd());
+  const explicit = await sm.create({ projectId: 'devflow', cwd: 'C:\\override' });
+  assert.equal(explicit.cwd, 'C:\\override');
+});
+
 ```
 
 - [ ] **Step 2: 运行确认失败**
@@ -914,15 +944,17 @@ const shortId = () => 's_' + crypto.randomBytes(4).toString('hex');
 const timeLabel = () => new Date().toLocaleTimeString('zh-CN', { hour12: false });
 
 export class SessionManager extends EventEmitter {
-  constructor({ ptyFactory = createPty, ringMaxBytes = 256 * 1024, logger = console } = {}) {
+  constructor({ ptyFactory = createPty, ringMaxBytes = 256 * 1024, logger = console, projectResolver = null } = {}) {
     super();
     this.ptyFactory = ptyFactory;   // async ({cwd,cols,rows}) => PseudoPty
     this.ringMaxBytes = ringMaxBytes;
     this.log = logger;
+    this.projectResolver = projectResolver; // (projectId) => root|null（spec §9：会话默认 cwd = 项目 root）
     this.sessions = new Map();
   }
   async create({ projectId = null, cwd = null, name = null, cols = 80, rows = 24 } = {}) {
-    const workdir = cwd || process.cwd();
+    const projRoot = projectId && this.projectResolver ? (this.projectResolver(projectId) || null) : null;
+    const workdir = cwd || projRoot || process.cwd();
     const pty = await this.ptyFactory({ cwd: workdir, cols, rows });
     const session = {
       id: shortId(), name: name || (projectId ? `${projectId} · ${timeLabel()}` : `会话 · ${timeLabel()}`),
@@ -1013,7 +1045,7 @@ export class SessionManager extends EventEmitter {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test server/test/session-manager.test.js`
-Expected: `pass 9`
+Expected: `pass 10`
 
 - [ ] **Step 5: 提交**
 
@@ -1250,8 +1282,11 @@ class Conn {
   constructor(ws) {
     this.ws = ws;
     this.alive = true;
-    this.sessionId = null;
+    // ws.data.sessionId 与 conn.sessionId 双向同步（spec §4 / §15.3）
+    ws.data = ws.data || { sessionId: null };
   }
+  get sessionId() { return this.ws.data.sessionId; }
+  set sessionId(v) { this.ws.data.sessionId = v; }
   send(obj) {
     if (!this.alive) return;
     try {
@@ -1692,6 +1727,16 @@ test('标记跨 chunk 分片也能匹配', async () => {
   assert.equal(run.snapshot().steps[0].status, 'done');
   runner.stopAll();
 });
+
+test('运行中被 kill 会话 → run 中止为 aborted', async () => {
+  const { sm, session, runner } = await makeRunner();
+  const res = runner.start('w1', session.id);
+  assert.equal(res.run.snapshot().status, 'running');
+  sm.kill(session.id);                       // 走 manager 'removed' 事件
+  assert.equal(res.run.snapshot().status, 'aborted');
+  assert.equal(res.run.snapshot().errorMessage, 'session removed');
+});
+
 ```
 
 - [ ] **Step 2: 运行确认失败**
@@ -1823,8 +1868,13 @@ export class WorkflowRunner {
       const rid = this._sessionRun.get(session.id);
       if (rid) this.runs.get(rid)?._fail('session exited');
     };
+    this._onRemoved = (sessionId) => {
+      const rid = this._sessionRun.get(sessionId);
+      if (rid) this.runs.get(rid)?._fail('session removed');   // kill 走 removed 事件，非 exit
+    };
     this.sm.on('data', this._onData);
     this.sm.on('exit', this._onExit);
+    this.sm.on('removed', this._onRemoved);
   }
   list() {
     return this.workflows.map((w) => ({ id: w.id, name: w.name, steps: w.steps }));
@@ -1872,7 +1922,7 @@ export class WorkflowRunner {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test server/test/workflow-runner.test.js`
-Expected: `pass 11`（abort 用例断言 `runner.get()===null` 成立）
+Expected: `pass 12`（abort 用例断言 `runner.get()===null` 成立）
 
 - [ ] **Step 6: 提交**
 
@@ -2036,7 +2086,10 @@ process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
 const files = resolveFiles();
 const projects = new Projects({ projects: loadProjects(files.projectsFile), logger: log });
 const workflows = loadWorkflows(files.workflowsFile);
-const sessionManager = new SessionManager({ logger: log });
+const sessionManager = new SessionManager({
+  logger: log,
+  projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
+});
 const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: log });
 
 // requireAuth 占位钩子（spec §11）：HTTP 用 requireAuthHttp，WS 走 upgrade 处的 requireAuthWs
@@ -2439,11 +2492,13 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
     switch (msg.type) {
       case S2C.SESSION_LIST:
         state.sessions = msg.sessions || [];
-        listResolve?.(state.sessions); listResolve = null; break;
+        listResolve?.(state.sessions); listResolve = null;
+        emit(S2C.SESSION_LIST, msg); break;      // 供视图决定是否需自动建第一个会话
       case S2C.SESSION_CREATED: {
         state.sessions = state.sessions.filter((s) => s.id !== msg.session.id).concat([msg.session]);
         state.activeSessionId = msg.session.id;
-        createdResolve?.(msg.session); createdResolve = null; break;
+        createdResolve?.(msg.session); createdResolve = null;
+        emit(S2C.SESSION_CREATED, msg); break;
       }
       case S2C.SESSION_EXITED: {
         const s = state.sessions.find((x) => x.id === msg.sessionId);
@@ -2532,6 +2587,7 @@ import { onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { FitAddon } from '@xterm/addon-fit';
+import { S2C } from '@devflow/shared';
 import type { useTerminal } from '../useTerminal';
 import TerminalToolbar from './TerminalToolbar.vue';
 
@@ -2541,6 +2597,8 @@ const hostRef = ref<HTMLDivElement | null>(null);
 let term: Terminal | null = null;
 let fit: FitAddon | null = null;
 let dataSub: ((d: string) => void) | null = null;
+let unsubList: (() => void) | null = null;
+let autoTried = false;
 
 function init() {
   if (!hostRef.value || term) return;
@@ -2561,11 +2619,16 @@ function init() {
   watch(() => props.terminal.state.status, (s) => {
     if (s === 'reconnecting') term?.write('\x1b[33m-- 已断开，正在重连 --\x1b[0m\r\n');
   });
-  if (!props.terminal.state.activeSessionId) {
-    const cols = fit!.proposeDimensions()?.cols || 80;
-    const rows = fit!.proposeDimensions()?.rows || 24;
-    props.terminal.createSession({ projectId: props.projectId, cols, rows });
-  } else {
+  const dims = () => { const d = fit?.proposeDimensions(); return { cols: d?.cols || 80, rows: d?.rows || 24 }; };
+  // 不盲建会话：等服务端回 list。仅当“无任何会话”时才自动建第一个，
+  // 避免每次刷新重复生成（会话常驻服务端，刷新不该新增）。
+  unsubList = props.terminal.on(S2C.SESSION_LIST, () => {
+    if (!autoTried && !props.terminal.state.activeSessionId && props.terminal.state.sessions.length === 0) {
+      autoTried = true;
+      props.terminal.createSession({ projectId: props.projectId, ...dims() });
+    }
+  });
+  if (props.terminal.state.activeSessionId) {
     props.terminal.switchTo(props.terminal.state.activeSessionId);
   }
 }
@@ -2583,6 +2646,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize);
+  unsubList?.();
   if (dataSub && term) term.offData(dataSub);
   term?.dispose();
   term = null;
@@ -3166,3 +3230,17 @@ git commit -m "chore: v0.1 实现完成（server + web + shared）"
 - `PseudoPty` 接口在 pty-runner/fake-pty/session-manager 三处签名一致（onData/onExit/write/resize/kill/shell/pid）。
 - workflow `Run.snapshot()` 字段与 WorkflowPanel 消费一致（含 status 枚举、currentIndex、steps.status）。
 - `C2S/S2C` 常量唯一引用 shared，无第二份字符串表。
+
+---
+
+## Review 附录（2026-09-08 内联适配版 autoplan review 已应用）
+
+完整审查记录见 `docs/superpowers/reviews/2026-09-08-autoplan-inline-review.md`。审查发现并已修复的问题：
+
+1. **Windows 标记 bug（关键）**：PowerShell 5.1 不解析 `"\u001b"`（实测为 6 字符字面量），原 win 分支永远打不出 ESC。已改用 `[char]27` 拼接并加测试断言。→ Task 5。
+2. **conpty OSC 透传风险**：conhost 可能吞掉未知 OSC，导致 Windows 本地 auto 步等不到标记。已加 Task 2 Step 3b 探针；若失败列为已知限制（UI「下一步」强推兜底），Linux 部署不受影响。
+3. **会话 cwd 未跟随项目 root**：原来 create 传 projectId 只做名字，cwd 恒为 process.cwd()，违反 spec §9。已加 `projectResolver` 注入 + 用例。→ Task 7/12。
+4. **kill 会话不通知 WorkflowRunner**：kill 走 manager `removed` 事件而非 `exit`，原来 workflow 会永远卡 running。已监听 `removed` + 用例。→ Task 10。
+5. **刷新页面会话重复生成**：页面每次刷新都新建终端（本地 active 丢失），服务端会话其实常驻。改为「list 为空才自动建第一个」，并让 composable 对 `session-list/created` 也 emit。→ Task 14/15。
+6. **`ws.data.sessionId` 未同步**：Conn 只同步 conn.sessionId，spec §15.3 要求 `ws.data` 同步。改为 getter/setter 直通 `ws.data.sessionId`。→ Task 8。
+7. **node-pty 版本**：锁 `^1.1.0`（带 `prebuild.js || node-gyp rebuild`，减少本机编译概率）。→ Task 2。
