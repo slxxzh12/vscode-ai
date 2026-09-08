@@ -208,6 +208,8 @@ node -e "const p=require('node-pty');const x=p.spawn('powershell.exe',[],{name:'
 - `PASS_OSC_PASSTHROUGH: true` → Windows 上 auto 步可用，无额外工作。
 - `PASS_OSC_PASSTHROUGH: false`（conhost 吞掉未知 OSC）→ **已知限制**：Windows 本地 auto 步会等不到标记；用户用 UI「下一步」强推即可（runner 已支持 running 中 advance）。把结果记入 Task 19 冒烟报告与 README 注意事项，Linux 部署不受影响。
 
+> **执行记录（2026-09-08）**：本机探测结果为 `HAS_REAL_OSC_MARKER=true`（node-pty+ConPTY 在命令回显后回传了真实 `ESC]777;dfdone;probe BEL` 序列）。**Windows auto 步可用，无需降级**；README 无需写该已知限制。
+
 - [ ] **Step 4: fake pty 助手（后续所有 server 单测共用）**
 
 `server/test/helpers/fake-pty.js`:
