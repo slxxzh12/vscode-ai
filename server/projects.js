@@ -1,0 +1,41 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+export class Projects {
+  constructor({ projects = [], logger = console } = {}) {
+    this.projects = projects;
+    this.log = logger;
+    this._byId = new Map(projects.map((p) => [p.id, p]));
+  }
+  listProjects() {
+    return this.projects.map((p) => ({ id: p.id, name: p.name, root: p.root }));
+  }
+  _project(id) {
+    const p = this._byId.get(id);
+    if (!p) { const e = new Error('project not found'); e.code = 'not-found'; throw e; }
+    return p;
+  }
+  _realOrResolved(p) {
+    try { return fs.realpathSync(p); } catch { return path.resolve(p); }
+  }
+  tree(projectId, rel = '') {
+    const proj = this._project(projectId);
+    const rootReal = this._realOrResolved(proj.root);
+    let target = path.resolve(proj.root, rel || '.');
+    if (target !== rootReal && !target.startsWith(rootReal + path.sep)) {
+      const e = new Error('path escapes project root'); e.code = 'forbidden'; throw e;
+    }
+    if (!fs.existsSync(target)) { const e = new Error('dir not found'); e.code = 'not-found'; throw e; }
+    const targetReal = this._realOrResolved(target);
+    if (targetReal !== rootReal && !targetReal.startsWith(rootReal + path.sep)) {
+      const e = new Error('symlink escapes project root'); e.code = 'forbidden'; throw e;
+    }
+    const entries = fs.readdirSync(target, { withFileTypes: true });
+    const items = entries
+      .map((d) => ({ name: d.name, type: d.isDirectory() ? 'dir' : d.isFile() ? 'file' : 'file' }))
+      .sort((a, b) =>
+        (a.type === b.type ? a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+          : a.type === 'dir' ? -1 : 1));
+    return items;
+  }
+}
