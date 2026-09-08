@@ -1,0 +1,5 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body { background: #1e2227; color: #d5dae1; font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px; }
+.xterm { height: 100%; padding: 4px 0; }
