@@ -541,6 +541,31 @@ onBeforeUnmount(() => {
         </div>
         <div v-show="showEditor" ref="editorHost" class="editor" />
 
+        <div v-if="b64Open && status === 'ok'" class="b64panel">
+          <div class="b64col">
+            <div class="b64ch">
+              <span class="b64t">Base64 编码（实时）</span>
+              <div class="b64btns">
+                <button class="b64b" :disabled="!b64EncodeOut" @click="b64Copy(b64EncodeOut)">复制</button>
+              </div>
+            </div>
+            <pre class="b64pre">{{ b64EncodeOut }}</pre>
+          </div>
+          <div class="b64col">
+            <div class="b64ch">
+              <span class="b64t">Base64 解码</span>
+              <div class="b64btns">
+                <button class="b64b" :disabled="!b64EncodeOut" @click="feedDecodeFromEncode()">编码结果→解码</button>
+                <button class="b64b" :disabled="!b64DecodeOut" @click="b64Copy(b64DecodeOut)">复制</button>
+                <button class="b64b" :disabled="!b64DecodeInput" @click="b64DecodeInput = ''">清空</button>
+              </div>
+            </div>
+            <textarea v-model="b64DecodeInput" class="b64ta" rows="2" spellcheck="false" placeholder="在此粘贴 Base64，自动实时解码…" />
+            <div v-if="b64DecodeErr" class="b64err">{{ b64DecodeErr }}</div>
+            <pre v-else class="b64pre">{{ b64DecodeOut }}</pre>
+          </div>
+        </div>
+
         <div v-if="curlOpen" class="curlpanel">
           <div class="cph">⇀ 构建 HTTP 请求 <button class="cpx" @click="curlOpen = false">×</button></div>
           <div class="cpf"><label>方法</label><input v-model="req.method" class="cpm" /></div>
