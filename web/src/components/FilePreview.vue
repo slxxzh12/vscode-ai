@@ -564,8 +564,16 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="preview">
-    <img v-if="kind === 'image'" :src="rawUrl(projectId, path)" class="img" alt="" />
-    <iframe v-else-if="kind === 'pdf'" :src="rawUrl(projectId, path)" class="pdf" />
+    <div v-if="kind === 'image' || kind === 'pdf'" class="head mediahead">
+      <span class="meta">{{ name }}<template v-if="status === 'ok'"> · {{ (size / 1024).toFixed(1) }} KB</template></span>
+      <div class="right">
+        <button class="fmt-btn" :class="{ on: detailOpen }" title="文件详细信息" @click="toggleDetail()">ⓘ 详细信息</button>
+      </div>
+    </div>
+    <div v-if="kind === 'image' || kind === 'pdf'" class="media">
+      <img v-if="kind === 'image'" :src="rawUrl(projectId, path)" class="img" alt="" />
+      <iframe v-else-if="kind === 'pdf'" :src="rawUrl(projectId, path)" class="pdf" />
+    </div>
     <template v-else>
       <div class="head">
         <span class="meta">{{ name }}<template v-if="status === 'ok'"> · {{ (size / 1024).toFixed(1) }} KB</template></span>
@@ -688,8 +696,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .preview { display: flex; flex-direction: column; height: 100%; background: var(--bg3); overflow: hidden; }
-.img { max-width: 100%; max-height: 100%; object-fit: contain; margin: auto; }
-.pdf { width: 100%; height: 100%; border: none; background: #fff; }
+.media { flex: 1; min-height: 0; overflow: hidden; display: flex; }
+.media .img { max-width: 100%; max-height: 100%; object-fit: contain; margin: auto; }
+.media .pdf { width: 100%; height: 100%; border: none; background: #fff; display: block; }
 .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 2px 10px; border-bottom: 1px solid var(--bd2); }
 .meta { color: var(--tx3); font-size: 11px; }
 .right { display: flex; align-items: center; gap: 10px; }
