@@ -446,17 +446,13 @@ watch(() => props.detailToken, (tk) => {
 }, { immediate: true });
 
 // —— 运行脚本（bat/cmd/ps1/sh）——
-const runMsg = ref('');
-let runTimer: ReturnType<typeof setTimeout> | null = null;
 async function runFile() {
   try {
     await runScript(props.projectId, props.path);
-    runMsg.value = '已在系统中执行';
+    setToolMsg('✓ 已在系统中执行');
   } catch (e: any) {
-    runMsg.value = `执行失败：${e?.message || e}`;
+    setToolMsg(`执行失败：${e?.message || e}`, false);
   }
-  if (runTimer) clearTimeout(runTimer);
-  runTimer = setTimeout(() => { runMsg.value = ''; }, 3200);
 }
 
 // —— curl → 构建请求 ——
@@ -512,8 +508,6 @@ async function sendRequest() {
 }
 
 // —— 一键格式化（Prettier 按需加载）——
-const fmtMsg = ref('');
-let fmtTimer: ReturnType<typeof setTimeout> | null = null;
 const PARSER_BY_EXT: Record<string, string> = {
   js: 'babel', mjs: 'babel', cjs: 'babel', jsx: 'babel',
   ts: 'typescript', tsx: 'typescript', mts: 'typescript',
@@ -521,11 +515,6 @@ const PARSER_BY_EXT: Record<string, string> = {
   md: 'markdown', markdown: 'markdown', yml: 'yaml', yaml: 'yaml',
 };
 const canFormat = computed(() => kind.value === 'text' && !!PARSER_BY_EXT[ext.value]);
-function flashFmt(m: string) {
-  fmtMsg.value = m;
-  if (fmtTimer) clearTimeout(fmtTimer);
-  fmtTimer = setTimeout(() => { fmtMsg.value = ''; }, 2600);
-}
 async function formatDoc() {
   if (!view || !canFormat.value) return;
   const parser = PARSER_BY_EXT[ext.value];
@@ -546,12 +535,12 @@ async function formatDoc() {
     const out = await prettier.format(doc, { parser, plugins });
     if (out !== doc) {
       view.dispatch({ changes: { from: 0, to: doc.length, insert: out } });
-      flashFmt('✓ 已格式化');
+      setToolMsg('✓ 已格式化');
     } else {
-      flashFmt('格式已是最佳');
+      setToolMsg('格式已是最佳');
     }
   } catch (e: any) {
-    flashFmt(`格式化失败：${e?.message || e}`);
+    setToolMsg(`格式化失败：${e?.message || e}`, false);
   }
 }
 
@@ -566,7 +555,6 @@ watch([status, viewMode], applyPreview);
 onBeforeUnmount(() => {
   disposed = true;
   unbindSort?.();
-  if (runTimer) clearTimeout(runTimer);
   flush();
   if (view) { view.destroy(); view = null; }
 });
@@ -591,7 +579,6 @@ onBeforeUnmount(() => {
           <span v-if="saveState === 'saving'" class="save saveing">保存中…</span>
           <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ saveMsg }} 已保存</span>
           <span v-else-if="saveState === 'error'" class="save saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
-          <span v-if="fmtMsg" class="save fmtmsg" :class="{ ok: fmtMsg.startsWith('✓') }">{{ fmtMsg }}</span>
           <button v-if="canFormat && showEditor" class="fmt-btn" title="格式化代码" @click="formatDoc">⇥ 格式化</button>
           <button v-if="canMinify && showEditor && status === 'ok'" class="fmt-btn" :disabled="minifying" title="压缩成一行（js/json）" @click="minifyOneLine">{{ minifying ? '压缩中…' : '⇣ 压成一行' }}</button>
           <span v-if="canSort" class="sortwrap">
@@ -604,7 +591,6 @@ onBeforeUnmount(() => {
             <button class="fmt-btn" :class="{ on: b64Open }" title="打开/关闭 Base64 编解码结果面板（编辑器下方）" @click="toggleB64">⇆ Base64</button>
           </span>
           <button v-if="status === 'ok'" class="fmt-btn" :class="{ on: detailOpen }" title="文件详细信息" @click="toggleDetail()">ⓘ 详细信息</button>
-          <span v-if="runMsg" class="save runmsg">{{ runMsg }}</span>
           <button v-if="canRun" class="fmt-btn run-btn" title="在系统中执行该脚本" @click="runFile">▶ 运行</button>
           <button v-if="canCurl" class="fmt-btn" title="解析 curl 命令并构建 HTTP 请求" @click="openCurl">⇀ 转请求</button>
           <div v-if="hasPreviewToggle" class="seg">
