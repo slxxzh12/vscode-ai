@@ -23,6 +23,17 @@ test('事件总线按原始 engine 事件转发（index 层再映射到 CollabS2
   assert.deepEqual(seen, [[CollabS2C.COLLAB_FRIEND_REQ, 'x'], [CollabS2C.COLLAB_SYNCED]]);
 });
 
+test('事件总线按原始事件名转发，index 层映射到 chat / cmd-pending 推送', async () => {
+  const bus = createEventBus();
+  const seen = [];
+  // 镜像 index.js 的接线：监听原始事件，转发为 CollabS2C 推送
+  bus.on('chat', (payload) => seen.push([CollabS2C.COLLAB_CHAT, payload.groupId]));
+  bus.on('cmd-pending', (payload) => seen.push([CollabS2C.COLLAB_CMD_PENDING, payload.reqId]));
+  bus.emit('chat', { groupId: 'g1', msg: null });
+  bus.emit('cmd-pending', { reqId: 'r1' });
+  assert.deepEqual(seen, [[CollabS2C.COLLAB_CHAT, 'g1'], [CollabS2C.COLLAB_CMD_PENDING, 'r1']]);
+});
+
 test('mount GET /api/collab/snapshot 返回身份', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-idx-'));
   const store = new CollabStore({ file: path.join(dir, 'c.json') });
