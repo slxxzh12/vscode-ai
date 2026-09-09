@@ -271,17 +271,26 @@ X 把「成员变更」增量广播给全群在线成员 → 各成员更新本�
 
 ### 6.1 导航
 
-- 顶部入口切换：`▶ devflow`（终端页现状）| `👥 协作`（协作视图）。
+- 左侧 rail（现有 ▤目录/▦会话 旁）新增第三个图标「👥 通讯录」。点击后 **中央区域整体切换为协作视图**（`CollaborationView` 全页），再点回 rail 图标即恢复终端页。侧栏在协作模式不显示。
+- 终端页与协作页互不干扰：协作页只在被选中时挂载，卸载时释放订阅。
 
 ### 6.2 协作页
 
+协作视图为单页 + 顶部 tab 布局，包含 5 个组件：
+
 | 组件 | 内容 |
 |---|---|
-| `CollaborationView.vue` | 本机身份卡（用户名/ip/端口/公钥指纹）+ tab |
-| `FriendsView.vue` | 好友列表、状态；加好友表单（ip:port）；删除好友 |
-| `GroupsView.vue` | 群列表；建群；群详情（成员+角色徽章、指定 admin、邀请成员）；入群邀请 |
-| `SkillDistributor.vue` | 勾选本地 skills → 选目标 → 发起分发；分发历史 |
-| `InboxView.vue` | 待确认 skill 包（名称/来源/大小/hash）→ 安装/忽略/删除；补拉提示 |
+| `CollaborationView.vue` | 容器：身份卡（用户名/ip/端口/公钥指纹）+ tab 切换（好友/群组/技能/收件箱）|
+| `FriendsView.vue` | 好友列表、待确认好友、状态；加好友表单（ip:port）；删除好友 |
+| `GroupsView.vue` | 群列表；建群；群详情（成员+角色徽章、owner 指定 admin、邀请成员、踢人）；待入群邀请 |
+| `SkillDistributor.vue` | 勾选本地 skills → 选目标（群）→ 发起分发；分发结果 |
+| `InboxView.vue` | 待确认 skill 包（名称/来源/大小/hash）→ 安装/忽略/删除 |
+
+协作视图数据流：
+
+- 挂载/收到 `COLLAB_SYNCED` 时 `GET /api/collab/snapshot` 刷新本地状态。
+- 所有操作走 `fetch('/api/collab/*')`（与 useProjects 同风格）。
+- 复用现有 `/ws` 订阅 `CollabS2C` 推送（useTerminal default 分支 emit）。
 
 HTTP 走 `fetch('/api/...')`；实时推送复用现有 WS。
 
@@ -332,4 +341,4 @@ Server plan（本阶段）：
 9. `npm test`（server）+ `npm run typecheck`（web 不受影响）全绿。
 
 Web plan（后续）：
-10. web：协作页 UI（5 个组件）+ `useCollab` + App.vue 入口接线。
+10. web：协作页 UI（CollaborationView + Friends/Groups/SkillDistributor/Inbox + useCollab API 客户端）+ App.vue rail 接线。
