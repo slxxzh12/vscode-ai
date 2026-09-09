@@ -70,3 +70,22 @@ test('ç¬¦å·é“¾æŽ¥é€ƒé€¸ 403ï¼ˆjunctionï¼‰', (t) => {
   const p = makeProjects([dir]);
   assert.throws(() => p.tree('p0', 'escape'), (e) => e.code === 'forbidden');
 });
+
+test('revealTarget ½âÎö´æÔÚµÄÎÄ¼þÓëÄ¿Â¼', () => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'x');
+  fs.mkdirSync(path.join(dir, 'sub'));
+  const p = makeProjects([dir]);
+  const f = p.revealTarget('p0', 'a.txt');
+  assert.equal(f.isDir, false);
+  assert.equal(f.name, 'a.txt');
+  const d = p.revealTarget('p0', 'sub');
+  assert.equal(d.isDir, true);
+});
+
+test('revealTarget ²»´æÔÚ/Ô½½çÅ×´í', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.throws(() => p.revealTarget('p0', 'ghost'), (e) => e.code === 'not-found');
+  assert.throws(() => p.revealTarget('p0', '..%2F..'), (e) => e.code === 'forbidden' || e.code === 'not-found');
+});

@@ -65,12 +65,17 @@ fs.mkdirSync(path.join(APP, 'server'), { recursive: true });
 fs.mkdirSync(path.join(APP, 'web'), { recursive: true });
 fs.copyFileSync(ENV_NODE, path.join(APP, 'runtime', 'node.exe'));
 
-// server 顶层 .js/.json（不含 test/）
-for (const entry of fs.readdirSync(path.join(ROOT, 'server'), { withFileTypes: true })) {
-  if (entry.isFile() && /\.(js|json)$/.test(entry.name)) {
-    fs.copyFileSync(path.join(ROOT, 'server', entry.name), path.join(APP, 'server', entry.name));
+// server 整树 .js/.json（跳过 test/）
+function copyServerTree(from, to) {
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name === 'test') continue;
+    const s = path.join(from, entry.name);
+    if (entry.isDirectory()) { copyServerTree(s, path.join(to, entry.name)); continue; }
+    if (/\.(js|json)$/.test(entry.name)) fs.copyFileSync(s, path.join(to, entry.name));
   }
 }
+copyServerTree(path.join(ROOT, 'server'), path.join(APP, 'server'));
 cpDir(path.join(ROOT, 'web', 'dist'), path.join(APP, 'web', 'dist'));
 
 // 运行时依赖（真实拷贝，含 node-pty 原生 .node）

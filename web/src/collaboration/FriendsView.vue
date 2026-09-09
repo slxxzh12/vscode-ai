@@ -48,13 +48,13 @@ async function remove(machineId: string) { if (confirm('删除好友？')) await
 <style scoped>
 .fw { padding: 14px; }
 .form { display: flex; gap: 6px; margin-bottom: 8px; }
-input { background: #222932; border: 1px solid #2a323e; color: #d5dae1; border-radius: 4px; padding: 5px 8px; }
-button { background: #2f6feb; color: #fff; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
-button.del { background: none; color: #ff6b6b; }
-h4 { color: #9aa4b2; text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; }
-.row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #232b34; }
-.nm { color: #e2e8f0; }
-.adr { color: #6b7686; font-family: monospace; font-size: 11px; margin-left: auto; }
-.empty { color: #6b7686; padding: 8px; }
-.err { color: #ff6b6b; }
+input { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 5px 8px; }
+button { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+button.del { background: none; color: var(--err); }
+h4 { color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; }
+.row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--bd2); }
+.nm { color: var(--tx1); }
+.adr { color: var(--tx6); font-family: monospace; font-size: 11px; margin-left: auto; }
+.empty { color: var(--tx6); padding: 8px; }
+.err { color: var(--err); }
 </style>

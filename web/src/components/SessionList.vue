@@ -27,15 +27,15 @@ async function create() {
 
 <style scoped>
 .sl { padding: 4px; display: flex; flex-direction: column; gap: 2px; }
-.head { display: flex; justify-content: space-between; padding: 6px 8px; color: #9aa4b2; text-transform: uppercase; font-size: 11px; }
-.plus { background: none; border: none; color: #4c9aff; cursor: pointer; }
-.item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: pointer; border-radius: 4px; color: #c8d0da; }
-.item.active { background: #2f6feb; color: #fff; }
+.head { display: flex; justify-content: space-between; padding: 6px 8px; color: var(--tx2); text-transform: uppercase; font-size: 11px; }
+.plus { background: none; border: none; color: var(--ac2); cursor: pointer; }
+.item { display: flex; align-items: center; gap: 6px; padding: 5px 8px; cursor: pointer; border-radius: 4px; color: var(--tx4); }
+.item.active { background: var(--ac); color: var(--onac); }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.dot.running { background: #22c55e; }
-.dot.exited { background: #64748b; }
+.dot.running { background: var(--ok); }
+.dot.exited { background: var(--tx5); }
 .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.exited-tag { font-size: 10px; color: #eab308; }
+.exited-tag { font-size: 10px; color: var(--warn); }
 .kill { color: transparent; padding: 0 3px; }
-.item:hover .kill { color: #ff6b6b; }
+.item:hover .kill { color: var(--err); }
 </style>

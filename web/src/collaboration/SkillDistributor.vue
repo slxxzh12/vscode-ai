@@ -52,11 +52,11 @@ async function distribute() {
 
 <style scoped>
 .sd { padding: 14px; }
-h4 { color: #9aa4b2; text-transform: uppercase; font-size: 11px; margin: 12px 0 6px; }
-.skill { display: block; padding: 4px 0; color: #c8d0da; }
-select { background: #222932; color: #d5dae1; border: 1px solid #2a323e; border-radius: 4px; padding: 5px 8px; margin-right: 8px; }
-button { background: #2f6feb; color: #fff; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; }
-.empty { color: #6b7686; padding: 8px; }
-.ok { color: #22c55e; margin-top: 8px; }
-.err { color: #ff6b6b; margin-top: 8px; }
+h4 { color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 12px 0 6px; }
+.skill { display: block; padding: 4px 0; color: var(--tx); }
+select { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; margin-right: 8px; }
+button { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; }
+.empty { color: var(--tx6); padding: 8px; }
+.ok { color: var(--ok); margin-top: 8px; }
+.err { color: var(--err); margin-top: 8px; }
 </style>

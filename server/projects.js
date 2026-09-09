@@ -35,6 +35,44 @@ export class Projects {
     }
     return target;
   }
+  // 校验 rel 落在项目 root 内（允许目标尚不存在），返回绝对目标路径；供新建文件/目录用
+  _safeTarget(projectId, rel) {
+    const proj = this._project(projectId);
+    const rootReal = this._realOrResolved(proj.root);
+    const target = path.resolve(proj.root, rel || '.');
+    if (target !== rootReal && !target.startsWith(rootReal + path.sep)) {
+      const e = new Error('path escapes project root'); e.code = 'forbidden'; throw e;
+    }
+    return target;
+  }
+  createFile(projectId, rel, content = '', maxBytes = 2 * 1024 * 1024) {
+    const target = this._safeTarget(projectId, rel);
+    if (fs.existsSync(target)) { const e = new Error('already exists'); e.code = 'exists'; throw e; }
+    const bytes = Buffer.byteLength(content, 'utf8');
+    if (bytes > maxBytes) { const e = new Error('content too large'); e.code = 'too-large'; throw e; }
+    const parent = path.dirname(target);
+    if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
+    fs.writeFileSync(target, content, 'utf8');
+    return { name: path.basename(target), path: rel, size: bytes };
+  }
+  createDir(projectId, rel) {
+    const target = this._safeTarget(projectId, rel);
+    if (fs.existsSync(target)) { const e = new Error('already exists'); e.code = 'exists'; throw e; }
+    fs.mkdirSync(target, { recursive: true });
+    return { name: path.basename(target), path: rel };
+  }
+  // 供 OS 资源管理器 reveal 用：解析到项目内已存在的绝对路径（文件或目录均可）
+  revealTarget(projectId, rel) {
+    const proj = this._project(projectId);
+    const rootReal = this._realOrResolved(proj.root);
+    const target = this._safeTarget(projectId, rel);
+    if (!fs.existsSync(target)) { const e = new Error('file not found'); e.code = 'not-found'; throw e; }
+    const real = this._realOrResolved(target);
+    if (real !== rootReal && !real.startsWith(rootReal + path.sep)) {
+      const e = new Error('symlink escapes project root'); e.code = 'forbidden'; throw e;
+    }
+    return { abs: real, name: path.basename(real), isDir: fs.statSync(real).isDirectory() };
+  }
   readText(projectId, rel, maxBytes = 1024 * 1024) {
     const file = this._filePath(projectId, rel);
     const size = fs.statSync(file).size;

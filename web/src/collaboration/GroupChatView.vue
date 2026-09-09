@@ -114,26 +114,26 @@ onMounted(async () => {
 
 <style scoped>
 .gcv { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.pend { background: #1d3a5f; border: 1px solid #2f6feb; border-radius: 6px; margin: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; }
-.pend-txt { flex: 1; color: #cfe0ff; }
-.pend code { color: #ffd479; }
+.pend { background: color-mix(in srgb, var(--ac) 18%, transparent); border: 1px solid var(--ac); border-radius: 6px; margin: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; }
+.pend-txt { flex: 1; color: var(--tx1); }
+.pend code { color: var(--warn2); }
 .msgs { flex: 1; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
 .msg { max-width: 100%; display: flex; flex-direction: column; gap: 2px; }
-.meta { display: flex; gap: 6px; color: #6b7686; font-size: 11px; align-items: center; }
-.who { color: #9aa4b2; font-weight: 600; }
-.tag.sys { background: #334155; color: #cbd5e1; padding: 0 6px; border-radius: 8px; font-size: 10px; }
-.bubble { background: #222932; border: 1px solid #2a323e; border-radius: 8px; padding: 6px 10px; color: #d5dae1; white-space: pre-wrap; word-break: break-word; align-self: flex-start; }
-.msg.mine .bubble { background: #14345e; border-color: #2f6feb; align-self: flex-end; }
-.at { color: #4c9aff; font-weight: 600; }
-.res-head { color: #9aa4b2; font-size: 11px; }
-.res-body { background: #10151b; color: #a5e8a0; border: 1px solid #1f3a24; border-radius: 6px; padding: 8px; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; max-height: 260px; overflow: auto; }
-.compose { border-top: 1px solid #2a323e; padding: 8px; position: relative; flex: none; }
-.mentions { position: absolute; bottom: 100%; left: 8px; background: #1a2027; border: 1px solid #2a323e; border-radius: 6px; padding: 4px; display: flex; flex-direction: column; max-height: 180px; overflow: auto; }
-.mentions button { background: none; border: none; color: #cfe0ff; text-align: left; padding: 4px 8px; cursor: pointer; }
-.mentions button:hover { background: #2f6feb; color: #fff; border-radius: 4px; }
+.meta { display: flex; gap: 6px; color: var(--tx6); font-size: 11px; align-items: center; }
+.who { color: var(--tx2); font-weight: 600; }
+.tag.sys { background: var(--bg5); color: var(--tx2); padding: 0 6px; border-radius: 8px; font-size: 10px; }
+.bubble { background: var(--bg4); border: 1px solid var(--bd); border-radius: 8px; padding: 6px 10px; color: var(--tx); white-space: pre-wrap; word-break: break-word; align-self: flex-start; }
+.msg.mine .bubble { background: color-mix(in srgb, var(--ac) 22%, transparent); border-color: var(--ac); align-self: flex-end; }
+.at { color: var(--ac2); font-weight: 600; }
+.res-head { color: var(--tx2); font-size: 11px; }
+.res-body { background: var(--bg3); color: var(--oktx); border: 1px solid var(--bd2); border-radius: 6px; padding: 8px; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; max-height: 260px; overflow: auto; }
+.compose { border-top: 1px solid var(--bd); padding: 8px; position: relative; flex: none; }
+.mentions { position: absolute; bottom: 100%; left: 8px; background: var(--bg2); border: 1px solid var(--bd); border-radius: 6px; padding: 4px; display: flex; flex-direction: column; max-height: 180px; overflow: auto; }
+.mentions button { background: none; border: none; color: var(--tx1); text-align: left; padding: 4px 8px; cursor: pointer; }
+.mentions button:hover { background: var(--ac); color: var(--onac); border-radius: 4px; }
 .row { display: flex; gap: 6px; }
-input { flex: 1; background: #222932; border: 1px solid #2a323e; color: #d5dae1; border-radius: 4px; padding: 7px 10px; }
-button { background: #2f6feb; color: #fff; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
-button.ghost { background: none; border: 1px solid #2a323e; color: #9aa4b2; }
-.empty { color: #6b7686; padding: 8px; }
+input { flex: 1; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 7px 10px; }
+button { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2); }
+.empty { color: var(--tx6); padding: 8px; }
 </style>
