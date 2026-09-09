@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 export class Projects {
   constructor({ projects = [], logger = console } = {}) {
@@ -78,6 +79,19 @@ export class Projects {
     const { abs, name, isDir } = this.revealTarget(projectId, rel);
     const st = fs.statSync(abs);
     return { name, path: rel, abs, size: st.size, mtime: st.mtimeMs, isDir };
+  }
+  // 单趟流式计算 MD5+SHA256（仅文件；目录抛 not-file）
+  hash(projectId, rel) {
+    const { abs, isDir } = this.revealTarget(projectId, rel);
+    if (isDir) { const e = new Error('is a directory'); e.code = 'not-file'; throw e; }
+    const md5 = crypto.createHash('md5');
+    const sha = crypto.createHash('sha256');
+    return new Promise((resolve, reject) => {
+      const s = fs.createReadStream(abs, { highWaterMark: 64 * 1024 });
+      s.on('data', (c) => { md5.update(c); sha.update(c); });
+      s.on('error', (err) => { const e = new Error(`read failed: ${err.message}`); e.code = 'internal'; reject(e); });
+      s.on('end', () => resolve({ md5: md5.digest('hex'), sha256: sha.digest('hex') }));
+    });
   }
   readText(projectId, rel, maxBytes = 1024 * 1024) {
     const file = this._filePath(projectId, rel);

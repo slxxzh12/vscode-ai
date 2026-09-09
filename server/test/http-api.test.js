@@ -4,6 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { Projects } from '../projects.js';
 import { createHttpApi } from '../http-api.js';
 
@@ -234,4 +235,31 @@ test('/api/file/meta 越界 403、不存在 404', async (t) => {
   assert.equal(esc.status, 403);
   const miss = await request(server, '/api/file/meta?project=a&path=nope.txt');
   assert.equal(miss.status, 404);
+});
+
+test('/api/file/hash 返回 md5+sha256（大文件跨块一致）', async (t) => {
+  const dir = tmpDir();
+  const buf = Buffer.alloc(300 * 1024);        // 跨 64KB 块边界
+  for (let i = 0; i < buf.length; i++) buf[i] = i % 251;
+  fs.writeFileSync(path.join(dir, 'big.bin'), buf);
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/file/hash?project=a&path=big.bin');
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.equal(j.md5, crypto.createHash('md5').update(buf).digest('hex'));
+  assert.equal(j.sha256, crypto.createHash('sha256').update(buf).digest('hex'));
+});
+
+test('/api/file/hash 目录返回 400；不存在 404；越界 403', async (t) => {
+  const dir = tmpDir();
+  fs.mkdirSync(path.join(dir, 'sub'));
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const d = await request(server, '/api/file/hash?project=a&path=sub');
+  assert.equal(d.status, 400);
+  const miss = await request(server, '/api/file/hash?project=a&path=nope.bin');
+  assert.equal(miss.status, 404);
+  const esc = await request(server, '/api/file/hash?project=a&path=..%2F..%2F..');
+  assert.equal(esc.status, 403);
 });

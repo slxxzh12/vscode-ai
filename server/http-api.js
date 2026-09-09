@@ -138,6 +138,12 @@ export function createHttpApi({ projects }) {
         sendJson(res, 200, projects.meta(project, rel));
         return;
       }
+      if (url.pathname === '/api/file/hash' && req.method === 'GET') {
+        const project = url.searchParams.get('project');
+        const rel = url.searchParams.get('path') || '';
+        sendJson(res, 200, await projects.hash(project, rel));
+        return;
+      }
       if (url.pathname === '/api/format' && req.method === 'POST') {
         const body = await readJsonBody(req);
         const name = String(body.name || '');
