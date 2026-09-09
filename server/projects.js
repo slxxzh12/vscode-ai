@@ -8,7 +8,7 @@ export class Projects {
     this._byId = new Map(projects.map((p) => [p.id, p]));
   }
   listProjects() {
-    return this.projects.map((p) => ({ id: p.id, name: p.name, root: p.root }));
+    return this.projects.map((p) => ({ id: p.id, name: p.name, root: path.resolve(p.root) }));
   }
   _project(id) {
     const p = this._byId.get(id);

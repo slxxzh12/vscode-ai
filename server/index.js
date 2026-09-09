@@ -36,7 +36,11 @@ const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: l
 // requireAuth 占位钩子（spec §11）：HTTP 用 requireAuthHttp，WS 走 upgrade 处的 requireAuthWs
 const requireAuthWs = () => true; // TODO(安全): 接入 Token 后校验 ws 握手
 
-// ---- 协作子系统（隔离目录 server/collaboration/**）----
+// ---- 协作子系统（隔离目录 server/collaboration/**，数据存用户数据目录）----
+import { collabDir, seedFromLegacy } from './data-home.js';
+const COLLAB_DIR = collabDir();
+seedFromLegacy(path.join(COLLAB_DIR, 'identity.json'), path.join(__dirname, 'collaboration', 'identity.json'));
+seedFromLegacy(path.join(COLLAB_DIR, 'collab.json'), path.join(__dirname, 'collaboration', 'collab.json'));
 const collabEventBus = createEventBus();
 let gateway;                                  // 后续 createGateway 赋值
 const broadcastCollab = (type, payload) => {
@@ -44,15 +48,15 @@ const broadcastCollab = (type, payload) => {
   for (const c of gateway.conns) c.send({ type, ...payload });
 };
 const collabIdentity = loadIdentity({
-  file: path.join(__dirname, 'collaboration', 'identity.json'),
+  file: path.join(COLLAB_DIR, 'identity.json'),
   host: process.env.DEVFLOW_HOST || '127.0.0.1',
   port: Number(process.env.DEVFLOW_PORT || 3001),
 });
 const collabEngine = new CollabEngine({
-  store: new CollabStore({ file: path.join(__dirname, 'collaboration', 'collab.json'), logger: log }),
+  store: new CollabStore({ file: path.join(COLLAB_DIR, 'collab.json'), logger: log }),
   identity: collabIdentity,
   skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(os.homedir(), '.config', 'opencode', 'skills'),
-  inboxDir: path.join(__dirname, 'collaboration', 'inbox'),
+  inboxDir: path.join(COLLAB_DIR, 'inbox'),
   events: collabEventBus,
   logger: log,
 });

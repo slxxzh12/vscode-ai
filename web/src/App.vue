@@ -21,6 +21,55 @@ const rail = ref<'explorer' | 'sessions' | 'contacts'>('explorer');
 const showWf = ref(false);
 
 const projectName = computed(() => projects.value.find((p) => p.id === currentProject.value)?.name || '未选择项目');
+const currentProjectInfo = computed(() => projects.value.find((p) => p.id === currentProject.value) || null);
+// 顶栏展示：优先「选中文件的绝对路径」，无选中文件则显示项目根绝对路径
+const displayPath = computed(() => {
+  const root = currentProjectInfo.value?.root || '';
+  if (!root) return '';
+  const base = root.replace(/\\/g, '/').replace(/\/+$/, '');
+  const af = center.active.value && center.active.value.kind === 'file' ? center.active.value.path : null;
+  if (!af) return base;
+  return base + '/' + af.replace(/\\/g, '/').replace(/^\/+/, '');
+});
+
+const RECENT_KEY = 'devflow-recent-projects';
+const RECENT_MAX = 100;
+interface RecentRec { id: string; ts: number; }
+function loadRecents(): RecentRec[] {
+  try {
+    const a = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+    return Array.isArray(a) ? a.filter((x) => x && typeof x.id === 'string' && typeof x.ts === 'number') : [];
+  } catch { return []; }
+}
+function saveRecents(a: RecentRec[]) { try { localStorage.setItem(RECENT_KEY, JSON.stringify(a.slice(0, RECENT_MAX))); } catch { /* ignore */ } }
+const recents = ref<RecentRec[]>(loadRecents());
+function touchRecent(id: string) {
+  const a = recents.value.filter((x) => x.id !== id);
+  a.unshift({ id, ts: Date.now() });
+  recents.value = a.slice(0, RECENT_MAX);
+  saveRecents(a);
+}
+function fmtRecent(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const sameDay = d.toDateString() === now.toDateString();
+  const thisYear = d.getFullYear() === now.getFullYear();
+  if (sameDay) return `今天 ${hm}`;
+  if (thisYear) return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+interface OrderedItem { project: ProjectInfo; ts: number | null; }
+const orderedProjects = computed<OrderedItem[]>(() => {
+  const byId = new Map(projects.value.map((p) => [p.id, p]));
+  const recent = recents.value
+    .filter((r) => byId.has(r.id))
+    .sort((a, b) => b.ts - a.ts)
+    .map((r): OrderedItem => ({ project: byId.get(r.id)!, ts: r.ts }));
+  const rest = projects.value.filter((p) => !recents.value.some((r) => r.id === p.id)).map((p): OrderedItem => ({ project: p, ts: null }));
+  return recent.concat(rest).slice(0, RECENT_MAX);
+});
 const activeFilePath = computed(() => {
   const a = center.active.value;
   return a && a.kind === 'file' && a.projectId === currentProject.value ? (a.path ?? null) : null;
@@ -58,9 +107,15 @@ function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b,
 
 async function loadProjects() {
   try { projects.value = await projectsApi.list(); } catch { projects.value = []; }
-  if (!currentProject.value && projects.value.length) currentProject.value = projects.value[0].id;
+  if (!currentProject.value && projects.value.length) {
+    currentProject.value = projects.value[0].id;
+    touchRecent(currentProject.value);
+  }
 }
-function selectProject(id: string) { currentProject.value = id; }
+function selectProject(id: string) {
+  currentProject.value = id;
+  if (id) touchRecent(id);
+}
 function openFile(projectId: string, path: string) {
   const q = path.replace(/\\/g, '/');
   const i = q.lastIndexOf('/');
@@ -78,8 +133,11 @@ onMounted(() => {
     <header class="top">
       <span class="logo">◈ devflow</span>
       <span class="proj">{{ projectName }}</span>
-      <select v-if="projects.length" :value="currentProject || ''" class="proj-sel" @change="(e: any) => selectProject(e.target.value)">
-        <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+      <span v-if="displayPath" class="projpath" :title="displayPath">{{ displayPath }}</span>
+      <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" @change="(e: any) => selectProject(e.target.value)">
+        <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id">
+          {{ it.project.name }}{{ it.ts ? ' · ' + fmtRecent(it.ts) : '' }}
+        </option>
       </select>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">重连中…</span>
@@ -118,8 +176,9 @@ onMounted(() => {
 .app { display: flex; flex-direction: column; height: 100%; position: relative; }
 .top { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--bd); flex: none; }
 .logo { color: var(--ac3); font-weight: 700; }
-.proj { color: var(--tx2); font-size: 12px; }
-.proj-sel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; }
+.proj { color: var(--tx2); font-size: 12px; white-space: nowrap; }
+.projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-sel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; max-width: 320px; }
 .spacer { flex: 1; }
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .theme-btn:hover { border-color: var(--ac2); }

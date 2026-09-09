@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { transformSync } from 'esbuild';
 
-export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反代/Token 后在此实现
+export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
 
-// 在宿主机上用系统文件管理器展示目标（文件 → 定位选中；目录 → 打开）。
+// 在宿主机上用系统文件管理器展示目标（文件 �?定位选中；目�?�?打开）�?
 function revealInOs(abs, isDir) {
   if (process.platform === 'win32') {
     const arg = isDir ? abs : `/select,${abs}`;
@@ -95,6 +96,25 @@ export function createHttpApi({ projects }) {
         if (typeof body.content !== 'string') return sendJson(res, 400, { error: 'content required' });
         const f = projects.writeText(project, rel, body.content);
         sendJson(res, 200, f);
+        return;
+      }
+      if (url.pathname === '/api/format' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const name = String(body.name || '');
+        const content = String(body.content ?? '');
+        const ext = path.extname(name).toLowerCase().slice(1);
+        let out;
+        if (ext === 'json') {
+          try { out = JSON.stringify(JSON.parse(content)); } catch (e) { return sendJson(res, 400, { error: 'invalid json', message: String(e?.message || e) }); }
+        } else if (['js', 'mjs', 'cjs', 'jsx'].includes(ext)) {
+          try {
+            const r = transformSync(content, { minify: true, loader: ext === 'jsx' ? 'jsx' : 'js' });
+            out = r.code.replace(/\n/g, '');   // 压成一�?
+          } catch (e) { return sendJson(res, 400, { error: 'invalid javascript', message: String(e?.message || e) }); }
+        } else {
+          return sendJson(res, 400, { error: 'unsupported type' });
+        }
+        sendJson(res, 200, { content: out, size: Buffer.byteLength(out, 'utf8') });
         return;
       }
       if (url.pathname === '/api/raw' && req.method === 'GET') {

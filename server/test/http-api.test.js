@@ -166,3 +166,33 @@ test('/api/file POST create dir 新建目录', async (t) => {
   assert.equal(d.status, 200);
   assert.equal(fs.existsSync(path.join(dir, 'made', 'folder')), true);
 });
+
+test('/api/format json 压成一行', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/format', { name: 'a.json', content: '{ "a": 1,  "b": [1, 2, 3] }' });
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.ok(!j.content.includes('\n'));
+  assert.deepEqual(JSON.parse(j.content), { a: 1, b: [1, 2, 3] });
+});
+
+test('/api/format js 压缩为单行且语义等价', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const src = 'function add(a, b) {\n  // 注释\n  return a + b;\n}\nconst x = add(1, 2);';
+  const r = await post(server, '/api/format', { name: 'a.js', content: src });
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.ok(!j.content.includes('\n'));
+  assert.ok(j.content.includes('x='));
+});
+
+test('/api/format 非法 JSON/不支持类型返回 400', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const bad = await post(server, '/api/format', { name: 'a.json', content: '{ nope' });
+  assert.equal(bad.status, 400);
+  const unsupported = await post(server, '/api/format', { name: 'a.txt', content: 'x' });
+  assert.equal(unsupported.status, 400);
+});

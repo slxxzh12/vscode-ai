@@ -31,7 +31,7 @@ import { useProjects } from '../useProjects';
 import { isMarkdownFile, renderMarkdown, renderMermaid } from '../markdown';
 
 const props = defineProps<{ projectId: string; path: string; name: string }>();
-const { text, write, rawUrl } = useProjects();
+const { text, write, rawUrl, format } = useProjects();
 const { isDark } = useTheme();
 
 const IMG = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
@@ -47,6 +47,7 @@ const kind = computed<'image' | 'pdf' | 'text'>(() => {
 const isMd = computed(() => isMarkdownFile(props.name));
 const isHtmlFile = computed(() => ['html', 'htm'].includes(ext.value));
 const hasPreviewToggle = computed(() => isMd.value || isHtmlFile.value);
+const canMinify = computed(() => ['js', 'mjs', 'cjs', 'jsx', 'json'].includes(ext.value) && kind.value === 'text');
 const viewMode = ref<'preview' | 'code'>(isMarkdownFile(props.name) || isHtmlFile.value ? 'preview' : 'code');
 const showEditor = computed(() => kind.value === 'text' && (!hasPreviewToggle.value || viewMode.value === 'code'));
 
@@ -210,6 +211,23 @@ async function applyPreview() {
 
 function onRetrySave() { dirty.value = true; flush(); }
 
+// —— 压缩成一行（js/json）——
+const minifying = ref(false);
+async function minifyOneLine() {
+  if (!view || minifying.value) return;
+  const src = view.state.doc.toString();
+  minifying.value = true;
+  try {
+    const r = await format(props.name, src);
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: r.content } });
+    requestMeasure();
+  } catch (e: any) {
+    alert(`压缩失败：${e?.message || e}`);
+  } finally {
+    minifying.value = false;
+  }
+}
+
 // —— 一键格式化（Prettier 按需加载）——
 const fmtMsg = ref('');
 let fmtTimer: ReturnType<typeof setTimeout> | null = null;
@@ -282,6 +300,7 @@ onBeforeUnmount(() => {
           <span v-else-if="saveState === 'error'" class="save saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
           <span v-if="fmtMsg" class="save fmtmsg" :class="{ ok: fmtMsg.startsWith('✓') }">{{ fmtMsg }}</span>
           <button v-if="canFormat && showEditor" class="fmt-btn" title="格式化代码" @click="formatDoc">⇥ 格式化</button>
+          <button v-if="canMinify && showEditor && status === 'ok'" class="fmt-btn" :disabled="minifying" title="压缩成一行（js/json）" @click="minifyOneLine">{{ minifying ? '压缩中…' : '⇣ 压成一行' }}</button>
           <div v-if="hasPreviewToggle" class="seg">
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">预览</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? '源码' : '代码' }}</button>

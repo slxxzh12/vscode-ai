@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dataHome, ensureDataHome, seedFromLegacy } from './data-home.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,14 +33,16 @@ export function ensureDefaults(projectsFile, workflowsFile) {
 }
 
 export function resolveFiles() {
-  ensureDefaults(
-    process.env.DEVFLOW_PROJECTS || path.join(__dirname, 'projects.json'),
-    process.env.DEVFLOW_WORKFLOWS || path.join(__dirname, 'workflows.json'),
-  );
-  return {
-    projectsFile: process.env.DEVFLOW_PROJECTS || path.join(__dirname, 'projects.json'),
-    workflowsFile: process.env.DEVFLOW_WORKFLOWS || path.join(__dirname, 'workflows.json'),
-  };
+  const dataRoot = ensureDataHome();
+  const legacyP = path.join(__dirname, 'projects.json');
+  const legacyW = path.join(__dirname, 'workflows.json');
+  // 默认配置放入用户数据目录；存在仓库旧配置则首次迁移
+  const projectsFile = process.env.DEVFLOW_PROJECTS || path.join(dataRoot, 'projects.json');
+  const workflowsFile = process.env.DEVFLOW_WORKFLOWS || path.join(dataRoot, 'workflows.json');
+  if (!process.env.DEVFLOW_PROJECTS) seedFromLegacy(projectsFile, legacyP);
+  if (!process.env.DEVFLOW_WORKFLOWS) seedFromLegacy(workflowsFile, legacyW);
+  ensureDefaults(projectsFile, workflowsFile);
+  return { projectsFile, workflowsFile, dataHome: dataRoot };
 }
 
 export function loadProjects(file) {

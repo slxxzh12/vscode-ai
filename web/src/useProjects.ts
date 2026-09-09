@@ -70,6 +70,19 @@ export function useProjects() {
       }
       return res.json();
     },
+    async format(name: string, content: string): Promise<{ content: string; size: number }> {
+      const res = await fetch('/api/format', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, content }),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = (j.error || '') + (j.message ? '：' + j.message : ''); } catch { /* keep status */ }
+        throw new Error(msg || 'format failed');
+      }
+      return res.json();
+    },
     rawUrl(project: string, rel: string): string {
       return `/api/raw?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`;
     },
