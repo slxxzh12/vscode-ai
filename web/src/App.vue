@@ -19,6 +19,16 @@ const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'sessions' | 'contacts'>('explorer');
 const showWf = ref(false);
+const detailToken = ref(0);
+const detailPath = ref('');
+function onDetailFile(projectId: string, path: string) {
+  const q = path.replace(/\\/g, '/');
+  const i = q.lastIndexOf('/');
+  const name = i >= 0 ? q.slice(i + 1) : q;
+  center.openFile(projectId, path, name);
+  detailPath.value = q;
+  detailToken.value++;
+}
 
 const projectName = computed(() => projects.value.find((p) => p.id === currentProject.value)?.name || '未选择项目');
 const currentProjectInfo = computed(() => projects.value.find((p) => p.id === currentProject.value) || null);
@@ -159,11 +169,11 @@ onMounted(() => {
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
           <SessionList v-if="rail === 'sessions'" :terminal="terminal" :project-id="currentProject" />
-          <FileTree v-else :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" />
+          <FileTree v-else :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
         <section class="center">
-          <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" />
+          <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" />
         </section>
       </template>
     </div>

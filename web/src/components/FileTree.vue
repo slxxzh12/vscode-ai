@@ -16,7 +16,10 @@ interface MenuState { x: number; y: number; path: string; name: string; type: 'f
 type CreateKind = 'file' | 'dir';
 
 const props = defineProps<{ projectId: string | null; activePath?: string | null }>();
-const emit = defineEmits<{ (e: 'open-file', projectId: string, path: string, name: string): void }>();
+const emit = defineEmits<{
+  (e: 'open-file', projectId: string, path: string, name: string): void;
+  (e: 'detail-file', projectId: string, path: string, name: string): void;
+}>();
 const { tree, text, createFile, createDir, reveal } = useProjects();
 const nodes = ref<TreeNode[]>([]);
 const menu = ref<MenuState | null>(null);
@@ -91,6 +94,13 @@ async function copyContent() {
   if (!m || !props.projectId || m.type !== 'file') return;
   try { const f = await text(props.projectId, m.path); await copyText(f.content); }
   catch (e: any) { console.error('copy failed', e); closeMenu(); }
+}
+function detailFile() {
+  const m = menu.value;
+  if (!m || !props.projectId || m.type !== 'file') return;
+  const name = m.name;
+  closeMenu();
+  emit('detail-file', props.projectId, m.path, name);
 }
 function ctxCreateDir(kind: CreateKind) {
   const m = menu.value;
@@ -175,6 +185,7 @@ defineExpose({ refresh });
       <button @click="ctxCreateDir('dir')">新建文件夹</button>
       <div class="sep" />
       <button v-if="menu.type === 'file'" @click="copyContent">复制文件内容</button>
+      <button v-if="menu.type === 'file'" @click="detailFile">ⓘ 详细信息</button>
       <button @click="copyName">{{ menu.type === 'dir' ? '复制文件夹名' : '复制文件名' }}</button>
       <button @click="copyPath">复制路径</button>
     </div>

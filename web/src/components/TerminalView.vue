@@ -9,7 +9,13 @@ import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
 import { useTheme } from '../theme';
 
-const props = defineProps<{ terminal: ReturnType<typeof useTerminal>; center: ReturnType<typeof useCenter>; projectId: string | null }>();
+const props = defineProps<{
+  terminal: ReturnType<typeof useTerminal>;
+  center: ReturnType<typeof useCenter>;
+  projectId: string | null;
+  detailToken?: number;
+  detailPath?: string;
+}>();
 const { theme, isDark } = useTheme();
 
 const hostRef = ref<HTMLDivElement | null>(null);
@@ -137,7 +143,8 @@ onBeforeUnmount(() => {
     <div v-show="isSessionView" class="term-layer" ref="hostRef" />
     <div v-show="!isSessionView" class="file-layer">
       <FilePreview v-if="activeFile && activeFile.projectId && activeFile.path"
-        :key="activeFile.id" :project-id="activeFile.projectId" :path="activeFile.path" :name="activeFile.label" />
+        :key="activeFile.id" :project-id="activeFile.projectId" :path="activeFile.path" :name="activeFile.label"
+        :detail-token="detailToken" :detail-path="detailPath" />
     </div>
   </div>
 </template>
