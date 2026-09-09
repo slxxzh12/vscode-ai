@@ -106,6 +106,51 @@ test('/api/file 目录返回 400，越界返回 403', async (t) => {
   assert.equal(esc.status, 403);
 });
 
+test('/api/file 含 NUL 的二进制文件返回 binary:true 且无 content', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.exe'), Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]));
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/file?project=a&path=a.exe');
+  assert.equal(r.status, 200);
+  const body = JSON.parse(r.body);
+  assert.equal(body.binary, true);
+  assert.equal('content' in body, false);
+});
+
+test('/api/file 普通 UTF-8 文本返回 binary:false + content', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'hello world');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/file?project=a&path=a.txt');
+  assert.equal(r.status, 200);
+  const body = JSON.parse(r.body);
+  assert.equal(body.binary, false);
+  assert.equal(body.content, 'hello world');
+});
+
+test('/api/file 超 1MB 且首 64KB 含 NUL 返回 binary 而非 413', async (t) => {
+  const dir = tmpDir();
+  const head = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x00]), Buffer.alloc(1024, 0x61)]);
+  const big = Buffer.concat([head, Buffer.alloc(1024 * 1024 + 512, 0x62)]);   // > 1MB
+  fs.writeFileSync(path.join(dir, 'big.bin'), big);
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/file?project=a&path=big.bin');
+  assert.equal(r.status, 200);
+  assert.equal(JSON.parse(r.body).binary, true);
+});
+
+test('/api/file 超 1MB 纯文本（前 64KB 无 NUL）仍返回 413', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'big.txt'), Buffer.alloc(1024 * 1024 + 64, 0x61));   // 'a' 无 NUL
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/file?project=a&path=big.txt');
+  assert.equal(r.status, 413);
+});
+
 test('/api/raw 按扩展名给 Content-Type 并返回字节', async (t) => {
   const dir = tmpDir();
   fs.writeFileSync(path.join(dir, 'pic.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));

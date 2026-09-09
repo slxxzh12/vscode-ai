@@ -96,8 +96,22 @@ export class Projects {
   readText(projectId, rel, maxBytes = 1024 * 1024) {
     const file = this._filePath(projectId, rel);
     const st = fs.statSync(file);
-    if (st.size > maxBytes) { const e = new Error('file too large'); e.code = 'too-large'; throw e; }
-    return { name: path.basename(file), path: rel, size: st.size, mtime: st.mtimeMs, abs: file, content: fs.readFileSync(file, 'utf8') };
+    const size = st.size;
+    const base = { name: path.basename(file), path: rel, size, mtime: st.mtimeMs, abs: file };
+    // 二进制探测：读文件前 64KB，含 NUL 即视为二进制（不读全文，大文件不再 413）
+    if (size > 0) {
+      const probeLen = Math.min(size, 64 * 1024);
+      const buf = Buffer.alloc(probeLen);
+      const fd = fs.openSync(file, 'r');
+      try {
+        fs.readSync(fd, buf, 0, probeLen, 0);
+        if (buf.includes(0)) return { ...base, binary: true };
+      } finally {
+        fs.closeSync(fd);
+      }
+    }
+    if (size > maxBytes) { const e = new Error('file too large'); e.code = 'too-large'; throw e; }
+    return { ...base, binary: false, content: fs.readFileSync(file, 'utf8') };
   }
   rawFile(projectId, rel) {
     const file = this._filePath(projectId, rel);
