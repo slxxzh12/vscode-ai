@@ -48,6 +48,7 @@ const isMd = computed(() => isMarkdownFile(props.name));
 const isHtmlFile = computed(() => ['html', 'htm'].includes(ext.value));
 const hasPreviewToggle = computed(() => isMd.value || isHtmlFile.value);
 const canMinify = computed(() => ['js', 'mjs', 'cjs', 'jsx', 'json'].includes(ext.value) && kind.value === 'text');
+const canSort = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value);
 const viewMode = ref<'preview' | 'code'>(isMarkdownFile(props.name) || isHtmlFile.value ? 'preview' : 'code');
 const showEditor = computed(() => kind.value === 'text' && (!hasPreviewToggle.value || viewMode.value === 'code'));
 
@@ -228,6 +229,61 @@ async function minifyOneLine() {
   }
 }
 
+// —— 文本排序 ——
+type SortMode = 'asc' | 'desc' | 'asc-ci' | 'desc-ci' | 'num-asc' | 'num-desc';
+const sortOpen = ref(false);
+const SORT_ITEMS: Array<{ mode: SortMode; label: string }> = [
+  { mode: 'asc', label: '升序排列（A-Z）' },
+  { mode: 'desc', label: '降序排列（Z-A）' },
+  { mode: 'asc-ci', label: '升序排列（不分大小写）' },
+  { mode: 'desc-ci', label: '降序排列（不分大小写）' },
+  { mode: 'num-asc', label: '按数字大小升序' },
+  { mode: 'num-desc', label: '按数字大小降序' },
+];
+function leadingNumber(s: string): number | null {
+  const m = s.trim().match(/^-?\d+(\.\d+)?/);
+  return m ? Number(m[0]) : null;
+}
+function numVal(s: string): number {
+  const v = leadingNumber(s);
+  return v ?? Number.MAX_SAFE_INTEGER;   // 非数字排最后
+}
+function sortLines(mode: SortMode): string {
+  if (!view) return '';
+  let text = view.state.doc.toString();
+  const endsNL = text.endsWith('\n');
+  let lines = text.split('\n');
+  if (endsNL) lines.pop();
+  const asc = (a: string, b: string) => { const an = a.toLowerCase(), bn = b.toLowerCase(); return an < bn ? -1 : an > bn ? 1 : 0; };
+  const raw = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  switch (mode) {
+    case 'asc': lines.sort(raw); break;
+    case 'desc': lines.sort((a, b) => raw(b, a)); break;
+    case 'asc-ci': lines.sort(asc); break;
+    case 'desc-ci': lines.sort((a, b) => asc(b, a)); break;
+    case 'num-asc': lines.sort((a, b) => numVal(a) - numVal(b)); break;
+    case 'num-desc': lines.sort((a, b) => numVal(b) - numVal(a)); break;
+  }
+  let out = lines.join('\n');
+  if (endsNL) out += '\n';
+  return out;
+}
+function applySort(mode: SortMode) {
+  if (!view) return;
+  const out = sortLines(mode);
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
+  sortOpen.value = false;
+  requestMeasure();
+}
+let unbindSort: (() => void) | null = null;
+watch(sortOpen, (o) => {
+  if (o) {
+    const h = (e: Event) => { const t = e.target as HTMLElement | null; if (t && !t.closest('.sortwrap')) sortOpen.value = false; };
+    document.addEventListener('pointerdown', h, true);
+    unbindSort = () => document.removeEventListener('pointerdown', h, true);
+  } else if (unbindSort) { unbindSort(); unbindSort = null; }
+});
+
 // —— 一键格式化（Prettier 按需加载）——
 const fmtMsg = ref('');
 let fmtTimer: ReturnType<typeof setTimeout> | null = null;
@@ -282,6 +338,7 @@ watch([status, viewMode], applyPreview);
 
 onBeforeUnmount(() => {
   disposed = true;
+  unbindSort?.();
   flush();
   if (view) { view.destroy(); view = null; }
 });
@@ -301,6 +358,12 @@ onBeforeUnmount(() => {
           <span v-if="fmtMsg" class="save fmtmsg" :class="{ ok: fmtMsg.startsWith('✓') }">{{ fmtMsg }}</span>
           <button v-if="canFormat && showEditor" class="fmt-btn" title="格式化代码" @click="formatDoc">⇥ 格式化</button>
           <button v-if="canMinify && showEditor && status === 'ok'" class="fmt-btn" :disabled="minifying" title="压缩成一行（js/json）" @click="minifyOneLine">{{ minifying ? '压缩中…' : '⇣ 压成一行' }}</button>
+          <span v-if="canSort" class="sortwrap">
+            <button class="fmt-btn" :class="{ on: sortOpen }" title="文本排序" @click.stop="sortOpen = !sortOpen">⇅ 排序 ▾</button>
+            <div v-if="sortOpen" class="sortmenu" @click.stop>
+              <button v-for="s in SORT_ITEMS" :key="s.mode" @click="applySort(s.mode)">{{ s.label }}</button>
+            </div>
+          </span>
           <div v-if="hasPreviewToggle" class="seg">
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">预览</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? '源码' : '代码' }}</button>
@@ -338,6 +401,13 @@ onBeforeUnmount(() => {
 .fmtmsg.ok { color: var(--ok); }
 .fmt-btn { background: transparent; border: 1px solid var(--bd); color: var(--tx3); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-family: inherit; }
 .fmt-btn:hover { border-color: var(--ac2); color: var(--tx1); }
+.fmt-btn { background: none; border: 1px solid var(--bd); color: var(--tx2); font-size: 11px; padding: 1px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.fmt-btn:hover, .fmt-btn.on { border-color: var(--ac2); color: var(--ac2); }
+.fmt-btn:disabled { opacity: .5; cursor: default; }
+.sortwrap { position: relative; }
+.sortmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 210px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 4px; display: flex; flex-direction: column; }
+.sortmenu button { text-align: left; background: none; border: none; color: var(--tx); padding: 6px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; font-family: inherit; }
+.sortmenu button:hover { background: var(--ac); color: var(--onac); }
 .seg { display: flex; gap: 2px; background: var(--bg2); border: 1px solid var(--bd3); border-radius: 4px; padding: 1px; }
 .seg button { background: transparent; border: none; color: var(--tx3); font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px; }
 .seg button.on { background: var(--ac); color: var(--onac); }
