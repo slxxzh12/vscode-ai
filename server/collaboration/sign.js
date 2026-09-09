@@ -1,0 +1,37 @@
+import crypto from 'node:crypto';
+
+// 规范化 JSON：递归按键排序，保证签名/验签两侧字节一致
+export function canonicalize(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) return `[${v.map(canonicalize).join(',')}]`;
+  const keys = Object.keys(v).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalize(v[k])}`).join(',')}}`;
+}
+
+export function makeEnvelope(privateKeyPem, type, from, payload = {}, ts = Date.now()) {
+  const body = { type, from, payload, ts };
+  const sig = crypto.sign(null, Buffer.from(canonicalize(body), 'utf8'), privateKeyPem);
+  return { ...body, sig: sig.toString('base64') };
+}
+
+// from: { machineId, username, host, port, publicKey }（含对方公钥以便首次验签）
+export function signEnvelope(privateKeyPem, type, from, payload, ts) {
+  return makeEnvelope(privateKeyPem, type, from, payload, ts);
+}
+
+export function verifyEnvelope(senderPublicKeyPem, env, { now = Date.now(), skewMs = 5 * 60 * 1000 } = {}) {
+  if (!env || typeof env !== 'object') return false;
+  const { type, from, payload, ts, sig } = env;
+  if (typeof type !== 'string' || !from || typeof from.publicKey !== 'string') return false;
+  if (typeof ts !== 'number' || Math.abs(now - ts) > skewMs) return false;
+  if (typeof sig !== 'string' || typeof payload !== 'object' || payload === null) return false;
+  try {
+    const body = { type, from, payload, ts };
+    return crypto.verify(
+      null,
+      Buffer.from(canonicalize(body), 'utf8'),
+      senderPublicKeyPem,
+      Buffer.from(sig, 'base64'),
+    );
+  } catch { return false; }
+}
