@@ -16,9 +16,13 @@ const EXE = new Set(['exe', 'bat', 'cmd', 'ps1']);
 const IMG = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
 const ZIP = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
 const OFF = new Set(['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'pdf']);
+const CODE: Record<string, string> = {
+  html: '🌐', css: '🎨', vue: '🍃', js: '🟨', py: '🐍', java: '☕', json: '🧾',
+};
 function fileIcon() {
   const i = n.name.lastIndexOf('.');
   const e = i >= 0 ? n.name.slice(i + 1).toLowerCase() : '';
+  if (CODE[e]) return CODE[e];
   if (EXE.has(e)) return '⬛';
   if (IMG.has(e)) return '🖼️';
   if (ZIP.has(e)) return '🗜️';
