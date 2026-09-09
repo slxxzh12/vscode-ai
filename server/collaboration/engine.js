@@ -389,6 +389,18 @@ export class CollabEngine {
     return { code: 'ignored' };
   }
 
+  // 删除我发出的任务：一并清掉 upload 目录留档
+  removeOutbox(id) {
+    const rec = this.store.listOutbox().find((r) => r.id === id);
+    if (!rec) return { code: 'not-found' };
+    if (rec.storedFile && this.uploadDir) {
+      try { fs.unlinkSync(path.join(this.uploadDir, rec.storedFile)); } catch { /* 文件可能已不在 */ }
+    }
+    this.store.removeOutbox(id);
+    this._emit('synced', {});
+    return { code: 'ok' };
+  }
+
   // 群系统消息留痕：本机落库并广播给全体成员（各成员以本地 seq 入库）
   _addSystemMessage(groupId, text) {
     if (!groupId || !text) return;

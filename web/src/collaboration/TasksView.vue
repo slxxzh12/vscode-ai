@@ -2,15 +2,16 @@
 import { ref, computed, onMounted } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
+import type { CollabInboxItem, CollabOutItem } from './types';
 
 const props = defineProps<{ collab: CollabApi }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 
-const items = computed(() => [...snap.value.skillsInbox].sort((a, b) => b.receivedAt - a.receivedAt));
-const skillsOnly = computed(() => items.value.filter((it) => (it.kind ?? 'skill') === 'skill'));
-const filesOnly = computed(() => items.value.filter((it) => it.kind === 'file'));
-const dirs = ref<{ upload: string | null; download: string | null }>({ upload: null, download: null });
+const inbound = computed(() => [...snap.value.skillsInbox].sort((a, b) => b.receivedAt - a.receivedAt));
+const outbound = computed(() => [...snap.value.outbox].sort((a, b) => b.createdAt - a.createdAt));
+const groupName = (gid: string | null) => snap.value.groups.find((g) => g.id === gid)?.name || '';
 
+const dirs = ref<{ upload: string | null; download: string | null }>({ upload: null, download: null });
 const toolOpen = ref(false);
 const toolKind = ref<'opencode' | 'claudecode' | 'custom'>('opencode');
 const customRoot = ref('');
@@ -36,24 +37,23 @@ async function saveTool() {
   } catch (e: any) { toolErr.value = String(e?.message || e); }
 }
 
-async function install(id: string) {
+async function installSkill(it: CollabInboxItem) {
   if (!confirm('skill 含未知脚本，将安装到所选开发工具的 skills 目录。确认？')) return;
   toolMsg.value = ''; toolErr.value = '';
-  try {
-    await props.collab.installInbox(id);
-    await props.collab.refresh();
-  } catch (e: any) { toolErr.value = String(e?.message || e); }
+  try { await props.collab.installInbox(it.id); await props.collab.refresh(); }
+  catch (e: any) { toolErr.value = String(e?.message || e); }
 }
-async function ignore(id: string) { await props.collab.ignoreInbox(id); await props.collab.refresh(); }
-async function remove(id: string) { if (confirm('删除该条目？')) await props.collab.removeInbox(id); }
-async function downloadFile(id: string, name: string) {
+async function ignoreIn(it: CollabInboxItem) { await props.collab.ignoreInbox(it.id); await props.collab.refresh(); }
+async function removeIn(it: CollabInboxItem) { if (confirm('删除该任务？')) await props.collab.removeInbox(it.id); }
+async function removeOut(it: CollabOutItem) { if (confirm('删除该任务并清掉 upload 留档？')) await props.collab.removeOutTask(it.id); }
+async function saveFile(it: CollabInboxItem) {
   try {
-    const res = await fetch(`/api/collab/download/${id}`);
+    const res = await fetch(`/api/collab/download/${it.id}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = name || 'download';
+    a.download = it.fileName || it.skillName || 'download';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -61,12 +61,11 @@ async function downloadFile(id: string, name: string) {
   } catch (e: any) { alert(`下载失败：${e?.message || e}`); }
 }
 function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n > 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`; }
-function fromName(mid: string) { return mid.slice(0, 6); }
 function fmtTime(ts: number) { return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false }); }
 </script>
 
 <template>
-  <div class="ib">
+  <div class="tk">
     <div class="toolbar">
       <div class="toolsel">
         <span class="tl">我的开发工具</span>
@@ -89,49 +88,49 @@ function fmtTime(ts: number) { return new Date(ts).toLocaleTimeString('zh-CN', {
           <div v-if="toolErr" class="tmsg err">{{ toolErr }}</div>
         </div>
       </div>
+      <div v-if="activeRoot" class="inst-hint">技能安装到：<code>{{ activeRoot }}</code>，重启对应 CLI 生效</div>
       <div class="dirinfo" v-if="dirs.download">
         <span title="接收目录">↓ {{ dirs.download }}</span>
         <span v-if="dirs.upload" title="发出目录" class="up">↑ {{ dirs.upload }}</span>
       </div>
-      <div v-if="activeRoot" class="inst-hint">技能将安装到：<code>{{ activeRoot }}</code>，重启对应 CLI 后生效</div>
     </div>
 
-    <div v-if="snap.skillsInbox.length === 0 && filesOnly.length === 0" class="empty">
-      暂无收到的内容（技能包/文件都会出现在这里）
-    </div>
+    <div v-if="inbound.length === 0 && outbound.length === 0" class="empty">暂无任务（群内「📎 发文件 / 🛠 分发技能」会生成这里与对方）</div>
 
-    <div class="warn">⚠️ 收到的内容可能来自不可信来源，安装/打开前请确认。</div>
-
-    <template v-if="filesOnly.length">
-      <h4>文件</h4>
-      <div v-for="it in filesOnly" :key="it.id" class="item">
+    <template v-if="inbound.length">
+      <h4>收到（{{ inbound.length }}）</h4>
+      <div v-for="it in inbound" :key="'in-' + it.id" class="task" :class="{ skill: (it.kind ?? 'skill') === 'skill' }">
+        <span class="tic">{{ (it.kind ?? 'skill') === 'skill' ? '🛠' : '📄' }}</span>
         <div class="info">
-          <span class="nm">📄 {{ it.fileName || it.skillName }}</span>
-          <span class="meta">来自 {{ fromName(it.fromId) }} · {{ fmtSize(it.size) }}</span>
-        </div>
-        <div class="acts">
-          <button v-if="it.status === 'received' || it.status === 'installed' || it.status === 'ignored'" @click="downloadFile(it.id, it.fileName || it.skillName || 'download')">下载</button>
-          <button class="ghost del" @click="remove(it.id)">删除</button>
-        </div>
-      </div>
-    </template>
-
-    <template v-if="skillsOnly.length">
-      <h4>技能包</h4>
-      <div v-for="it in skillsOnly" :key="it.id" class="item">
-        <div class="info">
-          <span class="nm">🛠 {{ it.skillName }}</span>
-          <span class="meta">{{ fmtTime(it.receivedAt) }} · 来自 {{ fromName(it.fromId) }} · {{ fmtSize(it.size) }} · {{ it.hash.slice(0, 8) }}</span>
+          <span class="nm">{{ (it.kind ?? 'skill') === 'skill' ? it.skillName : it.fileName }}</span>
+          <span class="meta">
+            {{ fmtTime(it.receivedAt) }} · {{ it.kind === 'file' ? '文件' : '技能' }} · {{ groupName(it.groupId) || '未知群' }} · {{ fmtSize(it.size) }}
+          </span>
         </div>
         <div class="acts">
           <template v-if="it.status === 'received'">
-            <button @click="install(it.id)">安装</button>
-            <button class="ghost" @click="ignore(it.id)">忽略</button>
+            <button v-if="(it.kind ?? 'skill') === 'skill'" @click="installSkill(it)">安装</button>
+            <button v-if="(it.kind ?? 'skill') === 'skill'" class="ghost" @click="ignoreIn(it)">忽略</button>
+            <button v-if="it.kind === 'file'" @click="saveFile(it)">下载</button>
           </template>
           <span v-else-if="it.status === 'installed'" class="state ok" :title="'已装到 ' + activeRoot">已安装·重启生效</span>
           <span v-else-if="it.status === 'ignored'" class="state">已忽略</span>
           <span v-else-if="it.status === 'invalid'" class="state bad">无效包</span>
-          <button class="ghost del" @click="remove(it.id)">删除</button>
+          <button class="ghost del" @click="removeIn(it)">删除</button>
+        </div>
+      </div>
+    </template>
+
+    <template v-if="outbound.length">
+      <h4>发出（{{ outbound.length }}）</h4>
+      <div v-for="it in outbound" :key="'out-' + it.id" class="task out">
+        <span class="tic">{{ it.kind === 'skill' ? '🛠' : '📄' }}</span>
+        <div class="info">
+          <span class="nm">{{ it.kind === 'skill' ? it.skillName : it.fileName }}</span>
+          <span class="meta">{{ fmtTime(it.createdAt) }} · {{ it.kind === 'file' ? '文件' : '技能' }} → {{ groupName(it.groupId) || '未知群' }} · {{ fmtSize(it.size) }}</span>
+        </div>
+        <div class="acts">
+          <button class="ghost del" @click="removeOut(it)">删除</button>
         </div>
       </div>
     </template>
@@ -139,7 +138,7 @@ function fmtTime(ts: number) { return new Date(ts).toLocaleTimeString('zh-CN', {
 </template>
 
 <style scoped>
-.ib { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
+.tk { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
 .toolbar { position: relative; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
 .toolsel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tl { color: var(--tx3); font-size: 12px; }
@@ -156,11 +155,13 @@ function fmtTime(ts: number) { return new Date(ts).toLocaleTimeString('zh-CN', {
 .dirinfo { margin-top: 6px; font-family: Consolas, monospace; font-size: 11px; color: var(--tx6); display: flex; gap: 14px; }
 .inst-hint { margin-top: 6px; font-size: 11px; color: var(--warn); }
 .inst-hint code { background: var(--bg3); padding: 1px 6px; border-radius: 4px; }
-.warn { background: var(--warnbg); color: var(--warn); border: 1px solid var(--bd); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; font-size: 12px; }
-h4 { color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; }
-.item { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--bd2); padding: 8px 4px; }
+h4 { color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 16px 0 6px; }
+.task { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--bd2); padding: 8px 4px; }
+.task.skill { }
+.task.out { opacity: .82; }
+.tic { font-size: 18px; flex: none; }
 .info { flex: 1; min-width: 0; }
-.nm { color: var(--tx1); font-weight: 600; }
+.nm { color: var(--tx1); font-weight: 600; word-break: break-all; }
 .meta { color: var(--tx6); font-size: 11px; margin-left: 8px; font-family: Consolas, monospace; }
 .acts { display: flex; gap: 6px; align-items: center; }
 button { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; }

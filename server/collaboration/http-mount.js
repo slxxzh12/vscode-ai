@@ -74,6 +74,7 @@ export function createCollabMount({ engine, logger = console }) {
           groups: engine.store.listGroups(),
           pendingInvites: engine.store.listPendingInvites(),
           skillsInbox: inbox,
+          outbox: engine.store.listOutbox().map(({ storedFile, ...rest }) => rest),
           groupSkills: engine.store.listGroupSkills(),
         });
       }
@@ -105,6 +106,7 @@ export function createCollabMount({ engine, logger = console }) {
         return ok(res, r);
       }
       if (seg[0] === 'outbox' && m === 'GET') return ok(res, { outbox: engine.store.listOutbox() });
+      if (seg[0] === 'outbox' && seg.length === 2 && m === 'DELETE') { const r = engine.removeOutbox(seg[1]); return ok(res, r); }
       if (seg[0] === 'download' && seg.length === 2 && m === 'GET') {
         const it = engine.store.findInbox(seg[1]);
         if (!it) return sendJson(res, 404, { error: 'not found' });

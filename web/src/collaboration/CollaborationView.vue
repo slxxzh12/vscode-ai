@@ -5,16 +5,16 @@ import { useCollab } from './useCollab';
 import { EMPTY_SNAPSHOT } from './types';
 import type { useTerminal } from '../useTerminal';
 import ContactsView from './ContactsView.vue';
-import InboxView from './InboxView.vue';
+import TasksView from './TasksView.vue';
 
-type CollabTab = 'contacts' | 'inbox';
+type CollabTab = 'contacts' | 'tasks';
 const props = defineProps<{ terminal: ReturnType<typeof useTerminal> }>();
 const collab = useCollab();
 const snap = computed(() => collab.state.value ?? EMPTY_SNAPSHOT);
 const tab = ref<CollabTab>('contacts');
 const tabs = [
   { id: 'contacts' as const, label: '联系人' },
-  { id: 'inbox' as const, label: '下载' },
+  { id: 'tasks' as const, label: '任务' },
 ];
 const pendingCount = computed(() => snap.value.pendingFriends.length + snap.value.pendingInvites.length + snap.value.skillsInbox.filter((i) => i.status === 'received').length);
 
@@ -50,7 +50,7 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
     </header>
     <section class="body">
       <ContactsView v-if="tab === 'contacts'" :collab="collab" />
-      <InboxView v-else :collab="collab" />
+      <TasksView v-else :collab="collab" />
     </section>
   </div>
 </template>

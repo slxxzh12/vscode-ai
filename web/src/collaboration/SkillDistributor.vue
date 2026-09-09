@@ -39,7 +39,7 @@ async function distribute() {
 <template>
   <div class="sd">
     <div class="head">🛠 分发技能 <span class="gn">{{ group?.name || '' }}</span></div>
-    <div v-if="toolRoot" class="root" :title="toolRoot">技能目录：<code>{{ toolRoot }}</code>（在「下载」页切换开发工具）</div>
+    <div v-if="toolRoot" class="root" :title="toolRoot">技能目录：<code>{{ toolRoot }}</code>（在「任务」页切换开发工具）</div>
     <div v-if="skills.length === 0" class="empty">所选技能目录下没有可分发技能（含 SKILL.md 的子目录）</div>
     <label v-for="s in skills" :key="s.name" class="skill">
       <input type="checkbox" :value="s.name" v-model="checked[s.name]" />

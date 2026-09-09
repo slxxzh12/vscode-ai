@@ -4,6 +4,7 @@ export interface CollabMember extends CollabProfile { role: 'owner' | 'admin' | 
 export interface CollabGroup { id: string; name: string; ownerId: string | null; createdAt: number; members: CollabMember[]; }
 export interface CollabInboxItem { id: string; fromId: string; groupId: string | null; kind?: 'skill' | 'file'; skillName: string | null; fileName?: string | null; hash: string; size: number; status: 'received' | 'installed' | 'ignored' | 'invalid'; receivedAt: number; }
 export interface CollabGroupSkill { groupId: string; skillName: string; hash: string; distributedBy: string; installed: boolean; }
+export interface CollabOutItem { id: string; kind: 'skill' | 'file'; groupId: string | null; skillName: string | null; fileName: string; size: number; hash: string; createdAt: number; }
 export interface CollabPendingFriend extends CollabProfile { requestedAt?: number; }
 export interface CollabInvite { id: string; groupId: string; groupName: string; inviter: CollabProfile; receivedAt?: number; }
 export interface CollabSnapshot {
@@ -13,12 +14,13 @@ export interface CollabSnapshot {
   groups: CollabGroup[];
   pendingInvites: CollabInvite[];
   skillsInbox: CollabInboxItem[];
+  outbox: CollabOutItem[];
   groupSkills: CollabGroupSkill[];
 }
 
 export const EMPTY_SNAPSHOT: CollabSnapshot = {
   identity: { machineId: '', username: '', host: '', port: 0, publicKey: '' },
-  friends: [], pendingFriends: [], groups: [], pendingInvites: [], skillsInbox: [], groupSkills: [],
+  friends: [], pendingFriends: [], groups: [], pendingInvites: [], skillsInbox: [], outbox: [], groupSkills: [],
 };
 
 export interface CollabChatMeta { reqId: string | null; exitCode: number | null; stderr: string | null; durationMs: number | null; }

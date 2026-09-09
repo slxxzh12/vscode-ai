@@ -114,6 +114,10 @@ test('切换工具目录：分发源/安装目标跟所选工具走，upload 留
     const out = A.store.listOutbox()[0];
     assert.equal(out.kind, 'skill');
     assert.ok(fs.existsSync(path.join(A.uploadDir, out.storedFile)), 'upload 目录存在 zip');
+    const rm = A.removeOutbox(out.id);
+    assert.equal(rm.code, 'ok');
+    assert.equal(A.store.listOutbox().length, 0, '删除后 outbox 清空');
+    assert.ok(!fs.existsSync(path.join(A.uploadDir, out.storedFile)), 'upload 留档同步删除');
     // B 收到的 zip 落在 download 目录；安装到 B 所选工具目录
     const item = B.store.listInbox()[0];
     assert.ok(item.zipPath.startsWith(B.downloadDir), 'zip 落 download 目录');
