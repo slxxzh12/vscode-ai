@@ -1,24 +1,21 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, computed, watch } from 'vue';
+import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
 import { CollabS2C } from '@devflow/shared/collab';
 import { useCollab } from './useCollab';
 import { EMPTY_SNAPSHOT } from './types';
 import type { useTerminal } from '../useTerminal';
 import FriendsView from './FriendsView.vue';
 import GroupsView from './GroupsView.vue';
-import SkillDistributor from './SkillDistributor.vue';
 import InboxView from './InboxView.vue';
 
-type CollabTab = 'friends' | 'groups' | 'skills' | 'inbox';
-const props = defineProps<{ terminal: ReturnType<typeof useTerminal>; forceTab?: CollabTab }>();
+type CollabTab = 'friends' | 'groups' | 'inbox';
+const props = defineProps<{ terminal: ReturnType<typeof useTerminal> }>();
 const collab = useCollab();
 const snap = computed(() => collab.state.value ?? EMPTY_SNAPSHOT);
 const tab = ref<CollabTab>('friends');
-watch(() => props.forceTab, (v) => { if (v) tab.value = v; });
 const tabs = [
   { id: 'friends' as const, label: '好友' },
   { id: 'groups' as const, label: '群组' },
-  { id: 'skills' as const, label: '技能分发' },
   { id: 'inbox' as const, label: '收件箱' },
 ];
 const pendingCount = computed(() => snap.value.pendingFriends.length + snap.value.pendingInvites.length + snap.value.skillsInbox.filter((i) => i.status === 'received').length);
@@ -56,7 +53,6 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
     <section class="body">
       <FriendsView v-if="tab === 'friends'" :collab="collab" />
       <GroupsView v-else-if="tab === 'groups'" :collab="collab" />
-      <SkillDistributor v-else-if="tab === 'skills'" :collab="collab" />
       <InboxView v-else :collab="collab" />
     </section>
   </div>

@@ -4,6 +4,7 @@ import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import { filterMentions, parseComposer, splitAtCommand, highlightMentions } from './chat-parser';
 import type { CollabChatMessage } from './types';
+import SkillDistributor from './SkillDistributor.vue';
 
 const props = defineProps<{ collab: CollabApi; groupId: string }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
@@ -11,6 +12,7 @@ const group = computed(() => snap.value.groups.find((g) => g.id === props.groupI
 const chat = computed(() => props.collab.chatState.value[props.groupId] || { messages: [] });
 const me = computed(() => snap.value.identity.machineId);
 const myPending = computed(() => props.collab.pendingCmdState.value.filter((p) => p.groupId === props.groupId));
+const skillOpen = ref(false);
 const nameById = computed(() => {
   const map: Record<string, string> = {};
   for (const m of group.value?.members ?? []) map[m.machineId] = m.username;
@@ -74,6 +76,12 @@ onMounted(async () => {
 
 <template>
   <div class="gcv">
+    <!-- 群聊工具条 -->
+    <div class="tools">
+      <button class="tool" :class="{ on: skillOpen }" title="把本机技能分发给该群所有成员" @click="skillOpen = !skillOpen">🛠 分发技能</button>
+    </div>
+    <SkillDistributor v-if="skillOpen" :collab="collab" :group-id="props.groupId" />
+
     <!-- 本机待确认执行卡片（按当前群过滤） -->
     <div v-for="p in myPending" :key="p.id" class="pend">
       <div class="pend-txt">@{{ nameOf(p.fromId) }} 请求在你这执行：<code>{{ p.text }}</code></div>
@@ -114,6 +122,10 @@ onMounted(async () => {
 
 <style scoped>
 .gcv { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.tools { flex: none; display: flex; gap: 6px; padding: 6px 8px 0; }
+.tool { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
+.tool:hover { border-color: var(--ac); color: var(--ac); }
+.tool.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .pend { background: color-mix(in srgb, var(--ac) 18%, transparent); border: 1px solid var(--ac); border-radius: 6px; margin: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; }
 .pend-txt { flex: 1; color: var(--tx1); }
 .pend code { color: var(--warn2); }
