@@ -8,17 +8,20 @@ import { loadIdentity, toPublicProfile } from './identity.js';
 import { signEnvelope, verifyEnvelope } from './sign.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
+import { createOpenCodeRunner } from './remote-runner.js';
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, logger = console }) {
+  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, runner = null, logger = console }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.events = events;
     this.peer = peer;              // { post(host, port, envelope) -> Promise<{ok, data?, error?}> }
     this.skillsRoot = skillsRoot;  // 安装/本机技能根目录
     this.inboxDir = inboxDir;      // 收到的 zip 落盘目录
+    this.runner = runner || createOpenCodeRunner();
     this.log = logger;
+    _extendChat(this);
   }
   get pub() { return toPublicProfile(this.identity); }
 
@@ -45,6 +48,11 @@ export class CollabEngine {
       case CollabPeer.MEMBER_SYNC: return this._inMemberSync(env);
       case CollabPeer.SKILL_PUSH: return this._inSkillPush(env);
       case CollabPeer.PULL_SYNC: return this._inPullSync(env);
+      case CollabPeer.CHAT_SEND: return this._inChatSend(env);
+      case CollabPeer.CMD_REQ: return this._inCmdReq(env);
+      case CollabPeer.CMD_CONFIRM: return this._inCmdConfirm(env);
+      case CollabPeer.CMD_RESULT: return this._inCmdResult(env);
+      case CollabPeer.CHAT_PULL: return this._inChatPull(env);
       default: return { ok: false, error: 'unknown-type' };
     }
   }
@@ -314,6 +322,151 @@ export class CollabEngine {
     this.store.data.identity = { ...this.identity };
     this.store.save();
   }
+}
+
+// ================= 群聊 与 @ 远程执行（追加到 CollabEngine 的方法以 mixin 形式扩展） =================
+// 说明：以下方法经由 _extendChat(engine) 挂载，保持 engine.js 原文件职责清晰、隔离新增逻辑。
+export function _extendChat(engine) {
+  engine._requireMember = function _requireMember(groupId, machineId = this.pub.machineId) {
+    const g = this.store.findGroup(groupId);
+    if (!g) return { code: 'no-group', group: null, me: null };
+    const me = g.members.find((m) => m.machineId === machineId);
+    if (!me) return { code: 'not-member', group: g, me: null };
+    return { code: 'ok', group: g, me };
+  };
+  engine._broadcastChat = async function _broadcastChat(groupId, msg) {
+    const g = this.store.findGroup(groupId);
+    if (!g) return;
+    const env = this._sign(CollabPeer.CHAT_SEND, { msg });
+    for (const m of g.members) {
+      if (m.machineId === this.pub.machineId) continue;
+      await this._post(m.host, m.port, env);
+    }
+  };
+  engine.sendChat = async function sendChat({ groupId, text, toId = null }) {
+    const r = this._requireMember(groupId);
+    if (r.code !== 'ok') return { code: r.code };
+    if (toId && !r.group.members.find((m) => m.machineId === toId)) return { code: 'no-target' };
+    const msg = { id: crypto.randomUUID(), groupId, kind: 'text', fromId: this.pub.machineId, text, toId, ts: Date.now(), seq: this.store.nextChatSeq() };
+    this.store.addChatMessage(msg);
+    this._broadcastChat(groupId, msg);
+    this._emit('chat', { groupId, msg });
+    return { code: 'ok', msg };
+  };
+  engine._inChatSend = async function _inChatSend(env) {
+    const p = env.from;
+    const msg = env.payload.msg;
+    if (!msg || msg.groupId == null || typeof msg.text !== 'string') return { ok: false, error: 'bad-msg' };
+    const r = this._requireMember(msg.groupId, p.machineId);
+    if (r.code !== 'ok') return { ok: false, error: 'not-member' };
+    this.store.addChatMessage({ ...msg, seq: this.store.nextChatSeq(), ts: msg.ts ?? Date.now() });
+    this._emit('chat', { groupId: msg.groupId, msg });
+    return { ok: true };
+  };
+  engine.requestRemoteExec = async function requestRemoteExec({ groupId, text, toId }) {
+    const r = this._requireMember(groupId);
+    if (r.code !== 'ok') return { code: r.code };
+    const target = r.group.members.find((m) => m.machineId === toId);
+    if (!target) return { code: 'no-target' };
+    const reqId = crypto.randomUUID();
+    const env = this._sign(CollabPeer.CMD_REQ, { groupId, text, toId, reqId });
+    const res = await this._post(target.host, target.port, env);
+    if (!res.ok) {
+      const msg = { id: crypto.randomUUID(), groupId, kind: 'system', fromId: this.pub.machineId, text: `远程执行未送达（@${target.username} 可能离线）`, toId, ts: Date.now(), seq: this.store.nextChatSeq(), meta: null };
+      this.store.addChatMessage(msg);
+      this._emit('chat', { groupId, msg });
+      return { code: 'undelivered', reqId };
+    }
+    return { code: 'sent', reqId };
+  };
+  engine._inCmdReq = async function _inCmdReq(env) {
+    const p = env.from;
+    const { groupId, text, toId, reqId } = env.payload;
+    if (!groupId || typeof text !== 'string' || !toId || !reqId) return { ok: false, error: 'bad-request' };
+    if (toId !== this.pub.machineId) return { ok: true };
+    const r = this._requireMember(groupId, p.machineId);
+    if (r.code !== 'ok') return { ok: false, error: 'not-member' };
+    if (this.store.isAllowed(text)) {
+      this._runCmd({ reqId, groupId, fromId: p.machineId, text, auto: true });
+      return { ok: true };
+    }
+    this.store.addPendingCmd({ id: reqId, groupId, fromId: p.machineId, text, receivedAt: Date.now() });
+    this._emit('cmd-pending', { reqId, groupId, fromId: p.machineId, text });
+    return { ok: true };
+  };
+  engine._runCmd = async function _runCmd({ reqId, groupId, fromId, text }) {
+    let res;
+    try { res = await this.runner.execute({ text, cwd: process.cwd() }); }
+    catch (e) { res = { stdout: '', stderr: String(e && e.message || e), exitCode: -1, timedOut: false, durationMs: 0, spawnError: true }; }
+    const msg = { id: crypto.randomUUID(), groupId, kind: 'cmd-result', fromId: this.pub.machineId,
+      text: res.stdout || '(no output)', toId: fromId, ts: Date.now(), seq: this.store.nextChatSeq(),
+      meta: { reqId, exitCode: res.exitCode, stderr: res.stderr || '', durationMs: res.durationMs ?? 0 } };
+    this.store.addChatMessage(msg);
+    this._broadcastChat(groupId, msg);
+    this._emit('chat', { groupId, msg });
+  };
+  engine.approveCmd = async function approveCmd({ reqId, approve }) {
+    const pending = this.store.findPendingCmd(reqId);
+    if (!pending) return { code: 'not-found' };
+    this.store.removePendingCmd(reqId);
+    if (!approve) {
+      const msg = { id: crypto.randomUUID(), groupId: pending.groupId, kind: 'system', fromId: this.pub.machineId,
+        text: `拒绝了 @${pending.fromId} 的远程执行`, toId: pending.fromId, ts: Date.now(), seq: this.store.nextChatSeq(), meta: null };
+      this.store.addChatMessage(msg);
+      this._broadcastChat(pending.groupId, msg);
+      this._emit('chat', { groupId: pending.groupId, msg });
+      return { code: 'denied' };
+    }
+    this._runCmd({ reqId: pending.id, groupId: pending.groupId, fromId: pending.fromId, text: pending.text });
+    return { code: 'approved' };
+  };
+  engine._inCmdConfirm = function _inCmdConfirm() {
+    return { ok: true };
+  };
+  engine._inCmdResult = function _inCmdResult(env) {
+    const p = env.from;
+    const { groupId } = env.payload;
+    const r = this._requireMember(groupId, p.machineId);
+    if (r.code !== 'ok') return { ok: false, error: 'not-member' };
+    const { reqId = null, stdout = '', stderr = '', exitCode = null, durationMs = 0 } = env.payload;
+    const msg = { id: crypto.randomUUID(), groupId, kind: 'cmd-result', fromId: p.machineId,
+      text: stdout || '(no output)', toId: env.payload.toId ?? null, ts: Date.now(), seq: this.store.nextChatSeq(),
+      meta: { reqId, exitCode, stderr, durationMs } };
+    this.store.addChatMessage(msg);
+    this._emit('chat', { groupId, msg });
+    return { ok: true };
+  };
+  engine.listChat = function listChat(groupId, { afterSeq = 0 } = {}) { return this.store.listChatMessages(groupId, { afterSeq }); };
+  engine.pullChatFrom = async function pullChatFrom(fromMachineId, { groupId }) {
+    const peerProfile = this._knownProfile(fromMachineId);
+    if (!peerProfile) return { code: 'no-peer' };
+    const afterSeq = this.store.lastSeqOf(groupId);
+    const res = await this._post(peerProfile.host, peerProfile.port, this._sign(CollabPeer.CHAT_PULL, { groupId, afterSeq }));
+    if (!res.ok) return { code: 'failed', error: res.error };
+    return { code: 'ok', messages: res.data?.messages || [] };
+  };
+  engine.applyChatPull = function applyChatPull({ groupId, messages }) {
+    if (!groupId || !Array.isArray(messages)) return;
+    const existing = new Set(this.store.listChatMessages(groupId).map((m) => m.id));
+    for (const m of messages) {
+      if (existing.has(m.id)) continue;
+      this.store.addChatMessage({ ...m, seq: this.store.nextChatSeq(), ts: m.ts ?? Date.now() });
+    }
+    this._emit('chat', { groupId, msg: null });
+  };
+  engine._inChatPull = function _inChatPull(env) {
+    const p = env.from;
+    const { groupId, afterSeq = 0 } = env.payload;
+    const r = this._requireMember(groupId, p.machineId);
+    if (r.code !== 'ok') return { ok: false, error: 'not-member' };
+    const messages = this.store.listChatMessages(groupId, { afterSeq });
+    return { ok: true, data: { messages } };
+  };
+  engine.listPendingCmds = function listPendingCmds() { return this.store.listPendingCmds(); };
+  engine.listAllowlist = function listAllowlist() { return this.store.listAllowlist(); };
+  engine.allowCmd = function allowCmd(prefix) { if (typeof prefix === 'string' && prefix) { this.store.addAllowEntry(prefix.trim()); return { code: 'ok' }; } return { code: 'bad' }; };
+  engine.disallowCmd = function disallowCmd(prefix) { this.store.removeAllowEntry(prefix); return { code: 'ok' }; };
+  return engine;
 }
 
 // ---- 测试双节点 harness（直连 transport，不走 http）----

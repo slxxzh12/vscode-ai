@@ -41,3 +41,45 @@ test('list/find/upsert 助手', () => {
   s.removeFriend('a');
   assert.equal(s.listFriends().length, 0);
 });
+
+test('chat 增删查 + 全局单调 seq', () => {
+  const s = new CollabStore({ file: tmpFile() });
+  s.addChatMessage({ id: 'm1', groupId: 'g', kind: 'text', fromId: 'a', text: 'hi', toId: null, ts: 1 });
+  s.addChatMessage({ id: 'm2', groupId: 'g', kind: 'text', fromId: 'b', text: 'yo', toId: 'a', ts: 2 });
+  const msgs = s.listChatMessages('g');
+  assert.equal(msgs.length, 2);
+  assert.equal(msgs[0].seq, 1);
+  assert.equal(msgs[1].seq, 2);
+  assert.equal(msgs[0].groupId, 'g');
+  // afterSeq 过滤
+  const after = s.listChatMessages('g', { afterSeq: 1 });
+  assert.equal(after.length, 1);
+  assert.equal(after[0].id, 'm2');
+  // 每机全局 seq 单调
+  assert.equal(s.nextChatSeq(), 3);
+  assert.equal(s.nextChatSeq(), 4);
+  s.addChatMessage({ id: 'm3', groupId: 'g2', kind: 'system', fromId: 'a', text: 'sys', toId: null, ts: 3 });
+  assert.equal(s.listChatMessages('g2')[0].seq, 5);
+});
+
+test('pendingCmds 与 allowlist', () => {
+  const s = new CollabStore({ file: tmpFile() });
+  s.addPendingCmd({ id: 'r1', groupId: 'g', fromId: 'a', text: 'ls', receivedAt: 1 });
+  assert.equal(s.listPendingCmds().length, 1);
+  assert.ok(s.findPendingCmd('r1'));
+  s.removePendingCmd('r1');
+  assert.equal(s.listPendingCmds().length, 0);
+  s.addAllowEntry('deploy');
+  s.addAllowEntry('git status');
+  assert.deepEqual(s.listAllowlist(), ['deploy', 'git status']);
+  s.removeAllowEntry('deploy');
+  assert.deepEqual(s.listAllowlist(), ['git status']);
+});
+
+test('本地历史 cap 每群 500', () => {
+  const s = new CollabStore({ file: tmpFile() });
+  for (let i = 0; i < 502; i++) s.addChatMessage({ id: `m${i}`, groupId: 'g', kind: 'text', fromId: 'a', text: String(i), toId: null, ts: i });
+  const msgs = s.listChatMessages('g');
+  assert.equal(msgs.length, 500);
+  assert.equal(msgs[0].id, 'm2'); // 最旧两条被裁
+});

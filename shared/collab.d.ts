@@ -3,6 +3,8 @@ export declare const CollabS2C: Readonly<{
   COLLAB_FRIEND_REQ: 'collab-friend-req';
   COLLAB_GROUP_INVITE: 'collab-group-invite';
   COLLAB_SYNCED: 'collab-synced';
+  COLLAB_CHAT: 'collab-chat';
+  COLLAB_CMD_PENDING: 'collab-cmd-pending';
 }>;
 export declare const CollabPeer: Readonly<{
   FRIEND_REQUEST: 'friend-request';
@@ -12,4 +14,9 @@ export declare const CollabPeer: Readonly<{
   MEMBER_SYNC: 'member-sync';
   SKILL_PUSH: 'skill-push';
   PULL_SYNC: 'pull-sync';
+  CHAT_SEND: 'chat-send';
+  CMD_REQ: 'cmd-req';
+  CMD_CONFIRM: 'cmd-confirm';
+  CMD_RESULT: 'cmd-result';
+  CHAT_PULL: 'chat-pull';
 }>;

@@ -210,6 +210,50 @@ async function applyPreview() {
 
 function onRetrySave() { dirty.value = true; flush(); }
 
+// —— 一键格式化（Prettier 按需加载）——
+const fmtMsg = ref('');
+let fmtTimer: ReturnType<typeof setTimeout> | null = null;
+const PARSER_BY_EXT: Record<string, string> = {
+  js: 'babel', mjs: 'babel', cjs: 'babel', jsx: 'babel',
+  ts: 'typescript', tsx: 'typescript', mts: 'typescript',
+  json: 'json', css: 'css', html: 'html', htm: 'html',
+  md: 'markdown', markdown: 'markdown', yml: 'yaml', yaml: 'yaml',
+};
+const canFormat = computed(() => kind.value === 'text' && !!PARSER_BY_EXT[ext.value]);
+function flashFmt(m: string) {
+  fmtMsg.value = m;
+  if (fmtTimer) clearTimeout(fmtTimer);
+  fmtTimer = setTimeout(() => { fmtMsg.value = ''; }, 2600);
+}
+async function formatDoc() {
+  if (!view || !canFormat.value) return;
+  const parser = PARSER_BY_EXT[ext.value];
+  const doc = view.state.doc.toString();
+  try {
+    const [{ default: prettierAny }, babelM, estreeM, tsM, htmlM, postcssM, mdM] = await Promise.all([
+      import('prettier/standalone'),
+      import('prettier/plugins/babel'),
+      import('prettier/plugins/estree'),
+      import('prettier/plugins/typescript'),
+      import('prettier/plugins/html'),
+      import('prettier/plugins/postcss'),
+      import('prettier/plugins/markdown'),
+    ]);
+    const prettier = (prettierAny as any).default ?? prettierAny;
+    const pl = (m: any) => (m.default ?? m);
+    const plugins = [pl(babelM), pl(estreeM), pl(tsM), pl(htmlM), pl(postcssM), pl(mdM)];
+    const out = await prettier.format(doc, { parser, plugins });
+    if (out !== doc) {
+      view.dispatch({ changes: { from: 0, to: doc.length, insert: out } });
+      flashFmt('✓ 已格式化');
+    } else {
+      flashFmt('格式已是最佳');
+    }
+  } catch (e: any) {
+    flashFmt(`格式化失败：${e?.message || e}`);
+  }
+}
+
 watch(() => [props.projectId, props.path], load, { immediate: true });
 watch(viewMode, (m) => {
   applyPreview();
@@ -236,6 +280,8 @@ onBeforeUnmount(() => {
           <span v-if="saveState === 'saving'" class="save saveing">保存中…</span>
           <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ saveMsg }} 已保存</span>
           <span v-else-if="saveState === 'error'" class="save saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
+          <span v-if="fmtMsg" class="save fmtmsg" :class="{ ok: fmtMsg.startsWith('✓') }">{{ fmtMsg }}</span>
+          <button v-if="canFormat && showEditor" class="fmt-btn" title="格式化代码" @click="formatDoc">⇥ 格式化</button>
           <div v-if="hasPreviewToggle" class="seg">
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">预览</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? '源码' : '代码' }}</button>
@@ -269,6 +315,10 @@ onBeforeUnmount(() => {
 .saveok { color: var(--ok); }
 .saveing { color: var(--warn); }
 .saveerr { color: var(--errtx); cursor: pointer; }
+.fmtmsg { color: var(--tx3); }
+.fmtmsg.ok { color: var(--ok); }
+.fmt-btn { background: transparent; border: 1px solid var(--bd); color: var(--tx3); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-family: inherit; }
+.fmt-btn:hover { border-color: var(--ac2); color: var(--tx1); }
 .seg { display: flex; gap: 2px; background: var(--bg2); border: 1px solid var(--bd3); border-radius: 4px; padding: 1px; }
 .seg button { background: transparent; border: none; color: var(--tx3); font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px; }
 .seg button.on { background: var(--ac); color: var(--onac); }

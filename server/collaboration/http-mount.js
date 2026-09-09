@@ -75,6 +75,34 @@ export function createCollabMount({ engine, logger = console }) {
         if (r.code === 'ok' && r.data) engine.applyPull(r.data);
         return ok(res, r);
       }
+      // ---- chat ----
+      if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'chat' && m === 'POST') {
+        const r = await engine.sendChat({ groupId: seg[1], text: body.text, toId: body.toId ?? null });
+        return ok(res, r);
+      }
+      if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'chat' && m === 'GET') {
+        const afterSeq = Number(url.searchParams.get('afterSeq') || 0);
+        return ok(res, { messages: engine.listChat(seg[1], { afterSeq }) });
+      }
+      if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'cmd' && m === 'POST') {
+        const r = await engine.requestRemoteExec({ groupId: seg[1], text: body.text, toId: body.toId });
+        return ok(res, r);
+      }
+      if (seg[0] === 'groups' && seg.length === 4 && seg[3] === 'chat-pull' && m === 'POST') {
+        const r = await engine.pullChatFrom(body.machineId, { groupId: seg[1] });
+        if (r.code === 'ok') engine.applyChatPull({ groupId: seg[1], messages: r.messages });
+        return ok(res, r);
+      }
+      // ---- pending cmds（目标机待确认）----
+      if (seg[0] === 'cmds' && seg.length === 1 && m === 'GET') return ok(res, { pending: engine.listPendingCmds() });
+      if (seg[0] === 'cmds' && seg.length === 3 && seg[2] === 'approve' && m === 'POST') {
+        const r = await engine.approveCmd({ reqId: seg[1], approve: body.approve !== false });
+        return ok(res, r);
+      }
+      // ---- allowlist ----
+      if (seg[0] === 'allowlist' && m === 'GET') return ok(res, { allowlist: engine.listAllowlist() });
+      if (seg[0] === 'allowlist' && seg.length === 1 && m === 'POST') { const r = engine.allowCmd(body.prefix); return ok(res, r); }
+      if (seg[0] === 'allowlist' && seg.length === 2 && m === 'DELETE') { const r = engine.disallowCmd(decodeURIComponent(seg[1])); return ok(res, r); }
       return sendJson(res, 404, { error: 'not found' });
     } catch (e) {
       logger?.error?.('collab http error', e);
