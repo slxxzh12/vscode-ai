@@ -89,6 +89,60 @@ test('snapshot 与 skills 端点返回', async () => {
   } finally { A.server.close(); }
 });
 
+test('HTTP 文件推送：头部公钥 + sha256 签名校验（合法通过 / 未知公钥拒收 / 坏签名拒收）', async () => {
+  const A = await startNode('alice-f');
+  const B = await startNode('bob-f');
+  const C = await startNode('mallory');
+  const postPeer = async (port, env, extraHeaders = {}) => {
+    const r = await fetch(`http://127.0.0.1:${port}/api/collab/peer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...extraHeaders },
+      body: JSON.stringify(env),
+    });
+    return r.json();
+  };
+  try {
+    // A↔B 好友并同群
+    await post(`http://127.0.0.1:${A.port}/api/collab/friends`, { host: '127.0.0.1', port: B.port });
+    await new Promise((r) => setTimeout(r, 50));
+    await post(`http://127.0.0.1:${B.port}/api/collab/friends/${A.engine.pub.machineId}/accept`, {});
+    const gRes = await post(`http://127.0.0.1:${A.port}/api/collab/groups`, { name: 'team' });
+    const gid = gRes.body.group.id;
+    await post(`http://127.0.0.1:${A.port}/api/collab/groups/${gid}/invite`, { machineId: B.engine.pub.machineId });
+    await new Promise((r) => setTimeout(r, 50));
+    await post(`http://127.0.0.1:${B.port}/api/collab/invites/${B.engine.store.listPendingInvites()[0].id}/accept`, {});
+    await new Promise((r) => setTimeout(r, 80));
+
+    const data = Buffer.from('file-http-receipt-check', 'utf8');
+    // 1) 合法：A 经 upload 端点推文件（peer-client 自动带头部凭证）→ B 收到
+    const up = await fetch(`http://127.0.0.1:${A.port}/api/collab/groups/${gid}/files?name=${encodeURIComponent('r.txt')}`, { method: 'POST', body: data });
+    assert.equal(up.status, 200);
+    const items = B.engine.store.listInbox();
+    const got = items.find((i) => i.fileName === 'r.txt');
+    assert.ok(got, 'B 已收到文件');
+    assert.equal(fs.readFileSync(got.zipPath, 'utf8'), 'file-http-receipt-check');
+
+    // 2) 未知公钥（非好友/非群成员）→ 拒收
+    const envU = { type: 'file-push', from: C.engine.pub, payload: { fileName: 'u.bin', hash: 'aa', size: 1, b64: 'YQ==' }, ts: Date.now(), sig: 'x' };
+    const rU = await postPeer(B.port, envU, C.engine.fileReceiptHeaders(Buffer.from('z')));
+    assert.equal(rU.ok, false);
+    assert.equal(rU.error, 'untrusted-pubkey');
+
+    // 3) 公钥可信但 sha256 签名伪造 → 拒收
+    const envB = A.engine._sign('file-push', { fileName: 'w.bin', hash: 'ab'.repeat(32), size: 1, b64: 'YQ==' });
+    const rB = await postPeer(B.port, envB, {
+      'x-df-pub': Buffer.from(A.engine.pub.publicKey, 'utf8').toString('base64'),
+      'x-df-sha': 'ab'.repeat(32),
+      'x-df-sig': 'AAAA',
+    });
+    assert.equal(rB.ok, false);
+    assert.equal(rB.error, 'bad-sha-signature');
+    assert.equal(B.engine.store.listInbox().length, 1, '伪造推送均未入库');
+  } finally {
+    A.server.close(); B.server.close(); C.server.close();
+  }
+});
+
 test('群聊与远程执行 REST 冒烟', async () => {
   const A = await startNode('alice');
   const B = await startNode('bob');

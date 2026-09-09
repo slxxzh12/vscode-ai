@@ -35,3 +35,13 @@ export function verifyEnvelope(senderPublicKeyPem, env, { now = Date.now(), skew
     );
   } catch { return false; }
 }
+
+// 对文件 sha256（hex 字符串字节）用私钥签名 / 公钥验签，用于防仿冒的独立文件凭证
+export function signHash(privateKeyPem, sha256Hex) {
+  return crypto.sign(null, Buffer.from(sha256Hex, 'utf8'), privateKeyPem).toString('base64');
+}
+export function verifyHash(publicKeyPem, sha256Hex, sigB64) {
+  try {
+    return crypto.verify(null, Buffer.from(sha256Hex, 'utf8'), publicKeyPem, Buffer.from(sigB64, 'base64'));
+  } catch { return false; }
+}

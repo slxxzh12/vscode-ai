@@ -90,6 +90,76 @@ test('群内分发 skill → 对方 inbox → 安装', async () => {
   } finally { await h.stop(); }
 });
 
+test('切换工具目录：分发源/安装目标跟所选工具走，upload 留档 + 群系统消息', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const customA = path.join(tmp(), 'custom-a');
+    const customB = path.join(tmp(), 'custom-b');
+    // A 切到自定义工具目录并造一个 skill；B 也切到另一个自定义目录作安装目标
+    assert.equal(A.setTool('custom', customA).root, customA);
+    assert.equal(B.setTool('custom', customB).root, customB);
+    const skillDir = path.join(A.skillRoot(), 'demo');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# demo', 'utf8');
+    await A.requestFriend({ host: B.pub.host, port: B.pub.port });
+    await B.acceptFriend(A.pub.machineId);
+    const g = await A.createGroup('team');
+    await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
+    await B.acceptInvite(B.store.listPendingInvites()[0].id);
+    const dist = await A.distributeToGroup(g.id, ['demo']);
+    assert.equal(dist.failures.length, 0, JSON.stringify(dist.failures));
+    // upload 目录留档 + outbox 记录
+    assert.equal(A.store.listOutbox().length, 1);
+    const out = A.store.listOutbox()[0];
+    assert.equal(out.kind, 'skill');
+    assert.ok(fs.existsSync(path.join(A.uploadDir, out.storedFile)), 'upload 目录存在 zip');
+    // B 收到的 zip 落在 download 目录；安装到 B 所选工具目录
+    const item = B.store.listInbox()[0];
+    assert.ok(item.zipPath.startsWith(B.downloadDir), 'zip 落 download 目录');
+    await B.installInbox(item.id);
+    assert.ok(fs.existsSync(path.join(customB, 'demo', 'SKILL.md')), '安装到 B 所选工具目录');
+    // 分发后 A 群聊出现系统留痕
+    const sys = A.store.listChatMessages(g.id).find((m) => m.kind === 'system');
+    assert.ok(sys && sys.text.includes('demo'), '有分发留痕系统消息');
+  } finally { await h.stop(); }
+});
+
+test('群内发文件：A 推送 → B 落 download 目录，sha256 校验 + 群系统消息', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    await A.requestFriend({ host: B.pub.host, port: B.pub.port });
+    await B.acceptFriend(A.pub.machineId);
+    const g = await A.createGroup('team');
+    await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
+    await B.acceptInvite(B.store.listPendingInvites()[0].id);
+    const payload = Buffer.from('hello-devflow-file', 'utf8');
+    const sent = await A.sendFileToGroup(g.id, { fileName: 'notes.txt', data: payload });
+    assert.equal(sent.code, 'ok', JSON.stringify(sent));
+    assert.equal(sent.failures.length, 0, JSON.stringify(sent.failures));
+    const inbox = B.store.listInbox();
+    assert.equal(inbox.length, 1);
+    const item = inbox[0];
+    assert.equal(item.kind, 'file');
+    assert.equal(item.fileName, 'notes.txt');
+    assert.ok(item.zipPath.startsWith(B.downloadDir), '文件落 download 目录');
+    assert.equal(fs.readFileSync(item.zipPath, 'utf8'), 'hello-devflow-file', '内容一致');
+    // A 侧 outbox 留档 + upload 目录文件
+    const out = A.store.listOutbox()[0];
+    assert.equal(out.kind, 'file');
+    assert.ok(fs.existsSync(path.join(A.uploadDir, out.storedFile)), 'upload 目录有文件留档');
+    // sha256 篡改 → 拒收
+    const bad = A._sign('file-push', { groupId: g.id, fileName: 'x.bin', hash: '0'.repeat(64), size: payload.length, b64: payload.toString('base64') });
+    const r = await B.handleIncoming(bad);
+    assert.equal(r.ok, false);
+    assert.equal(B.store.listInbox().length, 1, '篡改文件未被接收');
+    // 群系统留痕
+    const sys = A.store.listChatMessages(g.id).find((m) => m.kind === 'system');
+    assert.ok(sys && sys.text.includes('notes.txt'), '发文件留痕存在');
+  } finally { await h.stop(); }
+});
+
 test('验签失败的消息被丢弃（伪造信封直接进 inbound）', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {
