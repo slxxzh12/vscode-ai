@@ -5,5 +5,8 @@
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
-  "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" } }
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.js" },
+    "./collab": { "types": "./collab.d.ts", "default": "./collab.js" }
+  }
 }
