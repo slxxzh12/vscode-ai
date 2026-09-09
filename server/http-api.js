@@ -14,6 +14,21 @@ export function createHttpApi({ projects }) {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
   };
+  const readJsonBody = (req, limit = 4 * 1024 * 1024) =>
+    new Promise((resolve, reject) => {
+      const chunks = [];
+      let total = 0;
+      req.on('data', (c) => {
+        total += c.length;
+        if (total > limit) { const e = new Error('body too large'); e.code = 'too-large'; reject(e); req.destroy(); return; }
+        chunks.push(c);
+      });
+      req.on('end', () => {
+        if (!chunks.length) { resolve({}); return; }
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch (e) { reject(e); }
+      });
+      req.on('error', reject);
+    });
   return async (req, res) => {
     if (!(await requireAuthHttp(req, res))) { sendJson(res, 401, { error: 'unauthorized' }); return; }
     const url = new URL(req.url, 'http://localhost');
@@ -33,6 +48,15 @@ export function createHttpApi({ projects }) {
         const project = url.searchParams.get('project');
         const rel = url.searchParams.get('path') || '';
         const f = projects.readText(project, rel);
+        sendJson(res, 200, f);
+        return;
+      }
+      if (url.pathname === '/api/file' && req.method === 'POST') {
+        const project = url.searchParams.get('project');
+        const rel = url.searchParams.get('path') || '';
+        const body = await readJsonBody(req);
+        if (typeof body.content !== 'string') return sendJson(res, 400, { error: 'content required' });
+        const f = projects.writeText(project, rel, body.content);
         sendJson(res, 200, f);
         return;
       }

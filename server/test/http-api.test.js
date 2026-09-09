@@ -19,6 +19,20 @@ async function request(server, url) {
   });
 }
 
+function post(server, url, obj) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(obj);
+    const req = http.request({ host: '127.0.0.1', port: server.address().port, path: url, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => {
+      let body = '';
+      res.on('data', (d) => (body += d));
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', reject);
+    req.end(data);
+  });
+}
+
 async function start(projects) {
   const server = http.createServer(createHttpApi({ projects }));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -99,4 +113,27 @@ test('/api/raw 按扩展名给 Content-Type 并返回字节', async (t) => {
   const r = await request(server, '/api/raw?project=a&path=pic.png');
   assert.equal(r.status, 200);
   assert.ok(r.body.includes('PNG'));
+});
+
+test('/api/file POST 自动保存写盘并可读回', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'before');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const w = await post(server, '/api/file?project=a&path=a.txt', { content: 'after edit\nline2' });
+  assert.equal(w.status, 200);
+  const rb = await request(server, '/api/file?project=a&path=a.txt');
+  assert.equal(JSON.parse(rb.body).content, 'after edit\nline2');
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'after edit\nline2');
+});
+
+test('/api/file POST 越界 403；缺 content 400', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'x');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const esc = await post(server, '/api/file?project=a&path=..%2F..%2FREADME.md', { content: 'x' });
+  assert.equal(esc.status, 403);
+  const noContent = await post(server, '/api/file?project=a&path=a.txt', {});
+  assert.equal(noContent.status, 400);
 });

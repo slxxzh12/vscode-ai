@@ -3,11 +3,12 @@ import { useProjects } from '../useProjects';
 import type { TreeNode as TNode } from './FileTree.vue';
 
 const props = defineProps<{ projectId: string | null; node: TNode }>();
+const emit = defineEmits<{ (e: 'open-file', path: string, name: string): void }>();
 const { tree } = useProjects();
 const n = props.node;
 
 async function toggle() {
-  if (n.type !== 'dir') return;
+  if (n.type !== 'dir') { emit('open-file', n.path, n.name); return; }
   n.expanded = !n.expanded;
   if (n.expanded && n.children.length === 0) {
     n.loading = true;
@@ -31,7 +32,7 @@ async function toggle() {
       <span v-if="n.loading" class="loading">…</span>
     </div>
     <div v-if="n.expanded" class="indent">
-      <TreeNode v-for="c in n.children" :key="c.path" :project-id="projectId" :node="c" />
+      <TreeNode v-for="c in n.children" :key="c.path" :project-id="projectId" :node="c" @open-file="emit('open-file', $event, c.name)" />
     </div>
   </div>
 </template>

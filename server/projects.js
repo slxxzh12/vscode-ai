@@ -45,6 +45,15 @@ export class Projects {
     const file = this._filePath(projectId, rel);
     return { file, size: fs.statSync(file).size, name: path.basename(file) };
   }
+  writeText(projectId, rel, content, maxBytes = 2 * 1024 * 1024) {
+    const file = this._filePath(projectId, rel);
+    const bytes = Buffer.byteLength(content, 'utf8');
+    if (bytes > maxBytes) { const e = new Error('content too large'); e.code = 'too-large'; throw e; }
+    const tmp = file + '.devflow-tmp';
+    fs.writeFileSync(tmp, content, 'utf8');   // 先写临时文件
+    fs.renameSync(tmp, file);                 // 再原子替换，避免半写文件
+    return { name: path.basename(file), path: rel, size: bytes };
+  }
   tree(projectId, rel = '') {
     const proj = this._project(projectId);
     const rootReal = this._realOrResolved(proj.root);

@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useTerminal } from './useTerminal';
 import { useProjects } from './useProjects';
+import { useCenter } from './useCenter';
 import TerminalView from './components/TerminalView.vue';
 import SessionList from './components/SessionList.vue';
 import FileTree from './components/FileTree.vue';
@@ -9,6 +10,7 @@ import WorkflowPanel from './components/WorkflowPanel.vue';
 import type { ProjectInfo } from '@devflow/shared';
 
 const terminal = useTerminal({});
+const center = useCenter();
 const projectsApi = useProjects();
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
@@ -22,6 +24,9 @@ async function loadProjects() {
   if (!currentProject.value && projects.value.length) currentProject.value = projects.value[0].id;
 }
 function selectProject(id: string) { currentProject.value = id; }
+function openFile(projectId: string, path: string, name: string) {
+  center.openFile(projectId, path, name);
+}
 onMounted(() => {
   loadProjects();
   terminal.connect();
@@ -48,10 +53,10 @@ onMounted(() => {
       </aside>
       <aside class="side">
         <SessionList v-if="rail === 'sessions'" :terminal="terminal" :project-id="currentProject" />
-        <FileTree v-else :project-id="currentProject" />
+        <FileTree v-else :project-id="currentProject" @open-file="openFile" />
       </aside>
       <section class="center">
-        <TerminalView :terminal="terminal" :project-id="currentProject" />
+        <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" />
       </section>
     </div>
 

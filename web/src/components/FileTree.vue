@@ -13,6 +13,7 @@ export interface TreeNode {
 }
 
 const props = defineProps<{ projectId: string | null }>();
+const emit = defineEmits<{ (e: 'open-file', projectId: string, path: string, name: string): void }>();
 const { tree } = useProjects();
 const nodes = ref<TreeNode[]>([]);
 
@@ -28,7 +29,8 @@ defineExpose({ refresh });
 
 <template>
   <div class="ft">
-    <TreeNode v-for="n in nodes" :key="n.path" :project-id="projectId" :node="n" />
+    <TreeNode v-for="n in nodes" :key="n.path" :project-id="projectId" :node="n"
+      @open-file="(p, name) => projectId && emit('open-file', projectId, p, name)" />
     <div v-if="projectId && nodes.length === 0" class="empty">空目录</div>
     <div v-if="!projectId" class="empty">未选择项目</div>
   </div>
