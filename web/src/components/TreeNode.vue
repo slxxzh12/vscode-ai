@@ -17,7 +17,7 @@ const IMG = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
 const ZIP = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
 const OFF = new Set(['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'pdf']);
 const CODE: Record<string, string> = {
-  html: '🌐', css: '🎨', vue: '🍃', js: '🟨', py: '🐍', java: '☕', json: '🧾',
+  html: '🌐', css: '🎨', vue: '🍃', js: '🧩', ts: '🧩', mjs: '🧩', cjs: '🧩', jsx: '🧩', py: '🐍', java: '☕', json: '🧾',
 };
 function fileIcon() {
   const i = n.name.lastIndexOf('.');
