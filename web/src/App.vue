@@ -61,7 +61,10 @@ async function loadProjects() {
   if (!currentProject.value && projects.value.length) currentProject.value = projects.value[0].id;
 }
 function selectProject(id: string) { currentProject.value = id; }
-function openFile(projectId: string, path: string, name: string) {
+function openFile(projectId: string, path: string) {
+  const q = path.replace(/\\/g, '/');
+  const i = q.lastIndexOf('/');
+  const name = i >= 0 ? q.slice(i + 1) : q;   // 文件名一律由 path 推导，避免上游传错标签
   center.openFile(projectId, path, name);
 }
 onMounted(() => {
