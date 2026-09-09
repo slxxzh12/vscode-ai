@@ -1778,14 +1778,15 @@ import { createCollabMount } from '../collaboration/http-mount.js';
 import { makePeerClient } from '../collaboration/peer-client.js';
 import { CollabS2C } from '@devflow/shared/collab';
 
-test('事件总线把协作事件路由到 CollabS2C 类型', async () => {
+test('事件总线按原始 engine 事件转发（index 层再映射到 CollabS2C）', async () => {
   const bus = createEventBus();
   const seen = [];
-  bus.on(CollabS2C.COLLAB_FRIEND_REQ, (p) => seen.push(['req', p.from && p.from.machineId]));
-  bus.on(CollabS2C.COLLAB_SYNCED, () => seen.push(['synced']));
+  // index.js 的接线：监听原始事件，转发为 CollabS2C 消息
+  bus.on('friend-request', (payload) => seen.push([CollabS2C.COLLAB_FRIEND_REQ, payload.from && payload.from.machineId]));
+  bus.on('synced', () => seen.push([CollabS2C.COLLAB_SYNCED]));
   bus.emit('friend-request', { from: { machineId: 'x' } });
   bus.emit('synced', {});
-  assert.deepEqual(seen, [['req', 'x'], ['synced']]);
+  assert.deepEqual(seen, [[CollabS2C.COLLAB_FRIEND_REQ, 'x'], [CollabS2C.COLLAB_SYNCED]]);
 });
 
 test('mount GET /api/collab/snapshot 返回身份', async () => {
