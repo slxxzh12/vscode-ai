@@ -11,6 +11,7 @@
     "dev:server": "node --watch server/index.js",
     "dev:web": "npm --prefix web run dev",
     "build:web": "npm --prefix web run build",
+    "build:portable": "node scripts/build.js",
     "test:server": "node --test \"server/test/*.test.js\"",
     "test:web": "npm --prefix web run test",
     "test": "npm run test:server && npm run test:web",
