@@ -23,13 +23,31 @@ const menu = ref<MenuState | null>(null);
 const currentDir = ref('');
 const selectionPath = computed(() => props.activePath);
 
-function childOf(items: { name: string; type: 'file' | 'dir' }[]): TreeNode[] {
+async function fetchDir(rel: string) {
+  if (!props.projectId) return [];
+  const items = await tree(props.projectId, rel);
   return items.map((i) => ({ name: i.name, type: i.type, path: i.name, expanded: false, loading: false, children: [] }));
+}
+async function reloadDir(n: TreeNode): Promise<TreeNode[]> {
+  if (!props.projectId) return [];
+  const items = await tree(props.projectId, n.path);
+  const cur = new Map(n.children.map((c) => [c.name, c]));
+  const out = items.map((i) => {
+    const ex = cur.get(i.name);
+    return { name: i.name, type: i.type, path: `${n.path}/${i.name}`, expanded: ex?.expanded ?? false, loading: false, children: ex ? ex.children : [] };
+  });
+  for (const c of out) if (c.type === 'dir' && c.expanded) c.children = await reloadDir(c);
+  return out;
 }
 async function refresh() {
   if (!props.projectId) { nodes.value = []; return; }
   const items = await tree(props.projectId, '');
-  nodes.value = childOf(items);
+  const cur = new Map(nodes.value.map((n) => [n.name, n]));
+  nodes.value = items.map((i) => {
+    const ex = cur.get(i.name);
+    return { name: i.name, type: i.type, path: i.name, expanded: ex?.expanded ?? false, loading: false, children: ex ? ex.children : [] };
+  });
+  for (const n of nodes.value) if (n.type === 'dir' && n.expanded) n.children = await reloadDir(n);
 }
 async function expandTo(rel: string) {
   if (!props.projectId || !rel) return;
@@ -115,7 +133,7 @@ async function doCreate(kind: CreateKind, rel: string, name: string) {
       await createDir(props.projectId, rel);
       currentDir.value = rel;
       await refresh();
-      await expandTo(parentDir(rel));
+      await expandTo(rel);
     }
   } catch (e: any) {
     alert(`新建失败：${e?.message || e}`);
@@ -137,6 +155,7 @@ defineExpose({ refresh });
     <div class="head">
       <span class="title">资源管理器</span>
       <div class="acts">
+        <button class="ic" title="刷新目录" @click="refresh">⟳</button>
         <button class="ic" title="新建文件（当前目录）" @click.stop="promptCreate('file')">📄＋</button>
         <button class="ic" title="新建文件夹（当前目录）" @click.stop="promptCreate('dir')">📁＋</button>
       </div>
