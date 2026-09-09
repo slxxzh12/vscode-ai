@@ -1,4 +1,5 @@
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SessionManager } from './session-manager.js';
@@ -9,6 +10,13 @@ import { Projects } from './projects.js';
 import { createLogger } from './log.js';
 import { createStaticServer } from './static.js';
 import { resolveFiles, loadProjects, loadWorkflows } from './config.js';
+import { CollabStore } from './collaboration/store.js';
+import { loadIdentity } from './collaboration/identity.js';
+import { CollabEngine } from './collaboration/engine.js';
+import { createCollabMount } from './collaboration/http-mount.js';
+import { makePeerClient } from './collaboration/peer-client.js';
+import { createEventBus } from './collaboration/event-bus.js';
+import { CollabS2C } from '@devflow/shared/collab';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -28,9 +36,37 @@ const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: l
 // requireAuth 占位钩子（spec §11）：HTTP 用 requireAuthHttp，WS 走 upgrade 处的 requireAuthWs
 const requireAuthWs = () => true; // TODO(安全): 接入 Token 后校验 ws 握手
 
+// ---- 协作子系统（隔离目录 server/collaboration/**）----
+const collabEventBus = createEventBus();
+let gateway;                                  // 后续 createGateway 赋值
+const broadcastCollab = (type, payload) => {
+  if (!gateway) return;
+  for (const c of gateway.conns) c.send({ type, ...payload });
+};
+const collabIdentity = loadIdentity({
+  file: path.join(__dirname, 'collaboration', 'identity.json'),
+  host: process.env.DEVFLOW_HOST || '127.0.0.1',
+  port: Number(process.env.DEVFLOW_PORT || 3001),
+});
+const collabEngine = new CollabEngine({
+  store: new CollabStore({ file: path.join(__dirname, 'collaboration', 'collab.json'), logger: log }),
+  identity: collabIdentity,
+  skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(os.homedir(), '.config', 'opencode', 'skills'),
+  inboxDir: path.join(__dirname, 'collaboration', 'inbox'),
+  events: collabEventBus,
+  logger: log,
+});
+collabEngine.peer = makePeerClient();
+const collabMount = createCollabMount({ engine: collabEngine, logger: log });
+collabEventBus.on('friend-request', (payload) => broadcastCollab(CollabS2C.COLLAB_FRIEND_REQ, payload));
+collabEventBus.on('group-invite', (payload) => broadcastCollab(CollabS2C.COLLAB_GROUP_INVITE, payload));
+collabEventBus.on('inbox', (payload) => broadcastCollab(CollabS2C.COLLAB_INBOX, payload));
+collabEventBus.on('synced', () => broadcastCollab(CollabS2C.COLLAB_SYNCED, {}));
+
 const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
+  if (url.pathname.startsWith('/api/collab')) { await collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/')) {
     await createHttpApi({ projects })(req, res);
     return;
@@ -41,11 +77,12 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-createGateway({ httpServer: server, sessionManager, workflowRunner, requireAuthWs, log });
+gateway = createGateway({ httpServer: server, sessionManager, workflowRunner, requireAuthWs, log });
 
 const HOST = process.env.DEVFLOW_HOST || '127.0.0.1';
 const PORT = Number(process.env.DEVFLOW_PORT || 3001);
 server.listen(PORT, HOST, () => {
+  collabEngine.setAdvertised({ host: HOST, port: PORT });
   log.info(`listening on http://${HOST}:${PORT}  (ws: ws://${HOST}:${PORT}/ws)`);
 });
 

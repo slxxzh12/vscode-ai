@@ -5,3 +5,6 @@ env/
 .superpowers/
 *.log
 .DS_Store
+# 协作子系统运行时数据（含本机 Ed25519 私钥，禁止入库）
+server/collaboration/*.json
+server/collaboration/inbox/

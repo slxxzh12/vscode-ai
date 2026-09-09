@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue';
 import { useTerminal } from './useTerminal';
 import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
+import CollaborationView from './collaboration/CollaborationView.vue';
 import TerminalView from './components/TerminalView.vue';
 import SessionList from './components/SessionList.vue';
 import FileTree from './components/FileTree.vue';
@@ -14,7 +15,7 @@ const center = useCenter();
 const projectsApi = useProjects();
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
-const rail = ref<'explorer' | 'sessions'>('explorer');
+const rail = ref<'explorer' | 'sessions' | 'contacts'>('explorer');
 const showWf = ref(false);
 
 const projectName = computed(() => projects.value.find((p) => p.id === currentProject.value)?.name || '未选择项目');
@@ -50,14 +51,22 @@ onMounted(() => {
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" title="目录" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'sessions' }" title="会话" @click="rail = 'sessions'">▦</button>
+        <button class="a-btn" :class="{ on: rail === 'contacts' }" title="通讯录" @click="rail = 'contacts'">👥</button>
       </aside>
-      <aside class="side">
-        <SessionList v-if="rail === 'sessions'" :terminal="terminal" :project-id="currentProject" />
-        <FileTree v-else :project-id="currentProject" @open-file="openFile" />
-      </aside>
-      <section class="center">
-        <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" />
-      </section>
+      <template v-if="rail === 'contacts'">
+        <section class="center">
+          <CollaborationView :terminal="terminal" />
+        </section>
+      </template>
+      <template v-else>
+        <aside class="side">
+          <SessionList v-if="rail === 'sessions'" :terminal="terminal" :project-id="currentProject" />
+          <FileTree v-else :project-id="currentProject" @open-file="openFile" />
+        </aside>
+        <section class="center">
+          <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" />
+        </section>
+      </template>
     </div>
 
     <WorkflowPanel v-if="showWf" :terminal="terminal" @close="showWf = false" />
