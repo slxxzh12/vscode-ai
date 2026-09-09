@@ -5,34 +5,79 @@ import crypto from 'node:crypto';
 import { CollabPeer } from '@devflow/shared/collab';
 import { CollabStore } from './store.js';
 import { loadIdentity, toPublicProfile } from './identity.js';
-import { signEnvelope, verifyEnvelope } from './sign.js';
+import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
 import { createOpenCodeRunner } from './remote-runner.js';
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, runner = null, logger = console }) {
+  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, runner = null, logger = console }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.events = events;
     this.peer = peer;              // { post(host, port, envelope) -> Promise<{ok, data?, error?}> }
-    this.skillsRoot = skillsRoot;  // 安装/本机技能根目录
-    this.inboxDir = inboxDir;      // 收到的 zip 落盘目录
+    this.skillDefaultRoot = skillsRoot;   // opencode 技能根（env 覆盖优先）
+    this.uploadDir = uploadDir;           // 发出的 zip 落盘目录
+    this.downloadDir = downloadDir || inboxDir;   // 收到的 zip 落盘目录（下载页目录）
     this.runner = runner || createOpenCodeRunner();
     this.log = logger;
     _extendChat(this);
   }
   get pub() { return toPublicProfile(this.identity); }
 
+  // 本机选定的开发工具 → 技能根目录（分发打包源 & 安装目标），默认 opencode
+  skillRoot() {
+    const t = this.store.getTool();
+    if (t.kind === 'custom' && t.customRoot) return path.resolve(t.customRoot);
+    if (t.kind === 'claudecode') return path.join(os.homedir(), '.claude', 'skills');
+    return this.skillDefaultRoot;
+  }
+  getToolInfo() { return { tool: this.store.getTool(), root: this.skillRoot() }; }
+  setTool(kind, customRoot) {
+    const k = kind === 'claudecode' || kind === 'custom' ? kind : 'opencode';
+    if (k === 'custom' && !(customRoot && typeof customRoot === 'string' && customRoot.trim())) return { code: 'need-custom-root' };
+    this.store.setTool({ kind: k, customRoot: k === 'custom' ? customRoot.trim() : null });
+    this._emit('synced', {});
+    return { code: 'ok', ...this.getToolInfo() };
+  }
+
   _emit(type, payload) { if (this.events) this.events.emit(type, payload); }
   _sign(type, payload) {
     return signEnvelope(this.identity.privateKey, type, this.pub, payload);
   }
-  async _post(host, port, env) {
+  async _post(host, port, env, headers = null) {
     if (!this.peer) { this.log?.warn?.('peer transport not configured'); return { ok: false, error: 'no-transport' }; }
-    try { return await this.peer.post(host, port, env); }
+    try { return await this.peer.post(host, port, env, headers); }
     catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  }
+  // 按公钥反查已知身份（好友 + 我所在的群成员），供接收方头部公钥鉴权
+  profileByPublicKey(pem) {
+    if (!pem) return null;
+    for (const f of this.store.listFriends()) if (f.publicKey === pem) return f;
+    for (const g of this.store.listGroups()) {
+      const m = g.members.find((x) => x.publicKey === pem);
+      if (m) return m;
+    }
+    return null;
+  }
+  // 文件凭证请求头：对文件 sha256 用本机私钥签名，并附带公钥（base64）供接收方查询
+  fileReceiptHeaders(data) {
+    const sha = crypto.createHash('sha256').update(data).digest('hex');
+    return {
+      'x-df-pub': Buffer.from(this.identity.publicKey, 'utf8').toString('base64'),
+      'x-df-sha': sha,
+      'x-df-sig': signHash(this.identity.privateKey, sha),
+    };
+  }
+  verifyFileReceipt(pubB64, sha, sig) {
+    let pub = null;
+    try { pub = pubB64 ? Buffer.from(pubB64, 'base64').toString('utf8') : null; } catch { pub = null; }
+    if (!pub || !sha || !sig) return { ok: false, error: 'missing-file-receipt' };
+    const prof = this.profileByPublicKey(pub);
+    if (!prof) return { ok: false, error: 'untrusted-pubkey' };
+    if (!verifyHash(pub, sha, sig)) return { ok: false, error: 'bad-sha-signature' };
+    return { ok: true, profile: prof };
   }
   // 返回 { ok, error?, data? }
   async handleIncoming(env) {
@@ -47,6 +92,7 @@ export class CollabEngine {
       case CollabPeer.GROUP_ACCEPT: return this._inGroupAccept(env);
       case CollabPeer.MEMBER_SYNC: return this._inMemberSync(env);
       case CollabPeer.SKILL_PUSH: return this._inSkillPush(env);
+      case CollabPeer.FILE_PUSH: return this._inFilePush(env);
       case CollabPeer.PULL_SYNC: return this._inPullSync(env);
       case CollabPeer.CHAT_SEND: return this._inChatSend(env);
       case CollabPeer.CMD_REQ: return this._inCmdReq(env);
@@ -207,12 +253,20 @@ export class CollabEngine {
     const me = g.members.find((m) => m.machineId === this.pub.machineId);
     if (!me) return { code: 'not-member', failures: [], pushed: 0 };
     const failures = [];
+    const packedOk = [];
     let pushed = 0;
     for (const skillName of skillNames) {
-      const skillDir = path.join(this.skillsRoot, skillName);
+      const skillDir = path.join(this.skillRoot(), skillName);
       let pkg;
       try { pkg = await packSkill(skillDir); } catch (e) { failures.push({ skillName, error: 'pack:' + (e && e.message) }); continue; }
       if (pkg.skillName !== skillName) { failures.push({ skillName, error: 'name-mismatch' }); continue; }
+      packedOk.push(skillName);
+      // 我发出的技能 zip 落 upload 目录（留档）
+      if (this.uploadDir) {
+        fs.mkdirSync(this.uploadDir, { recursive: true });
+        const artifact = path.join(this.uploadDir, `${skillName}-${Date.now().toString(36)}.zip`);
+        fs.writeFileSync(artifact, pkg.zip);
+        this.store.addOutbox({ id: crypto.randomUUID(), kind: 'skill', groupId, skillName, fileName: skillName, storedFile: path.basename(artifact), size: pkg.zip.length, hash: pkg.hash, createdAt: Date.now() });      }
       const env = this._sign(CollabPeer.SKILL_PUSH, {
         groupId, skillName, hash: pkg.hash, zipB64: pkg.zip.toString('base64'),
       });
@@ -228,8 +282,11 @@ export class CollabEngine {
         installed: existing ? existing.installed : true, // 发起者本机已有
       });
     }
+    if (packedOk.length) {
+      this._addSystemMessage(groupId, `已向群分发技能：${packedOk.join('、')}`);
+    }
     this._emit('synced', {});
-    return { code: 'ok', pushed, failures };
+    return { code: 'ok', pushed, failures, packed: packedOk };
   }
   async _inSkillPush(env) {
     const p = env.from;
@@ -244,10 +301,10 @@ export class CollabEngine {
     }
     const zip = Buffer.from(zipB64, 'base64');
     const itemId = crypto.randomUUID();
-    fs.mkdirSync(this.inboxDir, { recursive: true });
-    const zipPath = path.join(this.inboxDir, `${itemId}.zip`);
+    fs.mkdirSync(this.downloadDir, { recursive: true });
+    const zipPath = path.join(this.downloadDir, `${itemId}.zip`);
     fs.writeFileSync(zipPath, zip);
-    const item = { id: itemId, fromId: p.machineId, groupId, skillName, hash, size: zip.length, zipPath, status: 'received', receivedAt: Date.now() };
+    const item = { id: itemId, kind: 'skill', fromId: p.machineId, groupId, skillName, fileName: `${skillName}.zip`, hash, size: zip.length, zipPath, status: 'received', receivedAt: Date.now() };
     this.store.addInbox(item);
     const gs = this.store.findGroupSkill(groupId, skillName);
     this.store.upsertGroupSkill({
@@ -261,7 +318,7 @@ export class CollabEngine {
     const it = this.store.findInbox(itemId);
     if (!it || it.status !== 'received') return { code: it ? 'not-received' : 'not-found' };
     try {
-      installZip({ zip: fs.readFileSync(it.zipPath), skillName: it.skillName, destRoot: this.skillsRoot });
+      installZip({ zip: fs.readFileSync(it.zipPath), skillName: it.skillName, destRoot: this.skillRoot() });
     } catch (e) { this.store.setInboxStatus(itemId, 'invalid'); return { code: 'invalid', error: String(e && e.message || e) }; }
     this.store.setInboxStatus(itemId, 'installed');
     if (it.groupId) {
@@ -271,12 +328,76 @@ export class CollabEngine {
     this._emit('synced', {});
     return { code: 'installed' };
   }
+
+  // ---- 通用文件互传（群内）：上传方落 upload 目录并推送成员 ----
+  async sendFileToGroup(groupId, { fileName, data }) {
+    const name = path.basename(String(fileName || '')).trim();
+    if (!name || name === '.' || name === '..') return { code: 'bad-name', pushed: 0, failures: [] };
+    if (!Buffer.isBuffer(data) || data.length === 0) return { code: 'empty-file', pushed: 0, failures: [] };
+    if (data.length > 40 * 1024 * 1024) return { code: 'too-large', pushed: 0, failures: [] };
+    const r = this._requireMember(groupId);
+    if (r.code !== 'ok') return { code: r.code, pushed: 0, failures: [] };
+    const hash = crypto.createHash('sha256').update(data).digest('hex');
+    if (this.uploadDir) {
+      fs.mkdirSync(this.uploadDir, { recursive: true });
+      const artifact = path.join(this.uploadDir, `${crypto.randomUUID()}-${name}`);
+      fs.writeFileSync(artifact, data);
+      this.store.addOutbox({ id: crypto.randomUUID(), kind: 'file', groupId, skillName: null, fileName: name, storedFile: path.basename(artifact), size: data.length, hash, createdAt: Date.now() });
+    }
+    const env = this._sign(CollabPeer.FILE_PUSH, { groupId, fileName: name, hash, size: data.length, b64: data.toString('base64') });
+    const receipt = this.fileReceiptHeaders(data);
+    const failures = [];
+    let pushed = 0;
+    for (const m of r.group.members) {
+      if (m.machineId === this.pub.machineId) continue;
+      const res = await this._post(m.host, m.port, env, receipt);
+      if (res.ok) pushed++;
+      else failures.push({ machineId: m.machineId, error: res.error || 'push-failed' });
+    }
+    this._addSystemMessage(groupId, `已向群发送文件：${name}（${(data.length / 1024).toFixed(1)} KB）`);
+    this._emit('synced', {});
+    return { code: 'ok', pushed, failures };
+  }
+  async _inFilePush(env) {
+    const p = env.from;
+    const { groupId = null, fileName, hash, size, b64 } = env.payload;
+    if (!fileName || typeof b64 !== 'string' || !hash) return { ok: false, error: 'bad-payload' };
+    const known = this._knownProfile(p.machineId);
+    if (!known) return { ok: false, error: 'unknown-sender' };
+    if (groupId) {
+      const g = this.store.findGroup(groupId);
+      if (!g || !g.members.find((m) => m.machineId === p.machineId)) return { ok: false, error: 'not-in-group' };
+    }
+    const data = Buffer.from(b64, 'base64');
+    if (data.length === 0 || (size != null && size !== data.length)) return { ok: false, error: 'size-mismatch' };
+    if (crypto.createHash('sha256').update(data).digest('hex') !== hash) return { ok: false, error: 'hash-mismatch' };
+    const itemId = crypto.randomUUID();
+    fs.mkdirSync(this.downloadDir, { recursive: true });
+    const safeName = path.basename(String(fileName));
+    const stored = path.join(this.downloadDir, `${itemId}-${safeName}`);
+    fs.writeFileSync(stored, data);
+    const item = { id: itemId, kind: 'file', fromId: p.machineId, groupId, skillName: null, fileName: safeName, hash, size: data.length, zipPath: stored, status: 'received', receivedAt: Date.now() };
+    this.store.addInbox(item);
+    this._emit('inbox', { inboxId: item.id });
+    return { ok: true };
+  }
   async ignoreInbox(itemId) {
     const it = this.store.findInbox(itemId);
     if (!it) return { code: 'not-found' };
     this.store.setInboxStatus(itemId, 'ignored');
     this._emit('synced', {});
     return { code: 'ignored' };
+  }
+
+  // 群系统消息留痕：本机落库并广播给全体成员（各成员以本地 seq 入库）
+  _addSystemMessage(groupId, text) {
+    if (!groupId || !text) return;
+    const g = this.store.findGroup(groupId);
+    if (!g) return;
+    const msg = { id: crypto.randomUUID(), groupId, kind: 'system', fromId: this.pub.machineId, text, toId: null, ts: Date.now(), seq: this.store.nextChatSeq(), meta: null };
+    this.store.addChatMessage(msg);
+    this._broadcastChat(groupId, msg);
+    this._emit('chat', { groupId, msg });
   }
 
   // ---- pull ----
@@ -476,17 +597,19 @@ export async function createPairHarness({ skipSkills = false, dir = null } = {})
   async function makeNode(idx, name) {
     const nodeDir = path.join(base, name);
     const skillsRoot = path.join(nodeDir, 'skills');
-    const inboxDir = path.join(nodeDir, 'inbox');
-    fs.mkdirSync(inboxDir, { recursive: true });
+    const uploadDir = path.join(nodeDir, 'upload');
+    const downloadDir = path.join(nodeDir, 'download');
+    fs.mkdirSync(downloadDir, { recursive: true });
+    fs.mkdirSync(uploadDir, { recursive: true });
     if (!skipSkills) fs.mkdirSync(skillsRoot, { recursive: true });
     const store = new CollabStore({ file: path.join(nodeDir, 'collab.json') });
     const identity = loadIdentity({ file: path.join(nodeDir, 'identity.json'), username: name, host: '127.0.0.1', port: ports[idx] });
-    return { store, identity, skillsRoot, inboxDir };
+    return { store, identity, skillsRoot, uploadDir, downloadDir };
   }
   const A0 = await makeNode(0, 'alice');
   const B0 = await makeNode(1, 'bob');
-  const engA = new CollabEngine({ store: A0.store, identity: A0.identity, skillsRoot: A0.skillsRoot, inboxDir: A0.inboxDir });
-  const engB = new CollabEngine({ store: B0.store, identity: B0.identity, skillsRoot: B0.skillsRoot, inboxDir: B0.inboxDir });
+  const engA = new CollabEngine({ store: A0.store, identity: A0.identity, skillsRoot: A0.skillsRoot, uploadDir: A0.uploadDir, downloadDir: A0.downloadDir });
+  const engB = new CollabEngine({ store: B0.store, identity: B0.identity, skillsRoot: B0.skillsRoot, uploadDir: B0.uploadDir, downloadDir: B0.downloadDir });
   // 直连 transport：A 发的投给 B 的 handleIncoming，B 发的投给 A（忽略 host/port）
   const forward = async (eng, host, port, envelope) => {
     const r = await eng.handleIncoming(JSON.parse(JSON.stringify(envelope)));
@@ -496,6 +619,8 @@ export async function createPairHarness({ skipSkills = false, dir = null } = {})
   engB.peer = { post: (host, port, envelope) => forward(engA, host, port, envelope) };
   engA.engine = engA;   // 供测试 B.engine.handleIncoming 这类写法
   engB.engine = engB;
+  engA.skillsRoot = A0.skillsRoot;   // 兼容旧测试直接引用技能根
+  engB.skillsRoot = B0.skillsRoot;
   return {
     nodes: [engA, engB],   // 直接返回引擎：A.requestFriend / A.store / A.skillsRoot 均可用
     async stop() {},

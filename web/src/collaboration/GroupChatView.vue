@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import { filterMentions, parseComposer, splitAtCommand, highlightMentions } from './chat-parser';
@@ -18,6 +18,29 @@ const nameById = computed(() => {
   for (const m of group.value?.members ?? []) map[m.machineId] = m.username;
   return map;
 });
+
+const fileInput = ref<HTMLInputElement | null>(null);
+const fileSending = ref(false);
+const fileMsg = ref('');
+let fileMsgTimer: ReturnType<typeof setTimeout> | null = null;
+async function onFilePick(e: Event) {
+  const el = e.target as HTMLInputElement;
+  const f = el.files?.[0];
+  el.value = '';
+  if (!f) return;
+  fileMsg.value = '';
+  fileSending.value = true;
+  try {
+    await props.collab.sendGroupFile(props.groupId, f.name, f);
+    fileMsg.value = `已发送文件：${f.name}`;
+  } catch (err: any) {
+    fileMsg.value = `发送失败：${err?.message || err}`;
+  } finally {
+    fileSending.value = false;
+  }
+  if (fileMsgTimer) clearTimeout(fileMsgTimer);
+  fileMsgTimer = setTimeout(() => { fileMsg.value = ''; }, 4000);
+}
 
 const composer = ref('');
 const showMentions = ref(false);
@@ -67,6 +90,7 @@ function resultText(m: CollabChatMessage) {
 }
 
 watch(() => chat.value.messages.length, () => scrollBottom());
+onBeforeUnmount(() => { if (fileMsgTimer) clearTimeout(fileMsgTimer); });
 onMounted(async () => {
   await props.collab.chat(props.groupId).catch(() => {});
   await props.collab.loadPendingCmds().catch(() => {});
@@ -79,6 +103,9 @@ onMounted(async () => {
     <!-- 群聊工具条 -->
     <div class="tools">
       <button class="tool" :class="{ on: skillOpen }" title="把本机技能分发给该群所有成员" @click="skillOpen = !skillOpen">🛠 分发技能</button>
+      <button class="tool" :disabled="fileSending" title="把本机文件发送给该群所有成员（≤40MB）" @click="fileInput?.click()">{{ fileSending ? '发送中…' : '📎 发文件' }}</button>
+      <span v-if="fileMsg" class="filemsg">{{ fileMsg }}</span>
+      <input ref="fileInput" type="file" class="filepick" @change="onFilePick" />
     </div>
     <SkillDistributor v-if="skillOpen" :collab="collab" :group-id="props.groupId" />
 
@@ -126,6 +153,9 @@ onMounted(async () => {
 .tool { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
 .tool:hover { border-color: var(--ac); color: var(--ac); }
 .tool.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
+.tool:disabled { opacity: .55; cursor: default; }
+.filemsg { color: var(--ok); font-size: 12px; align-self: center; }
+.filepick { display: none; }
 .pend { background: color-mix(in srgb, var(--ac) 18%, transparent); border: 1px solid var(--ac); border-radius: 6px; margin: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; }
 .pend-txt { flex: 1; color: var(--tx1); }
 .pend code { color: var(--warn2); }

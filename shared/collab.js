@@ -14,6 +14,7 @@ export const CollabPeer = Object.freeze({
   GROUP_ACCEPT: 'group-accept',
   MEMBER_SYNC: 'member-sync',
   SKILL_PUSH: 'skill-push',
+  FILE_PUSH: 'file-push',
   PULL_SYNC: 'pull-sync',
   CHAT_SEND: 'chat-send',
   CMD_REQ: 'cmd-req',

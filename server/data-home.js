@@ -21,6 +21,17 @@ export function collabDir() {
   fs.mkdirSync(d, { recursive: true });
   return d;
 }
+// 我发出的文件/技能 zip 落 upload；收到的落 download（下载页/收件箱展示同目录）
+export function uploadDir() {
+  const d = path.join(dataHome(), 'upload');
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
+export function downloadDir() {
+  const d = path.join(dataHome(), 'download');
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
 // 老版本把数据写在仓库 server/ 里；首次启动时若新位置没有、旧文件存在则迁移过去
 export function seedFromLegacy(target, legacySource) {
   if (!fs.existsSync(target) && fs.existsSync(legacySource)) {

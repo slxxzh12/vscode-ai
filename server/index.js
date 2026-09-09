@@ -37,7 +37,7 @@ const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: l
 const requireAuthWs = () => true; // TODO(安全): 接入 Token 后校验 ws 握手
 
 // ---- 协作子系统（隔离目录 server/collaboration/**，数据存用户数据目录）----
-import { collabDir, seedFromLegacy } from './data-home.js';
+import { collabDir, uploadDir, downloadDir, seedFromLegacy } from './data-home.js';
 const COLLAB_DIR = collabDir();
 seedFromLegacy(path.join(COLLAB_DIR, 'identity.json'), path.join(__dirname, 'collaboration', 'identity.json'));
 seedFromLegacy(path.join(COLLAB_DIR, 'collab.json'), path.join(__dirname, 'collaboration', 'collab.json'));
@@ -56,7 +56,8 @@ const collabEngine = new CollabEngine({
   store: new CollabStore({ file: path.join(COLLAB_DIR, 'collab.json'), logger: log }),
   identity: collabIdentity,
   skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(os.homedir(), '.config', 'opencode', 'skills'),
-  inboxDir: path.join(COLLAB_DIR, 'inbox'),
+  uploadDir: uploadDir(),
+  downloadDir: downloadDir(),
   events: collabEventBus,
   logger: log,
 });

@@ -2,11 +2,12 @@ const TIMEOUT_MS = 10000;
 
 export function makePeerClient({ timeoutMs = TIMEOUT_MS } = {}) {
   return {
-    async post(host, port, envelope) {
+    async post(host, port, envelope, extraHeaders = null) {
       const url = `http://${host}:${port}/api/collab/peer`;
+      const headers = { 'Content-Type': 'application/json', ...(extraHeaders || {}) };
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(envelope),
         signal: AbortSignal.timeout(timeoutMs),
       });

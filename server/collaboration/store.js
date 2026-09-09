@@ -8,8 +8,10 @@ export function defaultData() {
     pendingFriends: [],  // 待确认好友请求（对方 profile + requestedAt）
     groups: [],          // { id, name, ownerId, members:[profile+role], createdAt }
     pendingInvites: [],  // { id, groupId, groupName, inviter: profile, receivedAt }
-    skillsInbox: [],     // { id, fromId, groupId|null, skillName, hash, size, zipPath, status, receivedAt }
+    skillsInbox: [],     // { id, kind:'skill'|'file', fromId, groupId|null, skillName|null, fileName|null, hash, size, zipPath, status, receivedAt }
     groupSkills: [],     // { groupId, skillName, hash, distributedBy, installed }
+    outbox: [],          // 我发出的传输记录 { id, kind, groupId, skillName|null, fileName|null, size, hash, createdAt }
+    tool: { kind: 'opencode', customRoot: null },  // 我的开发工具：opencode | claudecode | custom(customRoot)
     chatSeq: 0,          // 本机全局单调消息序号
     chatMessages: [],    // { id, groupId, kind, fromId, text, toId, meta, ts, seq }
     pendingCmds: [],     // { id(reqId), groupId, fromId, text, receivedAt }
@@ -91,6 +93,20 @@ export class CollabStore {
     return it;
   }
   removeInbox(id) { this.data.skillsInbox = this.data.skillsInbox.filter((x) => x.id !== id); this.save(); }
+
+  // outbox（我发出的传输记录）
+  listOutbox() { return this.data.outbox; }
+  addOutbox(rec) {
+    this.data.outbox.unshift(rec);
+    const cap = 200;
+    if (this.data.outbox.length > cap) this.data.outbox.length = cap;
+    this.save();
+    return rec;
+  }
+
+  // 我的开发工具
+  getTool() { return this.data.tool || { kind: 'opencode', customRoot: null }; }
+  setTool(tool) { this.data.tool = { kind: 'opencode', customRoot: null, ...tool }; this.save(); return this.data.tool; }
 
   // group skills
   listGroupSkills(groupId = null) {

@@ -94,6 +94,19 @@ export function useCollab() {
     acceptInvite: (inviteId: string) => post(`/api/collab/invites/${inviteId}/accept`),
     rejectInvite: (inviteId: string) => post(`/api/collab/invites/${inviteId}/reject`),
     listSkills: () => http<{ skills: { name: string }[] }>('/api/collab/skills'),
+    async sendGroupFile(groupId: string, fileName: string, blob: Blob) {
+      if (blob.size > 40 * 1024 * 1024) throw new Error('文件超过 40MB 上限');
+      const res = await fetch(`/api/collab/groups/${groupId}/files?name=${encodeURIComponent(fileName)}`, { method: 'POST', body: blob });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep */ }
+        throw new Error(msg);
+      }
+      return res.json();
+    },
+    getTool: () => http<{ tool: { kind: 'opencode' | 'claudecode' | 'custom'; customRoot: string | null }; root: string }>('/api/collab/tool'),
+    setTool: (kind: string, customRoot?: string | null) => post<{ code: string; root: string }>('/api/collab/tool', { kind, customRoot: customRoot ?? null }),
+    getDirs: () => http<{ upload: string | null; download: string | null }>('/api/collab/dirs'),
     distributeToGroup: (groupId: string, skillNames: string[]) => post(`/api/collab/groups/${groupId}/distribute`, { skillNames }),
     installInbox: (id: string) => post(`/api/collab/inbox/${id}/install`),
     ignoreInbox: (id: string) => post(`/api/collab/inbox/${id}/ignore`),

@@ -2,7 +2,7 @@ export interface CollabProfile { machineId: string; username: string; host: stri
 export interface CollabFriend extends CollabProfile { addedAt?: number; }
 export interface CollabMember extends CollabProfile { role: 'owner' | 'admin' | 'member'; }
 export interface CollabGroup { id: string; name: string; ownerId: string | null; createdAt: number; members: CollabMember[]; }
-export interface CollabInboxItem { id: string; fromId: string; groupId: string | null; skillName: string; hash: string; size: number; status: 'received' | 'installed' | 'ignored' | 'invalid'; receivedAt: number; }
+export interface CollabInboxItem { id: string; fromId: string; groupId: string | null; kind?: 'skill' | 'file'; skillName: string | null; fileName?: string | null; hash: string; size: number; status: 'received' | 'installed' | 'ignored' | 'invalid'; receivedAt: number; }
 export interface CollabGroupSkill { groupId: string; skillName: string; hash: string; distributedBy: string; installed: boolean; }
 export interface CollabPendingFriend extends CollabProfile { requestedAt?: number; }
 export interface CollabInvite { id: string; groupId: string; groupName: string; inviter: CollabProfile; receivedAt?: number; }

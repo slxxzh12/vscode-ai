@@ -16,7 +16,7 @@ const tab = ref<CollabTab>('friends');
 const tabs = [
   { id: 'friends' as const, label: '好友' },
   { id: 'groups' as const, label: '群组' },
-  { id: 'inbox' as const, label: '收件箱' },
+  { id: 'inbox' as const, label: '下载' },
 ];
 const pendingCount = computed(() => snap.value.pendingFriends.length + snap.value.pendingInvites.length + snap.value.skillsInbox.filter((i) => i.status === 'received').length);
 
