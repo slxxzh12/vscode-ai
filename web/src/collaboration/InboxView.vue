@@ -39,7 +39,7 @@ function fmtSize(n: number) { return n > 1024 ? `${(n / 1024).toFixed(1)} KB` : 
 </template>
 
 <style scoped>
-.ib { padding: 14px; }
+.ib { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
 .warn { background: var(--warnbg); color: var(--warn); border: 1px solid var(--bd); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
 .item { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--bd2); padding: 8px 4px; }
 .info { flex: 1; }

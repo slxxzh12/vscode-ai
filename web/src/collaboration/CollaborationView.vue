@@ -69,5 +69,5 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
 .idbar { margin-left: auto; color: var(--tx2); font-size: 12px; display: flex; align-items: center; gap: 6px; }
 .fp { color: var(--tx6); font-family: monospace; font-size: 11px; }
 .err { color: var(--err); font-size: 12px; }
-.body { flex: 1; min-height: 0; overflow: auto; }
+.body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 </style>
