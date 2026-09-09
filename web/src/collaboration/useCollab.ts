@@ -111,6 +111,7 @@ export function useCollab() {
     installInbox: (id: string) => post(`/api/collab/inbox/${id}/install`),
     ignoreInbox: (id: string) => post(`/api/collab/inbox/${id}/ignore`),
     async removeInbox(id: string) { await http(`/api/collab/inbox/${id}`, { method: 'DELETE' }); return refresh(); },
+    async removeOutTask(id: string) { await http(`/api/collab/outbox/${id}`, { method: 'DELETE' }); return refresh(); },
   };
 }
 

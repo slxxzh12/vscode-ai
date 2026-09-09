@@ -103,6 +103,7 @@ export class CollabStore {
     this.save();
     return rec;
   }
+  removeOutbox(id) { this.data.outbox = this.data.outbox.filter((x) => x.id !== id); this.save(); }
 
   // 我的开发工具
   getTool() { return this.data.tool || { kind: 'opencode', customRoot: null }; }
