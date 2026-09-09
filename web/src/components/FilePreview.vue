@@ -49,8 +49,8 @@ const isMd = computed(() => isMarkdownFile(props.name));
 const isHtmlFile = computed(() => ['html', 'htm'].includes(ext.value));
 const hasPreviewToggle = computed(() => isMd.value || isHtmlFile.value);
 const canMinify = computed(() => ['js', 'mjs', 'cjs', 'jsx', 'json'].includes(ext.value) && kind.value === 'text');
-const canSort = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value);
-const canB64 = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value);
+const canSort = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value && !isBinary.value);
+const canB64 = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value && !isBinary.value);
 const RUN_EXT = new Set(['bat', 'cmd', 'ps1', 'sh']);
 const canRun = computed(() => RUN_EXT.has(ext.value) && kind.value === 'text' && status.value === 'ok');
 const canCurl = computed(() => kind.value === 'text' && status.value === 'ok' && /\bcurl\b/.test(raw.value || ''));
@@ -620,6 +620,13 @@ onBeforeUnmount(() => {
       <div v-if="status === 'loading'" class="note">加载中…</div>
       <div v-else-if="status === 'error'" class="note err">打开失败：{{ errMsg }}</div>
       <template v-else>
+        <div v-if="isBinary" class="binwrap">
+          <div class="binic">🚫</div>
+          <div class="bintxt">此文件为二进制格式，不支持网页预览</div>
+          <div class="binpath mono" :title="fileAbs" @click="revealInExplorer()">{{ fileAbs }}</div>
+          <button class="fmt-btn binbtn" @click="revealInExplorer()">📂 在资源管理器中定位</button>
+        </div>
+        <template v-else>
         <div v-show="viewMode === 'preview'" class="pane">
           <div v-if="isMd" class="scroll">
             <div v-if="mdErr" class="note err">{{ mdErr }}</div>
@@ -668,6 +675,7 @@ onBeforeUnmount(() => {
           <div v-if="respStatus !== null" class="cpstat">HTTP {{ respStatus }}</div>
           <pre v-if="respText" class="cpre">{{ respText }}</pre>
         </div>
+        </template>
       </template>
     </template>
 
@@ -788,4 +796,10 @@ onBeforeUnmount(() => {
 .st.saveerr { color: var(--errtx); cursor: pointer; }
 .st.toolmsg { color: var(--tx2); }
 .st.toolmsg.err { color: var(--errtx); }
+.binwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; }
+.binic { font-size: 42px; line-height: 1; opacity: .5; }
+.bintxt { color: var(--tx3); font-size: 13px; }
+.binpath { color: var(--ac2); font-family: ui-monospace, Consolas, monospace; font-size: 12px; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-decoration: underline dotted; }
+.binpath:hover { color: var(--ac); }
+.binbtn { padding: 4px 14px; font-size: 12px; }
 </style>
