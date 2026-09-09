@@ -581,9 +581,6 @@ onBeforeUnmount(() => {
       <div class="head">
         <span class="meta">{{ name }}<template v-if="status === 'ok'"> · {{ (size / 1024).toFixed(1) }} KB</template></span>
         <div class="right">
-          <span v-if="saveState === 'saving'" class="save saveing">保存中…</span>
-          <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ saveMsg }} 已保存</span>
-          <span v-else-if="saveState === 'error'" class="save saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
           <button v-if="canFormat && showEditor" class="fmt-btn" title="格式化代码" @click="formatDoc">⇥ 格式化</button>
           <button v-if="canMinify && showEditor && status === 'ok'" class="fmt-btn" :disabled="minifying" title="压缩成一行（js/json）" @click="minifyOneLine">{{ minifying ? '压缩中…' : '⇣ 压成一行' }}</button>
           <span v-if="canSort" class="sortwrap">
@@ -703,12 +700,6 @@ onBeforeUnmount(() => {
 .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 2px 10px; border-bottom: 1px solid var(--bd2); }
 .meta { color: var(--tx3); font-size: 11px; }
 .right { display: flex; align-items: center; gap: 10px; }
-.save { font-size: 11px; }
-.saveok { color: var(--ok); }
-.saveing { color: var(--warn); }
-.saveerr { color: var(--errtx); cursor: pointer; }
-.fmtmsg { color: var(--tx3); }
-.fmtmsg.ok { color: var(--ok); }
 .fmt-btn { background: transparent; border: 1px solid var(--bd); color: var(--tx3); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-family: inherit; }
 .fmt-btn:hover { border-color: var(--ac2); color: var(--tx1); }
 .fmt-btn { background: none; border: 1px solid var(--bd); color: var(--tx2); font-size: 11px; padding: 1px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
@@ -719,7 +710,6 @@ onBeforeUnmount(() => {
 .sortmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 210px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 4px; display: flex; flex-direction: column; }
 .sortmenu button { text-align: left; background: none; border: none; color: var(--tx); padding: 6px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; font-family: inherit; }
 .sortmenu button:hover { background: var(--ac); color: var(--onac); }
-.runmsg { color: var(--ok); }
 .run-btn { color: var(--ok); border-color: var(--ok); }
 .curlpanel { position: absolute; top: 34px; right: 10px; bottom: 10px; width: 480px; z-index: 80; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.4); display: flex; flex-direction: column; overflow: hidden; }
 .cph { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg4); color: var(--tx1); font-weight: 600; }
