@@ -4,18 +4,16 @@ import { CollabS2C } from '@devflow/shared/collab';
 import { useCollab } from './useCollab';
 import { EMPTY_SNAPSHOT } from './types';
 import type { useTerminal } from '../useTerminal';
-import FriendsView from './FriendsView.vue';
-import GroupsView from './GroupsView.vue';
+import ContactsView from './ContactsView.vue';
 import InboxView from './InboxView.vue';
 
-type CollabTab = 'friends' | 'groups' | 'inbox';
+type CollabTab = 'contacts' | 'inbox';
 const props = defineProps<{ terminal: ReturnType<typeof useTerminal> }>();
 const collab = useCollab();
 const snap = computed(() => collab.state.value ?? EMPTY_SNAPSHOT);
-const tab = ref<CollabTab>('friends');
+const tab = ref<CollabTab>('contacts');
 const tabs = [
-  { id: 'friends' as const, label: '好友' },
-  { id: 'groups' as const, label: '群组' },
+  { id: 'contacts' as const, label: '联系人' },
   { id: 'inbox' as const, label: '下载' },
 ];
 const pendingCount = computed(() => snap.value.pendingFriends.length + snap.value.pendingInvites.length + snap.value.skillsInbox.filter((i) => i.status === 'received').length);
@@ -41,7 +39,7 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
       <span class="title">👥 通讯录</span>
       <nav class="tabs">
         <button v-for="t in tabs" :key="t.id" class="tab" :class="{ on: tab === t.id }" @click="tab = t.id">
-          {{ t.label }}<span v-if="t.id === 'friends' && pendingCount" class="badge">{{ pendingCount }}</span>
+          {{ t.label }}<span v-if="t.id === 'contacts' && pendingCount" class="badge">{{ pendingCount }}</span>
         </button>
       </nav>
       <div class="idbar" v-if="snap.identity.machineId">
@@ -51,8 +49,7 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
       <span v-if="collab.lastError" class="err">{{ collab.lastError }}</span>
     </header>
     <section class="body">
-      <FriendsView v-if="tab === 'friends'" :collab="collab" />
-      <GroupsView v-else-if="tab === 'groups'" :collab="collab" />
+      <ContactsView v-if="tab === 'contacts'" :collab="collab" />
       <InboxView v-else :collab="collab" />
     </section>
   </div>
