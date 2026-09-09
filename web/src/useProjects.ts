@@ -1,6 +1,8 @@
 import type { ProjectInfo, TreeItem } from '@devflow/shared';
 
 export interface FileText { name: string; path: string; size: number; content: string; mtime?: number; abs?: string; }
+export interface FileMeta { name: string; path: string; abs: string; size: number; mtime: number; isDir: boolean; }
+export interface FileHashes { md5: string; sha256: string; }
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -94,6 +96,12 @@ export function useProjects() {
     },
     rawUrl(project: string, rel: string): string {
       return `/api/raw?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`;
+    },
+    async fileMeta(project: string, rel: string): Promise<FileMeta> {
+      return get<FileMeta>(`/api/file/meta?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`);
+    },
+    async fileHash(project: string, rel: string): Promise<FileHashes> {
+      return get<FileHashes>(`/api/file/hash?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`);
     },
   };
 }
