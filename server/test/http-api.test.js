@@ -196,3 +196,42 @@ test('/api/format 非法 JSON/不支持类型返回 400', async (t) => {
   const unsupported = await post(server, '/api/format', { name: 'a.txt', content: 'x' });
   assert.equal(unsupported.status, 400);
 });
+
+test('/api/file/meta 返回文件字段（含绝对路径）', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'm.txt'), 'hello');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/file/meta?project=a&path=m.txt');
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.equal(j.name, 'm.txt');
+  assert.equal(j.path, 'm.txt');
+  assert.equal(j.size, 5);
+  assert.equal(typeof j.mtime, 'number');
+  assert.equal(j.isDir, false);
+  assert.equal(path.resolve(j.abs), path.join(dir, 'm.txt'));
+});
+
+test('/api/file/meta 目录也返回（size 为目录 stat）', async (t) => {
+  const dir = tmpDir();
+  fs.mkdirSync(path.join(dir, 'sub'));
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/file/meta?project=a&path=sub');
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.equal(j.name, 'sub');
+  assert.equal(j.isDir, true);
+  assert.equal(typeof j.size, 'number');
+});
+
+test('/api/file/meta 越界 403、不存在 404', async (t) => {
+  const dir = tmpDir();
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const esc = await request(server, '/api/file/meta?project=a&path=..%2F..%2F..');
+  assert.equal(esc.status, 403);
+  const miss = await request(server, '/api/file/meta?project=a&path=nope.txt');
+  assert.equal(miss.status, 404);
+});

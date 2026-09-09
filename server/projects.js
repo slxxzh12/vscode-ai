@@ -73,6 +73,12 @@ export class Projects {
     }
     return { abs: real, name: path.basename(real), isDir: fs.statSync(real).isDirectory() };
   }
+  // 供详细信息用：解析到项目内已存在路径（文件或目录均可），返回 stat 概要，不读内容
+  meta(projectId, rel) {
+    const { abs, name, isDir } = this.revealTarget(projectId, rel);
+    const st = fs.statSync(abs);
+    return { name, path: rel, abs, size: st.size, mtime: st.mtimeMs, isDir };
+  }
   readText(projectId, rel, maxBytes = 1024 * 1024) {
     const file = this._filePath(projectId, rel);
     const st = fs.statSync(file);

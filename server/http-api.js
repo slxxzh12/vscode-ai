@@ -132,6 +132,12 @@ export function createHttpApi({ projects }) {
         sendJson(res, 200, f);
         return;
       }
+      if (url.pathname === '/api/file/meta' && req.method === 'GET') {
+        const project = url.searchParams.get('project');
+        const rel = url.searchParams.get('path') || '';
+        sendJson(res, 200, projects.meta(project, rel));
+        return;
+      }
       if (url.pathname === '/api/format' && req.method === 'POST') {
         const body = await readJsonBody(req);
         const name = String(body.name || '');
