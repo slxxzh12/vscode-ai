@@ -1,6 +1,6 @@
 import type { ProjectInfo, TreeItem } from '@devflow/shared';
 
-export interface FileText { name: string; path: string; size: number; content: string; mtime?: number; abs?: string; }
+export interface FileText { name: string; path: string; size: number; content: string; mtime?: number; abs?: string; binary?: boolean; }
 export interface FileMeta { name: string; path: string; abs: string; size: number; mtime: number; isDir: boolean; }
 export interface FileHashes { md5: string; sha256: string; }
 

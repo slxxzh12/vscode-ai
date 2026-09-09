@@ -32,7 +32,7 @@ import { isMarkdownFile, renderMarkdown, renderMermaid } from '../markdown';
 import { parseCurl, type CurlRequest } from '../curl';
 
 const props = defineProps<{ projectId: string; path: string; name: string; detailToken?: number; detailPath?: string }>();
-const { text, write, rawUrl, format, runScript, fileMeta, fileHash } = useProjects();
+const { text, write, rawUrl, format, runScript, fileMeta, fileHash, reveal } = useProjects();
 const { isDark } = useTheme();
 
 const IMG = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
@@ -116,6 +116,17 @@ function setToolMsg(text: string, ok = true) {
   toolOk.value = ok;
 }
 
+// —— 二进制文件：不支持网页预览 ——
+const isBinary = ref(false);
+async function revealInExplorer() {
+  try {
+    await reveal(props.projectId, props.path);
+    setToolMsg('✓ 已在系统资源管理器中定位该文件');
+  } catch (e: any) {
+    setToolMsg(`无法在系统资源管理器中打开：${e?.message || e}`, false);
+  }
+}
+
 function nowTime() {
   return new Date().toLocaleTimeString('zh-CN', { hour12: false });
 }
@@ -197,6 +208,7 @@ function requestMeasure() {
 
 async function load() {
   toolMsg.value = '';
+  isBinary.value = false;
   resetB64Panel();
   closeDetail();
   status.value = 'loading';
@@ -206,8 +218,12 @@ async function load() {
     size.value = f.size;
     fileAbs.value = f.abs || '';
     fileMtime.value = f.mtime || 0;
-    raw.value = f.content;
     status.value = 'ok';
+    if (f.binary === true) {
+      isBinary.value = true;
+      return;
+    }
+    raw.value = f.content;
     if (kind.value === 'text' && showEditor.value) {
       await nextTick();
       mountEditor(f.content);
