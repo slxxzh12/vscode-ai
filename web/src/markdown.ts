@@ -112,6 +112,8 @@ export async function renderMermaid(container: HTMLElement): Promise<void> {
     const id = `df-mm-${Date.now().toString(36)}-${seq++}`;
     try {
       const { svg } = await mm.render(id, code);
+      const holder = document.getElementById(id);
+      if (holder) holder.remove();
       pre.outerHTML = svg;
     } catch (e) {
       pre.innerHTML = `<div class="mermaid-err">Mermaid 渲染失败：${escHtml(String((e as Error)?.message || e))}</div>`;
