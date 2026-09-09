@@ -39,3 +39,21 @@ export function seedFromLegacy(target, legacySource) {
     fs.copyFileSync(legacySource, target);
   }
 }
+
+// ---- 多实例（同机模拟集群）：DEVFLOW_NODE 指定实例，状态按该实例公钥指纹隔离 ----
+// identity 存在 <root>/nodes/<实例名>/identity.json（按名字引导）；其余状态全部落到
+// <root>/nodes/<公钥指纹16hex>/ 下，同实例稳定、不同实例/不同密钥天然隔离。
+export function instanceName() {
+  const n = (process.env.DEVFLOW_NODE || '').trim();
+  return n === '' || n === 'default' ? '' : n;
+}
+export function instanceSeedDir(name) {
+  const d = path.join(dataHome(), 'nodes', name);
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
+export function instanceFpRoot(fp) {
+  const d = path.join(dataHome(), 'nodes', fp);
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
