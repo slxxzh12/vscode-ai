@@ -979,6 +979,31 @@ test('建群+邀请+接受+成员广播', async () => {
   } finally { await h.stop(); }
 });
 
+test('角色规则：owner 占 1 管理位；第 2~5 位入群自动为 admin；admin 只能踢 member，owner 可踢任何人', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    await A.requestFriend({ host: B.pub.host, port: B.pub.port });
+    await B.acceptFriend(A.pub.machineId);
+    const g = await A.createGroup('team');
+    // B 是第 2 位（owner 之后第 1 位）→ 应为 admin
+    await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
+    await B.acceptInvite(B.store.listPendingInvites()[0].id);
+    let gA = A.store.findGroup(g.id);
+    const bRole = gA.members.find((m) => m.machineId === B.pub.machineId).role;
+    assert.equal(bRole, 'admin', '第 2 位入群者应为 admin');
+    // B(admin) 踢 A(owner) 应被拒
+    const badKick = await B.kickMember({ groupId: g.id, targetMachineId: A.pub.machineId });
+    assert.equal(badKick.code, 'forbidden', 'admin 不能踢 owner');
+    // A(owner) 踢 B(admin) 应成功；B 本地收到 MEMBER_SYNC 后群应移除
+    const okKick = await A.kickMember({ groupId: g.id, targetMachineId: B.pub.machineId });
+    assert.equal(okKick.code, 'kicked', JSON.stringify(okKick));
+    gA = A.store.findGroup(g.id);
+    assert.equal(gA.members.find((m) => m.machineId === B.pub.machineId), undefined, 'A 群不再含 B');
+    assert.equal(B.store.findGroup(g.id), null, 'B 本地群已退出');
+  } finally { await h.stop(); }
+});
+
 test('群内分发 skill → 对方 inbox → 安装', async () => {
   const h = await createPairHarness({ skipSkills: false });
   try {
@@ -1159,13 +1184,18 @@ export class CollabEngine {
     this._emit('synced', {});
     return { code: 'accepted' };
   }
+  // 入群者自动角色：管理位共 5 个（owner 占 1），owner 之后按入群先后自动把前 4 位置为 admin，其余为 member
+  _assignRole(g) {
+    const adminCount = g.members.filter((m) => m.role === 'owner' || m.role === 'admin').length;
+    return adminCount < 5 ? 'admin' : 'member';
+  }
   async _inGroupAccept(env) {
     const p = env.from;
     const groupId = env.payload.groupId;
     const g = this.store.findGroup(groupId);
     if (!g) return { ok: true };
     if (!g.members.find((m) => m.machineId === p.machineId)) {
-      g.members.push({ ...p, role: 'member' });
+      g.members.push({ ...p, role: this._assignRole(g) });
       this.store.saveGroup(g);
     }
     // 广播全量成员表给所有成员（await，保证发起方应答前对方已收到同步）
@@ -1183,9 +1213,33 @@ export class CollabEngine {
   _inMemberSync(env) {
     const group = env.payload.group;
     if (!group || !group.id) return { ok: false, error: 'bad-group' };
+    // 我已不在成员表 → 被移出/解散，本地删除群
+    if (!(group.members || []).find((m) => m.machineId === this.pub.machineId)) {
+      this.store.removeGroup(group.id);
+      this._emit('synced', {});
+      return { ok: true };
+    }
     this.store.upsertGroup(group);
     this._emit('synced', {});
     return { ok: true };
+  }
+  // 踢人：owner 可踢任何人（含 admin）；admin 只能踢 member；member 无权
+  async kickMember({ groupId, targetMachineId }) {
+    const g = this.store.findGroup(groupId);
+    const me = g && g.members.find((m) => m.machineId === this.pub.machineId);
+    const target = g && g.members.find((m) => m.machineId === targetMachineId);
+    if (!g || !me) return { code: 'not-member' };
+    if (!target) return { code: 'no-target' };
+    if (me.role !== 'owner' && me.role !== 'admin') return { code: 'forbidden' };
+    if (me.role === 'admin' && target.role !== 'member') return { code: 'forbidden' };
+    g.members = g.members.filter((m) => m.machineId !== targetMachineId);
+    this.store.saveGroup(g);
+    // 通知被踢者（其收到后因不在成员表会删本地群）
+    await this._post(target.host, target.port, this._sign(CollabPeer.MEMBER_SYNC, { group: g }));
+    // 同步其余成员
+    await this._broadcastMemberSync(g);
+    this._emit('synced', {});
+    return { code: 'kicked' };
   }
 
   // ---- skill 分发 ----
@@ -1548,6 +1602,7 @@ export function createCollabMount({ engine, logger = console }) {
       // groups
       if (seg[0] === 'groups' && m === 'POST') { const g = await engine.createGroup(body.name); return ok(res, { group: g }); }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'invite' && m === 'POST') { const r = await engine.inviteMember({ groupId: seg[1], targetMachineId: body.machineId }); return ok(res, r); }
+      if (seg[0] === 'groups' && seg.length === 5 && seg[2] === 'members' && seg[4] === 'kick' && m === 'POST') { const r = await engine.kickMember({ groupId: seg[1], targetMachineId: seg[3] }); return ok(res, r); }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'distribute' && m === 'POST') { const r = await engine.distributeToGroup(seg[1], body.skillNames || []); return ok(res, r); }
       if (seg[0] === 'groups' && seg.length === 2 && m === 'DELETE') { engine.store.removeGroup(seg[1]); return ok(res, {}); }
       // invites
