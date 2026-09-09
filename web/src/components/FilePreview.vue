@@ -27,12 +27,12 @@ import { swift } from '@codemirror/legacy-modes/mode/swift';
 import { ruby } from '@codemirror/legacy-modes/mode/ruby';
 import { perl } from '@codemirror/legacy-modes/mode/perl';
 import '../styles/markdown.css';
-import { useProjects } from '../useProjects';
+import { useProjects, type FileMeta } from '../useProjects';
 import { isMarkdownFile, renderMarkdown, renderMermaid } from '../markdown';
 import { parseCurl, type CurlRequest } from '../curl';
 
-const props = defineProps<{ projectId: string; path: string; name: string }>();
-const { text, write, rawUrl, format, runScript } = useProjects();
+const props = defineProps<{ projectId: string; path: string; name: string; detailToken?: number; detailPath?: string }>();
+const { text, write, rawUrl, format, runScript, fileMeta, fileHash } = useProjects();
 const { isDark } = useTheme();
 
 const IMG = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
@@ -93,7 +93,6 @@ const raw = ref('');
 const size = ref(0);
 const fileAbs = ref('');
 const fileMtime = ref(0);
-const detailOpen = ref(false);
 const mdHtml = ref('');
 const mdErr = ref('');
 const mdBodyRef = ref<HTMLDivElement | null>(null);
@@ -190,6 +189,7 @@ function requestMeasure() {
 
 async function load() {
   resetB64Panel();
+  closeDetail();
   status.value = 'loading';
   errMsg.value = '';
   try {
@@ -375,6 +375,66 @@ function resetB64Panel() {
   b64DecodeErr.value = '';
 }
 
+// —— 文件详细信息 ——
+const HASH_WARN = 50 * 1024 * 1024;
+const detailOpen = ref(false);
+const detail = ref<FileMeta | null>(null);
+const detailErr = ref('');
+const hashing = ref(false);
+const hashMd5 = ref('');
+const hashSha256 = ref('');
+const hashErr = ref('');
+const kindLabel = computed(() => ({ image: '图片', pdf: 'PDF', text: '文本' })[kind.value] || '文件');
+let seenDetail = -1;
+async function openDetail() {
+  detailErr.value = '';
+  detail.value = null;
+  hashMd5.value = '';
+  hashSha256.value = '';
+  hashErr.value = '';
+  try {
+    detail.value = await fileMeta(props.projectId, props.path);
+  } catch (e: any) {
+    detailErr.value = String(e?.message || e);
+  }
+}
+function toggleDetail(force?: boolean) {
+  detailOpen.value = force ?? !detailOpen.value;
+  if (detailOpen.value && status.value === 'ok') openDetail();
+}
+function closeDetail() {
+  detailOpen.value = false;
+  detail.value = null;
+  detailErr.value = '';
+  hashMd5.value = '';
+  hashSha256.value = '';
+  hashErr.value = '';
+}
+async function computeHash() {
+  if (!detail.value || hashing.value) return;
+  if (detail.value.size > HASH_WARN) {
+    const ok = window.confirm(`文件较大（${fmtBytes(detail.value.size)}），计算 MD5/SHA256 可能需要一段时间，是否继续？`);
+    if (!ok) return;
+  }
+  hashing.value = true;
+  hashErr.value = '';
+  try {
+    const h = await fileHash(props.projectId, props.path);
+    hashMd5.value = h.md5;
+    hashSha256.value = h.sha256;
+  } catch (e: any) {
+    hashErr.value = `计算失败：${e?.message || e}`;
+  } finally {
+    hashing.value = false;
+  }
+}
+watch(() => props.detailToken, (tk) => {
+  if (tk && tk !== seenDetail && props.detailPath === props.path) {
+    seenDetail = tk;
+    if (!detailOpen.value) toggleDetail(true);
+  }
+}, { immediate: true });
+
 // —— 运行脚本（bat/cmd/ps1/sh）——
 const runMsg = ref('');
 let runTimer: ReturnType<typeof setTimeout> | null = null;
@@ -525,6 +585,7 @@ onBeforeUnmount(() => {
           <span v-if="canB64" class="b64wrap">
             <button class="fmt-btn" :class="{ on: b64Open }" title="打开/关闭 Base64 编解码结果面板（编辑器下方）" @click="toggleB64">⇆ Base64</button>
           </span>
+          <button v-if="status === 'ok'" class="fmt-btn" :class="{ on: detailOpen }" title="文件详细信息" @click="toggleDetail()">ⓘ 详细信息</button>
           <span v-if="runMsg" class="save runmsg">{{ runMsg }}</span>
           <button v-if="canRun" class="fmt-btn run-btn" title="在系统中执行该脚本" @click="runFile">▶ 运行</button>
           <button v-if="canCurl" class="fmt-btn" title="解析 curl 命令并构建 HTTP 请求" @click="openCurl">⇀ 转请求</button>
@@ -587,6 +648,41 @@ onBeforeUnmount(() => {
         </div>
       </template>
     </template>
+
+    <div v-if="detailOpen" class="detailpanel">
+      <div class="dph">
+        <span class="dpt">文件详细信息</span>
+        <button class="cpx" @click="toggleDetail()">×</button>
+      </div>
+      <div v-if="detailErr" class="note err">{{ detailErr }}</div>
+      <div v-else-if="detail" class="dbody">
+        <div class="drow"><span class="dk">名称</span><span class="dv" :title="detail.name">{{ detail.name }}</span></div>
+        <div class="drow"><span class="dk">类型</span><span class="dv">{{ kindLabel }}</span></div>
+        <div class="drow">
+          <span class="dk">绝对路径</span>
+          <span class="dv mono" :title="detail.abs">{{ detail.abs }}</span>
+          <button class="b64b" :disabled="!detail.abs" @click="b64Copy(detail.abs)">复制</button>
+        </div>
+        <div class="drow"><span class="dk">大小</span><span class="dv mono">{{ fmtBytes(detail.size) }}</span></div>
+        <div class="drow"><span class="dk">修改时间</span><span class="dv mono">{{ fmtMtime(detail.mtime) }}</span></div>
+        <div class="drow">
+          <span class="dk">MD5</span>
+          <span class="dv mono" :class="{ warn: hashErr }">{{ hashMd5 || hashErr || '—' }}</span>
+          <button class="b64b" :disabled="!hashMd5" @click="b64Copy(hashMd5)">复制</button>
+        </div>
+        <div class="drow">
+          <span class="dk">SHA256</span>
+          <span class="dv mono" :class="{ warn: hashErr }">{{ hashSha256 || hashErr || '—' }}</span>
+          <button class="b64b" :disabled="!hashSha256" @click="b64Copy(hashSha256)">复制</button>
+        </div>
+        <div class="drow">
+          <span class="dk" />
+          <button class="b64b hashgo" :disabled="hashing || !!(hashMd5 && hashSha256)" @click="computeHash">
+            {{ hashing ? '计算中…' : hashMd5 ? '已计算' : '计算 MD5+SHA256' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -652,4 +748,14 @@ onBeforeUnmount(() => {
 .b64pre { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 6px 8px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: var(--tx); box-sizing: border-box; }
 .b64ta { width: 100%; box-sizing: border-box; flex: none; resize: vertical; max-height: 45%; background: var(--bg3); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 .b64err { color: var(--err); font-size: 12px; flex: none; }
+.detailpanel { flex: none; border-top: 1px solid var(--bd); background: var(--bg2); display: flex; flex-direction: column; max-height: 260px; }
+.dph { display: flex; align-items: center; justify-content: space-between; padding: 4px 12px; background: var(--bg4); flex: none; }
+.dpt { font-size: 11px; font-weight: 600; color: var(--tx1); }
+.dbody { overflow: auto; padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+.drow { display: flex; align-items: center; gap: 8px; font-size: 12px; min-height: 20px; }
+.dk { color: var(--tx3); flex: none; width: 66px; text-align: right; }
+.dv { color: var(--tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.dv.mono { font-family: ui-monospace, Consolas, monospace; }
+.dv.warn { color: var(--err); }
+.hashgo { flex: none; }
 </style>
