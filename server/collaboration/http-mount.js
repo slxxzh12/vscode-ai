@@ -79,6 +79,31 @@ export function createCollabMount({ engine, logger = console }) {
         });
       }
       if (seg[0] === 'skills' && m === 'GET') return ok(res, { skills: listSkillsOf(engine.skillRoot()) });
+      // 可打包资产清单 + 打包/发送两步
+      if (seg[0] === 'assets' && m === 'GET') return ok(res, engine.listAssets());
+      if (seg[0] === 'packages' && seg.length === 1 && m === 'POST') {
+        try { const r = await engine.buildPackage({ skills: body.skills || [], command: body.command || [], agent: body.agent || [] }); return ok(res, { package: r }); }
+        catch (e) { return sendJson(res, 400, { error: 'pack-failed', message: String(e && e.message || e) }); }
+      }
+      if (seg[0] === 'packages' && seg.length === 3 && seg[2] === 'send' && m === 'POST') {
+        const r = await engine.sendPackage(seg[1], body.groupId);
+        if (r.code !== 'ok') return sendJson(res, 400, { error: r.code });
+        return ok(res, r);
+      }
+      // 我发出的文件（upload 目录留档）下载
+      if (seg[0] === 'outfile' && seg.length === 2 && m === 'GET') {
+        const rec = engine.store.listOutbox().find((r) => r.id === seg[1]);
+        if (!rec || !rec.storedFile || !engine.uploadDir) return sendJson(res, 404, { error: 'not found' });
+        const abs = path.join(engine.uploadDir, path.basename(rec.storedFile));
+        if (!fs.existsSync(abs)) return sendJson(res, 404, { error: 'file missing' });
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(rec.fileName || 'download')}`,
+          'Content-Length': fs.statSync(abs).size,
+        });
+        fs.createReadStream(abs).pipe(res);
+        return;
+      }
       // 我的开发工具（决定技能目录）
       if (seg[0] === 'tool' && m === 'GET') return ok(res, engine.getToolInfo());
       if (seg[0] === 'tool' && m === 'POST') {

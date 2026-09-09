@@ -106,6 +106,10 @@ export function useCollab() {
     },
     getTool: () => http<{ tool: { kind: 'opencode' | 'claudecode' | 'custom'; customRoot: string | null }; root: string }>('/api/collab/tool'),
     setTool: (kind: string, customRoot?: string | null) => post<{ code: string; root: string }>('/api/collab/tool', { kind, customRoot: customRoot ?? null }),
+    getAssets: () => http<{ skills: { name: string }[]; command: { name: string }[]; agent: { name: string }[] }>('/api/collab/assets'),
+    buildPackage: (sel: { skills?: string[]; command?: string[]; agent?: string[] }) =>
+      post<{ package: { id: string; fileName: string; size: number } }>('/api/collab/packages', { skills: sel.skills || [], command: sel.command || [], agent: sel.agent || [] }),
+    sendPackage: (id: string, groupId: string) => post<{ code: string; pushed: number; failures: unknown[] }>(`/api/collab/packages/${id}/send`, { groupId }),
     getDirs: () => http<{ upload: string | null; download: string | null }>('/api/collab/dirs'),
     distributeToGroup: (groupId: string, skillNames: string[]) => post(`/api/collab/groups/${groupId}/distribute`, { skillNames }),
     installInbox: (id: string) => post(`/api/collab/inbox/${id}/install`),

@@ -8,7 +8,23 @@ import { loadIdentity, toPublicProfile } from './identity.js';
 import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
+import { buildZip } from './zip.js';
 import { createOpenCodeRunner } from './remote-runner.js';
+
+// 递归收集目录内文件（跳过隐藏/.git）
+function collectTree(dir, rel, out) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === '.git' || e.name.startsWith('.')) continue;
+    const full = path.join(dir, e.name);
+    const r = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) collectTree(full, r, out);
+    else if (e.isFile()) out.push({ rel: r, data: fs.readFileSync(full) });
+  }
+}
+function assertSafeRel(name) {
+  if (!name || typeof name !== 'string') throw new Error('bad item name');
+  if (name.includes('..') || name.startsWith('/') || name.includes('\\')) throw new Error('unsafe item name');
+}
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
@@ -40,6 +56,122 @@ export class CollabEngine {
     this.store.setTool({ kind: k, customRoot: k === 'custom' ? customRoot.trim() : null });
     this._emit('synced', {});
     return { code: 'ok', ...this.getToolInfo() };
+  }
+  // opencode 配置根（skillRoot 的上一级），command/agent 目录所在
+  configRoot() {
+    const s = this.skillRoot();
+    return s ? path.dirname(s) : null;
+  }
+  assetDir(kind) {
+    if (kind === 'skills') return this.skillRoot();
+    if (kind === 'command' || kind === 'agent') {
+      const cr = this.configRoot();
+      return cr ? path.join(cr, kind) : null;
+    }
+    return null;
+  }
+  // 列出可打包资产：skills 目录（含 SKILL.md）/ command、agent 目录内文件
+  listAssets() {
+    const out = { skills: [], command: [], agent: [] };
+    const sk = this.assetDir('skills');
+    if (sk && fs.existsSync(sk)) {
+      for (const d of fs.readdirSync(sk, { withFileTypes: true })) {
+        if (d.isDirectory() && fs.existsSync(path.join(sk, d.name, 'SKILL.md'))) out.skills.push({ name: d.name });
+      }
+    }
+    for (const kind of ['command', 'agent']) {
+      const root = this.assetDir(kind);
+      if (!root || !fs.existsSync(root)) continue;
+      const files = [];
+      collectTree(root, '', files);
+      for (const f of files) out[kind].push({ name: f.rel });
+    }
+    return out;
+  }
+  // 第一步：打包（只生成本地 zip + outbox 未发送记录，不推送）
+  async buildPackage({ skills = [], command = [], agent = [] }) {
+    const sSel = [...new Set(skills || [])];
+    const cSel = [...new Set(command || [])];
+    const aSel = [...new Set(agent || [])];
+    const files = [];
+    for (const n of sSel) {
+      assertSafeRel(n);
+      const dir = path.join(this.skillRoot(), n);
+      if (!fs.existsSync(path.join(dir, 'SKILL.md'))) throw new Error(`不是合法技能目录: ${n}`);
+      collectTree(dir, `skills/${n}`, files);
+    }
+    for (const kind of ['command', 'agent']) {
+      const list = kind === 'command' ? cSel : aSel;
+      const root = this.assetDir(kind);
+      if (!root || !list.length) continue;
+      for (const n of list) {
+        assertSafeRel(n);
+        const full = path.join(root, n);
+        const rl = path.relative(root, full);
+        if (rl.startsWith('..') || path.isAbsolute(rl)) throw new Error('越界选择');
+        if (fs.existsSync(full)) {
+          if (fs.statSync(full).isDirectory()) collectTree(full, `${kind}/${n}`, files);
+          else files.push({ rel: `${kind}/${n}`, data: fs.readFileSync(full) });
+        }
+      }
+    }
+    if (!files.length) throw new Error('未选择任何内容');
+    const zip = buildZip(files);
+    const hash = crypto.createHash('sha256').update(zip).digest('hex');
+    const total = sSel.length + cSel.length + aSel.length;
+    const label = `assets-${total}-${hash.slice(0, 6)}.zip`;
+    if (!this.uploadDir) throw new Error('upload 目录未配置');
+    fs.mkdirSync(this.uploadDir, { recursive: true });
+    fs.writeFileSync(path.join(this.uploadDir, label), zip);
+    const rec = this.store.addOutbox({
+      id: crypto.randomUUID(), kind: 'file', groupId: null, skillName: null, fileName: label,
+      storedFile: label, size: zip.length, hash, createdAt: Date.now(),
+      package: { sent: false, skills: sSel, command: cSel, agent: aSel },
+    });
+    this._emit('synced', {});
+    return rec;
+  }
+  // 第二步：发送——把已打包的任务 zip 推给群成员（FILE_PUSH，等同上传通道）
+  async sendPackage(packageId, groupId) {
+    const rec = this.store.listOutbox().find((r) => r.id === packageId);
+    if (!rec || !rec.storedFile || !this.uploadDir) return { code: 'not-found', pushed: 0, failures: [] };
+    const g = this.store.findGroup(groupId);
+    if (!g) return { code: 'no-group', pushed: 0, failures: [] };
+    const me = g.members.find((m) => m.machineId === this.pub.machineId);
+    if (!me) return { code: 'not-member', pushed: 0, failures: [] };
+    const abs = path.join(this.uploadDir, path.basename(rec.storedFile));
+    if (!fs.existsSync(abs)) return { code: 'file-missing', pushed: 0, failures: [] };
+    const data = fs.readFileSync(abs);
+    const pkg = rec.package || {};
+    const env = this._sign(CollabPeer.FILE_PUSH, {
+      groupId, fileName: rec.fileName, hash: rec.hash, size: data.length,
+      skills: pkg.skills || [], command: pkg.command || [], agent: pkg.agent || [],
+      b64: data.toString('base64'),
+    });
+    const receipt = this.fileReceiptHeaders(data);
+    const failures = [];
+    let pushed = 0;
+    for (const m of g.members) {
+      if (m.machineId === this.pub.machineId) continue;
+      const res = await this._post(m.host, m.port, env, receipt);
+      if (res.ok) pushed++;
+      else failures.push({ machineId: m.machineId, error: res.error || 'push-failed' });
+    }
+    for (const skillName of (pkg.skills || [])) {
+      const existing = this.store.findGroupSkill(groupId, skillName);
+      this.store.upsertGroupSkill({ groupId, skillName, hash: rec.hash, distributedBy: this.pub.machineId, installed: existing ? existing.installed : true });
+    }
+    rec.groupId = groupId;
+    if (!rec.package) rec.package = {};
+    rec.package.sent = true;
+    this.store.save();
+    const parts = [];
+    if ((pkg.skills || []).length) parts.push(`技能 ${pkg.skills.join('、')}`);
+    if ((pkg.command || []).length) parts.push(`命令 ${pkg.command.join('、')}`);
+    if ((pkg.agent || []).length) parts.push(`代理 ${pkg.agent.join('、')}`);
+    this._addSystemMessage(groupId, `已向群分发配置包：${parts.join('；')}`);
+    this._emit('synced', {});
+    return { code: 'ok', pushed, failures };
   }
 
   _emit(type, payload) { if (this.events) this.events.emit(type, payload); }
