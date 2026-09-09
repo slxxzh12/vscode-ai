@@ -121,7 +121,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.gcv { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.gcv { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tools { flex: none; display: flex; gap: 6px; padding: 6px 8px 0; }
 .tool { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
 .tool:hover { border-color: var(--ac); color: var(--ac); }

@@ -46,7 +46,7 @@ async function remove(machineId: string) { if (confirm('删除好友？')) await
 </template>
 
 <style scoped>
-.fw { padding: 14px; }
+.fw { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
 .form { display: flex; gap: 6px; margin-bottom: 8px; }
 input { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 5px 8px; }
 button { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
