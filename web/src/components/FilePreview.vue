@@ -605,7 +605,6 @@ onBeforeUnmount(() => {
 .fmt-btn:disabled { opacity: .5; cursor: default; }
 .sortwrap { position: relative; }
 .b64wrap { position: relative; }
-.b64ok { color: var(--ok); }
 .sortmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 210px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 4px; display: flex; flex-direction: column; }
 .sortmenu button { text-align: left; background: none; border: none; color: var(--tx); padding: 6px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; font-family: inherit; }
 .sortmenu button:hover { background: var(--ac); color: var(--onac); }
@@ -637,4 +636,15 @@ onBeforeUnmount(() => {
 .editor :deep(.cm-editor.cm-focused) { outline: none; }
 .note { color: var(--tx3); padding: 16px; }
 .note.err { color: var(--errtx); }
+.b64panel { flex: none; display: flex; gap: 8px; height: 220px; padding: 8px 10px; border-top: 1px solid var(--bd); background: var(--bg2); box-sizing: border-box; }
+.b64col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; padding: 6px; }
+.b64ch { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
+.b64t { font-size: 11px; font-weight: 600; color: var(--tx2); white-space: nowrap; }
+.b64btns { display: flex; gap: 6px; flex: none; }
+.b64b { background: transparent; border: 1px solid var(--bd); color: var(--tx2); font-size: 11px; padding: 1px 8px; border-radius: 4px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.b64b:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
+.b64b:disabled { opacity: .45; cursor: default; }
+.b64pre { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 6px 8px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: var(--tx); box-sizing: border-box; }
+.b64ta { width: 100%; box-sizing: border-box; flex: none; resize: vertical; max-height: 45%; background: var(--bg3); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.b64err { color: var(--err); font-size: 12px; flex: none; }
 </style>
