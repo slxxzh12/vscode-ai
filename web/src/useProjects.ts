@@ -1,6 +1,6 @@
 import type { ProjectInfo, TreeItem } from '@devflow/shared';
 
-export interface FileText { name: string; path: string; size: number; content: string; }
+export interface FileText { name: string; path: string; size: number; content: string; mtime?: number; abs?: string; }
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -63,6 +63,15 @@ export function useProjects() {
     },
     async reveal(project: string, rel: string): Promise<{ ok: boolean; platform: string }> {
       const res = await fetch(`/api/explorer/reveal?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`, { method: 'POST' });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep status */ }
+        throw new Error(msg);
+      }
+      return res.json();
+    },
+    async runScript(project: string, rel: string): Promise<{ ok: boolean; platform: string }> {
+      const res = await fetch(`/api/run-script?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`, { method: 'POST' });
       if (!res.ok) {
         let msg = `HTTP ${res.status}`;
         try { const j = await res.json(); msg = j.error || msg; } catch { /* keep status */ }

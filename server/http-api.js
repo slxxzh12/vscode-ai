@@ -3,9 +3,9 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { transformSync } from 'esbuild';
 
-export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
+export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
 
-// 在宿主机上用系统文件管理器展示目标（文件 �?定位选中；目�?�?打开）�?
+// 在宿主机上用系统文件管理器展示目标（文件 �?定位选中；目�?�?打开）�?
 function revealInOs(abs, isDir) {
   if (process.platform === 'win32') {
     const arg = isDir ? abs : `/select,${abs}`;
@@ -20,6 +20,30 @@ function revealInOs(abs, isDir) {
   }
   if (process.platform === 'linux') {
     const p = spawn('xdg-open', [isDir ? abs : path.dirname(abs)], { detached: true, stdio: 'ignore' });
+    p.unref();
+    return true;
+  }
+  return false;
+}
+
+const RUNNABLE_EXT = new Set(['bat', 'cmd', 'ps1', 'sh']);
+// 执行脚本（双击效果：独立进程/独立控制台窗口，不阻塞请求）。
+function runScript(abs, ext) {
+  if (process.platform !== 'win32') {
+    if (ext === 'sh') {
+      const p = spawn('bash', [abs], { detached: true, stdio: 'ignore' });
+      p.unref();
+      return true;
+    }
+    return false;
+  }
+  if (ext === 'bat' || ext === 'cmd') {
+    const p = spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process -FilePath ${JSON.stringify(abs)}`], { detached: true, stdio: 'ignore', windowsHide: false });
+    p.unref();
+    return true;
+  }
+  if (ext === 'ps1') {
+    const p = spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',${JSON.stringify(abs)}`], { detached: true, stdio: 'ignore', windowsHide: false });
     p.unref();
     return true;
   }
@@ -67,6 +91,16 @@ export function createHttpApi({ projects }) {
         sendJson(res, 200, { items });
         return;
       }
+      if (url.pathname === '/api/run-script' && req.method === 'POST') {
+        const project = url.searchParams.get('project');
+        const rel = url.searchParams.get('path') || '';
+        const { abs } = projects.revealTarget(project, rel);
+        const ext = path.extname(abs).toLowerCase().replace('.', '');
+        if (!RUNNABLE_EXT.has(ext)) return sendJson(res, 400, { error: 'unsupported script type' });
+        if (!runScript(abs, ext)) return sendJson(res, 501, { error: 'platform not supported' });
+        sendJson(res, 200, { ok: true, platform: process.platform });
+        return;
+      }
       if (url.pathname === '/api/explorer/reveal' && req.method === 'POST') {
         const project = url.searchParams.get('project');
         const rel = url.searchParams.get('path') || '';
@@ -109,7 +143,7 @@ export function createHttpApi({ projects }) {
         } else if (['js', 'mjs', 'cjs', 'jsx'].includes(ext)) {
           try {
             const r = transformSync(content, { minify: true, loader: ext === 'jsx' ? 'jsx' : 'js' });
-            out = r.code.replace(/\n/g, '');   // 压成一�?
+            out = r.code.replace(/\n/g, '');   // 压成一�?
           } catch (e) { return sendJson(res, 400, { error: 'invalid javascript', message: String(e?.message || e) }); }
         } else {
           return sendJson(res, 400, { error: 'unsupported type' });

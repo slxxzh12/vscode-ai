@@ -19,6 +19,12 @@ const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'sessions' | 'contacts'>('explorer');
 const showWf = ref(false);
+const collabTab = ref<'friends' | 'groups' | 'skills' | 'inbox'>('friends');
+function openContacts(t: 'friends' | 'groups' | 'skills' | 'inbox') {
+  collabTab.value = t;
+  rail.value = 'contacts';
+  showWf.value = false;
+}
 
 const projectName = computed(() => projects.value.find((p) => p.id === currentProject.value)?.name || '未选择项目');
 const currentProjectInfo = computed(() => projects.value.find((p) => p.id === currentProject.value) || null);
@@ -141,6 +147,7 @@ onMounted(() => {
       </select>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">重连中…</span>
+      <button class="wf-btn ghost" @click="openContacts('skills')">🛠 技能分发</button>
       <button class="theme-btn" :title="theme === 'dark' ? '切换到浅色' : '切换到深色'" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
       <button class="wf-btn" @click="showWf = !showWf">⚡ Workflow ▾</button>
     </header>
@@ -149,11 +156,11 @@ onMounted(() => {
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" title="目录" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'sessions' }" title="会话" @click="rail = 'sessions'">▦</button>
-        <button class="a-btn" :class="{ on: rail === 'contacts' }" title="通讯录" @click="rail = 'contacts'">👥</button>
+        <button class="a-btn" :class="{ on: rail === 'contacts' }" title="通讯录" @click="openContacts('friends')">👥</button>
       </aside>
       <template v-if="rail === 'contacts'">
         <section class="center">
-          <CollaborationView :terminal="terminal" />
+          <CollaborationView :terminal="terminal" :force-tab="collabTab" />
         </section>
       </template>
       <template v-else>
@@ -183,6 +190,8 @@ onMounted(() => {
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .theme-btn:hover { border-color: var(--ac2); }
 .wf-btn { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+.wf-btn.ghost { background: transparent; border: 1px solid var(--ac); color: var(--ac); }
+.wf-btn.ghost:hover { background: var(--ac); color: var(--onac); }
 .net { color: var(--warn); font-size: 12px; }
 .main { flex: 1; display: flex; min-height: 0; }
 .activity { width: 40px; background: var(--bg6); border-right: 1px solid var(--bd); display: flex; flex-direction: column; align-items: center; padding-top: 6px; gap: 2px; flex: none; }

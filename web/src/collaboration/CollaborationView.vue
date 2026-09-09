@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
+import { onMounted, onBeforeUnmount, ref, computed, watch } from 'vue';
 import { CollabS2C } from '@devflow/shared/collab';
 import { useCollab } from './useCollab';
 import { EMPTY_SNAPSHOT } from './types';
@@ -9,10 +9,12 @@ import GroupsView from './GroupsView.vue';
 import SkillDistributor from './SkillDistributor.vue';
 import InboxView from './InboxView.vue';
 
-const props = defineProps<{ terminal: ReturnType<typeof useTerminal> }>();
+type CollabTab = 'friends' | 'groups' | 'skills' | 'inbox';
+const props = defineProps<{ terminal: ReturnType<typeof useTerminal>; forceTab?: CollabTab }>();
 const collab = useCollab();
 const snap = computed(() => collab.state.value ?? EMPTY_SNAPSHOT);
-const tab = ref<'friends' | 'groups' | 'skills' | 'inbox'>('friends');
+const tab = ref<CollabTab>('friends');
+watch(() => props.forceTab, (v) => { if (v) tab.value = v; });
 const tabs = [
   { id: 'friends' as const, label: '好友' },
   { id: 'groups' as const, label: '群组' },

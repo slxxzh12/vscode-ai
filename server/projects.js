@@ -75,9 +75,9 @@ export class Projects {
   }
   readText(projectId, rel, maxBytes = 1024 * 1024) {
     const file = this._filePath(projectId, rel);
-    const size = fs.statSync(file).size;
-    if (size > maxBytes) { const e = new Error('file too large'); e.code = 'too-large'; throw e; }
-    return { name: path.basename(file), path: rel, size, content: fs.readFileSync(file, 'utf8') };
+    const st = fs.statSync(file);
+    if (st.size > maxBytes) { const e = new Error('file too large'); e.code = 'too-large'; throw e; }
+    return { name: path.basename(file), path: rel, size: st.size, mtime: st.mtimeMs, abs: file, content: fs.readFileSync(file, 'utf8') };
   }
   rawFile(projectId, rel) {
     const file = this._filePath(projectId, rel);

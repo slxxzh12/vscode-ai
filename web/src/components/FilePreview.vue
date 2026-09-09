@@ -29,9 +29,10 @@ import { perl } from '@codemirror/legacy-modes/mode/perl';
 import '../styles/markdown.css';
 import { useProjects } from '../useProjects';
 import { isMarkdownFile, renderMarkdown, renderMermaid } from '../markdown';
+import { parseCurl, type CurlRequest } from '../curl';
 
 const props = defineProps<{ projectId: string; path: string; name: string }>();
-const { text, write, rawUrl, format } = useProjects();
+const { text, write, rawUrl, format, runScript } = useProjects();
 const { isDark } = useTheme();
 
 const IMG = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
@@ -50,6 +51,9 @@ const hasPreviewToggle = computed(() => isMd.value || isHtmlFile.value);
 const canMinify = computed(() => ['js', 'mjs', 'cjs', 'jsx', 'json'].includes(ext.value) && kind.value === 'text');
 const canSort = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value);
 const canB64 = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value);
+const RUN_EXT = new Set(['bat', 'cmd', 'ps1', 'sh']);
+const canRun = computed(() => RUN_EXT.has(ext.value) && kind.value === 'text' && status.value === 'ok');
+const canCurl = computed(() => kind.value === 'text' && status.value === 'ok' && /\bcurl\b/.test(raw.value || ''));
 const viewMode = ref<'preview' | 'code'>(isMarkdownFile(props.name) || isHtmlFile.value ? 'preview' : 'code');
 const showEditor = computed(() => kind.value === 'text' && (!hasPreviewToggle.value || viewMode.value === 'code'));
 
@@ -87,6 +91,9 @@ const status = ref<'loading' | 'ok' | 'error'>('loading');
 const errMsg = ref('');
 const raw = ref('');
 const size = ref(0);
+const fileAbs = ref('');
+const fileMtime = ref(0);
+const detailOpen = ref(false);
 const mdHtml = ref('');
 const mdErr = ref('');
 const mdBodyRef = ref<HTMLDivElement | null>(null);
@@ -104,6 +111,17 @@ let disposed = false;
 
 function nowTime() {
   return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(2)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+function fmtMtime(ms: number): string {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  const pad = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 function setSaveError(e: any) {
   saveState.value = 'error';
@@ -172,6 +190,8 @@ async function load() {
   try {
     const f = await text(props.projectId, props.path);
     size.value = f.size;
+    fileAbs.value = f.abs || '';
+    fileMtime.value = f.mtime || 0;
     raw.value = f.content;
     status.value = 'ok';
     if (kind.value === 'text' && showEditor.value) {
@@ -331,6 +351,72 @@ watch(b64Open, (o) => {
   } else if (unbindB64) { unbindB64(); unbindB64 = null; }
 });
 
+// —— 运行脚本（bat/cmd/ps1/sh）——
+const runMsg = ref('');
+let runTimer: ReturnType<typeof setTimeout> | null = null;
+async function runFile() {
+  try {
+    await runScript(props.projectId, props.path);
+    runMsg.value = '已在系统中执行';
+  } catch (e: any) {
+    runMsg.value = `执行失败：${e?.message || e}`;
+  }
+  if (runTimer) clearTimeout(runTimer);
+  runTimer = setTimeout(() => { runMsg.value = ''; }, 3200);
+}
+
+// —— curl → 构建请求 ——
+const curlOpen = ref(false);
+const curlErr = ref('');
+const req = ref<CurlRequest>({ method: 'GET', url: '', headers: [], body: '', raw: '' });
+const headerLines = ref('');
+const sending = ref(false);
+const respStatus = ref<number | null>(null);
+const respText = ref('');
+const curlUrl = ref('');
+function reqBody(): string | undefined {
+  if (['GET', 'HEAD'].includes(req.value.method.toUpperCase())) return undefined;
+  return req.value.body || undefined;
+}
+function openCurl() {
+  const src = view ? view.state.doc.toString() : raw.value;
+  const parsed = parseCurl(src);
+  if (!parsed) { curlErr.value = '未识别到 curl 命令'; curlOpen.value = false; return; }
+  req.value = parsed;
+  curlUrl.value = parsed.url;
+  headerLines.value = parsed.headers.map((h) => `${h.name}: ${h.value}`).join('\n');
+  respStatus.value = null; respText.value = ''; curlErr.value = '';
+  curlOpen.value = true;
+}
+function applyHeaderEdits() {
+  const out: Array<{ name: string; value: string }> = [];
+  for (const line of headerLines.value.split('\n')) {
+    const c = line.indexOf(':');
+    if (c > 0) out.push({ name: line.slice(0, c).trim(), value: line.slice(c + 1).trim() });
+  }
+  req.value.headers = out;
+}
+async function sendRequest() {
+  if (!curlUrl.value) { curlErr.value = 'URL 不能为空'; return; }
+  applyHeaderEdits();
+  sending.value = true;
+  curlErr.value = '';
+  respStatus.value = null;
+  respText.value = '';
+  try {
+    const headers: Record<string, string> = {};
+    for (const h of req.value.headers) if (h.name) headers[h.name] = h.value;
+    const r = await fetch(curlUrl.value, { method: req.value.method.toUpperCase(), headers, body: reqBody() });
+    respStatus.value = r.status;
+    const text = await r.text();
+    respText.value = text.length > 300000 ? text.slice(0, 300000) + '\n…(截断)' : text;
+  } catch (e: any) {
+    curlErr.value = `请求失败：${e?.message || e}`;
+  } finally {
+    sending.value = false;
+  }
+}
+
 // —— 一键格式化（Prettier 按需加载）——
 const fmtMsg = ref('');
 let fmtTimer: ReturnType<typeof setTimeout> | null = null;
@@ -388,6 +474,7 @@ onBeforeUnmount(() => {
   unbindSort?.();
   unbindB64?.();
   if (b64Timer) clearTimeout(b64Timer);
+  if (runTimer) clearTimeout(runTimer);
   flush();
   if (view) { view.destroy(); view = null; }
 });
@@ -421,6 +508,9 @@ onBeforeUnmount(() => {
               <button @click="b64Apply('decode')">Base64 解码</button>
             </div>
           </span>
+          <span v-if="runMsg" class="save runmsg">{{ runMsg }}</span>
+          <button v-if="canRun" class="fmt-btn run-btn" title="在系统中执行该脚本" @click="runFile">▶ 运行</button>
+          <button v-if="canCurl" class="fmt-btn" title="解析 curl 命令并构建 HTTP 请求" @click="openCurl">⇀ 转请求</button>
           <div v-if="hasPreviewToggle" class="seg">
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">预览</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? '源码' : '代码' }}</button>
@@ -438,6 +528,21 @@ onBeforeUnmount(() => {
           <iframe v-else-if="isHtmlFile" class="html-frame" :srcdoc="raw" sandbox="allow-scripts allow-modals" />
         </div>
         <div v-show="showEditor" ref="editorHost" class="editor" />
+
+        <div v-if="curlOpen" class="curlpanel">
+          <div class="cph">⇀ 构建 HTTP 请求 <button class="cpx" @click="curlOpen = false">×</button></div>
+          <div class="cpf"><label>方法</label><input v-model="req.method" class="cpm" /></div>
+          <div class="cpf"><label>URL</label><input v-model="curlUrl" class="cpi" placeholder="https://…" /></div>
+          <div class="cpf"><label>请求头</label><textarea v-model="headerLines" rows="3" class="cpt" placeholder="Name: Value，每行一个" /></div>
+          <div class="cpf"><label>请求体</label><textarea v-model="req.body" rows="4" class="cpt" placeholder="POST/PUT 请求体" /></div>
+          <div class="cpacts">
+            <button class="cpsend" :disabled="sending" @click="sendRequest">{{ sending ? '发送中…' : '▶ 发送' }}</button>
+            <span class="cprun" @click="curlOpen = false">关闭</span>
+          </div>
+          <div v-if="curlErr" class="cperr">{{ curlErr }}</div>
+          <div v-if="respStatus !== null" class="cpstat">HTTP {{ respStatus }}</div>
+          <pre v-if="respText" class="cpre">{{ respText }}</pre>
+        </div>
       </template>
     </template>
   </div>
@@ -467,6 +572,23 @@ onBeforeUnmount(() => {
 .sortmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 210px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 4px; display: flex; flex-direction: column; }
 .sortmenu button { text-align: left; background: none; border: none; color: var(--tx); padding: 6px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; font-family: inherit; }
 .sortmenu button:hover { background: var(--ac); color: var(--onac); }
+.runmsg { color: var(--ok); }
+.run-btn { color: var(--ok); border-color: var(--ok); }
+.curlpanel { position: absolute; top: 34px; right: 10px; bottom: 10px; width: 480px; z-index: 80; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.4); display: flex; flex-direction: column; overflow: hidden; }
+.cph { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg4); color: var(--tx1); font-weight: 600; }
+.cpx { background: none; border: none; color: var(--tx3); font-size: 15px; cursor: pointer; }
+.cpf { padding: 6px 12px; display: flex; flex-direction: column; gap: 4px; }
+.cpf label { font-size: 11px; color: var(--tx3); }
+.cpm, .cpi, .cpt { background: var(--bg3); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.cpm { width: 100px; }
+.cpt { width: 100%; resize: vertical; }
+.cpacts { padding: 4px 12px; display: flex; gap: 10px; align-items: center; }
+.cpsend { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 6px 16px; cursor: pointer; font-weight: 600; }
+.cpsend:disabled { opacity: .55; cursor: default; }
+.cprun { color: var(--tx3); cursor: pointer; font-size: 12px; }
+.cperr { color: var(--err); padding: 0 12px; font-size: 12px; }
+.cpstat { color: var(--ok); padding: 6px 12px 0; font-size: 12px; font-weight: 600; }
+.cpre { flex: 1; min-height: 0; overflow: auto; margin: 8px 12px 12px; padding: 10px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
 .seg { display: flex; gap: 2px; background: var(--bg2); border: 1px solid var(--bd3); border-radius: 4px; padding: 1px; }
 .seg button { background: transparent; border: none; color: var(--tx3); font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px; }
 .seg button.on { background: var(--ac); color: var(--onac); }
