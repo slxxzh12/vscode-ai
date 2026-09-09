@@ -29,6 +29,8 @@ onMounted(() => {
     props.terminal.on(CollabS2C.COLLAB_FRIEND_REQ, () => collab.refresh().catch(() => {})),
     props.terminal.on(CollabS2C.COLLAB_GROUP_INVITE, () => collab.refresh().catch(() => {})),
     props.terminal.on(CollabS2C.COLLAB_INBOX, () => collab.refresh().catch(() => {})),
+    props.terminal.on(CollabS2C.COLLAB_CHAT, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CHAT, payload)),
+    props.terminal.on(CollabS2C.COLLAB_CMD_PENDING, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CMD_PENDING, payload)),
   ];
 });
 onBeforeUnmount(() => { unsubs.forEach((u) => u()); });

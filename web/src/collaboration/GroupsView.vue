@@ -1,21 +1,32 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
+import GroupChatView from './GroupChatView.vue';
 
 const props = defineProps<{ collab: CollabApi }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const name = ref('');
 const err = ref('');
-const selectedGroup = ref<string | null>(null);
+const activeGroupId = ref<string | null>(null);
+const memberPanelOpen = ref<string | null>(null);
 const inviteMachineId = ref('');
+const newPrefix = ref('');
+
+onMounted(async () => {
+  await props.collab.loadAllowlist().catch(() => {});
+  await props.collab.loadPendingCmds().catch(() => {});
+});
+const myAllow = computed(() => props.collab.allowlistState.value);
 
 async function create() {
   err.value = '';
-  try { await props.collab.createGroup(name.value.trim()); await props.collab.refresh(); name.value = ''; }
-  catch (e) { err.value = String((e as Error).message || e); }
+  try { const r = await props.collab.createGroup(name.value.trim()); await props.collab.refresh(); name.value = '';
+    if ((r as { group?: { id?: string } }).group?.id) activeGroupId.value = (r as { group: { id: string } }).group.id;
+  } catch (e) { err.value = String((e as Error).message || e); }
 }
-function select(gid: string) { selectedGroup.value = selectedGroup.value === gid ? null : gid; }
+function openChat(gid: string) { activeGroupId.value = activeGroupId.value === gid ? null : gid; }
+function toggleManage(gid: string) { memberPanelOpen.value = memberPanelOpen.value === gid ? null : gid; }
 async function acceptInvite(id: string) { await props.collab.acceptInvite(id); await props.collab.refresh(); }
 async function rejectInvite(id: string) { await props.collab.rejectInvite(id); await props.collab.refresh(); }
 async function invite(gid: string) {
@@ -28,8 +39,10 @@ async function kick(gid: string, mid: string) {
   const who = g?.members.find((m) => m.machineId === mid);
   if (who && confirm(`把 ${who.username} 移出群？`)) { await props.collab.kickMember(gid, mid); await props.collab.refresh(); }
 }
-async function removeGroup(gid: string) { if (confirm('解散群？')) { await props.collab.deleteGroup(gid); await props.collab.refresh(); } }
+async function removeGroup(gid: string) { if (confirm('解散群？')) { await props.collab.deleteGroup(gid); await props.collab.refresh(); if (activeGroupId.value === gid) activeGroupId.value = null; } }
 function roleLabel(r: string) { return r === 'owner' ? '群主' : r === 'admin' ? '管理员' : '成员'; }
+async function addPrefix() { if (newPrefix.value.trim()) { await props.collab.addAllow(newPrefix.value.trim()); newPrefix.value = ''; } }
+async function delPrefix(p: string) { await props.collab.removeAllow(p); }
 </script>
 
 <template>
@@ -50,10 +63,14 @@ function roleLabel(r: string) { return r === 'owner' ? '群主' : r === 'admin' 
     <div v-if="snap.groups.length === 0" class="empty">还没有群，创建一个吧</div>
     <div v-for="g in snap.groups" :key="g.id" class="group">
       <div class="ghead">
-        <button class="gname" @click="select(g.id)">{{ g.name }} <span class="cnt">({{ g.members.length }})</span></button>
+        <button class="gname" @click="openChat(g.id)">💬 {{ g.name }} <span class="cnt">({{ g.members.length }})</span></button>
+        <button class="ghost" @click="toggleManage(g.id)">管理</button>
         <button v-if="g.ownerId === snap.identity?.machineId" class="ghost del" @click="removeGroup(g.id)">解散</button>
       </div>
-      <div v-if="selectedGroup === g.id" class="gdetail">
+      <div v-if="activeGroupId === g.id" class="chat-slot">
+        <GroupChatView :collab="collab" :group-id="g.id" />
+      </div>
+      <div v-if="memberPanelOpen === g.id" class="gdetail">
         <div class="inv-form">
           <input v-model="inviteMachineId" placeholder="成员 machineId" />
           <button @click="invite(g.id)">邀请</button>
@@ -64,6 +81,19 @@ function roleLabel(r: string) { return r === 'owner' ? '群主' : r === 'admin' 
           <span class="adr">{{ m.host }}:{{ m.port }}</span>
           <button v-if="m.machineId !== snap.identity?.machineId" class="ghost del" @click="kick(g.id, m.machineId)">踢出</button>
         </div>
+      </div>
+    </div>
+
+    <div class="allow">
+      <h4>本机免确认命令（白名单）</h4>
+      <div class="inv-form">
+        <input v-model="newPrefix" placeholder="如 deploy / git status" @keyup.enter="addPrefix" />
+        <button @click="addPrefix">＋ 添加</button>
+      </div>
+      <div v-if="myAllow.length === 0" class="empty">无，收到的远程执行都会要求你确认</div>
+      <div v-for="p in myAllow" :key="p" class="mrow">
+        <span class="nm"><code>{{ p }}</code></span>
+        <button class="ghost del" @click="delPrefix(p)">删除</button>
       </div>
     </div>
   </div>
@@ -81,8 +111,9 @@ button.gname { background: none; color: #e2e8f0; text-align: left; padding: 8px 
 h4 { color: #9aa4b2; text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; }
 .invite, .group { border-bottom: 1px solid #232b34; padding: 6px 4px; }
 .invite span { color: #c8d0da; }
-.ghead { display: flex; align-items: center; }
-.gdetail { padding: 4px 8px 8px; background: #171c22; border-radius: 6px; }
+.ghead { display: flex; align-items: center; gap: 6px; }
+.chat-slot { display: flex; min-height: 360px; border-top: 1px solid #232b34; margin-top: 6px; }
+.gdetail { padding: 4px 8px 8px; background: #171c22; border-radius: 6px; margin-top: 6px; }
 .inv-form { display: flex; gap: 6px; margin: 6px 0; }
 .mrow { display: flex; align-items: center; gap: 8px; padding: 4px 2px; }
 .nm { color: #e2e8f0; }
@@ -93,4 +124,5 @@ h4 { color: #9aa4b2; text-transform: uppercase; font-size: 11px; margin: 14px 0 
 .adr { color: #6b7686; font-family: monospace; font-size: 11px; margin-left: auto; }
 .empty { color: #6b7686; padding: 8px; }
 .err { color: #ff6b6b; }
+.allow { margin-top: 8px; }
 </style>
