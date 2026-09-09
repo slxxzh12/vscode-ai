@@ -2,12 +2,29 @@
 import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { StreamLanguage } from '@codemirror/language';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
 import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
+import { java } from '@codemirror/lang-java';
+import { cpp } from '@codemirror/lang-cpp';
+import { php } from '@codemirror/lang-php';
+import { sql } from '@codemirror/lang-sql';
+import { sass } from '@codemirror/lang-sass';
+import { go } from '@codemirror/legacy-modes/mode/go';
+import { rust } from '@codemirror/legacy-modes/mode/rust';
+import { shell } from '@codemirror/legacy-modes/mode/shell';
+import { powerShell } from '@codemirror/legacy-modes/mode/powershell';
+import { yaml } from '@codemirror/legacy-modes/mode/yaml';
+import { toml } from '@codemirror/legacy-modes/mode/toml';
+import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
+import { lua } from '@codemirror/legacy-modes/mode/lua';
+import { swift } from '@codemirror/legacy-modes/mode/swift';
+import { ruby } from '@codemirror/legacy-modes/mode/ruby';
+import { perl } from '@codemirror/legacy-modes/mode/perl';
 import 'highlight.js/styles/github-dark.css';
 import '../styles/markdown.css';
 import { useProjects } from '../useProjects';
@@ -27,18 +44,37 @@ const kind = computed<'image' | 'pdf' | 'text'>(() => {
   return 'text';
 });
 const isMd = computed(() => isMarkdownFile(props.name));
-const viewMode = ref<'preview' | 'code'>(isMarkdownFile(props.name) ? 'preview' : 'code');
-const showEditor = computed(() => kind.value === 'text' && (!isMd.value || viewMode.value === 'code'));
+const isHtmlFile = computed(() => ['html', 'htm'].includes(ext.value));
+const hasPreviewToggle = computed(() => isMd.value || isHtmlFile.value);
+const viewMode = ref<'preview' | 'code'>(isMarkdownFile(props.name) || isHtmlFile.value ? 'preview' : 'code');
+const showEditor = computed(() => kind.value === 'text' && (!hasPreviewToggle.value || viewMode.value === 'code'));
 
 function cmLangFor(extension: string) {
+  const L = (m: any) => StreamLanguage.define(m);
   switch (extension) {
     case 'js': case 'mjs': case 'cjs': case 'jsx': return javascript();
     case 'ts': case 'tsx': case 'mts': return javascript({ typescript: true });
     case 'json': return json();
     case 'css': return css();
-    case 'html': case 'xml': case 'svg': case 'vue': return html();
+    case 'html': case 'htm': case 'xml': case 'svg': case 'vue': return html();
     case 'md': case 'markdown': return markdown();
     case 'py': return python();
+    case 'java': return java();
+    case 'c': case 'h': case 'cc': case 'cpp': case 'cxx': case 'hpp': case 'hh': case 'cs': return cpp();
+    case 'php': return php();
+    case 'sql': return sql();
+    case 'sass': case 'scss': return sass();
+    case 'go': return L(go);
+    case 'rs': return L(rust);
+    case 'sh': case 'bash': case 'zsh': case 'ksh': return L(shell);
+    case 'ps1': return L(powerShell);
+    case 'yml': case 'yaml': return L(yaml);
+    case 'toml': return L(toml);
+    case 'dockerfile': case 'Dockerfile': return L(dockerFile);
+    case 'lua': return L(lua);
+    case 'swift': return L(swift);
+    case 'rb': case 'ruby': return L(ruby);
+    case 'pl': case 'pm': return L(perl);
     default: return null;
   }
 }
@@ -191,7 +227,7 @@ onBeforeUnmount(() => {
           <span v-if="saveState === 'saving'" class="save saveing">保存中…</span>
           <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ saveMsg }} 已保存</span>
           <span v-else-if="saveState === 'error'" class="save saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
-          <div v-if="isMd" class="seg">
+          <div v-if="hasPreviewToggle" class="seg">
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">预览</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">代码</button>
           </div>
@@ -200,9 +236,12 @@ onBeforeUnmount(() => {
       <div v-if="status === 'loading'" class="note">加载中…</div>
       <div v-else-if="status === 'error'" class="note err">打开失败：{{ errMsg }}</div>
       <template v-else>
-        <div v-show="isMd && viewMode === 'preview'" class="scroll">
-          <div v-if="mdErr" class="note err">{{ mdErr }}</div>
-          <div v-show="!mdErr" ref="mdBodyRef" class="md-body" v-html="mdHtml" />
+        <div v-show="viewMode === 'preview'" class="pane">
+          <div v-if="isMd" class="scroll">
+            <div v-if="mdErr" class="note err">{{ mdErr }}</div>
+            <div v-show="!mdErr" ref="mdBodyRef" class="md-body" v-html="mdHtml" />
+          </div>
+          <iframe v-else-if="isHtmlFile" class="html-frame" :srcdoc="raw" sandbox="allow-scripts allow-modals" />
         </div>
         <div v-show="showEditor" ref="editorHost" class="editor" />
       </template>
@@ -224,7 +263,9 @@ onBeforeUnmount(() => {
 .seg { display: flex; gap: 2px; background: #141920; border: 1px solid #242c38; border-radius: 4px; padding: 1px; }
 .seg button { background: transparent; border: none; color: #8b96a5; font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px; }
 .seg button.on { background: #2f6feb; color: #fff; }
+.pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .scroll { flex: 1; overflow: auto; min-height: 0; padding: 14px 20px 40px; }
+.html-frame { display: block; width: 100%; height: 100%; border: none; background: #fff; }
 .editor { flex: 1; min-height: 0; overflow: auto; }
 .editor :deep(.cm-editor) { height: 100%; font-size: 12.5px; }
 .editor :deep(.cm-editor.cm-focused) { outline: none; }

@@ -56,6 +56,5 @@ npm run typecheck
 ```
 
 ## 注意事项
-
 - 本仓库默认 `server/projects.json` 的示例项目 root 为 `.`（相对服务进程 cwd）。从仓库根目录启动即为本仓库。
 - 服务可在浏览器执行任意 shell 命令。v1 暂未做认证，仅建议绑定 `127.0.0.1`/内网；公网访问务必加反代鉴权（代码已预留 `requireAuthHttp` / `requireAuthWs` 钩子，见 `server/http-api.js` 与 `server/ws-gateway.js`）。
