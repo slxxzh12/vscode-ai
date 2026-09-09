@@ -20,3 +20,12 @@ export const EMPTY_SNAPSHOT: CollabSnapshot = {
   identity: { machineId: '', username: '', host: '', port: 0, publicKey: '' },
   friends: [], pendingFriends: [], groups: [], pendingInvites: [], skillsInbox: [], groupSkills: [],
 };
+
+export interface CollabChatMeta { reqId: string | null; exitCode: number | null; stderr: string | null; durationMs: number | null; }
+export type CollabChatKind = 'text' | 'cmd-result' | 'system';
+export interface CollabChatMessage {
+  id: string; groupId: string; kind: CollabChatKind;
+  fromId: string; text: string; toId: string | null;
+  meta: CollabChatMeta | null; ts: number; seq: number;
+}
+export interface CollabPendingCmd { id: string; groupId: string; fromId: string; text: string; receivedAt: number; }
