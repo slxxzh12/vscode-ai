@@ -156,6 +156,7 @@ function docChanged() {
   if (!view) return;
   raw.value = view.state.doc.toString();   // 供 md 预览实时使用
   scheduleSave();
+  if (b64Open.value) refreshB64Encode();
 }
 function mountEditor(doc: string) {
   if (!editorHost.value || view) return;
@@ -167,7 +168,10 @@ function mountEditor(doc: string) {
       ...(isDark.value ? [oneDark] : []),
       EditorView.lineWrapping,
       ...(lang ? [lang] : []),
-      EditorView.updateListener.of((u) => { if (u.docChanged) docChanged(); }),
+      EditorView.updateListener.of((u) => {
+        if (u.docChanged) docChanged();
+        if (u.selectionSet && b64Open.value) refreshB64Encode();
+      }),
     ],
     parent: editorHost.value,
   });
@@ -185,6 +189,7 @@ function requestMeasure() {
 }
 
 async function load() {
+  resetB64Panel();
   status.value = 'loading';
   errMsg.value = '';
   try {
