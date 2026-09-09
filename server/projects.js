@@ -18,6 +18,33 @@ export class Projects {
   _realOrResolved(p) {
     try { return fs.realpathSync(p); } catch { return path.resolve(p); }
   }
+  // 校验 rel 落在项目 root 内且是文件，返回绝对路径；越界/不存在抛对应 code
+  _filePath(projectId, rel) {
+    const proj = this._project(projectId);
+    const rootReal = this._realOrResolved(proj.root);
+    let target = path.resolve(proj.root, rel || '.');
+    if (target !== rootReal && !target.startsWith(rootReal + path.sep)) {
+      const e = new Error('path escapes project root'); e.code = 'forbidden'; throw e;
+    }
+    if (!fs.existsSync(target)) { const e = new Error('file not found'); e.code = 'not-found'; throw e; }
+    const st = fs.statSync(target);
+    if (st.isDirectory()) { const e = new Error('is a directory'); e.code = 'not-file'; throw e; }
+    const targetReal = this._realOrResolved(target);
+    if (targetReal !== rootReal && !targetReal.startsWith(rootReal + path.sep)) {
+      const e = new Error('symlink escapes project root'); e.code = 'forbidden'; throw e;
+    }
+    return target;
+  }
+  readText(projectId, rel, maxBytes = 1024 * 1024) {
+    const file = this._filePath(projectId, rel);
+    const size = fs.statSync(file).size;
+    if (size > maxBytes) { const e = new Error('file too large'); e.code = 'too-large'; throw e; }
+    return { name: path.basename(file), path: rel, size, content: fs.readFileSync(file, 'utf8') };
+  }
+  rawFile(projectId, rel) {
+    const file = this._filePath(projectId, rel);
+    return { file, size: fs.statSync(file).size, name: path.basename(file) };
+  }
   tree(projectId, rel = '') {
     const proj = this._project(projectId);
     const rootReal = this._realOrResolved(proj.root);

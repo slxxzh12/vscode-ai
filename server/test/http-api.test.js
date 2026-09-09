@@ -67,3 +67,36 @@ test('非 /api 路由返回 404 json', async (t) => {
   const r = await request(server, '/nope');
   assert.equal(r.status, 404);
 });
+
+test('/api/file 读取文本', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'hello world');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/file?project=a&path=a.txt');
+  assert.equal(r.status, 200);
+  const body = JSON.parse(r.body);
+  assert.equal(body.content, 'hello world');
+  assert.equal(body.size, 11);
+});
+
+test('/api/file 目录返回 400，越界返回 403', async (t) => {
+  const dir = tmpDir();
+  fs.mkdirSync(path.join(dir, 'sub'));
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const d = await request(server, '/api/file?project=a&path=sub');
+  assert.equal(d.status, 400);
+  const esc = await request(server, '/api/file?project=a&path=..%2Fprojects.json');
+  assert.equal(esc.status, 403);
+});
+
+test('/api/raw 按扩展名给 Content-Type 并返回字节', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'pic.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/raw?project=a&path=pic.png');
+  assert.equal(r.status, 200);
+  assert.ok(r.body.includes('PNG'));
+});
