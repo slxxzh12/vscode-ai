@@ -305,51 +305,70 @@ watch(sortOpen, (o) => {
   } else if (unbindSort) { unbindSort(); unbindSort = null; }
 });
 
-// —— Base64 编解码 ——
+// —— Base64 编解码结果面板 ——
 const b64Open = ref(false);
-const b64Msg = ref('');
-let b64Timer: ReturnType<typeof setTimeout> | null = null;
-let unbindB64: (() => void) | null = null;
+const b64EncodeOut = ref('');
+const b64DecodeInput = ref('');
+const b64DecodeOut = ref('');
+const b64DecodeErr = ref('');
+function encodeB64(src: string): string {
+  return btoa(unescape(encodeURIComponent(src)));
+}
+function decodeB64(src: string): string {
+  return decodeURIComponent(escape(atob(src.trim())));
+}
 function currentText(): string {
   if (!view) return '';
   const s = view.state.selection.main;
   return s.empty ? view.state.doc.toString() : view.state.sliceDoc(s.from, s.to);
 }
-async function b64Copy(text: string) {
-  try { await navigator.clipboard.writeText(text); }
-  catch {
-    const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select();
-    document.execCommand('copy'); ta.remove();
-  }
-}
-function flashB64(msg: string) {
-  b64Msg.value = msg;
-  if (b64Timer) clearTimeout(b64Timer);
-  b64Timer = setTimeout(() => { b64Msg.value = ''; }, 2600);
-}
-function b64Apply(mode: 'encode' | 'decode') {
-  const src = currentText();
-  if (!src) { b64Open.value = false; return; }
+function refreshB64Encode() {
+  if (!b64Open.value) return;
   try {
-    const out = mode === 'encode'
-      ? btoa(unescape(encodeURIComponent(src)))
-      : decodeURIComponent(escape(atob(src.trim())));
-    b64Copy(out);
-    b64Open.value = false;
-    flashB64(`已${mode === 'encode' ? '编码' : '解码'}并复制：${out.slice(0, 40)}${out.length > 40 ? '…' : ''}`);
-  } catch (e: any) {
-    b64Open.value = false;
-    alert(`${mode === 'encode' ? '编码' : '解码'}失败：${e?.message || e}`);
+    b64EncodeOut.value = encodeB64(currentText());
+  } catch {
+    b64EncodeOut.value = '';
   }
 }
-watch(b64Open, (o) => {
-  if (o) {
-    const h = (e: Event) => { const t = e.target as HTMLElement | null; if (t && !t.closest('.b64wrap')) b64Open.value = false; };
-    document.addEventListener('pointerdown', h, true);
-    unbindB64 = () => document.removeEventListener('pointerdown', h, true);
-  } else if (unbindB64) { unbindB64(); unbindB64 = null; }
-});
+function refreshB64Decode() {
+  const src = b64DecodeInput.value;
+  b64DecodeErr.value = '';
+  b64DecodeOut.value = '';
+  if (!src.trim()) return;
+  try {
+    b64DecodeOut.value = decodeB64(src);
+  } catch {
+    b64DecodeErr.value = '不是合法的 Base64 内容';
+  }
+}
+watch(b64DecodeInput, refreshB64Decode);
+function fallbackCopy(text: string) {
+  const ta = document.createElement('textarea');
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  document.execCommand('copy'); ta.remove();
+}
+async function b64Copy(text: string) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    fallbackCopy(text);
+  }
+}
+function feedDecodeFromEncode() {
+  b64DecodeInput.value = b64EncodeOut.value;   // watch 自动触发解码
+}
+function toggleB64() {
+  b64Open.value = !b64Open.value;
+  if (b64Open.value) { refreshB64Encode(); refreshB64Decode(); }
+}
+function resetB64Panel() {
+  b64Open.value = false;
+  b64EncodeOut.value = '';
+  b64DecodeInput.value = '';
+  b64DecodeOut.value = '';
+  b64DecodeErr.value = '';
+}
 
 // —— 运行脚本（bat/cmd/ps1/sh）——
 const runMsg = ref('');
@@ -472,8 +491,6 @@ watch([status, viewMode], applyPreview);
 onBeforeUnmount(() => {
   disposed = true;
   unbindSort?.();
-  unbindB64?.();
-  if (b64Timer) clearTimeout(b64Timer);
   if (runTimer) clearTimeout(runTimer);
   flush();
   if (view) { view.destroy(); view = null; }
@@ -500,13 +517,8 @@ onBeforeUnmount(() => {
               <button v-for="s in SORT_ITEMS" :key="s.mode" @click="applySort(s.mode)">{{ s.label }}</button>
             </div>
           </span>
-          <span v-if="b64Msg" class="save b64ok" title="Base64 结果已复制到剪贴板">{{ b64Msg }}</span>
           <span v-if="canB64" class="b64wrap">
-            <button class="fmt-btn" :class="{ on: b64Open }" title="Base64 编解码（全部或选中内容）" @click.stop="b64Open = !b64Open">⟐ Base64 ▾</button>
-            <div v-if="b64Open" class="sortmenu" @click.stop>
-              <button @click="b64Apply('encode')">Base64 编码</button>
-              <button @click="b64Apply('decode')">Base64 解码</button>
-            </div>
+            <button class="fmt-btn" :class="{ on: b64Open }" title="打开/关闭 Base64 编解码结果面板（编辑器下方）" @click="toggleB64">⇆ Base64</button>
           </span>
           <span v-if="runMsg" class="save runmsg">{{ runMsg }}</span>
           <button v-if="canRun" class="fmt-btn run-btn" title="在系统中执行该脚本" @click="runFile">▶ 运行</button>
