@@ -1596,11 +1596,11 @@ export function createCollabMount({ engine, logger = console }) {
       }
       if (seg[0] === 'skills' && m === 'GET') return ok(res, { skills: listLocalSkills() });
       // friends
-      if (seg[0] === 'friends' && m === 'POST') { const r = await engine.requestFriend({ host: body.host, port: body.port }); return ok(res, r); }
+      if (seg[0] === 'friends' && seg.length === 1 && m === 'POST') { const r = await engine.requestFriend({ host: body.host, port: body.port }); return ok(res, r); }
       if (seg[0] === 'friends' && seg.length === 3 && seg[2] === 'accept' && m === 'POST') { const r = await engine.acceptFriend(seg[1]); return ok(res, r); }
       if (seg[0] === 'friends' && seg.length === 2 && m === 'DELETE') { engine.store.removeFriend(seg[1]); return ok(res, {}); }
       // groups
-      if (seg[0] === 'groups' && m === 'POST') { const g = await engine.createGroup(body.name); return ok(res, { group: g }); }
+      if (seg[0] === 'groups' && seg.length === 1 && m === 'POST') { const g = await engine.createGroup(body.name); return ok(res, { group: g }); }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'invite' && m === 'POST') { const r = await engine.inviteMember({ groupId: seg[1], targetMachineId: body.machineId }); return ok(res, r); }
       if (seg[0] === 'groups' && seg.length === 5 && seg[2] === 'members' && seg[4] === 'kick' && m === 'POST') { const r = await engine.kickMember({ groupId: seg[1], targetMachineId: seg[3] }); return ok(res, r); }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'distribute' && m === 'POST') { const r = await engine.distributeToGroup(seg[1], body.skillNames || []); return ok(res, r); }
