@@ -689,6 +689,13 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <div class="statusbar">
+      <span v-if="saveState === 'saving'" class="st saveing">保存中…</span>
+      <span v-else-if="saveState === 'saved'" class="st saveok">✓ {{ saveMsg }} 已保存</span>
+      <span v-else-if="saveState === 'error'" class="st saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
+      <span v-if="toolMsg" class="st toolmsg" :class="{ err: !toolOk }" :title="toolMsg">{{ toolMsg }}</span>
+    </div>
   </div>
 </template>
 
@@ -758,4 +765,11 @@ onBeforeUnmount(() => {
 .dv.mono { font-family: ui-monospace, Consolas, monospace; }
 .dv.warn { color: var(--err); }
 .hashgo { flex: none; }
+.statusbar { flex: none; display: flex; align-items: center; gap: 14px; height: 24px; padding: 0 10px; border-top: 1px solid var(--bd); background: var(--bg2); overflow: hidden; white-space: nowrap; box-sizing: border-box; }
+.st { font-size: 11px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st.saveing { color: var(--warn); }
+.st.saveok { color: var(--ok); }
+.st.saveerr { color: var(--errtx); cursor: pointer; }
+.st.toolmsg { color: var(--tx2); }
+.st.toolmsg.err { color: var(--errtx); }
 </style>
