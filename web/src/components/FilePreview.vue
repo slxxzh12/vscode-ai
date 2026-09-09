@@ -2,6 +2,7 @@
 import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { useTheme } from '../theme';
 import { StreamLanguage } from '@codemirror/language';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
@@ -25,13 +26,13 @@ import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { swift } from '@codemirror/legacy-modes/mode/swift';
 import { ruby } from '@codemirror/legacy-modes/mode/ruby';
 import { perl } from '@codemirror/legacy-modes/mode/perl';
-import 'highlight.js/styles/github-dark.css';
 import '../styles/markdown.css';
 import { useProjects } from '../useProjects';
 import { isMarkdownFile, renderMarkdown, renderMermaid } from '../markdown';
 
 const props = defineProps<{ projectId: string; path: string; name: string }>();
 const { text, write, rawUrl } = useProjects();
+const { isDark } = useTheme();
 
 const IMG = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
 const ext = computed(() => {
@@ -142,7 +143,7 @@ function mountEditor(doc: string) {
     doc,
     extensions: [
       basicSetup,
-      oneDark,
+      ...(isDark.value ? [oneDark] : []),
       EditorView.lineWrapping,
       ...(lang ? [lang] : []),
       EditorView.updateListener.of((u) => { if (u.docChanged) docChanged(); }),
@@ -150,6 +151,14 @@ function mountEditor(doc: string) {
     parent: editorHost.value,
   });
 }
+watch(isDark, () => {
+  if (!view) return;
+  const doc = view.state.doc.toString();
+  view.destroy();
+  view = null;
+  mountEditor(doc);
+  requestMeasure();
+});
 function requestMeasure() {
   requestAnimationFrame(() => { view?.requestMeasure(); });
 }
@@ -250,25 +259,25 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.preview { display: flex; flex-direction: column; height: 100%; background: #0e1116; overflow: hidden; }
+.preview { display: flex; flex-direction: column; height: 100%; background: var(--bg3); overflow: hidden; }
 .img { max-width: 100%; max-height: 100%; object-fit: contain; margin: auto; }
 .pdf { width: 100%; height: 100%; border: none; background: #fff; }
-.head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 2px 10px; border-bottom: 1px solid #1e242e; }
-.meta { color: #8b96a5; font-size: 11px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 2px 10px; border-bottom: 1px solid var(--bd2); }
+.meta { color: var(--tx3); font-size: 11px; }
 .right { display: flex; align-items: center; gap: 10px; }
 .save { font-size: 11px; }
-.saveok { color: #22c55e; }
-.saveing { color: #eab308; }
-.saveerr { color: #fca5a5; cursor: pointer; }
-.seg { display: flex; gap: 2px; background: #141920; border: 1px solid #242c38; border-radius: 4px; padding: 1px; }
-.seg button { background: transparent; border: none; color: #8b96a5; font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px; }
-.seg button.on { background: #2f6feb; color: #fff; }
+.saveok { color: var(--ok); }
+.saveing { color: var(--warn); }
+.saveerr { color: var(--errtx); cursor: pointer; }
+.seg { display: flex; gap: 2px; background: var(--bg2); border: 1px solid var(--bd3); border-radius: 4px; padding: 1px; }
+.seg button { background: transparent; border: none; color: var(--tx3); font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px; }
+.seg button.on { background: var(--ac); color: var(--onac); }
 .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .scroll { flex: 1; overflow: auto; min-height: 0; padding: 14px 20px 40px; }
 .html-frame { display: block; width: 100%; height: 100%; border: none; background: #fff; }
 .editor { flex: 1; min-height: 0; overflow: auto; }
 .editor :deep(.cm-editor) { height: 100%; font-size: 12.5px; }
 .editor :deep(.cm-editor.cm-focused) { outline: none; }
-.note { color: #8b96a5; padding: 16px; }
-.note.err { color: #fca5a5; }
+.note { color: var(--tx3); padding: 16px; }
+.note.err { color: var(--errtx); }
 </style>

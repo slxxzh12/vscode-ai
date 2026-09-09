@@ -59,15 +59,15 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
 </template>
 
 <style scoped>
-.cv { display: flex; flex-direction: column; height: 100%; background: #161b21; }
-.topbar { display: flex; align-items: center; gap: 14px; padding: 0 14px; height: 46px; border-bottom: 1px solid #2a323e; flex: none; }
-.title { font-weight: 700; color: #6aa2ff; }
+.cv { display: flex; flex-direction: column; height: 100%; background: var(--bg0); }
+.topbar { display: flex; align-items: center; gap: 14px; padding: 0 14px; height: 46px; border-bottom: 1px solid var(--bd); flex: none; }
+.title { font-weight: 700; color: var(--ac3); }
 .tabs { display: flex; gap: 4px; }
-.tab { background: none; border: none; color: #9aa4b2; padding: 6px 10px; cursor: pointer; border-radius: 4px; }
-.tab.on { background: #2f6feb; color: #fff; }
-.badge { margin-left: 4px; background: #ef4444; color: #fff; border-radius: 8px; padding: 0 5px; font-size: 10px; }
-.idbar { margin-left: auto; color: #9aa4b2; font-size: 12px; display: flex; align-items: center; gap: 6px; }
-.fp { color: #6b7686; font-family: monospace; font-size: 11px; }
-.err { color: #ff6b6b; font-size: 12px; }
+.tab { background: none; border: none; color: var(--tx2); padding: 6px 10px; cursor: pointer; border-radius: 4px; }
+.tab.on { background: var(--ac); color: var(--onac); }
+.badge { margin-left: 4px; background: var(--err); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 10px; }
+.idbar { margin-left: auto; color: var(--tx2); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.fp { color: var(--tx6); font-family: monospace; font-size: 11px; }
+.err { color: var(--err); font-size: 12px; }
 .body { flex: 1; min-height: 0; overflow: auto; }
 </style>

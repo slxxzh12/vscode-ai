@@ -40,17 +40,17 @@ function fmtSize(n: number) { return n > 1024 ? `${(n / 1024).toFixed(1)} KB` : 
 
 <style scoped>
 .ib { padding: 14px; }
-.warn { background: #3a2a12; color: #eab308; border: 1px solid #4a3a1a; border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
-.item { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #232b34; padding: 8px 4px; }
+.warn { background: var(--warnbg); color: var(--warn); border: 1px solid var(--bd); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
+.item { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--bd2); padding: 8px 4px; }
 .info { flex: 1; }
-.nm { color: #e2e8f0; font-weight: 600; }
-.meta { color: #6b7686; font-size: 11px; margin-left: 8px; font-family: monospace; }
+.nm { color: var(--tx1); font-weight: 600; }
+.meta { color: var(--tx6); font-size: 11px; margin-left: 8px; font-family: monospace; }
 .acts { display: flex; gap: 6px; align-items: center; }
-button { background: #2f6feb; color: #fff; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
-button.ghost { background: none; border: 1px solid #2a323e; color: #9aa4b2; }
-button.del { color: #ff6b6b; }
-.state { font-size: 11px; color: #9aa4b2; }
-.state.ok { color: #22c55e; }
-.state.bad { color: #ff6b6b; }
-.empty { color: #6b7686; padding: 8px; }
+button { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2); }
+button.del { color: var(--err); }
+.state { font-size: 11px; color: var(--tx3); }
+.state.ok { color: var(--ok); }
+.state.bad { color: var(--err); }
+.empty { color: var(--tx6); padding: 8px; }
 </style>

@@ -38,10 +38,10 @@ async function toggle() {
 </template>
 
 <style scoped>
-.row { display: flex; gap: 4px; padding: 2px 6px; cursor: default; color: #c8d0da; white-space: nowrap; overflow: hidden; }
-.row:hover { background: #262c34; }
-.tw { color: #8b96a5; width: 12px; flex: none; }
+.row { display: flex; gap: 4px; padding: 2px 6px; cursor: default; color: var(--tx4); white-space: nowrap; overflow: hidden; }
+.row:hover { background: var(--bg5); }
+.tw { color: var(--tx3); width: 12px; flex: none; }
 .nm { overflow: hidden; text-overflow: ellipsis; }
 .indent { padding-left: 14px; }
-.loading { color: #5b6472; }
+.loading { color: var(--tx5); }
 </style>

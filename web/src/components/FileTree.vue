@@ -38,5 +38,5 @@ defineExpose({ refresh });
 
 <style scoped>
 .ft { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; padding: 6px 2px; user-select: none; }
-.empty { color: #5b6472; padding: 8px; }
+.empty { color: var(--tx5); padding: 8px; }
 </style>

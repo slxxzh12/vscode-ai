@@ -7,8 +7,10 @@ import { S2C } from '@devflow/shared';
 import type { useTerminal } from '../useTerminal';
 import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
+import { useTheme } from '../theme';
 
 const props = defineProps<{ terminal: ReturnType<typeof useTerminal>; center: ReturnType<typeof useCenter>; projectId: string | null }>();
+const { theme, isDark } = useTheme();
 
 const hostRef = ref<HTMLDivElement | null>(null);
 let term: Terminal | null = null;
@@ -31,7 +33,7 @@ function init() {
   if (!hostRef.value || term) return;
   term = new Terminal({
     cursorBlink: true, fontSize: 13, fontFamily: 'Consolas, "Courier New", monospace',
-    theme: { background: '#0e1116', foreground: '#d5dae1' },
+    theme: termTheme(isDark.value),
   });
   fit = new FitAddon();
   term.loadAddon(fit);
@@ -76,6 +78,12 @@ function onResize() {
   const d = fit.proposeDimensions();
   if (d) props.terminal.resize(d.cols, d.rows);
 }
+function termTheme(dark: boolean) {
+  return dark
+    ? { background: '#0e1116', foreground: '#d5dae1', cursor: '#6aa2ff', selectionBackground: '#2f6feb66' }
+    : { background: '#ffffff', foreground: '#1f2937', cursor: '#2563eb', selectionBackground: '#93c5fd99' };
+}
+watch(isDark, (d) => { if (term) { term.options.theme = termTheme(d); requestAnimationFrame(() => onResize()); } });
 
 function onTabClick(id: string) {
   const t = props.center.tabs.value.find((x) => x.id === id);
@@ -135,19 +143,19 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.center-wrap { display: flex; flex-direction: column; height: 100%; background: #0e1116; position: relative; }
-.tabstrip { display: flex; align-items: center; gap: 2px; background: #141920; border-bottom: 1px solid #2a323e; padding: 0 8px; height: 32px; overflow-x: auto; flex: none; }
-.tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: #9aa4b2; padding: 0 10px; height: 100%; cursor: pointer; border-right: 1px solid #2a323e; flex: none; max-width: 220px; }
-.tab.active { background: #0e1116; color: #e6e9ef; }
+.center-wrap { display: flex; flex-direction: column; height: 100%; background: var(--bg3); position: relative; }
+.tabstrip { display: flex; align-items: center; gap: 2px; background: var(--bg2); border-bottom: 1px solid var(--bd); padding: 0 8px; height: 32px; overflow-x: auto; flex: none; }
+.tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--tx2); padding: 0 10px; height: 100%; cursor: pointer; border-right: 1px solid var(--bd); flex: none; max-width: 220px; }
+.tab.active { background: var(--bg3); color: var(--tx1); }
 .tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.dot.running { background: #22c55e; }
-.dot.exited { background: #64748b; }
-.file-ic { color: #4c9aff; font-size: 11px; }
-.tab .x { color: #5b6472; padding: 0 3px; }
-.tab .x:hover { color: #fff; }
-.new { background: none; border: none; color: #4c9aff; cursor: pointer; flex: none; margin-left: 4px; }
-.net { margin-left: auto; color: #eab308; flex: none; }
+.dot.running { background: var(--ok); }
+.dot.exited { background: var(--tx5); }
+.file-ic { color: var(--ac2); font-size: 11px; }
+.tab .x { color: var(--tx3); padding: 0 3px; }
+.tab .x:hover { color: var(--err); }
+.new { background: none; border: none; color: var(--ac2); cursor: pointer; flex: none; margin-left: 4px; }
+.net { margin-left: auto; color: var(--warn); flex: none; }
 .term-layer { flex: 1; padding: 2px 6px; overflow: hidden; min-height: 0; }
 .file-layer { flex: 1; min-height: 0; overflow: hidden; }
 </style>

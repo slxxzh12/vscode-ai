@@ -1,5 +1,92 @@
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  --bg0: #1e2227;
+  --bg1: #1a2027;
+  --bg2: #141920;
+  --bg3: #0e1116;
+  --bg4: #222932;
+  --bg5: #262c34;
+  --bg6: #161b21;
+  --bd: #2a323e;
+  --bd2: #1e242e;
+  --bd3: #242c38;
+  --tx: #d5dae1;
+  --tx1: #e6e9ef;
+  --tx2: #9aa4b2;
+  --tx3: #8b96a5;
+  --tx4: #c8d0da;
+  --tx5: #5b6472;
+  --tx6: #6b7686;
+  --ac: #2f6feb;
+  --ac2: #4c9aff;
+  --ac3: #6aa2ff;
+  --onac: #fff;
+  --ok: #22c55e;
+  --okbg: #14532d;
+  --oktx: #86efac;
+  --warn: #eab308;
+  --warn2: #fcd34d;
+  --warnbg: #78350f;
+  --err: #ef4444;
+  --errbg: #7f1d1d;
+  --errtx: #fca5a5;
+  --xterm-bg: #0e1116;
+  --xterm-fg: #d5dae1;
+  --scrollbar: #2a323e;
+  --hlk: #ff7b72;
+  --hls: #a5d6ff;
+  --hlc: #8b949e;
+  --hln: #79c0ff;
+  --hlt: #d2a8ff;
+  --hla: #79c0ff;
+  --hlb: #ffa657;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg0: #eef1f5;
+  --bg1: #ffffff;
+  --bg2: #eef1f5;
+  --bg3: #fafbfc;
+  --bg4: #f0f2f5;
+  --bg5: #e3e7ec;
+  --bg6: #f6f8fa;
+  --bd: #d7dce3;
+  --bd2: #e6eaef;
+  --bd3: #cfd6de;
+  --tx: #1f2937;
+  --tx1: #111827;
+  --tx2: #4b5563;
+  --tx3: #6b7280;
+  --tx4: #374151;
+  --tx5: #9aa3af;
+  --tx6: #6b7280;
+  --ac: #2563eb;
+  --ac2: #2563eb;
+  --ac3: #1d4ed8;
+  --onac: #fff;
+  --ok: #16a34a;
+  --okbg: #dcfce7;
+  --oktx: #15803d;
+  --warn: #d97706;
+  --warn2: #92400e;
+  --warnbg: #fef3c7;
+  --err: #dc2626;
+  --errbg: #fee2e2;
+  --errtx: #b91c1c;
+  --xterm-bg: #ffffff;
+  --xterm-fg: #1f2937;
+  --scrollbar: #cbd5e1;
+  --hlk: #cf222e;
+  --hls: #0a3069;
+  --hlc: #6e7781;
+  --hln: #0550ae;
+  --hlt: #8250df;
+  --hla: #953800;
+  --hlb: #0550ae;
+}
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
-body { background: #1e2227; color: #d5dae1; font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px; }
+body { background: var(--bg0); color: var(--tx); font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px; }
 .xterm { height: 100%; padding: 4px 0; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 5px; }

@@ -72,25 +72,25 @@ function roleLabel(r: string) { return r === 'owner' ? '群主' : r === 'admin' 
 <style scoped>
 .gw { padding: 14px; }
 .create { display: flex; gap: 6px; margin: 10px 0; }
-input { background: #222932; border: 1px solid #2a323e; color: #d5dae1; border-radius: 4px; padding: 5px 8px; }
-button { background: #2f6feb; color: #fff; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
-button.ghost { background: none; border: 1px solid #2a323e; color: #9aa4b2; }
-button.del { color: #ff6b6b; border-color: #3a2530; }
-button.gname { background: none; color: #e2e8f0; text-align: left; padding: 8px 6px; font-size: 13px; }
-.cnt { color: #6b7686; }
-h4 { color: #9aa4b2; text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; }
-.invite, .group { border-bottom: 1px solid #232b34; padding: 6px 4px; }
-.invite span { color: #c8d0da; }
+input { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 5px 8px; }
+button { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2); }
+button.del { color: var(--err); border-color: var(--bd); }
+button.gname { background: none; color: var(--tx1); text-align: left; padding: 8px 6px; font-size: 13px; }
+.cnt { color: var(--tx6); }
+h4 { color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; }
+.invite, .group { border-bottom: 1px solid var(--bd2); padding: 6px 4px; }
+.invite span { color: var(--tx); }
 .ghead { display: flex; align-items: center; }
-.gdetail { padding: 4px 8px 8px; background: #171c22; border-radius: 6px; }
+.gdetail { padding: 4px 8px 8px; background: var(--bg2); border-radius: 6px; }
 .inv-form { display: flex; gap: 6px; margin: 6px 0; }
 .mrow { display: flex; align-items: center; gap: 8px; padding: 4px 2px; }
-.nm { color: #e2e8f0; }
+.nm { color: var(--tx1); }
 .role { font-size: 10px; padding: 1px 6px; border-radius: 8px; }
 .role.owner { background: #7c3aed; color: #fff; }
 .role.admin { background: #b45309; color: #fff; }
-.role.member { background: #334155; color: #cbd5e1; }
-.adr { color: #6b7686; font-family: monospace; font-size: 11px; margin-left: auto; }
-.empty { color: #6b7686; padding: 8px; }
-.err { color: #ff6b6b; }
+.role.member { background: var(--bg5); color: var(--tx); }
+.adr { color: var(--tx6); font-family: monospace; font-size: 11px; margin-left: auto; }
+.empty { color: var(--tx6); padding: 8px; }
+.err { color: var(--err); }
 </style>
