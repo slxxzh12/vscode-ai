@@ -276,6 +276,10 @@ const SORT_ITEMS: Array<{ mode: SortMode; label: string }> = [
   { mode: 'num-asc', label: '按数字大小升序' },
   { mode: 'num-desc', label: '按数字大小降序' },
 ];
+const SORT_LABEL: Record<SortMode, string> = {
+  asc: '升序', desc: '降序', 'asc-ci': '升序（不分大小写）', 'desc-ci': '降序（不分大小写）',
+  'num-asc': '数字升序', 'num-desc': '数字降序',
+};
 function leadingNumber(s: string): number | null {
   const m = s.trim().match(/^-?\d+(\.\d+)?/);
   return m ? Number(m[0]) : null;
@@ -310,6 +314,7 @@ function applySort(mode: SortMode) {
   view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
   sortOpen.value = false;
   requestMeasure();
+  setToolMsg(`✓ 已按${SORT_LABEL[mode]}排列`);
 }
 let unbindSort: (() => void) | null = null;
 watch(sortOpen, (o) => {
