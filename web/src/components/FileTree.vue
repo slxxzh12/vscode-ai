@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useProjects } from '../useProjects';
 import TreeNode from './TreeNode.vue';
 
@@ -17,12 +17,11 @@ type CreateKind = 'file' | 'dir';
 
 const props = defineProps<{ projectId: string | null; activePath?: string | null }>();
 const emit = defineEmits<{ (e: 'open-file', projectId: string, path: string, name: string): void }>();
-const { tree, text, createFile, createDir } = useProjects();
+const { tree, text, createFile, createDir, reveal } = useProjects();
 const nodes = ref<TreeNode[]>([]);
 const menu = ref<MenuState | null>(null);
 const currentDir = ref('');
-const revealedPath = ref<string | null>(null);
-const selectionPath = computed(() => props.activePath ?? revealedPath.value);
+const selectionPath = computed(() => props.activePath);
 
 function childOf(items: { name: string; type: 'file' | 'dir' }[]): TreeNode[] {
   return items.map((i) => ({ name: i.name, type: i.type, path: i.name, expanded: false, loading: false, children: [] }));
@@ -84,21 +83,15 @@ function ctxCreateDir(kind: CreateKind) {
   promptCreate(kind, base);
 }
 
-// —— Reveal in explorer：在树中展开定位到目标并高亮/滚动 ——
-async function reveal(rel: string) {
-  if (!props.projectId) return;
-  const isFile = menu.value?.type === 'file';
-  const dir = isFile ? parentDir(rel) : rel;
-  revealedPath.value = isFile ? rel : null;
+// —— Reveal in system explorer：调用后端在宿主机系统文件管理器中展示并选中 ——
+async function revealOs() {
+  const m = menu.value;
+  if (!m || !props.projectId) return;
+  const target = m.path;
   closeMenu();
-  if (dir) {
-    try { await expandTo(dir); } catch { /* 目录已不存在则忽略 */ }
-  }
-  await nextTick();
-  const row = document.querySelector<HTMLElement>(`.ft [data-path="${cssSafe(rel)}"]`);
-  if (row) row.scrollIntoView({ block: 'nearest' });
+  try { await reveal(props.projectId, target); }
+  catch (e: any) { alert(`无法在系统资源管理器中打开：${e?.message || e}`); }
 }
-function cssSafe(p: string) { return p.replace(/\\/g, '/').replace(/"/g, '&quot;'); }
 
 // —— 新建文件 / 文件夹 ——
 function promptCreate(kind: CreateKind, dir = currentDir.value) {
@@ -157,7 +150,7 @@ defineExpose({ refresh });
     <div v-if="!projectId" class="empty">未选择项目</div>
 
     <div v-if="menu" class="ctx" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
-      <button @click="reveal(menu.path)">在目录中定位 (Reveal)</button>
+      <button @click="revealOs">在系统资源管理器中显示</button>
       <div class="sep" />
       <button @click="ctxCreateDir('file')">新建文件</button>
       <button @click="ctxCreateDir('dir')">新建文件夹</button>

@@ -26,6 +26,36 @@ const activeFilePath = computed(() => {
   return a && a.kind === 'file' && a.projectId === currentProject.value ? (a.path ?? null) : null;
 });
 
+const SIDE_KEY = 'devflow-side-width';
+function initialSideW(): number {
+  try { const v = Number(localStorage.getItem(SIDE_KEY)); if (v >= 140 && v <= 700) return v; } catch { /* ignore */ }
+  return 240;
+}
+const sideW = ref<number>(initialSideW());
+const dragging = ref(false);
+let dragStartX = 0;
+let dragStartW = 0;
+function onDividerDown(e: MouseEvent) {
+  dragStartX = e.clientX;
+  dragStartW = sideW.value;
+  dragging.value = true;
+  document.body.classList.add('dragging-side');
+  document.addEventListener('mousemove', onDividerMove);
+  document.addEventListener('mouseup', onDividerUp);
+}
+function onDividerMove(e: MouseEvent) {
+  const w = clamp(dragStartW + (e.clientX - dragStartX), 140, 700);
+  sideW.value = Math.round(w);
+}
+function onDividerUp() {
+  dragging.value = false;
+  document.body.classList.remove('dragging-side');
+  document.removeEventListener('mousemove', onDividerMove);
+  document.removeEventListener('mouseup', onDividerUp);
+  try { localStorage.setItem(SIDE_KEY, String(sideW.value)); } catch { /* ignore */ }
+}
+function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
+
 async function loadProjects() {
   try { projects.value = await projectsApi.list(); } catch { projects.value = []; }
   if (!currentProject.value && projects.value.length) currentProject.value = projects.value[0].id;
@@ -66,10 +96,11 @@ onMounted(() => {
         </section>
       </template>
       <template v-else>
-        <aside class="side">
+        <aside class="side" :style="{ width: sideW + 'px' }">
           <SessionList v-if="rail === 'sessions'" :terminal="terminal" :project-id="currentProject" />
           <FileTree v-else :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" />
         </aside>
+        <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
         <section class="center">
           <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" />
         </section>
@@ -96,5 +127,8 @@ onMounted(() => {
 .a-btn { background: none; border: none; color: var(--tx6); font-size: 17px; width: 34px; height: 30px; cursor: pointer; border-left: 2px solid transparent; }
 .a-btn.on { color: var(--tx1); border-left-color: var(--ac); }
 .side { width: 240px; background: var(--bg1); border-right: 1px solid var(--bd); overflow: auto; flex: none; }
+.divider { width: 5px; flex: none; cursor: col-resize; background: transparent; margin: 0 -2px; z-index: 5; }
+.divider:hover, .divider.on { background: var(--ac); opacity: .55; }
 .center { flex: 1; min-width: 0; }
+body.dragging-side { cursor: col-resize; user-select: none; }
 </style>

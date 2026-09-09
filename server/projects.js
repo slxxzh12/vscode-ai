@@ -61,6 +61,18 @@ export class Projects {
     fs.mkdirSync(target, { recursive: true });
     return { name: path.basename(target), path: rel };
   }
+  // 供 OS 资源管理器 reveal 用：解析到项目内已存在的绝对路径（文件或目录均可）
+  revealTarget(projectId, rel) {
+    const proj = this._project(projectId);
+    const rootReal = this._realOrResolved(proj.root);
+    const target = this._safeTarget(projectId, rel);
+    if (!fs.existsSync(target)) { const e = new Error('file not found'); e.code = 'not-found'; throw e; }
+    const real = this._realOrResolved(target);
+    if (real !== rootReal && !real.startsWith(rootReal + path.sep)) {
+      const e = new Error('symlink escapes project root'); e.code = 'forbidden'; throw e;
+    }
+    return { abs: real, name: path.basename(real), isDir: fs.statSync(real).isDirectory() };
+  }
   readText(projectId, rel, maxBytes = 1024 * 1024) {
     const file = this._filePath(projectId, rel);
     const size = fs.statSync(file).size;

@@ -61,6 +61,15 @@ export function useProjects() {
       }
       return res.json();
     },
+    async reveal(project: string, rel: string): Promise<{ ok: boolean; platform: string }> {
+      const res = await fetch(`/api/explorer/reveal?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`, { method: 'POST' });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep status */ }
+        throw new Error(msg);
+      }
+      return res.json();
+    },
     rawUrl(project: string, rel: string): string {
       return `/api/raw?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`;
     },

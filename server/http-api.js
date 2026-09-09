@@ -1,7 +1,29 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反代/Token 后在此实现
+
+// 在宿主机上用系统文件管理器展示目标（文件 → 定位选中；目录 → 打开）。
+function revealInOs(abs, isDir) {
+  if (process.platform === 'win32') {
+    const arg = isDir ? abs : `/select,${abs}`;
+    const p = spawn('explorer', [arg], { detached: true, stdio: 'ignore', windowsHide: true });
+    p.unref();
+    return true;
+  }
+  if (process.platform === 'darwin') {
+    const p = spawn('open', isDir ? [abs] : ['-R', abs], { detached: true, stdio: 'ignore' });
+    p.unref();
+    return true;
+  }
+  if (process.platform === 'linux') {
+    const p = spawn('xdg-open', [isDir ? abs : path.dirname(abs)], { detached: true, stdio: 'ignore' });
+    p.unref();
+    return true;
+  }
+  return false;
+}
 
 const RAW_MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -42,6 +64,14 @@ export function createHttpApi({ projects }) {
         const rel = url.searchParams.get('path') || '';
         const items = projects.tree(project, rel);
         sendJson(res, 200, { items });
+        return;
+      }
+      if (url.pathname === '/api/explorer/reveal' && req.method === 'POST') {
+        const project = url.searchParams.get('project');
+        const rel = url.searchParams.get('path') || '';
+        const { abs, isDir } = projects.revealTarget(project, rel);
+        if (!revealInOs(abs, isDir)) return sendJson(res, 501, { error: 'platform not supported' });
+        sendJson(res, 200, { ok: true, platform: process.platform });
         return;
       }
       if (url.pathname === '/api/file' && req.method === 'GET') {
