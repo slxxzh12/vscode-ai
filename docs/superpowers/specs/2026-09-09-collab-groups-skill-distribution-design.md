@@ -21,20 +21,53 @@
 - 本机密钥为 **Ed25519 私钥自持**；所有协作消息带签名，接收方用「该发送者公钥」验签（只签名不加密内容）。
 - UI 为 Web 新页面。
 
+## 1.5 目录隔离约束（重要）
+
+本功能在 `statistic` 分支开发，master 后续会持续演进。为避免每次 pull master 大量冲突，新功能代码**全部进入隔离目录**，对 master 现有文件只做最小接线：
+
+- 新文件只允许出现在：`server/collaboration/`、`web/src/collaboration/`、`shared/collab.js` + `shared/collab.d.ts`（协作常量独立文件，**不改** `shared/index.js`）、`server/collaboration.json`（数据）。
+- master 现有文件**只允许**以下最小改动点：
+  1. `server/index.js` — 实例化 Collaboration 并挂载其 HTTP 路由 + 把协作推送广播到已连浏览器 WS（复用 `gateway.conns`，不改 ws-gateway）。
+  2. `web/src/App.vue` — 顶部加入口按钮 + 条件渲染 `<CollaborationView>`（collab 视图只在选中时挂载）。
+  3. `shared/package.json` — `exports` 增加 `"./collab"` 子路径映射（让 `@devflow/shared/collab` 可被 server/web import）。
+- `shared/collab.js` 导出 `CollabS2C`（本地服务端→本机浏览器 WS 推送类型）与 `CollabPeer`（机器↔机器 HTTP 信封 `type`）两组常量；协作用户层命令不走 WS（见 §6.3），故不需要 `CollabC2S`。
+- 机器↔机器传输：统一走 HTTP `POST /api/collab/peer`，body 为签名信封 `{ type, from, payload, signature, ts }`（见 §3.2）。本地浏览器↔本地服务端：只走 `fetch('/api/collab/*')` REST + 复用现有 `/ws` 连接收 S2C 推送。
+- ws-gateway、useTerminal.ts **不改**：协作 S2C 推送由 index.js 遍历 `gateway.conns` 下发；浏览器端 useTerminal 的 default 分支会把未知 type 以 `emit(msg.type)` 转发，collab UI 直接 `terminal.on(CollabS2C.x, ...)` 订阅。
+
+隔离边界示意：
+
+```
+只新增（隔离目录）:  server/collaboration/**   web/src/collaboration/**   shared/collab.js(.d.ts)   server/collaboration.json
+最小改动（≤3 处）:  server/index.js   shared/package.json   web/src/App.vue
+不改:              shared/index.js  server/ws-gateway.js  web/src/useTerminal.ts
+```
+
 ## 2. 总体架构
 
-协作子系统与终端会话 / Workflow 并列，互不侵入：
+协作子系统与终端会话 / Workflow 并列，互不侵入（文件布局见 §1.5）：
 
 ```
 server/
   collaboration/
-    identity.js         本机身份：machineId + 用户名 + ip:port + Ed25519 密钥对
+    engine.js           协调器：身份/store/收发 API/事件总线（心跳推送由事件→gateway 广播）
+    identity.js         本机身份：machineId + 用户名 + ip:port + Ed25519 密钥对（含 sign/verify）
     store.js            本地权威 JSON 持久化：friends / groups / skillsInbox / groupSkills
-    peer-http.js        被动侧：接收对端 HTTP（握手、同步、收发 zip）+ 验签
-    peer-client.js      主动侧：发起连接、握手、分发 zip、拉取同步
+    sign.js             Ed25519 签名/验签 + 规范化 JSON（工具，供 engine/peer 复用）
+    zip.js              零依赖 zip 写/读（Node 内置 zlib，不引第三方包）
     skill-packer.js     扫描技能源目录 → zip（内存流）
     skill-installer.js  校验并解压安装（同名备份覆盖、防路径穿越）
+    peer-http.js        POST /api/collab/peer 接收：验签 → 按 CollabPeer.type 分发
+    peer-client.js      主动侧 HTTP 调用：握手、分发 zip、pull-sync（fetch）
+    http-api.js         本地 REST：/api/collab/{identity,friends,groups,skills,inbox,pull}
+    http-mount.js       挂载到 index.js 的最小接线：/api/collab/* 路由
+    event-bus.js        发布/订阅（engine 事件 → index.js 广播到 gateway.conns）
   collaboration.json    数据文件（同 projects.json 模式）
+```
+
+```
+shared/
+  collab.js             协作常量独立文件：CollabS2C / CollabPeer（不改 index.js）
+  collab.d.ts           同上 TS 类型声明（web 侧 import 用）
 ```
 
 ```
@@ -244,12 +277,13 @@ X 把「成员变更」增量广播给全群在线成员 → 各成员更新本�
 
 HTTP 走 `fetch('/api/...')`；实时推送复用现有 WS。
 
-### 6.3 WS 消息扩展（`shared/index.js`）
+### 6.3 WS 消息（`shared/collab.js`，隔离常量）
 
-现有会话/Workflow 消息全部保留，新增协作消息（按类型路由，互不干扰）：
+现有会话/Workflow 消息（`shared/index.js`）全部不动。协作常量放独立文件 `shared/collab.js`（导出 `CollabS2C` / `CollabPeer`），web 侧经 `@devflow/shared/collab` 子路径 import：
 
-- C2S（本机 → 本地服务端）：`COLLAB_SNAPSHOT`、`COLLAB_INSTALL`、`COLLAB_IGNORE`、`COLLAB_PULL`
-- S2C（本地服务端 → 本机前端）：`COLLAB_INBOX`（收到新包）、`COLLAB_FRIEND_REQ`、`COLLAB_GROUP_INVITE`、`COLLAB_SYNCED`（本机状态已变更）
+- `CollabS2C`（本地服务端 → 本机浏览器，**复用现有 /ws 推送**）：`COLLAB_INBOX`（收到新包）、`COLLAB_FRIEND_REQ`（待确认好友）、`COLLAB_GROUP_INVITE`（待入群）、`COLLAB_SYNCED`（本机状态已变更 → 前端刷新快照）
+- 协作用户层命令**不走 WS**：浏览器对本地服务端的所有操作走 HTTP `fetch('/api/collab/*')`；浏览器收推送只需订阅 `CollabS2C` 对应 type（useTerminal default 分支会 emit，无需改 useTerminal.ts）。
+- `CollabPeer`（机器↔机器 HTTP 信封 `type`）：`FRIEND_REQUEST`、`FRIEND_ACCEPT`、`GROUP_INVITE`、`GROUP_ACCEPT`、`MEMBER_SYNC`、`SKILL_PUSH`、`PULL_SYNC`
 
 > peer 间（机器↔机器）握手/分发/同步走 HTTP + 签名；WS 仅用于「本地服务端 ↔ 本地浏览器」。两层语义分开。
 
@@ -276,13 +310,18 @@ HTTP 走 `fetch('/api/...')`；实时推送复用现有 WS。
 - mDNS / UDP 广播自动发现。
 - 移动端适配。
 
-## 8. 实施建议（后续 writing-plans 细化）
+## 8. 实施建议（拆两份 plan：server 先行）
 
-1. shared：新增协作 WS 消息类型常量。
-2. server：identity + store + 签名工具 → collaboration.json 持久化。
-3. server：peer-http / peer-client 握手与加好友。
-4. server：群组管理（建群/邀请/角色）与增量广播。
-5. server：skill-packer / 分发 / skill-installer / inbox。
-6. server：pull-sync 与补拉。
-7. web：协作页 UI（5 个组件）+ WS 路由。
-8. 配置接线 + 测试补齐。
+Server plan（本阶段）：
+1. shared：`collab.js` + `collab.d.ts` + `package.json` exports 子路径。
+2. server：sign.js（规范化 JSON + Ed25519）+ identity.js → 测试。
+3. server：zip.js 零依赖写/读 → 测试。
+4. server：store.js（collaboration.json 持久化）+ 测试。
+5. server：skill-packer.js / skill-installer.js → 测试。
+6. server：engine.js + event-bus.js（friend/group/skill/pull 全流程核心逻辑，纯内存可测）。
+7. server：peer-http.js / peer-client.js / http-api.js / http-mount.js → 集成测试（双实例 P2P）。
+8. server：index.js 接线 + 广播到 gateway.conns；配置。
+9. `npm test`（server）+ `npm run typecheck`（web 不受影响）全绿。
+
+Web plan（后续）：
+10. web：协作页 UI（5 个组件）+ `useCollab` + App.vue 入口接线。
