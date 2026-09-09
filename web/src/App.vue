@@ -21,6 +21,10 @@ const rail = ref<'explorer' | 'sessions' | 'contacts'>('explorer');
 const showWf = ref(false);
 
 const projectName = computed(() => projects.value.find((p) => p.id === currentProject.value)?.name || '未选择项目');
+const activeFilePath = computed(() => {
+  const a = center.active.value;
+  return a && a.kind === 'file' && a.projectId === currentProject.value ? (a.path ?? null) : null;
+});
 
 async function loadProjects() {
   try { projects.value = await projectsApi.list(); } catch { projects.value = []; }
@@ -64,7 +68,7 @@ onMounted(() => {
       <template v-else>
         <aside class="side">
           <SessionList v-if="rail === 'sessions'" :terminal="terminal" :project-id="currentProject" />
-          <FileTree v-else :project-id="currentProject" @open-file="openFile" />
+          <FileTree v-else :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" />
         </aside>
         <section class="center">
           <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" />

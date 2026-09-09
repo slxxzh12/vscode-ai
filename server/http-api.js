@@ -55,6 +55,13 @@ export function createHttpApi({ projects }) {
         const project = url.searchParams.get('project');
         const rel = url.searchParams.get('path') || '';
         const body = await readJsonBody(req);
+        if (body.create) {
+          const f = body.dir
+            ? projects.createDir(project, rel)
+            : projects.createFile(project, rel, typeof body.content === 'string' ? body.content : '');
+          sendJson(res, 200, f);
+          return;
+        }
         if (typeof body.content !== 'string') return sendJson(res, 400, { error: 'content required' });
         const f = projects.writeText(project, rel, body.content);
         sendJson(res, 200, f);
@@ -78,6 +85,7 @@ export function createHttpApi({ projects }) {
       if (err.code === 'not-found') return sendJson(res, 404, { error: 'not found' });
       if (err.code === 'not-file') return sendJson(res, 400, { error: 'not a file' });
       if (err.code === 'too-large') return sendJson(res, 413, { error: 'file too large' });
+      if (err.code === 'exists') return sendJson(res, 409, { error: 'already exists' });
       sendJson(res, 500, { error: 'internal', message: String(err && err.message || err) });
       return;
     }

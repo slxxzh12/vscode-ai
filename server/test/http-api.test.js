@@ -137,3 +137,32 @@ test('/api/file POST 越界 403；缺 content 400', async (t) => {
   const noContent = await post(server, '/api/file?project=a&path=a.txt', {});
   assert.equal(noContent.status, 400);
 });
+
+test('/api/file POST create 新建文件（可含嵌套目录）并可读回', async (t) => {
+  const dir = tmpDir();
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const c = await post(server, '/api/file?project=a&path=new%2Fsub%2Fapp.txt', { create: true, content: 'hello' });
+  assert.equal(c.status, 200);
+  assert.equal(JSON.parse(c.body).size, 5);
+  const rb = await request(server, '/api/file?project=a&path=new%2Fsub%2Fapp.txt');
+  assert.equal(JSON.parse(rb.body).content, 'hello');
+});
+
+test('/api/file POST create 已存在返回 409', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'x.txt'), 'x');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/file?project=a&path=x.txt', { create: true, content: 'y' });
+  assert.equal(r.status, 409);
+});
+
+test('/api/file POST create dir 新建目录', async (t) => {
+  const dir = tmpDir();
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const d = await post(server, '/api/file?project=a&path=made%2Ffolder', { create: true, dir: true });
+  assert.equal(d.status, 200);
+  assert.equal(fs.existsSync(path.join(dir, 'made', 'folder')), true);
+});

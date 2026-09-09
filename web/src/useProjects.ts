@@ -35,6 +35,32 @@ export function useProjects() {
       }
       return res.json();
     },
+    async createFile(project: string, rel: string, content = ''): Promise<{ name: string; path: string }> {
+      const res = await fetch(`/api/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ create: true, content }),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep status */ }
+        throw new Error(msg);
+      }
+      return res.json();
+    },
+    async createDir(project: string, rel: string): Promise<{ name: string; path: string }> {
+      const res = await fetch(`/api/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ create: true, dir: true }),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep status */ }
+        throw new Error(msg);
+      }
+      return res.json();
+    },
     rawUrl(project: string, rel: string): string {
       return `/api/raw?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`;
     },

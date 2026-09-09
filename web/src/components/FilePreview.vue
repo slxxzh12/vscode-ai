@@ -238,7 +238,7 @@ onBeforeUnmount(() => {
           <span v-else-if="saveState === 'error'" class="save saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
           <div v-if="hasPreviewToggle" class="seg">
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">预览</button>
-            <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">代码</button>
+            <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? '源码' : '代码' }}</button>
           </div>
         </div>
       </div>
