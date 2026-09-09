@@ -37,10 +37,12 @@
 隔离边界示意：
 
 ```
-只新增（隔离目录）:  server/collaboration/**   web/src/collaboration/**   shared/collab.js(.d.ts)   server/collaboration.json
+只新增（隔离目录）:  server/collaboration/**   web/src/collaboration/**   shared/collab.js(.d.ts)
 最小改动（≤3 处）:  server/index.js   shared/package.json   web/src/App.vue
 不改:              shared/index.js  server/ws-gateway.js  web/src/useTerminal.ts
 ```
+
+运行时数据（不入库）：`server/collaboration/identity.json`（**含本机 Ed25519 私钥**）、`server/collaboration/collab.json`、`server/collaboration/inbox/`。`.gitignore` 追加了这三条规则（私钥绝不允许提交；此为对 master 文件的第四处例外改动，因安全必需）。
 
 ## 2. 总体架构
 
@@ -119,7 +121,7 @@ web/src/collaboration/
 
 ### 3.3 本地权威 JSON
 
-`server/collaboration.json`（示例；字段命名全库统一：机器标识为 `machineId`，地址为 `ip`）：
+`server/collaboration/collab.json`（store 数据；identity 单独存 `server/collaboration/identity.json`，二者均不入库）：
 
 ```json
 {
