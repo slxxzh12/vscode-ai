@@ -108,6 +108,14 @@ const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
 const saveMsg = ref('');
 let disposed = false;
 
+// —— 底部常驻状态栏：最近一次工具反馈（保存状态单独在最左）——
+const toolMsg = ref('');
+const toolOk = ref(true);
+function setToolMsg(text: string, ok = true) {
+  toolMsg.value = text;
+  toolOk.value = ok;
+}
+
 function nowTime() {
   return new Date().toLocaleTimeString('zh-CN', { hour12: false });
 }
@@ -188,6 +196,7 @@ function requestMeasure() {
 }
 
 async function load() {
+  toolMsg.value = '';
   resetB64Panel();
   closeDetail();
   status.value = 'loading';
@@ -248,8 +257,9 @@ async function minifyOneLine() {
     const r = await format(props.name, src);
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: r.content } });
     requestMeasure();
+    setToolMsg('✓ 已压缩为一行');
   } catch (e: any) {
-    alert(`压缩失败：${e?.message || e}`);
+    setToolMsg(`压缩失败：${e?.message || e}`, false);
   } finally {
     minifying.value = false;
   }
