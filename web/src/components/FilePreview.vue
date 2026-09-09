@@ -116,6 +116,22 @@ function setToolMsg(text: string, ok = true) {
   toolOk.value = ok;
 }
 
+// —— 顶栏闪字（格式化/运行 短暂提示，与底部状态栏并存）——
+const fmtMsg = ref('');
+let fmtTimer: ReturnType<typeof setTimeout> | null = null;
+function flashFmt(m: string) {
+  fmtMsg.value = m;
+  if (fmtTimer) clearTimeout(fmtTimer);
+  fmtTimer = setTimeout(() => { fmtMsg.value = ''; }, 2600);
+}
+const runMsg = ref('');
+let runTimer: ReturnType<typeof setTimeout> | null = null;
+function flashRun(m: string) {
+  runMsg.value = m;
+  if (runTimer) clearTimeout(runTimer);
+  runTimer = setTimeout(() => { runMsg.value = ''; }, 3200);
+}
+
 // —— 二进制文件：不支持网页预览 ——
 const isBinary = ref(false);
 async function revealInExplorer() {
@@ -208,6 +224,8 @@ function requestMeasure() {
 
 async function load() {
   toolMsg.value = '';
+  fmtMsg.value = '';
+  runMsg.value = '';
   isBinary.value = false;
   resetB64Panel();
   closeDetail();
@@ -273,9 +291,12 @@ async function minifyOneLine() {
     const r = await format(props.name, src);
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: r.content } });
     requestMeasure();
+    flashFmt('✓ 已压缩为一行');
     setToolMsg('✓ 已压缩为一行');
   } catch (e: any) {
-    setToolMsg(`压缩失败：${e?.message || e}`, false);
+    const m = `压缩失败：${e?.message || e}`;
+    flashFmt(m);
+    setToolMsg(m, false);
   } finally {
     minifying.value = false;
   }
@@ -283,7 +304,6 @@ async function minifyOneLine() {
 
 // —— 文本排序 ——
 type SortMode = 'asc' | 'desc' | 'asc-ci' | 'desc-ci' | 'num-asc' | 'num-desc';
-const sortOpen = ref(false);
 const SORT_ITEMS: Array<{ mode: SortMode; label: string }> = [
   { mode: 'asc', label: '升序排列（A-Z）' },
   { mode: 'desc', label: '降序排列（Z-A）' },
@@ -328,18 +348,40 @@ function applySort(mode: SortMode) {
   if (!view) return;
   const out = sortLines(mode);
   view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
-  sortOpen.value = false;
+  toolsOpen.value = false;
   requestMeasure();
+  flashFmt(`✓ 已按${SORT_LABEL[mode]}排列`);
   setToolMsg(`✓ 已按${SORT_LABEL[mode]}排列`);
 }
-let unbindSort: (() => void) | null = null;
-watch(sortOpen, (o) => {
+
+// —— 🧰 小工具（顶栏右上收纳菜单）：排序/Base64/格式化/压缩/运行/curl ——
+const toolsOpen = ref(false);
+let toolsOpenedAt = 0;
+let unbindTools: (() => void) | null = null;
+const anyTool = computed(() =>
+  !!(canFormat.value && showEditor.value)
+  || !!(canMinify.value && showEditor.value && status.value === 'ok')
+  || !!canSort.value || !!canB64.value || !!canRun.value || !!canCurl.value);
+watch(toolsOpen, (o) => {
   if (o) {
-    const h = (e: Event) => { const t = e.target as HTMLElement | null; if (t && !t.closest('.sortwrap')) sortOpen.value = false; };
+    toolsOpenedAt = Date.now();
+    const h = (e: Event) => {
+      if (Date.now() - toolsOpenedAt < 250) return;   // 忽略打开瞬间的重复/合成事件
+      const t = e.target as HTMLElement | null;
+      if (t && !t.closest('.twrap')) toolsOpen.value = false;
+    };
     document.addEventListener('pointerdown', h, true);
-    unbindSort = () => document.removeEventListener('pointerdown', h, true);
-  } else if (unbindSort) { unbindSort(); unbindSort = null; }
+    unbindTools = () => document.removeEventListener('pointerdown', h, true);
+  } else if (unbindTools) { unbindTools(); unbindTools = null; }
 });
+function runTools(t: 'format' | 'minify' | 'b64' | 'run' | 'curl') {
+  toolsOpen.value = false;
+  if (t === 'format') formatDoc();
+  else if (t === 'minify') minifyOneLine();
+  else if (t === 'b64') toggleB64();
+  else if (t === 'run') runFile();
+  else if (t === 'curl') openCurl();
+}
 
 // —— Base64 编解码结果面板 ——
 const b64Open = ref(false);
@@ -470,9 +512,12 @@ watch(() => props.detailToken, (tk) => {
 async function runFile() {
   try {
     await runScript(props.projectId, props.path);
+    flashRun('已在系统中执行');
     setToolMsg('✓ 已在系统中执行');
   } catch (e: any) {
-    setToolMsg(`执行失败：${e?.message || e}`, false);
+    const m = `执行失败：${e?.message || e}`;
+    flashRun(m);
+    setToolMsg(m, false);
   }
 }
 
@@ -556,12 +601,16 @@ async function formatDoc() {
     const out = await prettier.format(doc, { parser, plugins });
     if (out !== doc) {
       view.dispatch({ changes: { from: 0, to: doc.length, insert: out } });
+      flashFmt('✓ 已格式化');
       setToolMsg('✓ 已格式化');
     } else {
+      flashFmt('格式已是最佳');
       setToolMsg('格式已是最佳');
     }
   } catch (e: any) {
-    setToolMsg(`格式化失败：${e?.message || e}`, false);
+    const m = `格式化失败：${e?.message || e}`;
+    flashFmt(m);
+    setToolMsg(m, false);
   }
 }
 
@@ -575,7 +624,9 @@ watch([status, viewMode], applyPreview);
 
 onBeforeUnmount(() => {
   disposed = true;
-  unbindSort?.();
+  unbindTools?.();
+  if (fmtTimer) clearTimeout(fmtTimer);
+  if (runTimer) clearTimeout(runTimer);
   flush();
   if (view) { view.destroy(); view = null; }
 });
@@ -597,24 +648,32 @@ onBeforeUnmount(() => {
       <div class="head">
         <span class="meta">{{ name }}<template v-if="status === 'ok'"> · {{ (size / 1024).toFixed(1) }} KB</template></span>
         <div class="right">
-          <button v-if="canFormat && showEditor" class="fmt-btn" title="格式化代码" @click="formatDoc">⇥ 格式化</button>
-          <button v-if="canMinify && showEditor && status === 'ok'" class="fmt-btn" :disabled="minifying" title="压缩成一行（js/json）" @click="minifyOneLine">{{ minifying ? '压缩中…' : '⇣ 压成一行' }}</button>
-          <span v-if="canSort" class="sortwrap">
-            <button class="fmt-btn" :class="{ on: sortOpen }" title="文本排序" @click.stop="sortOpen = !sortOpen">⇅ 排序 ▾</button>
-            <div v-if="sortOpen" class="sortmenu" @click.stop>
-              <button v-for="s in SORT_ITEMS" :key="s.mode" @click="applySort(s.mode)">{{ s.label }}</button>
-            </div>
-          </span>
-          <span v-if="canB64" class="b64wrap">
-            <button class="fmt-btn" :class="{ on: b64Open }" title="打开/关闭 Base64 编解码结果面板（编辑器下方）" @click="toggleB64">⇆ Base64</button>
-          </span>
-          <button v-if="status === 'ok'" class="fmt-btn" :class="{ on: detailOpen }" title="文件详细信息" @click="toggleDetail()">ⓘ 详细信息</button>
-          <button v-if="canRun" class="fmt-btn run-btn" title="在系统中执行该脚本" @click="runFile">▶ 运行</button>
-          <button v-if="canCurl" class="fmt-btn" title="解析 curl 命令并构建 HTTP 请求" @click="openCurl">⇀ 转请求</button>
           <div v-if="hasPreviewToggle" class="seg">
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">预览</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? '源码' : '代码' }}</button>
           </div>
+          <span v-if="saveState === 'saving'" class="save saveing">保存中…</span>
+          <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ saveMsg }} 已保存</span>
+          <span v-else-if="saveState === 'error'" class="save saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
+          <span v-if="fmtMsg" class="save fmtmsg" :class="{ ok: fmtMsg.startsWith('✓') }">{{ fmtMsg }}</span>
+          <span class="twrap">
+            <button class="fmt-btn" :class="{ on: toolsOpen }" title="小工具" @click.stop="toolsOpen = !toolsOpen">🧰 小工具 ▾</button>
+            <div v-if="toolsOpen" class="toolsmenu" @click.stop>
+              <button v-if="canFormat && showEditor" class="mi" @click="runTools('format')">⇥ 格式化</button>
+              <button v-if="canMinify && showEditor && status === 'ok'" class="mi" :disabled="minifying" @click="runTools('minify')">{{ minifying ? '压缩中…' : '⇣ 压成一行' }}</button>
+              <div v-if="canSort" class="mi has-sub">⇅ 排序<span class="caret">▸</span>
+                <div class="submenu">
+                  <button v-for="s in SORT_ITEMS" :key="s.mode" @click="applySort(s.mode)">{{ s.label }}</button>
+                </div>
+              </div>
+              <button v-if="canB64" class="mi" :class="{ on: b64Open }" @click="runTools('b64')">⇆ Base64 编解码面板</button>
+              <button v-if="canRun" class="mi run-t" @click="runTools('run')">▶ 在系统中运行</button>
+              <button v-if="canCurl" class="mi" @click="runTools('curl')">⇀ curl 转请求</button>
+              <div v-if="!anyTool" class="mi none">当前视图无可用工具（切到代码视图试试）</div>
+            </div>
+          </span>
+          <span v-if="runMsg" class="save runmsg">{{ runMsg }}</span>
+          <button v-if="status === 'ok'" class="fmt-btn" :class="{ on: detailOpen }" title="文件详细信息" @click="toggleDetail()">ⓘ 详细信息</button>
         </div>
       </div>
       <div v-if="status === 'loading'" class="note">加载中…</div>
@@ -736,12 +795,29 @@ onBeforeUnmount(() => {
 .fmt-btn { background: none; border: 1px solid var(--bd); color: var(--tx2); font-size: 11px; padding: 1px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .fmt-btn:hover, .fmt-btn.on { border-color: var(--ac2); color: var(--ac2); }
 .fmt-btn:disabled { opacity: .5; cursor: default; }
-.sortwrap { position: relative; }
-.b64wrap { position: relative; }
-.sortmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 60; min-width: 210px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 4px; display: flex; flex-direction: column; }
-.sortmenu button { text-align: left; background: none; border: none; color: var(--tx); padding: 6px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; font-family: inherit; }
-.sortmenu button:hover { background: var(--ac); color: var(--onac); }
-.run-btn { color: var(--ok); border-color: var(--ok); }
+.save { font-size: 11px; line-height: 1; white-space: nowrap; }
+.save.saveing { color: var(--warn); }
+.save.saveok { color: var(--ok); }
+.save.saveerr { color: var(--errtx); cursor: pointer; }
+.save.fmtmsg { color: var(--tx3); }
+.save.fmtmsg.ok { color: var(--ok); }
+.save.runmsg { color: var(--ok); }
+.twrap { position: relative; }
+.toolsmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 70; min-width: 190px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 4px; display: flex; flex-direction: column; }
+.mi { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: none; border: none; color: var(--tx); padding: 6px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; font-family: inherit; white-space: nowrap; box-sizing: border-box; }
+.mi:hover { background: var(--ac); color: var(--onac); }
+.mi.on { color: var(--ac2); }
+.mi:disabled { opacity: .5; cursor: default; }
+.mi.has-sub { position: relative; }
+.mi .caret { margin-left: auto; color: var(--tx6); }
+.mi:hover .caret { color: var(--onac); }
+.submenu { display: none; position: absolute; left: calc(100% - 6px); top: -5px; z-index: 71; min-width: 200px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 4px; flex-direction: column; }
+.mi.has-sub:hover > .submenu { display: flex; }
+.submenu button { text-align: left; background: none; border: none; color: var(--tx); padding: 6px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; font-family: inherit; white-space: nowrap; }
+.submenu button:hover { background: var(--ac); color: var(--onac); }
+.mi.run-t { color: var(--ok); }
+.mi.none { color: var(--tx6); cursor: default; pointer-events: none; }
+.mi.none:hover { background: none; color: var(--tx6); }
 .curlpanel { position: absolute; top: 34px; right: 10px; bottom: 10px; width: 480px; z-index: 80; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.4); display: flex; flex-direction: column; overflow: hidden; }
 .cph { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg4); color: var(--tx1); font-weight: 600; }
 .cpx { background: none; border: none; color: var(--tx3); font-size: 15px; cursor: pointer; }

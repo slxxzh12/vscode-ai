@@ -5,7 +5,7 @@ import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
 import CollaborationView from './collaboration/CollaborationView.vue';
 import TerminalView from './components/TerminalView.vue';
-import SessionList from './components/SessionList.vue';
+import HistoryList from './components/HistoryList.vue';
 import FileTree from './components/FileTree.vue';
 import WorkflowPanel from './components/WorkflowPanel.vue';
 import type { ProjectInfo } from '@devflow/shared';
@@ -17,7 +17,7 @@ const projectsApi = useProjects();
 const { theme, toggle } = useTheme();
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
-const rail = ref<'explorer' | 'sessions' | 'contacts'>('explorer');
+const rail = ref<'explorer' | 'history' | 'contacts'>('explorer');
 const showWf = ref(false);
 const detailToken = ref(0);
 const detailPath = ref('');
@@ -25,9 +25,62 @@ function onDetailFile(projectId: string, path: string) {
   const q = path.replace(/\\/g, '/');
   const i = q.lastIndexOf('/');
   const name = i >= 0 ? q.slice(i + 1) : q;
+  pushFileHistory(projectId, q);
   center.openFile(projectId, path, name);
   detailPath.value = q;
   detailToken.value++;
+}
+
+// —— 打开文件历史（按节点公钥指纹隔离存储，同机多实例不串）——
+interface FileRec { projectId: string; path: string; ts: number; }
+function loadHistoryArr(raw: string | null): FileRec[] {
+  try {
+    const a = JSON.parse(raw || '[]');
+    return Array.isArray(a) ? a.filter((x) => x && typeof x.projectId === 'string' && typeof x.path === 'string' && typeof x.ts === 'number') : [];
+  } catch { return []; }
+}
+let fileHistKey = 'devflow-file-history';
+const fileHistory = ref<FileRec[]>([]);
+function persistFileHistory() {
+  try { localStorage.setItem(fileHistKey, JSON.stringify(fileHistory.value.slice(0, 200))); } catch { /* ignore */ }
+}
+async function initFileHistory() {
+  try {
+    const snap = await fetch('/api/collab/snapshot').then((r) => r.json()).catch(() => null);
+    const pem: string = snap?.identity?.publicKey || '';
+    let fp = 'none';
+    if (pem) {
+      try {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pem));
+        fp = Array.from(new Uint8Array(buf)).slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+      } catch { fp = 'none'; }
+    }
+    fileHistKey = `devflow-file-history-${fp}`;
+    fileHistory.value = loadHistoryArr(localStorage.getItem(fileHistKey));
+  } catch { /* keep empty */ }
+}
+function pushFileHistory(projectId: string, path: string) {
+  const q = path.replace(/\\/g, '/');
+  const arr = fileHistory.value.filter((r) => !(r.projectId === projectId && r.path === q));
+  arr.unshift({ projectId, path: q, ts: Date.now() });
+  fileHistory.value = arr.slice(0, 200);
+  persistFileHistory();
+}
+function removeFileHistory(projectId: string, path: string) {
+  fileHistory.value = fileHistory.value.filter((r) => !(r.projectId === projectId && r.path === path));
+  persistFileHistory();
+}
+function clearFileHistory() { fileHistory.value = []; persistFileHistory(); }
+const historyItems = computed(() => fileHistory.value.map((r) => {
+  const i = r.path.lastIndexOf('/');
+  const name = i >= 0 ? r.path.slice(i + 1) : r.path;
+  const projName = projects.value.find((p) => p.id === r.projectId)?.name || r.projectId;
+  return { ...r, name, projName };
+}));
+function openFromHistory(it: FileRec & { name: string; projName: string }) {
+  if (it.projectId) { currentProject.value = it.projectId; touchRecent(it.projectId); }
+  pushFileHistory(it.projectId, it.path);
+  center.openFile(it.projectId, it.path, it.name);
 }
 
 const projectName = computed(() => projects.value.find((p) => p.id === currentProject.value)?.name || '未选择项目');
@@ -130,9 +183,11 @@ function openFile(projectId: string, path: string) {
   const q = path.replace(/\\/g, '/');
   const i = q.lastIndexOf('/');
   const name = i >= 0 ? q.slice(i + 1) : q;   // 文件名一律由 path 推导，避免上游传错标签
+  pushFileHistory(projectId, q);
   center.openFile(projectId, path, name);
 }
 onMounted(() => {
+  initFileHistory();
   loadProjects();
   terminal.connect();
 });
@@ -158,7 +213,7 @@ onMounted(() => {
     <div class="main">
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" title="目录" @click="rail = 'explorer'">▤</button>
-        <button class="a-btn" :class="{ on: rail === 'sessions' }" title="会话" @click="rail = 'sessions'">▦</button>
+        <button class="a-btn" :class="{ on: rail === 'history' }" title="历史" @click="rail = 'history'; showWf = false">🕘</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" title="通讯录" @click="rail = 'contacts'; showWf = false">👥</button>
       </aside>
       <template v-if="rail === 'contacts'">
@@ -168,7 +223,7 @@ onMounted(() => {
       </template>
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
-          <SessionList v-if="rail === 'sessions'" :terminal="terminal" :project-id="currentProject" />
+          <HistoryList v-if="rail === 'history'" :items="historyItems" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)" @clear="clearFileHistory" />
           <FileTree v-else :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
