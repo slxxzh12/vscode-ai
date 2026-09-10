@@ -26,7 +26,7 @@ test('parseWorkflowXml 解析多工作流/多阶段/多提示语', () => {
   assert.equal(wfs[1].stages[0].label, '盘点');
 });
 
-test('仓库 config/workflow.xml 可解析出 开发/测试/文档 三个工作流且阶段均有提示语', () => {
+test('仓库 config/devflow.xml 可解析出 开发/测试/文档 三个工作流且阶段均有提示语', () => {
   const file = defaultWorkflowFile(path.join(__dirname, '..', '..'));
   const wfs = loadWorkflowXml(file);
   const ids = wfs.map((w) => w.id);

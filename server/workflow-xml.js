@@ -61,5 +61,5 @@ export function loadWorkflowXml(file) {
 
 // 默认配置文件位置：仓库根 config/workflow.xml（server/ 的上一级）
 export function defaultWorkflowFile(baseDir) {
-  return path.join(baseDir, 'config', 'workflow.xml');
+  return path.join(baseDir, 'config', 'devflow.xml');
 }
