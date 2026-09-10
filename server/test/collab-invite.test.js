@@ -91,3 +91,81 @@ test('普通成员（member）不能生成邀请链接', async () => {
     assert.equal(r.code, 'forbidden');
   } finally { await h.stop(); }
 });
+
+test('B 通过邀请链接入群：双方成员表一致、角色正确', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const g = await A.createGroup('team');
+    const link = A.createInviteLink({ groupId: g.id });
+
+    const pv = B.previewInvite(link.token);
+    assert.equal(pv.code, 'ok');
+    assert.equal(pv.groupName, 'team');
+    assert.equal(pv.inviter.machineId, A.pub.machineId);
+    assert.equal(pv.alreadyMember, false);
+
+    const jr = await B.joinByInvite(link.token);
+    assert.equal(jr.code, 'joined', JSON.stringify(jr));
+    const gA = A.store.findGroup(g.id);
+    const gB = B.store.findGroup(g.id);
+    assert.ok(gB, 'B 本地已建群');
+    assert.ok(gA.members.find((m) => m.machineId === B.pub.machineId), 'A 群含 B');
+    assert.ok(gB.members.find((m) => m.machineId === A.pub.machineId), 'B 群含 A');
+    const role = gA.members.find((m) => m.machineId === B.pub.machineId).role;
+    assert.equal(role, 'admin', '第 2 位入群者为 admin');
+
+    const again = await B.joinByInvite(link.token);
+    assert.equal(again.code, 'already-member');
+  } finally { await h.stop(); }
+});
+
+test('过期 token 预览/加入被拒', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const g = await A.createGroup('team');
+    const past = makeInviteToken(A.identity.privateKey, {
+      groupId: g.id, groupName: 'team', inviter: A.pub, epoch: 0, exp: Date.now() - 1000, jti: 'j',
+    });
+    assert.equal(B.previewInvite(past).code, 'expired');
+    const jr = await B.joinByInvite(past);
+    assert.equal(jr.code, 'expired');
+  } finally { await h.stop(); }
+});
+
+test('撤销后旧 token 被拒（invite-revoked）', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const g = await A.createGroup('team');
+    const link = A.createInviteLink({ groupId: g.id });
+    await A.revokeInvites(g.id);
+    const jr = await B.joinByInvite(link.token);
+    assert.equal(jr.code, 'invite-revoked', JSON.stringify(jr));
+    assert.equal(B.store.findGroup(g.id), null, 'B 未入群');
+  } finally { await h.stop(); }
+});
+
+test('篡改 token 加入被拒', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const g = await A.createGroup('team');
+    const link = A.createInviteLink({ groupId: g.id });
+    const jr = await B.joinByInvite(link.token.slice(0, -4) + 'AAAA');
+    assert.equal(jr.code, 'bad-token');
+  } finally { await h.stop(); }
+});
+
+test('邀请方不可达 → unreachable', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const g = await A.createGroup('team');
+    const link = A.createInviteLink({ groupId: g.id });
+    B.peer = { post: async () => ({ ok: false, error: 'connect-failed' }) };
+    const jr = await B.joinByInvite(link.token);
+    assert.equal(jr.code, 'unreachable');
+  } finally { await h.stop(); }
+});
