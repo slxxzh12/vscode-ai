@@ -20,6 +20,7 @@ import { createEventBus } from './collaboration/event-bus.js';
 import { CollabS2C } from '@devflow/shared/collab';
 import { loadWorkflowXml, defaultWorkflowFile } from './workflow-xml.js';
 import { defaultSettingsFile, readSettings, writeSettings } from './settings.js';
+import { readHistory, writeHistory, appendHistory } from './message-history.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -78,6 +79,8 @@ const collabIdentity = loadIdentity({
   port: PORT_DEFAULT,
 });
 const nodeFp = publicFingerprint(collabIdentity.publicKey);
+// 用户输入历史落盘：<dataHome>/nodes/<公钥指纹>/message-history.jsonc
+const historyFile = path.join(instanceFpRoot(nodeFp), 'message-history.jsonc');
 
 if (NODE) {
   // 状态按本实例公钥指纹隔离（同一密钥永远同一目录；不同密钥互不干扰）
@@ -142,6 +145,26 @@ const server = http.createServer(async (req, res) => {
       const next = writeSettings(settingsFile, { port });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ settings: next, needRestart: true }));
+    });
+    return;
+  }
+  if (url.pathname === '/api/history' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ messages: readHistory(historyFile), file: historyFile }));
+    return;
+  }
+  if (url.pathname === '/api/history' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      let messages;
+      if (typeof body.append === 'string') messages = appendHistory(historyFile, body.append);
+      else if (Array.isArray(body.messages)) messages = writeHistory(historyFile, body.messages);
+      else { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'messages[] or append required' })); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ messages }));
     });
     return;
   }
