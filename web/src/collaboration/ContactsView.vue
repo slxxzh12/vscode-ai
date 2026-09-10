@@ -5,6 +5,7 @@ import type { CollabApi } from './useCollab';
 import type { CollabFriend, CollabMember, CollabGroup } from './types';
 import GroupChatView from './GroupChatView.vue';
 import JoinInviteCard from './JoinInviteCard.vue';
+import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
@@ -78,14 +79,14 @@ function canKick(target: CollabMember): boolean {
 async function kick(m: CollabMember) {
   const g = activeGroup.value;
   if (!g) return;
-  if (confirm(`把 ${m.username} 移出群？`)) { await props.collab.kickMember(g.id, m.machineId); await props.collab.refresh(); }
+  if (confirm(t('collab.group.kick_confirm', { name: m.username }))) { await props.collab.kickMember(g.id, m.machineId); await props.collab.refresh(); }
 }
 async function dissolveGroup() {
   const g = activeGroup.value;
   if (!g) return;
-  if (confirm(`解散群「${g.name}」？`)) { await props.collab.deleteGroup(g.id); await props.collab.refresh(); }
+  if (confirm(t('collab.group.dissolve_confirm', { name: g.name }))) { await props.collab.deleteGroup(g.id); await props.collab.refresh(); }
 }
-function roleLabel(r: string) { return r === 'owner' ? '群主' : r === 'admin' ? '管理员' : '成员'; }
+function roleLabel(r: string) { return r === 'owner' ? t('collab.role.owner') : r === 'admin' ? t('collab.role.admin') : t('collab.role.member'); }
 async function genInviteLink() {
   const g = activeGroup.value; if (!g) return;
   inviteErr.value = '';
@@ -96,7 +97,7 @@ async function genInviteLink() {
 }
 async function resetInviteLink() {
   const g = activeGroup.value; if (!g) return;
-  if (!confirm('重置邀请链接？旧链接将立即失效')) return;
+  if (!confirm(t('collab.invite.reset_confirm'))) return;
   inviteErr.value = '';
   try { await props.collab.revokeInvites(g.id); await genInviteLink(); }
   catch (e) { inviteErr.value = String((e as Error).message || e); }
@@ -106,12 +107,12 @@ async function copyInvite() {
   try { await navigator.clipboard.writeText(inviteUrl.value); } catch { /* ignore */ }
 }
 function extractToken(s: string): string {
-  const t = s.trim();
-  const m = t.match(/[?&]invite=([^&\s]+)/);
+  const raw = s.trim();
+  const m = raw.match(/[?&]invite=([^&\s]+)/);
   if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
-  return t;
+  return raw;
 }
-function openPaste() { const t = pasteInvite.value.trim(); if (t) pasteToken.value = extractToken(t); }
+function openPaste() { const raw = pasteInvite.value.trim(); if (raw) pasteToken.value = extractToken(raw); }
 async function onPasteJoined(g: CollabGroup | undefined) {
   pasteToken.value = ''; pasteInvite.value = '';
   await props.collab.refresh();
@@ -130,7 +131,7 @@ async function addFriend() {
   } catch (e) { ferr.value = String((e as Error).message || e); }
 }
 async function acceptFriend(machineId: string) { await props.collab.acceptFriend(machineId); await props.collab.refresh(); }
-async function removeFriend(machineId: string) { if (confirm('删除好友？')) { await props.collab.removeFriend(machineId); if (activeFriendId.value === machineId) activeFriendId.value = null; } }
+async function removeFriend(machineId: string) { if (confirm(t('collab.friend.remove_confirm'))) { await props.collab.removeFriend(machineId); if (activeFriendId.value === machineId) activeFriendId.value = null; } }
 async function inviteFriendToGroup(friendId: string) {
   if (!inviteToGroup.value) return;
   merr.value = '';
@@ -145,39 +146,39 @@ async function inviteFriendToGroup(friendId: string) {
       <div v-if="err" class="err">{{ err }}</div>
 
       <div class="sec" v-if="snap.pendingInvites.length || snap.pendingFriends.length">
-        <h4>待处理</h4>
+        <h4>{{ $t('collab.pending') }}</h4>
         <div v-for="iv in snap.pendingInvites" :key="iv.id" class="rowline">
-          <span class="txt">「{{ iv.groupName }}」<span class="sub">@{{ iv.inviter.username }} 邀你入群</span></span>
-          <button @click="acceptGroupInvite(iv.id)">接受</button>
-          <button class="ghost" @click="rejectGroupInvite(iv.id)">拒绝</button>
+          <span class="txt">「{{ iv.groupName }}」<span class="sub">@{{ iv.inviter.username }} {{ $t('collab.group.invited_you') }}</span></span>
+          <button @click="acceptGroupInvite(iv.id)">{{ $t('common.accept') }}</button>
+          <button class="ghost" @click="rejectGroupInvite(iv.id)">{{ $t('common.reject') }}</button>
         </div>
         <div v-for="p in snap.pendingFriends" :key="p.machineId" class="rowline">
           <span class="txt">{{ p.username }} <span class="sub">{{ p.host }}:{{ p.port }}</span></span>
-          <button @click="acceptFriend(p.machineId)">接受</button>
+          <button @click="acceptFriend(p.machineId)">{{ $t('common.accept') }}</button>
         </div>
       </div>
 
       <div class="sec">
-        <h4>添加</h4>
+        <h4>{{ $t('collab.add') }}</h4>
         <div class="addrow">
-          <input v-model="groupName" placeholder="建群名称" @keyup.enter="createGroup" />
-          <button title="建群" @click="createGroup">＋群</button>
+          <input v-model="groupName" :placeholder="$t('collab.group.name_placeholder')" @keyup.enter="createGroup" />
+          <button :title="$t('collab.group.create')" @click="createGroup">{{ $t('collab.group.create_short') }}</button>
         </div>
         <div class="addrow">
-          <input v-model="addHost" placeholder="好友 IP" class="ip" @keyup.enter="addFriend" />
-          <input v-model.number="addPort" type="number" placeholder="端口" class="pt" @keyup.enter="addFriend" />
-          <button title="加好友" @click="addFriend">＋友</button>
+          <input v-model="addHost" :placeholder="$t('collab.friend.host_placeholder')" class="ip" @keyup.enter="addFriend" />
+          <input v-model.number="addPort" type="number" :placeholder="$t('collab.friend.port_placeholder')" class="pt" @keyup.enter="addFriend" />
+          <button :title="$t('collab.friend.add')" @click="addFriend">{{ $t('collab.friend.add_short') }}</button>
         </div>
         <div class="addrow">
-          <input v-model="pasteInvite" placeholder="粘贴邀请链接/邀请码" @keyup.enter="openPaste" />
-          <button title="预览邀请" @click="openPaste">预览</button>
+          <input v-model="pasteInvite" :placeholder="$t('collab.invite.paste_placeholder')" @keyup.enter="openPaste" />
+          <button :title="$t('collab.invite.preview_title')" @click="openPaste">{{ $t('collab.invite.preview') }}</button>
         </div>
         <div v-if="ferr" class="err">{{ ferr }}</div>
       </div>
 
       <div class="sec">
-        <h4>我的好友（{{ friends.length }}）</h4>
-        <div v-if="friends.length === 0" class="empty">暂无，输入对方 IP:端口 添加</div>
+        <h4>{{ $t('collab.friend.mine', { count: friends.length }) }}</h4>
+        <div v-if="friends.length === 0" class="empty">{{ $t('collab.friend.empty') }}</div>
         <button v-for="f in friends" :key="f.machineId" class="item" :class="{ on: f.machineId === activeFriendId && !activeGroup }" @click="selectFriend(f.machineId)">
           <span class="av av-f">{{ f.username.charAt(0) || '?' }}</span>
           <span class="gtx">
@@ -188,27 +189,27 @@ async function inviteFriendToGroup(friendId: string) {
       </div>
 
       <div class="sec">
-        <h4>我的群（{{ groups.length }}）</h4>
-        <div v-if="groups.length === 0" class="empty">还没有群，创建或等邀请吧</div>
+        <h4>{{ $t('collab.group.mine', { count: groups.length }) }}</h4>
+        <div v-if="groups.length === 0" class="empty">{{ $t('collab.group.empty') }}</div>
         <button v-for="g in groups" :key="g.id" class="item" :class="{ on: g.id === activeGroupId }" @click="selectGroup(g.id)">
-          <span class="av av-g">{{ g.name.trim().charAt(0) || '群' }}</span>
+          <span class="av av-g">{{ g.name.trim().charAt(0) || $t('collab.group.avatar') }}</span>
           <span class="gtx">
             <span class="gn">{{ g.name }}</span>
-            <span class="gsub">{{ g.members.length }} 人</span>
+            <span class="gsub">{{ $t('collab.group.member_count', { count: g.members.length }) }}</span>
           </span>
         </button>
       </div>
 
       <div class="sec allow">
-        <h4>本机免确认命令（白名单）</h4>
+        <h4>{{ $t('collab.allow.title') }}</h4>
         <div class="addrow">
-          <input v-model="newPrefix" placeholder="如 deploy / git status" @keyup.enter="addAllowPrefix" />
+          <input v-model="newPrefix" :placeholder="$t('collab.allow.placeholder')" @keyup.enter="addAllowPrefix" />
           <button @click="addAllowPrefix">＋</button>
         </div>
-        <div v-if="myAllow.length === 0" class="empty">无，收到的远程执行都会要求确认</div>
+        <div v-if="myAllow.length === 0" class="empty">{{ $t('collab.allow.empty') }}</div>
         <div v-for="p in myAllow" :key="p" class="rowline">
           <span class="txt"><code>{{ p }}</code></span>
-          <button class="ghost del" @click="delAllowPrefix(p)">删除</button>
+          <button class="ghost del" @click="delAllowPrefix(p)">{{ $t('common.delete') }}</button>
         </div>
       </div>
     </aside>
@@ -218,34 +219,34 @@ async function inviteFriendToGroup(friendId: string) {
         <div class="chat-col">
           <header class="gtop">
             <span class="tname">💬 {{ activeGroup.name }} <span class="tcnt">({{ activeGroup.members.length }})</span></span>
-            <button v-if="activeGroup.ownerId === me" class="tbtn del" @click="dissolveGroup">解散群</button>
+            <button v-if="activeGroup.ownerId === me" class="tbtn del" @click="dissolveGroup">{{ $t('collab.group.dissolve') }}</button>
           </header>
           <GroupChatView :collab="collab" :group-id="activeGroup.id" />
         </div>
         <aside class="memcol">
-          <div class="mem-head">成员 {{ activeGroup.members.length }}</div>
+          <div class="mem-head">{{ $t('collab.group.members', { count: activeGroup.members.length }) }}</div>
           <div class="invrow">
-            <input v-model="inviteMachineId" placeholder="成员 machineId，回车邀请" @keyup.enter="inviteMemberByMachineId" />
-            <button title="邀请入群" @click="inviteMemberByMachineId">＋</button>
+            <input v-model="inviteMachineId" :placeholder="$t('collab.group.invite_placeholder')" @keyup.enter="inviteMemberByMachineId" />
+            <button :title="$t('collab.group.invite')" @click="inviteMemberByMachineId">＋</button>
           </div>
           <div v-if="merr" class="merr">{{ merr }}</div>
           <div v-if="canInvite" class="invlink">
-            <button class="genbtn" @click="genInviteLink">生成邀请链接</button>
+            <button class="genbtn" @click="genInviteLink">{{ $t('collab.invite.generate') }}</button>
             <div v-if="inviteUrl" class="linkrow">
               <input :value="inviteUrl" readonly @focus="($event.target as HTMLInputElement).select()" />
-              <button @click="copyInvite">复制</button>
+              <button @click="copyInvite">{{ $t('common.copy') }}</button>
             </div>
-            <button v-if="inviteUrl" class="ghost resetlink" @click="resetInviteLink">重置链接</button>
+            <button v-if="inviteUrl" class="ghost resetlink" @click="resetInviteLink">{{ $t('collab.invite.reset') }}</button>
             <div v-if="inviteErr" class="merr">{{ inviteErr }}</div>
           </div>
           <div class="mlist">
             <div v-for="m in activeGroup.members" :key="m.machineId" class="mrow" :class="{ me: m.machineId === me }">
               <span class="mav" :class="m.role">{{ m.username.charAt(0) || '?' }}</span>
               <span class="minfo">
-                <span class="mname">{{ m.username }}{{ m.machineId === me ? '（我）' : '' }}</span>
+                <span class="mname">{{ m.username }}{{ m.machineId === me ? $t('collab.group.me_suffix') : '' }}</span>
                 <span class="mrole" :class="m.role">{{ roleLabel(m.role) }}</span>
               </span>
-              <button v-if="canKick(m)" class="kick" title="移出群" @click="kick(m)">踢出</button>
+              <button v-if="canKick(m)" class="kick" :title="$t('collab.group.kick_title')" @click="kick(m)">{{ $t('collab.group.kick') }}</button>
             </div>
           </div>
         </aside>
@@ -258,22 +259,22 @@ async function inviteFriendToGroup(friendId: string) {
               <span class="fname">{{ activeFriend.username }}</span>
               <span class="fsub">machineId {{ activeFriend.machineId.slice(0, 8) }}…</span>
             </div>
-            <button class="tbtn del" @click="removeFriend(activeFriend.machineId)">删除好友</button>
+            <button class="tbtn del" @click="removeFriend(activeFriend.machineId)">{{ $t('collab.friend.remove') }}</button>
           </div>
-          <div class="frow"><span>地址</span><code>{{ activeFriend.host }}:{{ activeFriend.port }}</code></div>
-          <div class="frow"><span>公钥指纹</span><code>{{ (activeFriend.publicKey || '').slice(-24) }}</code></div>
+          <div class="frow"><span>{{ $t('collab.friend.address') }}</span><code>{{ activeFriend.host }}:{{ activeFriend.port }}</code></div>
+          <div class="frow"><span>{{ $t('collab.friend.fingerprint') }}</span><code>{{ (activeFriend.publicKey || '').slice(-24) }}</code></div>
           <div class="invite-to">
-            <span>拉入群</span>
+            <span>{{ $t('collab.friend.invite_to_group') }}</span>
             <select v-model="inviteToGroup">
               <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
             </select>
-            <button v-if="groups.length" @click="inviteFriendToGroup(activeFriend.machineId)">邀请</button>
-            <div v-if="!groups.length" class="empty">还没有群可拉入</div>
+            <button v-if="groups.length" @click="inviteFriendToGroup(activeFriend.machineId)">{{ $t('common.invite') }}</button>
+            <div v-if="!groups.length" class="empty">{{ $t('collab.friend.no_group') }}</div>
           </div>
         </div>
       </template>
       <div v-else class="placeholder">
-        <div class="ph">选择左侧好友或群组开始吧</div>
+        <div class="ph">{{ $t('collab.placeholder') }}</div>
       </div>
     </section>
 
