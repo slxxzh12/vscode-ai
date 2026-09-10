@@ -18,6 +18,8 @@ import { createCollabMount } from './collaboration/http-mount.js';
 import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
 import { CollabS2C } from '@devflow/shared/collab';
+import { SchedulerS2C } from '@devflow/shared/scheduler';
+import { createScheduler } from './scheduler/index.js';
 import { loadWorkflowXml, defaultWorkflowFile } from './workflow-xml.js';
 import { defaultSettingsFile, readSettings, writeSettings } from './settings.js';
 
@@ -44,7 +46,7 @@ const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: l
 const requireAuthWs = () => true; // TODO(安全): 接入 Token 后校验 ws 握手
 
 // ---- 协作子系统（隔离目录 server/collaboration/**，数据存用户数据目录）----
-import { collabDir, uploadDir, downloadDir, seedFromLegacy, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
+import { collabDir, uploadDir, downloadDir, seedFromLegacy, instanceName, instanceSeedDir, instanceFpRoot, dataHome } from './data-home.js';
 import { publicFingerprint } from './collaboration/identity.js';
 const HOST_DEFAULT = process.env.DEVFLOW_HOST || '127.0.0.1';
 const PORT_DEFAULT = Number(process.env.DEVFLOW_PORT || 3001);
@@ -116,6 +118,23 @@ collabEventBus.on('synced', () => broadcastCollab(CollabS2C.COLLAB_SYNCED, {}));
 collabEventBus.on('chat', (payload) => broadcastCollab(CollabS2C.COLLAB_CHAT, { groupId: payload.groupId, msg: payload.msg }));
 collabEventBus.on('cmd-pending', (payload) => broadcastCollab(CollabS2C.COLLAB_CMD_PENDING, payload));
 
+// ---- 定时任务子系统（隔离目录 server/scheduler/**，数据存用户数据目录）----
+const scheduler = createScheduler({
+  dir: path.join(dataHome(), 'scheduler'),
+  projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
+  logger: log,
+});
+const broadcastSched = (type, payload) => {
+  if (!gateway) return;
+  for (const c of gateway.conns) c.send({ type, ...payload });
+};
+scheduler.engine.onEvent((evt, payload) => {
+  const type = evt === 'run-start' ? SchedulerS2C.SCHED_RUN_START
+    : evt === 'run-end' ? SchedulerS2C.SCHED_RUN_END
+    : SchedulerS2C.SCHED_TASKS_CHANGED;
+  broadcastSched(type, payload);
+});
+
 const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
@@ -146,6 +165,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname.startsWith('/api/collab')) { await collabMount(req, res); return; }
+  if (url.pathname.startsWith('/api/scheduler')) { await scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/')) {
     await createHttpApi({ projects })(req, res);
     return;
@@ -162,6 +182,10 @@ server.listen(PORT, HOST, () => {
   collabEngine.setAdvertised({ host: HOST, port: PORT });
   log.info(`listening on http://${HOST}:${PORT}  (ws: ws://${HOST}:${PORT}/ws)`);
   log.info(`collab node=${NODE || 'default'} fp=${nodeFp} store=${storeFile}`);
+  if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
+    scheduler.engine.start();
+    log.info('scheduler started');
+  }
 });
 
 export { server, sessionManager, workflowRunner, projects };
