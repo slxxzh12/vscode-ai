@@ -273,7 +273,7 @@ function onFillComposer(e: Event) {
 // 底部框高度（可上下拖动）+ 最小化
 const COMPOSER_H_KEY = 'devflow-composer-h';
 const composerH = ref(240);
-const composerMin = ref(false);
+const composerMin = ref(true);
 function loadComposerH() {
   try {
     const h = Number(localStorage.getItem(COMPOSER_H_KEY));
@@ -294,9 +294,9 @@ function onComposerDragDown(e: MouseEvent) {
   document.addEventListener('mousemove', move);
   document.addEventListener('mouseup', up);
 }
-// 切到非 Agent 会话默认最小化；Agent 会话默认展开（用户仍可手动折叠/展开）
+// 当前是 Agent 会话才默认展开；其他（含未选中）默认最小化；用户仍可手动折叠/展开
 watch([() => props.terminal.state.activeSessionId, agentSids], ([sid]) => {
-  if (sid) composerMin.value = !agentSids.value.has(sid);
+  composerMin.value = !(sid && agentSids.value.has(sid));
 });
 
 const curWf = computed<WfDef>(() => wfDefs.value.find((w) => w.id === wfKind.value) || wfDefs.value[0] || buildFallbackWf()[0]);
@@ -421,10 +421,11 @@ function init() {
   });
   const dims = () => { const d = fit?.proposeDimensions(); return { cols: d?.cols || 80, rows: d?.rows || 24 }; };
   unsubList = props.terminal.on(S2C.SESSION_LIST, () => {
-    if (!autoTried && !props.terminal.state.activeSessionId && props.terminal.state.sessions.length === 0) {
-      autoTried = true;
-      startAgent();   // 首标签固定为 Agent 会话（opencode/claudecode）
-    }
+    if (autoTried || props.terminal.state.activeSessionId) return;
+    autoTried = true;
+    const existing = props.terminal.state.sessions.find((s) => agentSids.value.has(s.id));
+    if (existing) props.terminal.switchTo(existing.id);   // 复用已存在的 Agent 会话
+    else startAgent();                                    // 默认先开一个默认 Agent 会话
   });
   unsubCfg = props.terminal.on(S2C.CONFIG_CHANGED, async () => {
     await loadAgents();
