@@ -562,9 +562,11 @@ onBeforeUnmount(() => {
 .chip { display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip:hover { border-color: var(--ac2); color: var(--ac2); }
 .cdot { width: 5px; height: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
-.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: #d21f3c; caret-color: #d21f3c; border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
-.cinput:focus { border-color: #d21f3c; box-shadow: 0 0 0 2px rgba(210,31,60,.22); }
+.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
+.cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cinput::placeholder { color: var(--tx3); }
+.composer.light .cinput { color: #d21f3c; caret-color: #d21f3c; }
+.composer.light .cinput:focus { border-color: #d21f3c; box-shadow: 0 0 0 2px rgba(210,31,60,.22); }
 .csend { background: var(--ac); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
