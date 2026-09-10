@@ -121,9 +121,27 @@ export class Projects {
     const file = this._filePath(projectId, rel);
     const bytes = Buffer.byteLength(content, 'utf8');
     if (bytes > maxBytes) { const e = new Error('content too large'); e.code = 'too-large'; throw e; }
-    const tmp = file + '.devflow-tmp';
+    const tmp = `${file}.devflow-tmp`;
     fs.writeFileSync(tmp, content, 'utf8');   // 先写临时文件
-    fs.renameSync(tmp, file);                 // 再原子替换，避免半写文件
+    // Windows 上目标被占用/杀软扫描时 rename 可能瞬时失败(EPERM/EBUSY)，重试几次；仍失败则回退为直接覆盖写
+    let lastErr;
+    for (let i = 0; i < 4; i++) {
+      try {
+        fs.renameSync(tmp, file);             // 原子替换，避免半写文件
+        return { name: path.basename(file), path: rel, size: bytes };
+      } catch (e) {
+        lastErr = e;
+        if (i < 3) { const t = Date.now() + 30; while (Date.now() < t) { /* brief spin */ } }
+      }
+    }
+    try {
+      fs.writeFileSync(file, content, 'utf8');
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+      throw e;
+    }
+    try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    if (lastErr && process.env.DEVFLOW_DEBUG) this.log.warn?.('rename fallback used:', lastErr.message);
     return { name: path.basename(file), path: rel, size: bytes };
   }
   tree(projectId, rel = '') {

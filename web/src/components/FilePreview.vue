@@ -163,22 +163,28 @@ function setSaveError(e: any) {
 }
 async function doWrite(content: string) {
   saveState.value = 'saving';
-  try {
-    await write(props.projectId, props.path, content);
-    if (disposed) return;
-    saveState.value = 'saved';
-    saveMsg.value = nowTime();
-    dirty.value = false;
-  } catch (e: unknown) {
-    dirty.value = true;
-    setSaveError(e);
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await write(props.projectId, props.path, content);
+      if (disposed) return;
+      saveState.value = 'saved';
+      saveMsg.value = nowTime();
+      dirty.value = false;
+      return;
+    } catch (e: unknown) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
   }
+  dirty.value = true;
+  setSaveError(lastErr);
 }
 function scheduleSave() {
   dirty.value = true;
   saveState.value = 'idle';
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => flush(), 800);
+  saveTimer = setTimeout(() => flush(), 10000);
 }
 function flush() {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
