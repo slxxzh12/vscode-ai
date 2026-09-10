@@ -272,11 +272,23 @@ async function sendToAgent(text: string) {
   await startAgent();
   setTimeout(() => sendAgentText(t), 4400);
 }
+// 把输入框内容直接打进「当前上面显示的会话」（opencode / claudecode / cmd 等一律适配）
+function sendToActive(text: string) {
+  const t = text.trim();
+  if (!t) return;
+  const sid = props.terminal.state.activeSessionId;
+  if (!sid) { sendToAgent(t); return; }   // 没有任何会话时回退：启动 Agent 会话再发送
+  props.terminal.input(t);
+  setTimeout(() => {
+    if (props.terminal.state.activeSessionId !== sid) return;
+    props.terminal.input('\r');
+  }, 150);
+}
 function submitComposer() {
   const t = composerText.value.trim();
   if (!t) return;
   composerText.value = '';
-  sendToAgent(t);
+  sendToActive(t);
 }
 function onComposerKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComposer(); }
@@ -527,7 +539,7 @@ onBeforeUnmount(() => {
           <textarea
             v-model="composerText"
             class="cinput"
-            placeholder="输入内容，回车送入上方 Agent 会话；Shift+Enter 换行"
+            placeholder="输入内容，回车送入上方当前会话；Shift+Enter 换行"
             @keydown="onComposerKey"
           />
           <button class="csend" @click="submitComposer">发送</button>
