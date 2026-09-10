@@ -7,6 +7,7 @@
   "types": "./index.d.ts",
   "exports": {
     ".": { "types": "./index.d.ts", "default": "./index.js" },
-    "./collab": { "types": "./collab.d.ts", "default": "./collab.js" }
+    "./collab": { "types": "./collab.d.ts", "default": "./collab.js" },
+    "./scheduler": { "types": "./scheduler.d.ts", "default": "./scheduler.js" }
   }
 }
