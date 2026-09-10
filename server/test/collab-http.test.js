@@ -185,3 +185,35 @@ test('群聊与远程执行 REST 冒烟', async () => {
     assert.equal(pending2.pending.length, 0, '确认后 pending 清空');
   } finally { A.server.close(); B.server.close(); }
 });
+
+test('邀请链接 REST：签发 → 预览 → 入群 → 撤销失效', async () => {
+  const A = await startNode('alice-inv');
+  const B = await startNode('bob-inv');
+  try {
+    const gRes = await post(`http://127.0.0.1:${A.port}/api/collab/groups`, { name: 'team' });
+    const gid = gRes.body.group.id;
+
+    const link = await post(`http://127.0.0.1:${A.port}/api/collab/groups/${gid}/invite-link`, { origin: 'http://127.0.0.1:3001' });
+    assert.equal(link.status, 200);
+    assert.ok(link.body.token.startsWith('dfinv1.'));
+    assert.ok(link.body.url.includes('?invite='));
+    const token = link.body.token;
+
+    const pv = await fetch(`http://127.0.0.1:${B.port}/api/collab/join/preview?token=${encodeURIComponent(token)}`).then((r) => r.json());
+    assert.equal(pv.code, 'ok');
+    assert.equal(pv.groupName, 'team');
+
+    const jr = await post(`http://127.0.0.1:${B.port}/api/collab/join`, { token });
+    assert.equal(jr.status, 200);
+    assert.equal(jr.body.code, 'joined', JSON.stringify(jr.body));
+    assert.ok(B.engine.store.findGroup(gid), 'B 已入群');
+    assert.ok(A.engine.store.findGroup(gid).members.find((m) => m.machineId === B.engine.pub.machineId), 'A 群含 B');
+
+    // 撤销后旧 token 失效
+    await post(`http://127.0.0.1:${A.port}/api/collab/groups/${gid}/invite-revoke`, {});
+    const C = await startNode('carol-inv');
+    const jr2 = await post(`http://127.0.0.1:${C.port}/api/collab/join`, { token });
+    assert.equal(jr2.body.code, 'invite-revoked', JSON.stringify(jr2.body));
+    C.server.close();
+  } finally { A.server.close(); B.server.close(); }
+});

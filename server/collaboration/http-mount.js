@@ -120,6 +120,16 @@ export function createCollabMount({ engine, logger = console }) {
       // groups
       if (seg[0] === 'groups' && seg.length === 1 && m === 'POST') { const g = await engine.createGroup(body.name); return ok(res, { group: g }); }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'invite' && m === 'POST') { const r = await engine.inviteMember({ groupId: seg[1], targetMachineId: body.machineId }); return ok(res, r); }
+      if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'invite-link' && m === 'POST') {
+        const r = engine.createInviteLink({ groupId: seg[1], ttlMs: body.ttlMs });
+        if (r.code !== 'ok') return ok(res, r);
+        const origin = (typeof body.origin === 'string' && body.origin) ? body.origin.replace(/\/+$/, '') : 'http://127.0.0.1:3001';
+        return ok(res, { token: r.token, url: `${origin}/?invite=${encodeURIComponent(r.token)}`, expiresAt: r.expiresAt, jti: r.jti });
+      }
+      if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'invite-revoke' && m === 'POST') {
+        const r = await engine.revokeInvites(seg[1]);
+        return ok(res, r);
+      }
       if (seg[0] === 'groups' && seg.length === 5 && seg[2] === 'members' && seg[4] === 'kick' && m === 'POST') { const r = await engine.kickMember({ groupId: seg[1], targetMachineId: seg[3] }); return ok(res, r); }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'distribute' && m === 'POST') { const r = await engine.distributeToGroup(seg[1], body.skillNames || []); return ok(res, r); }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'files' && m === 'POST') {
@@ -150,6 +160,15 @@ export function createCollabMount({ engine, logger = console }) {
       // invites
       if (seg[0] === 'invites' && seg.length === 3 && seg[2] === 'accept' && m === 'POST') { const r = await engine.acceptInvite(seg[1]); return ok(res, r); }
       if (seg[0] === 'invites' && seg.length === 3 && seg[2] === 'reject' && m === 'POST') { const inv = engine.store.findPendingInvite(seg[1]); if (inv) engine.store.removePendingInvite(seg[1]); return ok(res, {}); }
+      // join（邀请链接入群）
+      if (seg[0] === 'join' && seg.length === 2 && seg[1] === 'preview' && m === 'GET') {
+        const token = url.searchParams.get('token') || '';
+        return ok(res, engine.previewInvite(token));
+      }
+      if (seg[0] === 'join' && seg.length === 1 && m === 'POST') {
+        const r = await engine.joinByInvite(body.token);
+        return ok(res, r);
+      }
       // inbox
       if (seg[0] === 'inbox' && seg.length === 3 && seg[2] === 'install' && m === 'POST') { const r = await engine.installInbox(seg[1]); return ok(res, r); }
       if (seg[0] === 'inbox' && seg.length === 3 && seg[2] === 'ignore' && m === 'POST') { const r = await engine.ignoreInbox(seg[1]); return ok(res, r); }
