@@ -342,6 +342,7 @@ export const messages = {
   'term.composer_placeholder': 'Type here; Enter sends to the active session; Shift+Enter for newline',
   'term.history': '🕘 History',
   'term.new_session_btn': '＋ New session',
+  'term.create': 'Create',
   'term.kill_confirm': 'End this session?',
   'term.disconnected': '-- Disconnected, reconnecting --',
   'termwf.group.requirement': 'Requirement',

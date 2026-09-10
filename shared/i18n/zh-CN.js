@@ -342,6 +342,7 @@ export const messages = {
   'term.composer_placeholder': '输入内容，回车送入上方当前会话；Shift+Enter 换行',
   'term.history': '🕘 历史',
   'term.new_session_btn': '＋ 新建会话',
+  'term.create': '创建',
   'term.kill_confirm': '结束该会话？',
   'term.disconnected': '-- 已断开，正在重连 --',
   'termwf.group.requirement': '需求',
