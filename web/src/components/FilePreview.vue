@@ -448,8 +448,8 @@ function resetB64Panel() {
   b64DecodeErr.value = '';
 }
 
-// —— 文件详细信息 ——
-const HASH_WARN = 50 * 1024 * 1024;
+// —— 文件详细信息｜≤20MB 打开即自动计算 MD5/SHA256；>20MB 显示“计算”按钮手动触发 ——
+const HASH_AUTO_LIMIT = 20 * 1024 * 1024;
 const detailOpen = ref(false);
 const detail = ref<FileMeta | null>(null);
 const detailErr = ref('');
@@ -469,8 +469,11 @@ async function openDetail() {
     detail.value = await fileMeta(props.projectId, props.path);
   } catch (e: any) {
     detailErr.value = String(e?.message || e);
+    return;
   }
+  if (detail.value.size <= HASH_AUTO_LIMIT) computeHash();   // 小文件直接算；大文件给按钮手动触发
 }
+const needHashBtn = computed(() => !!detail.value && detail.value.size > HASH_AUTO_LIMIT && !hashMd5.value && !hashSha256.value && !hashing.value);
 function toggleDetail(force?: boolean) {
   detailOpen.value = force ?? !detailOpen.value;
   if (detailOpen.value && status.value === 'ok') openDetail();
@@ -485,10 +488,6 @@ function closeDetail() {
 }
 async function computeHash() {
   if (!detail.value || hashing.value) return;
-  if (detail.value.size > HASH_WARN) {
-    const ok = window.confirm(`文件较大（${fmtBytes(detail.value.size)}），计算 MD5/SHA256 可能需要一段时间，是否继续？`);
-    if (!ok) return;
-  }
   hashing.value = true;
   hashErr.value = '';
   try {
@@ -756,19 +755,25 @@ onBeforeUnmount(() => {
         <div class="drow"><span class="dk">修改时间</span><span class="dv mono">{{ fmtMtime(detail.mtime) }}</span></div>
         <div class="drow">
           <span class="dk">MD5</span>
-          <span class="dv mono" :class="{ warn: hashErr }">{{ hashMd5 || hashErr || '—' }}</span>
-          <button class="b64b" :disabled="!hashMd5" @click="b64Copy(hashMd5)">复制</button>
+          <span class="dv mono hval" :class="{ warn: hashErr }">
+            <span v-if="hashing" class="spin" />
+            <template v-if="hashing">计算中…</template>
+            <template v-else>{{ hashMd5 || hashErr || '—' }}</template>
+          </span>
+          <button class="b64b" :disabled="!hashMd5 || hashing" @click="b64Copy(hashMd5)">复制</button>
         </div>
         <div class="drow">
           <span class="dk">SHA256</span>
-          <span class="dv mono" :class="{ warn: hashErr }">{{ hashSha256 || hashErr || '—' }}</span>
-          <button class="b64b" :disabled="!hashSha256" @click="b64Copy(hashSha256)">复制</button>
+          <span class="dv mono hval" :class="{ warn: hashErr }">
+            <span v-if="hashing" class="spin" />
+            <template v-if="hashing">计算中…</template>
+            <template v-else>{{ hashSha256 || hashErr || '—' }}</template>
+          </span>
+          <button class="b64b" :disabled="!hashSha256 || hashing" @click="b64Copy(hashSha256)">复制</button>
         </div>
-        <div class="drow">
+        <div v-if="needHashBtn" class="drow">
           <span class="dk" />
-          <button class="b64b hashgo" :disabled="hashing || !!(hashMd5 && hashSha256)" @click="computeHash">
-            {{ hashing ? '计算中…' : hashMd5 ? '已计算' : '计算 MD5+SHA256' }}
-          </button>
+          <button class="b64b hashgo" title="文件较大，点击手动计算" @click="computeHash">计算 MD5+SHA256（大文件）</button>
         </div>
       </div>
     </div>
@@ -865,6 +870,9 @@ onBeforeUnmount(() => {
 .dv.mono { font-family: ui-monospace, Consolas, monospace; }
 .dv.warn { color: var(--err); }
 .hashgo { flex: none; }
+.hval { display: inline-flex; align-items: center; gap: 6px; }
+.spin { width: 11px; height: 11px; flex: none; border: 2px solid var(--bd3); border-top-color: var(--ac); border-radius: 50%; animation: fp-spin .8s linear infinite; }
+@keyframes fp-spin { to { transform: rotate(360deg); } }
 .statusbar { flex: none; display: flex; align-items: center; gap: 14px; height: 24px; padding: 0 10px; border-top: 1px solid var(--bd); background: var(--bg2); overflow: hidden; white-space: nowrap; box-sizing: border-box; }
 .st { font-size: 11px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .st.saveing { color: var(--warn); }
