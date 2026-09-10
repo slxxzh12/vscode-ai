@@ -47,11 +47,11 @@ const agents = ref<AgentDef[]>(DEFAULT_AGENTS.map((a) => ({ ...a })));
 const agentId = ref('opencode');
 const currentAgent = computed(() => agents.value.find((a) => a.id === agentId.value) || agents.value[0] || { id: '', name: '-', cmd: 'opencode' });
 const agentCmd = computed(() => currentAgent.value.cmd || 'opencode');
-const wfKind = ref<'dev' | 'test' | 'doc'>('dev');
+const wfKind = ref<string>('dev');
 const agentStarted = ref(false);
 const agentCliReady = ref(false);   // agent CLI 是否已在固定会话里启动
 // 工作流 → opencode 自定义命令（可配置，按节点公钥指纹持久化）
-const wfCmds = ref<Record<'dev' | 'test' | 'doc', string>>({ dev: '/dev', test: '/test', doc: '/doc' });
+const wfCmds = ref<Record<string, string>>({ dev: '/dev', test: '/test', doc: '/doc' });
 const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent id
 const settingsOpen = ref(false);
 let cfgKey = 'devflow-agent-cfg-none';
@@ -67,7 +67,7 @@ function loadCfg() {
     }
     if (typeof c.agentId === 'string' && agents.value.some((a) => a.id === c.agentId)) agentId.value = c.agentId;
     else if (c.engine === 'opencode' || c.engine === 'claudecode') agentId.value = c.engine;   // 兼容旧配置
-    if (c.wf === 'dev' || c.wf === 'test' || c.wf === 'doc') wfKind.value = c.wf;
+    if (typeof c.wf === 'string') wfKind.value = c.wf;
     if (c.cmds) for (const k of ['dev', 'test', 'doc'] as const) if (typeof c.cmds[k] === 'string') wfCmds.value[k] = c.cmds[k];
   } catch { /* ignore */ }
 }
@@ -138,33 +138,50 @@ function sendAgentText(text: string) {
   }, 150);
 }
 
-// 常用提示语（底部类百度下拉：可输入筛选、选中填入，回车送进上方终端）
-const PROMPTS: { label: string; text: string }[] = [
-  { label: '需求澄清', text: '请使用 superpower brainstorm 来拆解下面需求：' },
-  { label: '需求确认', text: '请使用 gstack 的 autoplan skills 对刚才输入的文档进行 review' },
+// 工作流定义来自 config/workflow.xml（GET /api/workflows-xml）；下面为兜底
+interface StageDef { id: string; label: string; prompts: string[]; }
+interface WfDef { id: string; label: string; stages: StageDef[]; }
+const FALLBACK_WF: WfDef[] = [
+  {
+    id: 'dev', label: '开发工作流',
+    stages: [
+      { id: 'design', label: '需求设计', prompts: ['请使用 superpower brainstorm 来拆解下面需求：', '请澄清边界、非目标与验收标准。'] },
+      { id: 'design-review', label: '需求 Review', prompts: ['请使用 gstack 的 autoplan skills 对刚才输入的文档进行 review'] },
+      { id: 'code', label: '代码实现', prompts: ['请按需求文档实现功能，遵循仓库 AGENTS 约定，改完先跑测试与类型检查。'] },
+      { id: 'optimize', label: '代码优化', prompts: ['请在不改变行为的前提下重构优化，每步跑测试确保不回归。'] },
+      { id: 'test', label: '开发自测', prompts: ['请补齐并运行测试与类型检查，报告结果与风险。'] },
+      { id: 'deploy', label: '环境部署', prompts: ['请给出构建/打包/发布步骤并执行，说明回滚方案。'] },
+    ],
+  },
+  { id: 'test', label: '测试工作流', stages: [{ id: 'scope', label: '测试范围', prompts: ['请梳理本次改动影响面，产出测试范围与优先级。'] }] },
+  { id: 'doc', label: '文档工作流', stages: [{ id: 'scan', label: '盘点文档', prompts: ['请梳理本次改动需要更新哪些文档。'] }] },
 ];
+const wfDefs = ref<WfDef[]>(FALLBACK_WF);
 const composerText = ref('');
-const suggestOpen = ref(false);
-const suggestions = computed(() => {
-  const q = composerText.value.trim().toLowerCase();
-  if (!q) return PROMPTS;
-  return PROMPTS.filter((p) => (p.label + p.text).toLowerCase().includes(q));
-});
-function pickPrompt(text: string) { composerText.value = text; suggestOpen.value = false; }
+function fillPrompt(text: string) { composerText.value = text; }
 
-// 阶段电子流：需求设计 → 需求 Review → 代码实现 → 开发自测 → 代码优化 → 环境部署
-const STAGES: { key: string; label: string; prompt: string }[] = [
-  { key: 'design', label: '需求设计', prompt: '进入「需求设计」阶段：请先澄清并输出需求文档（可用 superpower brainstorm 拆解），明确边界、非目标与验收标准。' },
-  { key: 'design-review', label: '需求 Review', prompt: '进入「需求 Review」阶段：请使用 gstack 的 autoplan / plan-ceo-review / plan-eng-review 对需求文档做评审，指出缺口、歧义、风险与优先级建议。' },
-  { key: 'code', label: '代码实现', prompt: '进入「代码实现」阶段：按需求文档实现，遵循仓库 AGENTS 约定，改完先跑测试与类型检查再继续。' },
-  { key: 'test', label: '开发自测', prompt: '进入「开发自测」阶段：补齐并运行单元/集成测试与类型检查，做必要手工验证，报告结果、覆盖与风险。' },
-  { key: 'optimize', label: '代码优化', prompt: '进入「代码优化」阶段：在不改变行为的前提下重构与优化（可读性/性能/去重/边界处理），每次改动后跑测试与类型检查确保不回归。' },
-  { key: 'deploy', label: '环境部署', prompt: '进入「环境部署」阶段：给出构建/打包/发布步骤并执行，说明所需环境变量与回滚方案。' },
-];
+const curWf = computed<WfDef>(() => wfDefs.value.find((w) => w.id === wfKind.value) || wfDefs.value[0] || FALLBACK_WF[0]);
+const STAGES = computed(() => curWf.value.stages);
 const activeStage = ref('');
-function pickStage(s: { key: string; prompt: string }) {
-  activeStage.value = s.key;
-  sendToAgent(s.prompt);
+const chips = computed<string[]>(() => {
+  const st = curWf.value.stages.find((s) => s.id === activeStage.value) || curWf.value.stages[0];
+  return st ? st.prompts : [];
+});
+function pickStage(s: StageDef) {
+  activeStage.value = s.id;
+  if (s.prompts.length) composerText.value = s.prompts[0];   // 阶段首句填入输入框
+}
+async function loadWorkflows() {
+  try {
+    const r = await fetch('/api/workflows-xml').then((x) => x.json());
+    if (Array.isArray(r?.workflows) && r.workflows.length) {
+      wfDefs.value = r.workflows;
+      if (!r.workflows.some((w: WfDef) => w.id === wfKind.value)) wfKind.value = r.workflows[0].id as any;
+    }
+  } catch { /* 用兜底 */ }
+  // 默认选中当前工作流首阶段，展示其常用语
+  const first = curWf.value.stages[0];
+  if (first) activeStage.value = first.id;
 }
 async function sendToAgent(text: string) {
   const t = text.trim();
@@ -186,11 +203,15 @@ function submitComposer() {
   const t = composerText.value.trim();
   if (!t) return;
   composerText.value = '';
-  suggestOpen.value = false;
   sendToAgent(t);
 }
 function onComposerKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComposer(); }
+}
+async function onWfChange() {
+  const first = curWf.value.stages[0];
+  if (first) pickStage(first);
+  runWorkflow();   // 切换工作流后仍自动起 agent 并执行对应命令
 }
 async function runWorkflow() {
   const cmd = wfCmds.value[wfKind.value] || '';
@@ -308,6 +329,7 @@ onMounted(async () => {
   cfgKey = `devflow-agent-cfg-${fp}`;
   loadCfg();
   cfgLoaded = true;
+  loadWorkflows();
 });
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize);
@@ -327,10 +349,8 @@ onBeforeUnmount(() => {
         <option v-for="a in agents" :key="a.id" :value="a.id">{{ a.name }}</option>
       </select>
       <span class="alab">工作流</span>
-      <select v-model="wfKind" class="asel" @change="runWorkflow">
-        <option value="dev">开发工作流</option>
-        <option value="test">测试工作流</option>
-        <option value="doc">文档工作流</option>
+      <select v-model="wfKind" class="asel" @change="onWfChange">
+        <option v-for="w in wfDefs" :key="w.id" :value="w.id">{{ w.label }}</option>
       </select>
       <button class="ago" @click="runWorkflow">▶ 启动/执行</button>
       <span class="ahint">首标签固定为 Agent 会话（不可关闭）</span>
@@ -386,27 +406,23 @@ onBeforeUnmount(() => {
 
     <div v-if="isSessionView" class="composer">
       <div class="flowbar">
-        <template v-for="(s, i) in STAGES" :key="s.key">
-          <button class="stage" :class="{ on: activeStage === s.key }" @click="pickStage(s)">{{ s.label }}</button>
+        <template v-for="(s, i) in STAGES" :key="s.id">
+          <button class="stage" :class="{ on: activeStage === s.id }" @click="pickStage(s)">{{ s.label }}</button>
           <span v-if="i < STAGES.length - 1" class="flowline" />
         </template>
       </div>
+      <div class="chipbar">
+        <button v-for="(p, i) in chips" :key="i" class="chip" :title="p" @click="fillPrompt(p)">
+          <span class="cdot" />{{ p }}
+        </button>
+      </div>
       <div class="cwrap">
-        <div v-if="suggestOpen && suggestions.length" class="suglist">
-          <div v-for="p in suggestions" :key="p.label" class="sug" @mousedown.prevent="pickPrompt(p.text)">
-            <span class="suglab">{{ p.label }}</span>
-            <span class="sugtxt">{{ p.text }}</span>
-          </div>
-        </div>
         <textarea
           v-model="composerText"
           class="cinput"
-          rows="3"
-          placeholder="输入内容，回车送入上方 Agent 会话；Shift+Enter 换行；可输入关键字筛选常用提示语"
-          @focus="suggestOpen = true"
-          @input="suggestOpen = true"
+          rows="6"
+          placeholder="输入内容，回车送入上方 Agent 会话；Shift+Enter 换行"
           @keydown="onComposerKey"
-          @blur="suggestOpen = false"
         />
         <button class="csend" @click="submitComposer">发送</button>
       </div>
@@ -429,14 +445,13 @@ onBeforeUnmount(() => {
 .stage.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .flowline { flex: 1; height: 2px; min-width: 10px; background: linear-gradient(90deg, var(--ac2), var(--bd3)); margin: 0 4px; border-radius: 2px; }
 .cwrap { position: relative; display: flex; align-items: flex-end; gap: 8px; }
-.cinput { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; outline: none; resize: vertical; font-family: inherit; min-height: 64px; }
-.cinput:focus { border-color: var(--ac2); }
+.chipbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip:hover { border-color: var(--ac2); color: var(--ac2); }
+.cdot { width: 5px; height: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
+.cinput { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: vertical; font-family: inherit; min-height: 140px; }
+.cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .csend { background: var(--ac); color: var(--onac); border: none; border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: 12px; font-weight: 600; flex: none; }
-.suglist { position: absolute; left: 0; right: 80px; bottom: calc(100% + 4px); z-index: 80; max-height: 240px; overflow-y: auto; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 4px; }
-.sug { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
-.sug:hover { background: var(--bg3); }
-.suglab { color: var(--ac2); font-size: 12px; font-weight: 600; }
-.sugtxt { color: var(--tx3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
 .cfgrow span { width: 62px; flex: none; }

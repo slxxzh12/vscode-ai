@@ -18,9 +18,11 @@ import { createCollabMount } from './collaboration/http-mount.js';
 import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
 import { CollabS2C } from '@devflow/shared/collab';
+import { loadWorkflowXml, defaultWorkflowFile } from './workflow-xml.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
+const workflowXmlFile = defaultWorkflowFile(path.join(__dirname, '..'));
 
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
 process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
@@ -113,6 +115,12 @@ collabEventBus.on('cmd-pending', (payload) => broadcastCollab(CollabS2C.COLLAB_C
 const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
+  if (url.pathname === '/api/workflows-xml' && req.method === 'GET') {
+    const workflows = loadWorkflowXml(workflowXmlFile);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ workflows }));
+    return;
+  }
   if (url.pathname.startsWith('/api/collab')) { await collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/')) {
     await createHttpApi({ projects })(req, res);
