@@ -198,14 +198,24 @@ function selectProject(id: string) {
   currentProject.value = id;
   if (id) touchRecent(id);
 }
-async function addFolder() {
+const addOpen = ref(false);
+const addPath = ref('');
+function openAddFolder() { addPath.value = ''; addOpen.value = true; }
+async function chooseFolder() {
   try {
     const r = await projectsApi.pickFolder();
     if (r.error) { alert(t('top.pick_unsupported')); return; }
-    if (r.cancelled || !r.path) return;
-    const proj = await projectsApi.add(r.path);
+    if (r.path) addPath.value = r.path;
+  } catch (e) { alert(t('top.add_failed', { msg: (e as Error).message || String(e) })); }
+}
+async function confirmAddFolder() {
+  const p = addPath.value.trim();
+  if (!p) return;
+  try {
+    const proj = await projectsApi.add(p);
     await loadProjects();
     if (proj?.id) selectProject(proj.id);
+    addOpen.value = false;
   } catch (e) { alert(t('top.add_failed', { msg: (e as Error).message || String(e) })); }
 }
 function openFile(projectId: string, path: string) {
@@ -251,7 +261,7 @@ function onInviteJoined(_g?: CollabGroup) {
   <div class="app">
     <header class="top">
       <span class="logo">◈ vscode-ai</span>
-      <button class="addproj" :title="$t('top.add_folder')" @click="addFolder">＋</button>
+      <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
       <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" @change="(e: any) => selectProject(e.target.value)">
         <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id">
           {{ it.project.name }}{{ it.ts ? ' · ' + fmtRecent(it.ts) : '' }}
@@ -302,6 +312,19 @@ function onInviteJoined(_g?: CollabGroup) {
       </template>
     </div>
 
+    <div v-if="addOpen" class="joinmask" @click.self="addOpen = false">
+      <div class="addcard">
+        <div class="addtitle">{{ $t('top.add_folder') }}</div>
+        <div class="addrow2">
+          <input v-model="addPath" :placeholder="$t('top.folder_path')" @keyup.enter="confirmAddFolder" />
+          <button class="addchoose" @click="chooseFolder">{{ $t('top.choose') }}</button>
+        </div>
+        <div class="addacts">
+          <button class="ghost" @click="addOpen = false">{{ $t('common.cancel') }}</button>
+          <button class="ok" @click="confirmAddFolder">{{ $t('common.ok') }}</button>
+        </div>
+      </div>
+    </div>
     <div v-if="inviteToken" class="joinmask" @click.self="clearInvite()">
       <JoinInviteCard :collab="inviteCollab" :token="inviteToken" @joined="onInviteJoined" @cancel="clearInvite" />
     </div>
@@ -333,4 +356,13 @@ function onInviteJoined(_g?: CollabGroup) {
 .center { flex: 1; min-width: 0; }
 body.dragging-side { cursor: col-resize; user-select: none; }
 .joinmask { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.addcard { width: 420px; max-width: 92vw; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; padding: 16px; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+.addtitle { color: var(--tx1); font-weight: 700; margin-bottom: 10px; }
+.addrow2 { display: flex; gap: 8px; }
+.addrow2 input { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 6px 8px; box-sizing: border-box; }
+.addchoose { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.addchoose:hover { border-color: var(--ac2); }
+.addacts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.addacts .ghost { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 14px; cursor: pointer; }
+.addacts .ok { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 4px 16px; cursor: pointer; }
 </style>

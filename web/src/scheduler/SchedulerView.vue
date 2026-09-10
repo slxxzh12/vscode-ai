@@ -160,6 +160,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
         </label>
+        <button class="pickfile" @click="pickCommandFile">{{ $t('sched.pick_file') }}</button>
         <label>{{ $t('sched.field.cwd') }} <input v-model="form.cwd" :placeholder="$t('sched.field.cwd_placeholder')" /></label>
         <label>{{ $t('sched.field.type') }}
           <select v-model="form.type">
@@ -168,7 +169,6 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <option value="script">{{ $t('sched.type.script') }}</option>
           </select>
         </label>
-        <button class="pickfile" @click="pickCommandFile">{{ $t('sched.pick_file') }}</button>
         <template v-if="form.type === 'shell'">
           <label>{{ $t('sched.field.command') }} <textarea v-model="form.command" rows="3" /></label>
         </template>
