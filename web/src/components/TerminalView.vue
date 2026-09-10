@@ -38,6 +38,8 @@ const activeIsAgent = computed(() => {
   const tab = props.center.tabs.value.find((t) => t.id === `s:${sid}`);
   return !!tab && typeof tab.label === 'string' && tab.label.startsWith('◈');
 });
+// 非 Agent 会话强制折叠整条底部（含输入框/发送）
+const composerCollapsed = computed(() => composerMin.value || !activeIsAgent.value);
 
 function sessionState(id: string) {
   return props.terminal.state.sessions.find((s) => s.id === id)?.state || 'running';
@@ -570,15 +572,15 @@ onBeforeUnmount(() => {
         :detail-token="detailToken" :detail-path="detailPath" />
     </div>
 
-    <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerMin }" :style="{ height: (composerMin ? 40 : composerH) + 'px' }">
+    <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerCollapsed }" :style="{ height: (composerCollapsed ? 40 : composerH) + 'px' }">
       <div class="cbar" @mousedown="onComposerDragDown">
-        <div v-if="activeIsAgent" class="wfbtns" @mousedown.stop>
+        <div class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
         </div>
-        <button class="cmin" :title="composerMin ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerMin ? '❐' : '—' }}</button>
+        <button v-if="activeIsAgent" class="cmin" :title="composerCollapsed ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerCollapsed ? '❐' : '—' }}</button>
       </div>
-      <template v-if="!composerMin">
-        <div v-if="activeIsAgent" class="flowbar">
+      <template v-if="!composerCollapsed">
+        <div class="flowbar">
           <template v-for="(g, gi) in stageGroups" :key="gi">
             <div class="fgroup">
               <span v-if="g.name" class="fglabel">{{ g.name }}</span>
@@ -590,7 +592,7 @@ onBeforeUnmount(() => {
             <span v-if="gi < stageGroups.length - 1" class="fgap" />
           </template>
         </div>
-        <div v-if="activeIsAgent && chips.length" class="chipbar" :title="$t('term.phase_hints')">
+        <div v-if="chips.length" class="chipbar" :title="$t('term.phase_hints')">
           <span class="chips-label">{{ $t('term.common') }}</span>
           <button
             v-for="(p, i) in chips"
