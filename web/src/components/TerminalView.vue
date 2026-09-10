@@ -35,6 +35,61 @@ function sessionLabel(id: string) {
   return props.terminal.state.sessions.find((s) => s.id === id)?.name || id;
 }
 
+// —— 固定 Agent 首标签：交互式 opencode/claudecode + 工作流（跑 opencode 自定义命令）——
+const WF_LABELS: Record<string, string> = { dev: '开发工作流', test: '测试工作流', doc: '文档工作流' };
+// command/ 目录下的 opencode 自定义命令名（前端送 /<cmd> 回车给 TUI）
+const WF_CMDS: Record<string, string> = { dev: '/dev', test: '/test', doc: '/doc' };
+const agentSid = ref<string | null>(null);
+const agentEngine = ref<'opencode' | 'claudecode'>('opencode');
+const wfKind = ref<'dev' | 'test' | 'doc'>('dev');
+const agentStarted = ref(false);
+
+function ensureAgentOrder() {
+  if (!agentSid.value) return;
+  const arr = props.center.tabs.value;
+  const i = arr.findIndex((t) => t.id === `s:${agentSid.value}`);
+  if (i <= 0) return;
+  const [tab] = arr.splice(i, 1);
+  arr.unshift(tab);
+  props.center.tabs.value = [...arr];
+}
+function agentActive() {
+  return !!agentSid.value && props.terminal.state.sessions.some((s) => s.id === agentSid.value);
+}
+async function startAgent() {
+  if (agentSid.value && agentActive()) {
+    props.terminal.switchTo(agentSid.value);
+    return;
+  }
+  const s = await props.terminal.createSession({ projectId: props.projectId, cols: 80, rows: 24 });
+  agentSid.value = s.id;
+  agentStarted.value = true;
+  props.center.ensureSession(s.id, `◈ ${agentEngine.value}`, s.state || 'running');
+  ensureAgentOrder();
+  props.terminal.switchTo(s.id);
+  setTimeout(() => launchAgentCmd(), 1200);
+}
+function launchAgentCmd() {
+  if (!agentSid.value || !agentActive()) return;
+  props.terminal.switchTo(agentSid.value);
+  props.terminal.input(`${agentEngine.value}\r`);
+}
+function sendAgentText(text: string) {
+  if (!agentSid.value || !agentActive()) return;
+  props.terminal.input(`${text}\r`);
+}
+function runWorkflow() {
+  const cmd = WF_CMDS[wfKind.value] || '';
+  if (!cmd) return;
+  if (agentSid.value && agentActive()) {
+    props.terminal.switchTo(agentSid.value);
+    // TUI 输入需要一点时间聚焦；直接送入命令
+    setTimeout(() => sendAgentText(cmd), 600);
+    return;
+  }
+  startAgent().then(() => setTimeout(() => sendAgentText(cmd), 4200));
+}
+
 function init() {
   if (!hostRef.value || term) return;
   term = new Terminal({
@@ -57,7 +112,7 @@ function init() {
   unsubList = props.terminal.on(S2C.SESSION_LIST, () => {
     if (!autoTried && !props.terminal.state.activeSessionId && props.terminal.state.sessions.length === 0) {
       autoTried = true;
-      props.terminal.createSession({ projectId: props.projectId, ...dims() });
+      startAgent();   // 首标签固定为 Agent 会话（opencode/claudecode）
     }
   });
 }
@@ -65,9 +120,13 @@ function init() {
 // 会话列表 → 统一页签栏同步（保证顺序：会话在前，文件在后）
 const knownSessions = ref<string[]>([]);
 watch(() => props.terminal.state.sessions.map((s) => s.id), (ids) => {
-  for (const id of ids) props.center.ensureSession(id, sessionLabel(id), sessionState(id));
+  for (const id of ids) {
+    const lbl = id === agentSid.value ? `◈ ${agentEngine.value}` : sessionLabel(id);
+    props.center.ensureSession(id, lbl, sessionState(id));
+  }
   for (const old of knownSessions.value) if (!ids.includes(old)) props.center.removeSession(old);
   knownSessions.value = ids;
+  ensureAgentOrder();
 }, { immediate: true });
 
 // 激活会话变化 → 中心激活对应会话页签（新建/切换时回到终端视图）
@@ -128,13 +187,28 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="center-wrap">
+    <div class="agentbar">
+      <span class="alab">Agent</span>
+      <select v-model="agentEngine" class="asel">
+        <option value="opencode">OpenCode</option>
+        <option value="claudecode">ClaudeCode</option>
+      </select>
+      <span class="alab">工作流</span>
+      <select v-model="wfKind" class="asel">
+        <option value="dev">开发工作流</option>
+        <option value="test">测试工作流</option>
+        <option value="doc">文档工作流</option>
+      </select>
+      <button class="ago" @click="runWorkflow">▶ 启动/执行</button>
+      <span class="ahint">首标签固定为 Agent 会话（不可关闭）</span>
+    </div>
     <div class="tabstrip">
       <div v-for="t in center.tabs.value" :key="t.id" class="tab"
         :class="{ active: center.activeId.value === t.id }" @click="onTabClick(t.id)">
         <span v-if="t.kind === 'session'" :class="['dot', sessionState(t.id.slice(2))]" />
         <span v-else class="file-ic">▤</span>
         <span class="nm" :title="t.kind === 'file' ? t.path : t.label">{{ t.label }}</span>
-        <span class="x" @click="onTabClose(t.id, $event)">×</span>
+        <span v-if="t.id !== 's:' + agentSid" class="x" @click="onTabClose(t.id, $event)">×</span>
       </div>
       <button class="new" @click="terminal.createSession({ projectId, cols: 80, rows: 24 })">＋ 新建会话</button>
       <span v-if="terminal.state.status === 'reconnecting'" class="net">重连中…</span>
@@ -151,6 +225,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .center-wrap { display: flex; flex-direction: column; height: 100%; background: var(--bg3); position: relative; }
+.agentbar { display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 30px; background: var(--bg1); border-bottom: 1px solid var(--bd2); flex: none; }
+.alab { color: var(--tx3); font-size: 11px; }
+.asel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+.ago { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 2px 12px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.ahint { margin-left: auto; color: var(--tx6); font-size: 11px; }
 .tabstrip { display: flex; align-items: center; gap: 2px; background: var(--bg2); border-bottom: 1px solid var(--bd); padding: 0 8px; height: 32px; overflow-x: auto; flex: none; }
 .tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--tx2); padding: 0 10px; height: 100%; cursor: pointer; border-right: 1px solid var(--bd); flex: none; max-width: 220px; }
 .tab.active { background: var(--bg3); color: var(--tx1); }
