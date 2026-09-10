@@ -28,6 +28,7 @@ import { ruby } from '@codemirror/legacy-modes/mode/ruby';
 import { perl } from '@codemirror/legacy-modes/mode/perl';
 import '../styles/markdown.css';
 import { useProjects, type FileMeta } from '../useProjects';
+import { t, locale } from '../i18n';
 import { isMarkdownFile, renderMarkdown, renderMermaid } from '../markdown';
 import { parseCurl, type CurlRequest } from '../curl';
 
@@ -137,14 +138,14 @@ const isBinary = ref(false);
 async function revealInExplorer() {
   try {
     await reveal(props.projectId, props.path);
-    setToolMsg('✓ 已在系统资源管理器中定位该文件');
+    setToolMsg(t('fp.revealed'));
   } catch (e: any) {
-    setToolMsg(`无法在系统资源管理器中打开：${e?.message || e}`, false);
+    setToolMsg(t('fp.reveal_failed', { msg: e?.message || e }), false);
   }
 }
 
 function nowTime() {
-  return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  return new Date().toLocaleTimeString(locale.value, { hour12: false });
 }
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -308,10 +309,10 @@ async function minifyOneLine() {
     const r = await format(props.name, src);
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: r.content } });
     requestMeasure();
-    flashFmt('✓ 已压缩为一行');
-    setToolMsg('✓ 已压缩为一行');
+    flashFmt(t('fp.minified'));
+    setToolMsg(t('fp.minified'));
   } catch (e: any) {
-    const m = `压缩失败：${e?.message || e}`;
+    const m = t('fp.minify_failed', { msg: e?.message || e });
     flashFmt(m);
     setToolMsg(m, false);
   } finally {
@@ -321,17 +322,17 @@ async function minifyOneLine() {
 
 // —— 文本排序 ——
 type SortMode = 'asc' | 'desc' | 'asc-ci' | 'desc-ci' | 'num-asc' | 'num-desc';
-const SORT_ITEMS: Array<{ mode: SortMode; label: string }> = [
-  { mode: 'asc', label: '升序排列（A-Z）' },
-  { mode: 'desc', label: '降序排列（Z-A）' },
-  { mode: 'asc-ci', label: '升序排列（不分大小写）' },
-  { mode: 'desc-ci', label: '降序排列（不分大小写）' },
-  { mode: 'num-asc', label: '按数字大小升序' },
-  { mode: 'num-desc', label: '按数字大小降序' },
-];
-const SORT_LABEL: Record<SortMode, string> = {
-  asc: '升序', desc: '降序', 'asc-ci': '升序（不分大小写）', 'desc-ci': '降序（不分大小写）',
-  'num-asc': '数字升序', 'num-desc': '数字降序',
+const SORT_ITEMS = computed<Array<{ mode: SortMode; label: string }>>(() => [
+  { mode: 'asc', label: t('fp.sort.asc') },
+  { mode: 'desc', label: t('fp.sort.desc') },
+  { mode: 'asc-ci', label: t('fp.sort.asc_ci') },
+  { mode: 'desc-ci', label: t('fp.sort.desc_ci') },
+  { mode: 'num-asc', label: t('fp.sort.num_asc') },
+  { mode: 'num-desc', label: t('fp.sort.num_desc') },
+]);
+const SORT_KEY: Record<SortMode, string> = {
+  asc: 'fp.sort.short.asc', desc: 'fp.sort.short.desc', 'asc-ci': 'fp.sort.short.asc_ci', 'desc-ci': 'fp.sort.short.desc_ci',
+  'num-asc': 'fp.sort.short.num_asc', 'num-desc': 'fp.sort.short.num_desc',
 };
 function leadingNumber(s: string): number | null {
   const m = s.trim().match(/^-?\d+(\.\d+)?/);
@@ -367,8 +368,8 @@ function applySort(mode: SortMode) {
   view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
   toolsOpen.value = false;
   requestMeasure();
-  flashFmt(`✓ 已按${SORT_LABEL[mode]}排列`);
-  setToolMsg(`✓ 已按${SORT_LABEL[mode]}排列`);
+  flashFmt(t('fp.sorted', { label: t(SORT_KEY[mode]) }));
+  setToolMsg(t('fp.sorted', { label: t(SORT_KEY[mode]) }));
 }
 
 // —— 🧰 小工具（顶栏右上收纳菜单）：排序/Base64/格式化/压缩/运行/curl ——
@@ -433,7 +434,7 @@ function refreshB64Decode() {
   try {
     b64DecodeOut.value = decodeB64(src);
   } catch {
-    b64DecodeErr.value = '不是合法的 Base64 内容';
+    b64DecodeErr.value = t('fp.b64_invalid');
   }
 }
 watch(b64DecodeInput, refreshB64Decode);
@@ -474,7 +475,7 @@ const hashing = ref(false);
 const hashMd5 = ref('');
 const hashSha256 = ref('');
 const hashErr = ref('');
-const kindLabel = computed(() => ({ image: '图片', pdf: 'PDF', text: '文本' })[kind.value] || '文件');
+const kindLabel = computed(() => ({ image: t('fp.kind.image'), pdf: 'PDF', text: t('fp.kind.text') })[kind.value] || t('fp.kind.file'));
 let seenDetail = -1;
 async function openDetail() {
   detailErr.value = '';
@@ -512,7 +513,7 @@ async function computeHash() {
     hashMd5.value = h.md5;
     hashSha256.value = h.sha256;
   } catch (e: any) {
-    hashErr.value = `计算失败：${e?.message || e}`;
+    hashErr.value = t('fp.hash_failed', { msg: e?.message || e });
   } finally {
     hashing.value = false;
   }
@@ -528,10 +529,10 @@ watch(() => props.detailToken, (tk) => {
 async function runFile() {
   try {
     await runScript(props.projectId, props.path);
-    flashRun('已在系统中执行');
-    setToolMsg('✓ 已在系统中执行');
+    flashRun(t('fp.ran'));
+    setToolMsg(t('fp.ran'));
   } catch (e: any) {
-    const m = `执行失败：${e?.message || e}`;
+    const m = t('fp.run_failed', { msg: e?.message || e });
     flashRun(m);
     setToolMsg(m, false);
   }
@@ -553,7 +554,7 @@ function reqBody(): string | undefined {
 function openCurl() {
   const src = view ? view.state.doc.toString() : raw.value;
   const parsed = parseCurl(src);
-  if (!parsed) { curlErr.value = '未识别到 curl 命令'; curlOpen.value = false; return; }
+  if (!parsed) { curlErr.value = t('fp.curl_no_command'); curlOpen.value = false; return; }
   req.value = parsed;
   curlUrl.value = parsed.url;
   headerLines.value = parsed.headers.map((h) => `${h.name}: ${h.value}`).join('\n');
@@ -569,7 +570,7 @@ function applyHeaderEdits() {
   req.value.headers = out;
 }
 async function sendRequest() {
-  if (!curlUrl.value) { curlErr.value = 'URL 不能为空'; return; }
+  if (!curlUrl.value) { curlErr.value = t('fp.curl_url_required'); return; }
   applyHeaderEdits();
   sending.value = true;
   curlErr.value = '';
@@ -581,9 +582,9 @@ async function sendRequest() {
     const r = await fetch(curlUrl.value, { method: req.value.method.toUpperCase(), headers, body: reqBody() });
     respStatus.value = r.status;
     const text = await r.text();
-    respText.value = text.length > 300000 ? text.slice(0, 300000) + '\n…(截断)' : text;
+    respText.value = text.length > 300000 ? text.slice(0, 300000) + t('fp.truncated') : text;
   } catch (e: any) {
-    curlErr.value = `请求失败：${e?.message || e}`;
+    curlErr.value = t('fp.request_failed', { msg: e?.message || e });
   } finally {
     sending.value = false;
   }
@@ -617,14 +618,14 @@ async function formatDoc() {
     const out = await prettier.format(doc, { parser, plugins });
     if (out !== doc) {
       view.dispatch({ changes: { from: 0, to: doc.length, insert: out } });
-      flashFmt('✓ 已格式化');
-      setToolMsg('✓ 已格式化');
+      flashFmt(t('fp.formatted'));
+      setToolMsg(t('fp.formatted'));
     } else {
-      flashFmt('格式已是最佳');
-      setToolMsg('格式已是最佳');
+      flashFmt(t('fp.format_optimal'));
+      setToolMsg(t('fp.format_optimal'));
     }
   } catch (e: any) {
-    const m = `格式化失败：${e?.message || e}`;
+    const m = t('fp.format_failed', { msg: e?.message || e });
     flashFmt(m);
     setToolMsg(m, false);
   }
@@ -656,7 +657,7 @@ onBeforeUnmount(() => {
     <div v-if="kind === 'image' || kind === 'pdf'" class="head mediahead">
       <span class="meta">{{ name }}<template v-if="status === 'ok'"> · {{ (size / 1024).toFixed(1) }} KB</template></span>
       <div class="right">
-        <button class="fmt-btn" :class="{ on: detailOpen }" title="文件详细信息" @click="toggleDetail()">ⓘ 详细信息</button>
+        <button class="fmt-btn" :class="{ on: detailOpen }" :title="$t('fp.detail.title')" @click="toggleDetail()">{{ $t('fp.detail') }}</button>
       </div>
     </div>
     <div v-if="kind === 'image' || kind === 'pdf'" class="media">
@@ -668,42 +669,42 @@ onBeforeUnmount(() => {
         <span class="meta">{{ name }}<template v-if="status === 'ok'"> · {{ (size / 1024).toFixed(1) }} KB</template></span>
         <div class="right">
           <div v-if="hasPreviewToggle" class="seg">
-            <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">预览</button>
-            <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? '源码' : '代码' }}</button>
+            <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">{{ $t('fp.preview') }}</button>
+            <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? $t('fp.source') : $t('fp.code') }}</button>
           </div>
-          <span v-if="saveState === 'saving'" class="save saveing">保存中…</span>
-          <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ saveMsg }} 已保存</span>
-          <span v-else-if="saveState === 'error'" class="save saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
+          <span v-if="saveState === 'saving'" class="save saveing">{{ $t('fp.saving') }}</span>
+          <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ $t('fp.saved', { msg: saveMsg }) }}</span>
+          <span v-else-if="saveState === 'error'" class="save saveerr" :title="$t('fp.retry')" @click="onRetrySave">{{ $t('fp.save_failed', { msg: saveMsg }) }}</span>
           <span v-if="fmtMsg" class="save fmtmsg" :class="{ ok: fmtMsg.startsWith('✓') }">{{ fmtMsg }}</span>
           <span class="twrap">
-            <button class="fmt-btn" :class="{ on: toolsOpen }" title="小工具" @click.stop="toolsOpen = !toolsOpen">🧰 小工具 ▾</button>
+            <button class="fmt-btn" :class="{ on: toolsOpen }" :title="$t('fp.tools')" @click.stop="toolsOpen = !toolsOpen">{{ $t('fp.tools') }}</button>
             <div v-if="toolsOpen" class="toolsmenu" @click.stop>
-              <button v-if="canFormat && showEditor" class="mi" @click="runTools('format')">⇥ 格式化</button>
-              <button v-if="canMinify && showEditor && status === 'ok'" class="mi" :disabled="minifying" @click="runTools('minify')">{{ minifying ? '压缩中…' : '⇣ 压成一行' }}</button>
-              <div v-if="canSort" class="mi has-sub">⇅ 排序<span class="caret">▸</span>
+              <button v-if="canFormat && showEditor" class="mi" @click="runTools('format')">{{ $t('fp.format') }}</button>
+              <button v-if="canMinify && showEditor && status === 'ok'" class="mi" :disabled="minifying" @click="runTools('minify')">{{ minifying ? $t('fp.minifying') : $t('fp.minify') }}</button>
+              <div v-if="canSort" class="mi has-sub">{{ $t('fp.sort') }}<span class="caret">▸</span>
                 <div class="submenu">
                   <button v-for="s in SORT_ITEMS" :key="s.mode" @click="applySort(s.mode)">{{ s.label }}</button>
                 </div>
               </div>
-              <button v-if="canB64" class="mi" :class="{ on: b64Open }" @click="runTools('b64')">⇆ Base64 编解码面板</button>
-              <button v-if="canRun" class="mi run-t" @click="runTools('run')">▶ 在系统中运行</button>
-              <button v-if="canCurl" class="mi" @click="runTools('curl')">⇀ curl 转请求</button>
-              <div v-if="!anyTool" class="mi none">当前视图无可用工具（切到代码视图试试）</div>
+              <button v-if="canB64" class="mi" :class="{ on: b64Open }" @click="runTools('b64')">{{ $t('fp.b64') }}</button>
+              <button v-if="canRun" class="mi run-t" @click="runTools('run')">{{ $t('fp.run') }}</button>
+              <button v-if="canCurl" class="mi" @click="runTools('curl')">{{ $t('fp.curl') }}</button>
+              <div v-if="!anyTool" class="mi none">{{ $t('fp.no_tools') }}</div>
             </div>
           </span>
           <span v-if="runMsg" class="save runmsg">{{ runMsg }}</span>
-          <button v-if="status === 'ok'" class="fmt-btn" :class="{ on: detailOpen }" title="文件详细信息" @click="toggleDetail()">ⓘ 详细信息</button>
-          <button v-if="status === 'ok' && showEditor && !isBinary" class="fmt-btn savebtn" :disabled="!dirty" title="保存 (Ctrl+S)" @click="saveNow">💾 保存{{ dirty ? ' *' : '' }}</button>
+          <button v-if="status === 'ok'" class="fmt-btn" :class="{ on: detailOpen }" :title="$t('fp.detail.title')" @click="toggleDetail()">{{ $t('fp.detail') }}</button>
+          <button v-if="status === 'ok' && showEditor && !isBinary" class="fmt-btn savebtn" :disabled="!dirty" :title="$t('fp.save') + ' (Ctrl+S)'" @click="saveNow">{{ $t('fp.save') }}{{ dirty ? ' *' : '' }}</button>
         </div>
       </div>
-      <div v-if="status === 'loading'" class="note">加载中…</div>
-      <div v-else-if="status === 'error'" class="note err">打开失败：{{ errMsg }}</div>
+      <div v-if="status === 'loading'" class="note">{{ $t('fp.loading') }}</div>
+      <div v-else-if="status === 'error'" class="note err">{{ $t('fp.open_failed', { msg: errMsg }) }}</div>
       <template v-else>
         <div v-if="isBinary" class="binwrap">
           <div class="binic">🚫</div>
-          <div class="bintxt">此文件为二进制格式，不支持网页预览</div>
+          <div class="bintxt">{{ $t('fp.binary_unsupported') }}</div>
           <div class="binpath mono" :title="fileAbs" @click="revealInExplorer()">{{ fileAbs }}</div>
-          <button class="fmt-btn binbtn" @click="revealInExplorer()">📂 在资源管理器中定位</button>
+          <button class="fmt-btn binbtn" @click="revealInExplorer()">{{ $t('fp.reveal') }}</button>
         </div>
         <template v-else>
         <div v-show="viewMode === 'preview'" class="pane">
@@ -718,37 +719,37 @@ onBeforeUnmount(() => {
         <div v-if="b64Open && status === 'ok'" class="b64panel">
           <div class="b64col">
             <div class="b64ch">
-              <span class="b64t">Base64 编码（实时）</span>
+              <span class="b64t">{{ $t('fp.b64.encode') }}</span>
               <div class="b64btns">
-                <button class="b64b" :disabled="!b64EncodeOut" @click="b64Copy(b64EncodeOut)">复制</button>
+                <button class="b64b" :disabled="!b64EncodeOut" @click="b64Copy(b64EncodeOut)">{{ $t('common.copy') }}</button>
               </div>
             </div>
             <pre class="b64pre">{{ b64EncodeOut }}</pre>
           </div>
           <div class="b64col">
             <div class="b64ch">
-              <span class="b64t">Base64 解码</span>
+              <span class="b64t">{{ $t('fp.b64.decode') }}</span>
               <div class="b64btns">
-                <button class="b64b" :disabled="!b64EncodeOut" @click="feedDecodeFromEncode()">编码结果→解码</button>
-                <button class="b64b" :disabled="!b64DecodeOut" @click="b64Copy(b64DecodeOut)">复制</button>
-                <button class="b64b" :disabled="!b64DecodeInput" @click="b64DecodeInput = ''">清空</button>
+                <button class="b64b" :disabled="!b64EncodeOut" @click="feedDecodeFromEncode()">{{ $t('fp.b64.encode_to_decode') }}</button>
+                <button class="b64b" :disabled="!b64DecodeOut" @click="b64Copy(b64DecodeOut)">{{ $t('common.copy') }}</button>
+                <button class="b64b" :disabled="!b64DecodeInput" @click="b64DecodeInput = ''">{{ $t('fp.b64.clear') }}</button>
               </div>
             </div>
-            <textarea v-model="b64DecodeInput" class="b64ta" rows="2" spellcheck="false" placeholder="在此粘贴 Base64，自动实时解码…" />
+            <textarea v-model="b64DecodeInput" class="b64ta" rows="2" spellcheck="false" :placeholder="$t('fp.b64.placeholder')" />
             <div v-if="b64DecodeErr" class="b64err">{{ b64DecodeErr }}</div>
             <pre v-else class="b64pre">{{ b64DecodeOut }}</pre>
           </div>
         </div>
 
         <div v-if="curlOpen" class="curlpanel">
-          <div class="cph">⇀ 构建 HTTP 请求 <button class="cpx" @click="curlOpen = false">×</button></div>
-          <div class="cpf"><label>方法</label><input v-model="req.method" class="cpm" /></div>
+          <div class="cph">{{ $t('fp.curl.title') }} <button class="cpx" @click="curlOpen = false">×</button></div>
+          <div class="cpf"><label>{{ $t('fp.curl.method') }}</label><input v-model="req.method" class="cpm" /></div>
           <div class="cpf"><label>URL</label><input v-model="curlUrl" class="cpi" placeholder="https://…" /></div>
-          <div class="cpf"><label>请求头</label><textarea v-model="headerLines" rows="3" class="cpt" placeholder="Name: Value，每行一个" /></div>
-          <div class="cpf"><label>请求体</label><textarea v-model="req.body" rows="4" class="cpt" placeholder="POST/PUT 请求体" /></div>
+          <div class="cpf"><label>{{ $t('fp.curl.headers') }}</label><textarea v-model="headerLines" rows="3" class="cpt" :placeholder="$t('fp.curl.headers_placeholder')" /></div>
+          <div class="cpf"><label>{{ $t('fp.curl.body') }}</label><textarea v-model="req.body" rows="4" class="cpt" :placeholder="$t('fp.curl.body_placeholder')" /></div>
           <div class="cpacts">
-            <button class="cpsend" :disabled="sending" @click="sendRequest">{{ sending ? '发送中…' : '▶ 发送' }}</button>
-            <span class="cprun" @click="curlOpen = false">关闭</span>
+            <button class="cpsend" :disabled="sending" @click="sendRequest">{{ sending ? $t('fp.curl.sending') : $t('fp.curl.send') }}</button>
+            <span class="cprun" @click="curlOpen = false">{{ $t('fp.curl.close') }}</span>
           </div>
           <div v-if="curlErr" class="cperr">{{ curlErr }}</div>
           <div v-if="respStatus !== null" class="cpstat">HTTP {{ respStatus }}</div>
@@ -760,49 +761,49 @@ onBeforeUnmount(() => {
 
     <div v-if="detailOpen" class="detailpanel">
       <div class="dph">
-        <span class="dpt">文件详细信息</span>
+        <span class="dpt">{{ $t('fp.detail.title') }}</span>
         <button class="cpx" @click="toggleDetail()">×</button>
       </div>
       <div v-if="detailErr" class="note err">{{ detailErr }}</div>
       <div v-else-if="detail" class="dbody">
-        <div class="drow"><span class="dk">名称</span><span class="dv" :title="detail.name">{{ detail.name }}</span></div>
-        <div class="drow"><span class="dk">类型</span><span class="dv">{{ kindLabel }}</span></div>
+        <div class="drow"><span class="dk">{{ $t('fp.detail.name') }}</span><span class="dv" :title="detail.name">{{ detail.name }}</span></div>
+        <div class="drow"><span class="dk">{{ $t('fp.detail.type') }}</span><span class="dv">{{ kindLabel }}</span></div>
         <div class="drow">
-          <span class="dk">绝对路径</span>
+          <span class="dk">{{ $t('fp.detail.abs') }}</span>
           <span class="dv mono" :title="detail.abs">{{ detail.abs }}</span>
-          <button class="b64b" :disabled="!detail.abs" @click="b64Copy(detail.abs)">复制</button>
+          <button class="b64b" :disabled="!detail.abs" @click="b64Copy(detail.abs)">{{ $t('common.copy') }}</button>
         </div>
-        <div class="drow"><span class="dk">大小</span><span class="dv mono">{{ fmtBytes(detail.size) }}</span></div>
-        <div class="drow"><span class="dk">修改时间</span><span class="dv mono">{{ fmtMtime(detail.mtime) }}</span></div>
+        <div class="drow"><span class="dk">{{ $t('fp.detail.size') }}</span><span class="dv mono">{{ fmtBytes(detail.size) }}</span></div>
+        <div class="drow"><span class="dk">{{ $t('fp.detail.mtime') }}</span><span class="dv mono">{{ fmtMtime(detail.mtime) }}</span></div>
         <div class="drow">
           <span class="dk">MD5</span>
           <span class="dv mono hval" :class="{ warn: hashErr }">
             <span v-if="hashing" class="spin" />
-            <template v-if="hashing">计算中…</template>
+            <template v-if="hashing">{{ $t('fp.detail.computing') }}</template>
             <template v-else>{{ hashMd5 || hashErr || '—' }}</template>
           </span>
-          <button class="b64b" :disabled="!hashMd5 || hashing" @click="b64Copy(hashMd5)">复制</button>
+          <button class="b64b" :disabled="!hashMd5 || hashing" @click="b64Copy(hashMd5)">{{ $t('common.copy') }}</button>
         </div>
         <div class="drow">
           <span class="dk">SHA256</span>
           <span class="dv mono hval" :class="{ warn: hashErr }">
             <span v-if="hashing" class="spin" />
-            <template v-if="hashing">计算中…</template>
+            <template v-if="hashing">{{ $t('fp.detail.computing') }}</template>
             <template v-else>{{ hashSha256 || hashErr || '—' }}</template>
           </span>
-          <button class="b64b" :disabled="!hashSha256 || hashing" @click="b64Copy(hashSha256)">复制</button>
+          <button class="b64b" :disabled="!hashSha256 || hashing" @click="b64Copy(hashSha256)">{{ $t('common.copy') }}</button>
         </div>
         <div v-if="needHashBtn" class="drow">
           <span class="dk" />
-          <button class="b64b hashgo" title="文件较大，点击手动计算" @click="computeHash">计算 MD5+SHA256（大文件）</button>
+          <button class="b64b hashgo" :title="$t('fp.detail.hash_tip')" @click="computeHash">{{ $t('fp.detail.compute') }}</button>
         </div>
       </div>
     </div>
 
     <div class="statusbar">
-      <span v-if="saveState === 'saving'" class="st saveing">保存中…</span>
-      <span v-else-if="saveState === 'saved'" class="st saveok">✓ {{ saveMsg }} 已保存</span>
-      <span v-else-if="saveState === 'error'" class="st saveerr" title="点击重试" @click="onRetrySave">⚠ 保存失败：{{ saveMsg }}</span>
+      <span v-if="saveState === 'saving'" class="st saveing">{{ $t('fp.saving') }}</span>
+      <span v-else-if="saveState === 'saved'" class="st saveok">✓ {{ $t('fp.saved', { msg: saveMsg }) }}</span>
+      <span v-else-if="saveState === 'error'" class="st saveerr" :title="$t('fp.retry')" @click="onRetrySave">{{ $t('fp.save_failed', { msg: saveMsg }) }}</span>
       <span v-if="toolMsg" class="st toolmsg" :class="{ err: !toolOk }" :title="toolMsg">{{ toolMsg }}</span>
     </div>
   </div>
