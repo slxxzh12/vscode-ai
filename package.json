@@ -15,7 +15,8 @@
     "test:server": "node --test \"server/test/*.test.js\"",
     "test:web": "npm --prefix web run test",
     "test": "npm run test:server && npm run test:web",
-    "typecheck": "npm --prefix web run typecheck"
+    "typecheck": "npm --prefix web run typecheck",
+    "check:i18n": "node scripts/check-i18n.js"
   },
   "engines": {
     "node": ">=20"
