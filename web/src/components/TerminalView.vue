@@ -40,14 +40,27 @@ function sessionLabel(id: string) {
 
 // —— 固定 Agent 首标签：交互式 Agent（列表可配置）+ 工作流（跑 opencode 自定义命令）——
 interface AgentDef { id: string; name: string; cmd: string; }
-const DEFAULT_AGENTS: AgentDef[] = [
-  { id: 'opencode', name: 'OpenCode', cmd: 'opencode' },
-  { id: 'claudecode', name: 'ClaudeCode', cmd: 'claudecode' },
-  { id: 'nga', name: 'nga', cmd: 'nga.cmd' },
-];
+// 仅作接口不可达时的最小兜底；正式列表来自 config/devflow.xml（GET /api/agents）
+const DEFAULT_AGENTS: AgentDef[] = [{ id: 'opencode', name: 'OpenCode', cmd: 'opencode' }];
 const agentSid = ref<string | null>(null);
+const defaultAgents = ref<AgentDef[]>(DEFAULT_AGENTS.map((a) => ({ ...a })));
+const defaultAgentId = ref('opencode');
 const agents = ref<AgentDef[]>(DEFAULT_AGENTS.map((a) => ({ ...a })));
 const agentId = ref('opencode');
+async function loadAgents() {
+  try {
+    const r = await fetch('/api/agents').then((x) => x.json());
+    const list = Array.isArray(r?.agents)
+      ? r.agents.filter((a: any) => a && typeof a.id === 'string' && typeof a.cmd === 'string')
+      : [];
+    if (!list.length) return;
+    defaultAgents.value = list.map((a: any) => ({ id: a.id, name: a.name || a.id, cmd: a.cmd }));
+    defaultAgentId.value = (typeof r.default === 'string' && defaultAgents.value.some((a) => a.id === r.default))
+      ? r.default : defaultAgents.value[0].id;
+    agents.value = defaultAgents.value.map((a) => ({ ...a }));
+    agentId.value = defaultAgentId.value;
+  } catch { /* 保留最小兜底 */ }
+}
 const currentAgent = computed(() => agents.value.find((a) => a.id === agentId.value) || agents.value[0] || { id: '', name: '-', cmd: 'opencode' });
 const agentCmd = computed(() => currentAgent.value.cmd || 'opencode');
 const wfKind = ref<string>('dev');
@@ -114,8 +127,8 @@ function saveCfg() {
   try { localStorage.setItem(cfgKey, JSON.stringify({ agentId: agentId.value, agents: agents.value, wf: wfKind.value, cmds: wfCmds.value })); } catch { /* ignore */ }
 }
 function resetCfg() {
-  agents.value = DEFAULT_AGENTS.map((a) => ({ ...a }));
-  agentId.value = 'opencode';
+  agents.value = defaultAgents.value.map((a) => ({ ...a }));
+  agentId.value = defaultAgentId.value;
   wfKind.value = 'dev';
   wfCmds.value = { dev: '/dev', test: '/test', doc: '/doc' };
 }
@@ -438,7 +451,8 @@ onMounted(async () => {
   window.addEventListener('df-fill-composer', onFillComposer);
   const fp = await nodeFp();
   cfgKey = `devflow-agent-cfg-${fp}`;
-  loadCfg();
+  await loadAgents();
+  loadCfg();           // 本地已保存配置优先覆盖 API 默认
   cfgLoaded = true;
   loadWorkflows();
   loadComposerH();
