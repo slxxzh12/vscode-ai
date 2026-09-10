@@ -7,7 +7,6 @@ import CollaborationView from './collaboration/CollaborationView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import FileTree from './components/FileTree.vue';
-import WorkflowPanel from './components/WorkflowPanel.vue';
 import GitStat from './components/GitStat.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
@@ -19,7 +18,6 @@ const { theme, toggle } = useTheme();
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts' | 'stat'>('explorer');
-const showWf = ref(false);
 const detailToken = ref(0);
 const detailPath = ref('');
 function onDetailFile(projectId: string, path: string) {
@@ -187,6 +185,10 @@ function openFile(projectId: string, path: string) {
   pushFileHistory(projectId, q);
   center.openFile(projectId, path, name);
 }
+function openAgentSettings() {
+  if (rail.value === 'contacts') { rail.value = 'explorer'; }
+  setTimeout(() => window.dispatchEvent(new Event('df-open-agent-settings')), 120);
+}
 onMounted(() => {
   initFileHistory();
   loadProjects();
@@ -208,15 +210,15 @@ onMounted(() => {
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">重连中…</span>
       <button class="theme-btn" :title="theme === 'dark' ? '切换到浅色' : '切换到深色'" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
-      <button class="wf-btn" @click="showWf = !showWf">⚡ Workflow ▾</button>
     </header>
 
     <div class="main">
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" title="目录" @click="rail = 'explorer'">▤</button>
-        <button class="a-btn" :class="{ on: rail === 'history' }" title="历史" @click="rail = 'history'; showWf = false">🕘</button>
-        <button class="a-btn" :class="{ on: rail === 'contacts' }" title="通讯录" @click="rail = 'contacts'; showWf = false">👥</button>
-        <button class="a-btn" :class="{ on: rail === 'stat' }" title="提交统计" @click="rail = 'stat'; showWf = false">📊</button>
+        <button class="a-btn" :class="{ on: rail === 'history' }" title="历史" @click="rail = 'history'">🕘</button>
+        <button class="a-btn" :class="{ on: rail === 'contacts' }" title="通讯录" @click="rail = 'contacts'">👥</button>
+        <button class="a-btn" :class="{ on: rail === 'stat' }" title="提交统计" @click="rail = 'stat'">📊</button>
+        <button class="a-btn gearbot" title="设置" @click="openAgentSettings">⚙</button>
       </aside>
       <template v-if="rail === 'contacts'">
         <section class="center">
@@ -239,8 +241,6 @@ onMounted(() => {
         </section>
       </template>
     </div>
-
-    <WorkflowPanel v-if="showWf" :terminal="terminal" @close="showWf = false" />
   </div>
 </template>
 
@@ -254,12 +254,12 @@ onMounted(() => {
 .spacer { flex: 1; }
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .theme-btn:hover { border-color: var(--ac2); }
-.wf-btn { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
 .net { color: var(--warn); font-size: 12px; }
 .main { flex: 1; display: flex; min-height: 0; }
 .activity { width: 40px; background: var(--bg6); border-right: 1px solid var(--bd); display: flex; flex-direction: column; align-items: center; padding-top: 6px; gap: 2px; flex: none; }
 .a-btn { background: none; border: none; color: var(--tx6); font-size: 17px; width: 34px; height: 30px; cursor: pointer; border-left: 2px solid transparent; }
 .a-btn.on { color: var(--tx1); border-left-color: var(--ac); }
+.a-btn.gearbot { margin-top: auto; margin-bottom: 8px; }
 .side { width: 240px; background: var(--bg1); border-right: 1px solid var(--bd); overflow: auto; flex: none; }
 .divider { width: 5px; flex: none; cursor: col-resize; background: transparent; margin: 0 -2px; z-index: 5; }
 .divider:hover, .divider.on { background: var(--ac); opacity: .55; }
