@@ -15,7 +15,6 @@ export const messages = {
   'time.today': '今天 {hm}',
   'top.add_folder': '添加目录',
   'top.add_folder_prompt': '输入要添加的本地目录绝对路径',
-  'top.recent_folders': '最近打开的本地目录',
   'top.add_failed': '添加目录失败：{msg}',
   'common.accept': '接受',
   'common.reject': '拒绝',

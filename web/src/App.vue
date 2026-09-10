@@ -103,7 +103,6 @@ function openFromHistory(it: FileRec & { name: string; projName: string }) {
   center.openFile(it.projectId, it.path, it.name);
 }
 
-const projectName = computed(() => projects.value.find((p) => p.id === currentProject.value)?.name || t('app.no_project'));
 const currentProjectInfo = computed(() => projects.value.find((p) => p.id === currentProject.value) || null);
 // 顶栏展示：优先「选中文件的绝对路径」，无选中文件则显示项目根绝对路径
 const displayPath = computed(() => {
@@ -252,13 +251,11 @@ function onInviteJoined(_g?: CollabGroup) {
     <header class="top">
       <span class="logo">◈ vscode-ai</span>
       <button class="addproj" :title="$t('top.add_folder')" @click="addFolder">＋</button>
-      <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="$t('top.recent_folders')" @change="(e: any) => selectProject(e.target.value)">
+      <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" @change="(e: any) => selectProject(e.target.value)">
         <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id">
           {{ it.project.name }}{{ it.ts ? ' · ' + fmtRecent(it.ts) : '' }}
         </option>
       </select>
-      <span class="selltip">{{ $t('top.recent_folders') }}</span>
-      <span class="proj">{{ projectName }}</span>
       <span v-if="displayPath" class="projpath" :title="displayPath">{{ displayPath }}</span>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
@@ -316,10 +313,8 @@ function onInviteJoined(_g?: CollabGroup) {
 .logo { color: var(--ac3); font-weight: 700; }
 .addproj { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
 .addproj:hover { border-color: var(--ac2); color: var(--ac2); }
-.proj { color: var(--tx2); font-size: 12px; white-space: nowrap; }
 .projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proj-sel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; max-width: 320px; }
-.selltip { color: var(--tx6); font-size: 11px; white-space: nowrap; }
 .spacer { flex: 1; }
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .theme-btn:hover { border-color: var(--ac2); }

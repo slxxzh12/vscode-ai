@@ -15,7 +15,6 @@ export const messages = {
   'time.today': 'Today {hm}',
   'top.add_folder': 'Add folder',
   'top.add_folder_prompt': 'Enter the absolute path of a local folder to add',
-  'top.recent_folders': 'Recent local folders',
   'top.add_failed': 'Failed to add folder: {msg}',
   'common.accept': 'Accept',
   'common.reject': 'Reject',
