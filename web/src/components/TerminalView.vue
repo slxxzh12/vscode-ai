@@ -43,6 +43,7 @@ interface AgentDef { id: string; name: string; cmd: string; }
 const DEFAULT_AGENTS: AgentDef[] = [
   { id: 'opencode', name: 'OpenCode', cmd: 'opencode' },
   { id: 'claudecode', name: 'ClaudeCode', cmd: 'claudecode' },
+  { id: 'nga', name: 'nga', cmd: 'nga.cmd' },
 ];
 const agentSid = ref<string | null>(null);
 const agents = ref<AgentDef[]>(DEFAULT_AGENTS.map((a) => ({ ...a })));
