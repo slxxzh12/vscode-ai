@@ -33,7 +33,15 @@ const activeFile = computed(() => (props.center.active.value?.kind === 'file' ? 
 const isSessionView = computed(() => props.center.activeKind.value !== 'file');
 // 仅 Agent 会话显示工作流相关板块（终端 cmd/shell 等不显示）
 const agentSids = ref<Set<string>>(new Set());
-function markAgent(sid: string) { const s = new Set(agentSids.value); s.add(sid); agentSids.value = s; }
+let agentSidsKey = 'devflow-agent-sids-none';
+function persistAgentSids() { try { localStorage.setItem(agentSidsKey, JSON.stringify([...agentSids.value])); } catch { /* ignore */ } }
+function markAgent(sid: string) { const s = new Set(agentSids.value); s.add(sid); agentSids.value = s; persistAgentSids(); }
+function loadAgentSids() {
+  try {
+    const a = JSON.parse(localStorage.getItem(agentSidsKey) || '[]');
+    agentSids.value = new Set(Array.isArray(a) ? a.filter((x) => typeof x === 'string') : []);
+  } catch { /* ignore */ }
+}
 const activeIsAgent = computed(() => {
   const sid = props.terminal.state.activeSessionId;
   return !!sid && agentSids.value.has(sid);
@@ -287,7 +295,7 @@ function onComposerDragDown(e: MouseEvent) {
   document.addEventListener('mouseup', up);
 }
 // 切到非 Agent 会话默认最小化；Agent 会话默认展开（用户仍可手动折叠/展开）
-watch(() => props.terminal.state.activeSessionId, (sid) => {
+watch([() => props.terminal.state.activeSessionId, agentSids], ([sid]) => {
   if (sid) composerMin.value = !agentSids.value.has(sid);
 });
 
@@ -494,6 +502,8 @@ onMounted(async () => {
   window.addEventListener('df-fill-composer', onFillComposer);
   const fp = await nodeFp();
   cfgKey = `devflow-agent-cfg-${fp}`;
+  agentSidsKey = `devflow-agent-sids-${fp}`;
+  loadAgentSids();
   await loadAgents();
   loadCfg();           // 本地已保存配置优先覆盖 API 默认
   cfgLoaded = true;
