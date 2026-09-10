@@ -44,7 +44,7 @@ async function run() {
   error.value = '';
   result.value = null;
   try {
-    result.value = await fetchGitChanges({ repoPath: p, since: since.value, until: until.value });
+    result.value = await fetchGitChanges({ repo: p, since: since.value, until: until.value });
     remember(p);
   } catch (e: any) {
     error.value = String(e?.message || e);
@@ -78,13 +78,13 @@ function fmtDate(iso: string): string {
 
     <div class="form">
       <label class="fld grow">
-        <span>仓库路径</span>
-        <input v-model="repoPath" list="gitstat-recents" placeholder="例如 D:\code\my-repo" @keyup.enter="run" />
+        <span>仓库路径或 git 地址</span>
+        <input v-model="repoPath" list="gitstat-recents" placeholder="本地路径，或 https://… / git@…（远程会先 clone）" @keyup.enter="run" />
         <datalist id="gitstat-recents"><option v-for="p in recents" :key="p" :value="p" /></datalist>
       </label>
       <label class="fld"><span>起始日期</span><input v-model="since" type="date" /></label>
       <label class="fld"><span>结束日期</span><input v-model="until" type="date" /></label>
-      <button class="go" :disabled="loading" @click="run">{{ loading ? '查询中…' : '查询' }}</button>
+      <button class="go" :disabled="loading" @click="run">{{ loading ? '克隆/查询中…' : '查询' }}</button>
     </div>
     <div v-if="error" class="err">{{ error }}</div>
 

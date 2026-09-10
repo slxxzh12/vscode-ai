@@ -189,13 +189,16 @@ export function createHttpApi({ projects }) {
       }
       if (url.pathname === '/api/git/changes' && req.method === 'POST') {
         const body = await readJsonBody(req);
-        sendJson(res, 200, await collectGitChanges({ repoPath: body.repoPath, since: body.since, until: body.until }));
+        sendJson(res, 200, await collectGitChanges({ repo: body.repo, since: body.since, until: body.until }));
         return;
       }
     } catch (err) {
       if (err.code === 'not-a-repo') return sendJson(res, 400, { error: 'not a git repo' });
+      if (err.code === 'bad-repo') return sendJson(res, 400, { error: 'bad repo', message: String(err.message) });
       if (err.code === 'bad-date') return sendJson(res, 400, { error: 'bad date' });
       if (err.code === 'bad-range') return sendJson(res, 400, { error: 'bad range' });
+      if (err.code === 'clone-failed') return sendJson(res, 400, { error: 'clone failed', message: String(err.message) });
+      if (err.code === 'clone-timeout') return sendJson(res, 400, { error: 'clone timeout', message: String(err.message) });
       if (err.code === 'git-unavailable') return sendJson(res, 500, { error: 'git unavailable', message: String(err.message) });
       if (err.code === 'forbidden') return sendJson(res, 403, { error: 'forbidden' });
       if (err.code === 'not-found') return sendJson(res, 404, { error: 'not found' });

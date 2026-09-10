@@ -7,14 +7,14 @@ export interface GitCommit {
 export interface GitSummaryRow { path: string; status: GitStatus; oldPath?: string; touches: number; lastDate: string; }
 export interface GitStats { commits: number; files: number; added: number; modified: number; deleted: number; renamed: number; }
 export interface GitChangesResult {
-  repo: { path: string; branch: string | null };
+  repo: { path: string; branch: string | null; cloned?: boolean };
   range: { since: string; until: string };
   stats: GitStats;
   summary: GitSummaryRow[];
   commits: GitCommit[];
   truncated?: boolean;
 }
-export interface GitChangesParams { repoPath: string; since: string; until: string; }
+export interface GitChangesParams { repo: string; since: string; until: string; }
 
 const LABELS: Record<GitStatus, string> = { added: '新增', modified: '修改', deleted: '删除', renamed: '重命名' };
 

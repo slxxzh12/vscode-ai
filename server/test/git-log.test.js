@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { collectGitChanges } from '../git-log.js';
 import { tmpDir, makeRepo, seedRepo } from './helpers/git-fixture.js';
@@ -8,7 +10,7 @@ const RANGE = { since: '2026-09-01', until: '2026-09-10' };
 
 test('collectGitChanges 汇总新增/修改/删除/重命名', async () => {
   const repo = seedRepo();
-  const r = await collectGitChanges({ repoPath: repo, ...RANGE });
+  const r = await collectGitChanges({ repo: repo, ...RANGE });
   assert.equal(r.stats.commits, 4);
   assert.equal(r.stats.files, 4);
   assert.equal(r.stats.added, 1);
@@ -28,7 +30,7 @@ test('collectGitChanges 汇总新增/修改/删除/重命名', async () => {
 
 test('collectGitChanges 只含区间内提交（c0/c5 不出现）', async () => {
   const repo = seedRepo();
-  const r = await collectGitChanges({ repoPath: repo, ...RANGE });
+  const r = await collectGitChanges({ repo: repo, ...RANGE });
   const subjects = r.commits.map((c) => c.subject);
   assert.deepEqual(subjects, ['c4', 'c3', 'c2', 'c1']);
   const c1 = r.commits.find((c) => c.subject === 'c1');
@@ -39,7 +41,7 @@ test('collectGitChanges 只含区间内提交（c0/c5 不出现）', async () =>
 
 test('collectGitChanges 空区间返回零与空数组', async () => {
   const repo = seedRepo();
-  const r = await collectGitChanges({ repoPath: repo, since: '2026-01-01', until: '2026-01-02' });
+  const r = await collectGitChanges({ repo: repo, since: '2026-01-01', until: '2026-01-02' });
   assert.equal(r.stats.commits, 0);
   assert.deepEqual(r.summary, []);
   assert.deepEqual(r.commits, []);
@@ -48,11 +50,11 @@ test('collectGitChanges 空区间返回零与空数组', async () => {
 test('collectGitChanges 非仓库 → not-a-repo；路径不存在 → not-found', async () => {
   const empty = tmpDir();
   await assert.rejects(
-    () => collectGitChanges({ repoPath: empty, ...RANGE }),
+    () => collectGitChanges({ repo: empty, ...RANGE }),
     (e) => e.code === 'not-a-repo',
   );
   await assert.rejects(
-    () => collectGitChanges({ repoPath: path.join(empty, 'nope'), ...RANGE }),
+    () => collectGitChanges({ repo: path.join(empty, 'nope'), ...RANGE }),
     (e) => e.code === 'not-found',
   );
 });
@@ -60,11 +62,31 @@ test('collectGitChanges 非仓库 → not-a-repo；路径不存在 → not-found
 test('collectGitChanges 坏日期 → bad-date；反序 → bad-range', async () => {
   const repo = makeRepo();
   await assert.rejects(
-    () => collectGitChanges({ repoPath: repo, since: '2026/09/01', until: '2026-09-10' }),
+    () => collectGitChanges({ repo: repo, since: '2026/09/01', until: '2026-09-10' }),
     (e) => e.code === 'bad-date',
   );
   await assert.rejects(
-    () => collectGitChanges({ repoPath: repo, since: '2026-09-10', until: '2026-09-01' }),
+    () => collectGitChanges({ repo: repo, since: '2026-09-10', until: '2026-09-01' }),
     (e) => e.code === 'bad-range',
+  );
+});
+
+test('collectGitChanges 远程 file:// 地址 → 克隆分析并清理临时目录', async () => {
+  const repo = seedRepo();
+  const countClones = () => fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('dfgit-clone-')).length;
+  const before = countClones();
+  const url = `file:///${repo.replace(/\\/g, '/')}`;
+  const r = await collectGitChanges({ repo: url, ...RANGE });
+  assert.equal(r.repo.cloned, true);
+  assert.equal(r.repo.path, url);
+  assert.equal(r.stats.commits, 4);
+  assert.equal(r.summary.length, 4);
+  assert.equal(countClones(), before);
+});
+
+test('collectGitChanges 以 - 开头 → bad-repo（防参数注入）', async () => {
+  await assert.rejects(
+    () => collectGitChanges({ repo: '--upload-pack=evil', ...RANGE }),
+    (e) => e.code === 'bad-repo',
   );
 });

@@ -314,7 +314,7 @@ test('/api/git/changes POST 返回统计与汇总', async (t) => {
   const repo = seedRepo();
   const server = await start(new Projects({ projects: [] }));
   t.after(() => server.close());
-  const r = await post(server, '/api/git/changes', { repoPath: repo, since: '2026-09-01', until: '2026-09-10' });
+  const r = await post(server, '/api/git/changes', { repo: repo, since: '2026-09-01', until: '2026-09-10' });
   assert.equal(r.status, 200);
   const j = JSON.parse(r.body);
   assert.equal(j.stats.commits, 4);
@@ -326,10 +326,10 @@ test('/api/git/changes POST 非仓库 400、坏日期 400、路径不存在 404'
   const empty = tmpDir();
   const server = await start(new Projects({ projects: [] }));
   t.after(() => server.close());
-  const nr = await post(server, '/api/git/changes', { repoPath: empty, since: '2026-09-01', until: '2026-09-10' });
+  const nr = await post(server, '/api/git/changes', { repo: empty, since: '2026-09-01', until: '2026-09-10' });
   assert.equal(nr.status, 400);
-  const bd = await post(server, '/api/git/changes', { repoPath: empty, since: 'x', until: '2026-09-10' });
+  const bd = await post(server, '/api/git/changes', { repo: empty, since: 'x', until: '2026-09-10' });
   assert.equal(bd.status, 400);
-  const nf = await post(server, '/api/git/changes', { repoPath: path.join(empty, 'nope'), since: '2026-09-01', until: '2026-09-10' });
+  const nf = await post(server, '/api/git/changes', { repo: path.join(empty, 'nope'), since: '2026-09-01', until: '2026-09-10' });
   assert.equal(nf.status, 404);
 });

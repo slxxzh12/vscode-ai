@@ -1,10 +1,13 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { execFile } from 'node:child_process';
 
 const STATUS_MAP = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', C: 'modified', T: 'modified' };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_COMMITS = 500;
 const MAX_FILES = 5000;
+const CLONE_TIMEOUT = 120 * 1000;
 
 function err(code, message) {
   const e = new Error(message || code);
@@ -12,17 +15,33 @@ function err(code, message) {
   return e;
 }
 
-function runGit(repoPath, args) {
+function runGitRaw(args, { timeout = 0 } = {}) {
   return new Promise((resolve, reject) => {
-    execFile('git', ['-C', repoPath, ...args], { encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile('git', args, {
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+      timeout,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    }, (error, stdout, stderr) => {
       if (error) {
         if (error.code === 'ENOENT') { reject(err('git-unavailable', 'git not found in PATH')); return; }
+        if (error.killed || error.signal) { reject(err('git-timeout', 'git command timed out')); return; }
         reject(err('git-failed', String(stderr || error.message).trim()));
         return;
       }
       resolve(stdout);
     });
   });
+}
+
+function runGit(repo, args) {
+  return runGitRaw(['-C', repo, ...args]);
+}
+
+// 远程地址判定：scheme 形式或 scp 形式（user@host:path）
+function isGitUrl(s) {
+  return /^(https?|git|ssh|file):\/\//i.test(s) || /^[^\s@:]+@[^\s:]+:\S+$/.test(s);
 }
 
 function parseLog(out) {
@@ -103,56 +122,86 @@ function summarize(commits) {
   return rows;
 }
 
-export async function collectGitChanges({ repoPath, since, until } = {}) {
-  if (typeof repoPath !== 'string' || !repoPath) throw err('not-found', 'repoPath required');
-  let st;
-  try { st = fs.statSync(repoPath); } catch { throw err('not-found', 'repo path not found'); }
-  if (!st.isDirectory()) throw err('not-found', 'repo path is not a directory');
+// 远程地址 → 克隆到临时目录裸仓库，返回 { target, cleanup }；失败时抛并清掉临时目录
+async function cloneToTemp(repo) {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'dfgit-clone-'));
+  const target = path.join(parent, 'repo');
+  try {
+    await runGitRaw(['clone', '--quiet', '--bare', repo, target], { timeout: CLONE_TIMEOUT });
+  } catch (e) {
+    fs.rmSync(parent, { recursive: true, force: true });
+    if (e.code === 'git-unavailable') throw e;
+    if (e.code === 'git-timeout') throw err('clone-timeout', `clone timed out after ${CLONE_TIMEOUT / 1000}s`);
+    throw err('clone-failed', e.message);
+  }
+  return { target, cleanup: () => fs.rmSync(parent, { recursive: true, force: true }) };
+}
+
+export async function collectGitChanges({ repo, since, until } = {}) {
+  if (typeof repo !== 'string' || !repo.trim()) throw err('bad-repo', 'repo required');
+  const source = repo.trim();
+  if (source.startsWith('-')) throw err('bad-repo', 'invalid repo');
   if (!DATE_RE.test(since || '') || !DATE_RE.test(until || '')) throw err('bad-date', 'date must be YYYY-MM-DD');
   if (since > until) throw err('bad-range', 'since is after until');
 
-  let inside;
-  try {
-    inside = (await runGit(repoPath, ['rev-parse', '--is-inside-work-tree'])).trim();
-  } catch (e) {
-    if (e.code === 'git-unavailable') throw e;
-    throw err('not-a-repo', e.message);
+  const remote = isGitUrl(source);
+  let target = source;
+  let cleanup = null;
+  if (remote) {
+    const cloned = await cloneToTemp(source);
+    target = cloned.target;
+    cleanup = cloned.cleanup;
+  } else {
+    let st;
+    try { st = fs.statSync(source); } catch { throw err('not-found', 'repo path not found'); }
+    if (!st.isDirectory()) throw err('not-found', 'repo path is not a directory');
   }
-  if (inside !== 'true') throw err('not-a-repo', 'not a git work tree');
 
-  let branch = null;
   try {
-    branch = (await runGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || null;
-  } catch { /* 空仓库无分支，忽略 */ }
+    try {
+      await runGit(target, ['rev-parse', '--git-dir']);
+    } catch (e) {
+      if (e.code === 'git-unavailable') throw e;
+      throw err('not-a-repo', e.message);
+    }
 
-  const out = await runGit(repoPath, [
-    '-c', 'core.quotepath=false',
-    'log',
-    `--since=${since}T00:00:00`,
-    `--until=${until}T23:59:59`,
-    '--no-merges',
-    '-M',
-    '--name-status',
-    '--pretty=format:@@%x01%H%x01%an%x01%ae%x01%aI%x01%s',
-  ]);
+    let branch = null;
+    try {
+      branch = (await runGit(target, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || null;
+      if (branch === 'HEAD') branch = null;
+    } catch { /* 空仓库无分支，忽略 */ }
 
-  const parsed = parseLog(out);
-  const commits = parsed.slice(0, MAX_COMMITS).map((c) => ({
-    hash: c.hash, short: c.short, author: c.author, email: c.email, date: c.date, subject: c.subject, files: c.files,
-  }));
-  const summaryAll = summarize(commits);
-  const summary = summaryAll.slice(0, MAX_FILES);
-  const truncated = parsed.length > MAX_COMMITS || summaryAll.length > MAX_FILES;
+    const out = await runGit(target, [
+      '-c', 'core.quotepath=false',
+      'log',
+      `--since=${since}T00:00:00`,
+      `--until=${until}T23:59:59`,
+      '--no-merges',
+      '-M',
+      '--name-status',
+      '--pretty=format:@@%x01%H%x01%an%x01%ae%x01%aI%x01%s',
+    ]);
 
-  const stats = { commits: commits.length, files: summary.length, added: 0, modified: 0, deleted: 0, renamed: 0 };
-  for (const r of summary) stats[r.status] = (stats[r.status] || 0) + 1;
+    const parsed = parseLog(out);
+    const commits = parsed.slice(0, MAX_COMMITS).map((c) => ({
+      hash: c.hash, short: c.short, author: c.author, email: c.email, date: c.date, subject: c.subject, files: c.files,
+    }));
+    const summaryAll = summarize(commits);
+    const summary = summaryAll.slice(0, MAX_FILES);
+    const truncated = parsed.length > MAX_COMMITS || summaryAll.length > MAX_FILES;
 
-  return {
-    repo: { path: repoPath, branch },
-    range: { since, until },
-    stats,
-    summary,
-    commits,
-    ...(truncated ? { truncated: true } : {}),
-  };
+    const stats = { commits: commits.length, files: summary.length, added: 0, modified: 0, deleted: 0, renamed: 0 };
+    for (const r of summary) stats[r.status] = (stats[r.status] || 0) + 1;
+
+    return {
+      repo: { path: source, branch, cloned: remote },
+      range: { since, until },
+      stats,
+      summary,
+      commits,
+      ...(truncated ? { truncated: true } : {}),
+    };
+  } finally {
+    if (cleanup) cleanup();
+  }
 }
