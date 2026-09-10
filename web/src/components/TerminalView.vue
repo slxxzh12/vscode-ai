@@ -9,6 +9,7 @@ import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
+import { useMessageHistory } from '../useMessageHistory';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -201,34 +202,15 @@ const wfDefs = ref<WfDef[]>(FALLBACK_WF);
 const composerText = ref('');
 function fillPrompt(text: string) { composerText.value = text; }
 
-// —— 输入历史（由服务端存到用户数据目录的 message-history.jsonc）——
-const HISTORY_MAX = 200;
-const history = ref<string[]>([]);
-const histOpen = ref(false);
-async function loadHistory() {
-  try {
-    const r = await fetch('/api/history').then((x) => x.json());
-    if (Array.isArray(r?.messages)) history.value = r.messages.filter((x: unknown) => typeof x === 'string');
-  } catch { /* ignore */ }
+// —— 输入历史：点击工具栏「历史」→ 打开左侧历史面板的「消息」页签 ——
+const { push: pushMsg } = useMessageHistory();
+function openHistory() {
+  window.dispatchEvent(new CustomEvent('df-open-history', { detail: { tab: 'messages' } }));
 }
-async function persistHistory() {
-  try {
-    await fetch('/api/history', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history.value.slice(0, HISTORY_MAX) }),
-    });
-  } catch { /* ignore */ }
+function onFillComposer(e: Event) {
+  const t = (e as CustomEvent).detail?.text;
+  if (typeof t === 'string') composerText.value = t;
 }
-function pushHistory(text: string) {
-  const t = text.trim();
-  if (!t) return;
-  if (history.value[0] === t) return;                 // 连续重复不记录
-  history.value = [t, ...history.value.filter((x) => x !== t)].slice(0, HISTORY_MAX);
-  void persistHistory();
-}
-function useHistory(h: string) { composerText.value = h; histOpen.value = false; }
-function clearHistory() { history.value = []; void persistHistory(); }
 
 // 底部框高度（可上下拖动）+ 最小化
 const COMPOSER_H_KEY = 'devflow-composer-h';
@@ -317,7 +299,7 @@ function submitComposer() {
   const t = composerText.value.trim();
   if (!t) return;
   composerText.value = '';
-  pushHistory(t);
+  void pushMsg(t);
   sendToActive(t);
 }
 function onComposerKey(e: KeyboardEvent) {
@@ -449,10 +431,10 @@ onMounted(async () => {
   init();
   window.addEventListener('resize', onResize);
   window.addEventListener('df-open-agent-settings', onOpenSettings);
+  window.addEventListener('df-fill-composer', onFillComposer);
   const fp = await nodeFp();
   cfgKey = `devflow-agent-cfg-${fp}`;
   loadCfg();
-  loadHistory();
   cfgLoaded = true;
   loadWorkflows();
   loadComposerH();
@@ -460,6 +442,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize);
   window.removeEventListener('df-open-agent-settings', onOpenSettings);
+  window.removeEventListener('df-fill-composer', onFillComposer);
   unsubList?.();
   dataSub?.dispose();
   term?.dispose();
@@ -517,19 +500,6 @@ onBeforeUnmount(() => {
         </footer>
       </div>
     </div>
-    <div v-if="histOpen" class="histpop" :style="{ bottom: (composerMin ? 48 : composerH + 8) + 'px' }">
-      <header class="histpop-h">
-        <span>输入历史（{{ history.length }}）</span>
-        <button class="setx" @click="histOpen = false">×</button>
-      </header>
-      <div class="histbody">
-        <div v-if="!history.length" class="histempty">暂无历史消息</div>
-        <button v-for="(h, i) in history" :key="i" class="histitem" :title="h" @click="useHistory(h)">{{ h }}</button>
-      </div>
-      <footer class="histpop-f">
-        <button class="ghostcfg" :disabled="!history.length" @click="clearHistory">清空历史</button>
-      </footer>
-    </div>
     <div class="tabstrip">
       <div v-for="t in center.tabs.value" :key="t.id" class="tab"
         :class="{ active: center.activeId.value === t.id }" @click="onTabClick(t.id)">
@@ -580,7 +550,7 @@ onBeforeUnmount(() => {
           ><span class="cdot" />{{ p }}</button>
         </div>
         <div class="qtool" @mousedown.stop>
-          <button class="qtbtn" :class="{ on: histOpen }" title="查看输入历史" @click="histOpen = !histOpen">🕘 历史</button>
+          <button class="qtbtn" title="查看输入历史" @click="openHistory">🕘 历史</button>
         </div>
         <div class="cwrap">
           <textarea
@@ -668,11 +638,6 @@ onBeforeUnmount(() => {
 .newitem:hover { border-color: var(--ac2); background: color-mix(in srgb, var(--ac) 8%, transparent); }
 .ni-label { font-size: 13px; font-weight: 600; }
 .ni-cmd { color: var(--tx6); font-family: Consolas, monospace; font-size: 11px; }
-.histmodal { width: 620px; max-width: 92vw; max-height: 80vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
-.histbody { padding: 10px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
-.histitem { background: none; border: 1px solid var(--bd); color: var(--tx1); border-radius: 6px; padding: 8px 10px; cursor: pointer; text-align: left; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-.histitem:hover { border-color: var(--ac2); background: color-mix(in srgb, var(--ac) 8%, transparent); }
-.histempty { color: var(--tx3); font-size: 12px; text-align: center; padding: 24px 0; }
 .tabstrip { display: flex; align-items: center; gap: 2px; background: var(--bg2); border-bottom: 1px solid var(--bd); padding: 0 8px; height: 32px; overflow-x: auto; flex: none; }
 .tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--tx2); padding: 0 10px; height: 100%; cursor: pointer; border-right: 1px solid var(--bd); flex: none; max-width: 220px; }
 .tab.active { background: var(--bg3); color: var(--tx1); }

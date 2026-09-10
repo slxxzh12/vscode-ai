@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import { useTerminal } from './useTerminal';
 import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
+import { useMessageHistory } from './useMessageHistory';
 import CollaborationView from './collaboration/CollaborationView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
@@ -17,6 +18,17 @@ const { theme, toggle } = useTheme();
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts'>('explorer');
+const historyTab = ref<'files' | 'messages'>('files');
+const msgHistory = useMessageHistory();
+function onOpenHistory(e: Event) {
+  const d = (e as CustomEvent).detail || {};
+  rail.value = 'history';
+  historyTab.value = d.tab === 'messages' ? 'messages' : 'files';
+}
+function onOpenMessage(text: string) {
+  rail.value = 'history';
+  window.dispatchEvent(new CustomEvent('df-fill-composer', { detail: { text } }));
+}
 const detailToken = ref(0);
 const detailPath = ref('');
 function onDetailFile(projectId: string, path: string) {
@@ -191,7 +203,12 @@ function openAgentSettings() {
 onMounted(() => {
   initFileHistory();
   loadProjects();
+  msgHistory.load();
+  window.addEventListener('df-open-history', onOpenHistory);
   terminal.connect();
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('df-open-history', onOpenHistory);
 });
 </script>
 
@@ -225,7 +242,9 @@ onMounted(() => {
       </template>
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
-          <HistoryList v-if="rail === 'history'" :items="historyItems" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)" @clear="clearFileHistory" />
+          <HistoryList v-if="rail === 'history'" :items="historyItems" :tab="historyTab" :messages="msgHistory.messages.value"
+            @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
+            @clear="clearFileHistory" @open-message="onOpenMessage" @clear-messages="msgHistory.clear()" />
           <FileTree v-else :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
