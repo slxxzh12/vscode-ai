@@ -32,14 +32,13 @@ let autoTried = false;
 const activeFile = computed(() => (props.center.active.value?.kind === 'file' ? props.center.active.value : null));
 const isSessionView = computed(() => props.center.activeKind.value !== 'file');
 // 仅 Agent 会话显示工作流相关板块（终端 cmd/shell 等不显示）
+const agentSids = ref<Set<string>>(new Set());
+function markAgent(sid: string) { const s = new Set(agentSids.value); s.add(sid); agentSids.value = s; }
 const activeIsAgent = computed(() => {
   const sid = props.terminal.state.activeSessionId;
-  if (!sid) return false;
-  const tab = props.center.tabs.value.find((t) => t.id === `s:${sid}`);
-  return !!tab && typeof tab.label === 'string' && tab.label.startsWith('◈');
+  return !!sid && agentSids.value.has(sid);
 });
-// 非 Agent 会话强制折叠整条底部（含输入框/发送）
-const composerCollapsed = computed(() => composerMin.value || !activeIsAgent.value);
+const composerCollapsed = computed(() => composerMin.value);
 
 function sessionState(id: string) {
   return props.terminal.state.sessions.find((s) => s.id === id)?.state || 'running';
@@ -128,6 +127,7 @@ async function createNew(id: string) {
   newOpen.value = false;
   const c = newChoices.value.find((x) => x.id === id) || newChoices.value[0];
   const s = await props.terminal.createSession({ projectId: props.projectId, cols: 80, rows: 24 });
+  if (c.cmd) markAgent(s.id);
   props.center.ensureSession(s.id, c.cmd ? `◈ ${c.label}` : c.label, s.state || 'running');
   props.terminal.switchTo(s.id);
   if (c.cmd) setTimeout(() => { props.terminal.input(`${c.cmd}`); setTimeout(() => props.terminal.input('\r'), 200); }, 1200);
@@ -192,6 +192,7 @@ async function startAgent() {
   }
   const s = await props.terminal.createSession({ projectId: props.projectId, cols: 80, rows: 24 });
   agentSid.value = s.id;
+  markAgent(s.id);
   agentStarted.value = true;
   agentCliReady.value = false;
   agentLaunching = false;
@@ -273,10 +274,10 @@ function loadComposerH() {
 }
 function saveComposerH() { try { localStorage.setItem(COMPOSER_H_KEY, String(Math.round(composerH.value))); } catch { /* ignore */ } }
 function onComposerDragDown(e: MouseEvent) {
+  if (composerCollapsed.value) return;
   e.preventDefault();
   const startY = e.clientY;
   const startH = composerH.value;
-  composerMin.value = false;
   const move = (ev: MouseEvent) => {
     const max = Math.max(200, window.innerHeight * 0.7);
     composerH.value = Math.min(max, Math.max(120, startH + (startY - ev.clientY)));
@@ -285,6 +286,10 @@ function onComposerDragDown(e: MouseEvent) {
   document.addEventListener('mousemove', move);
   document.addEventListener('mouseup', up);
 }
+// 切到非 Agent 会话默认最小化；Agent 会话默认展开（用户仍可手动折叠/展开）
+watch(() => props.terminal.state.activeSessionId, (sid) => {
+  if (sid) composerMin.value = !agentSids.value.has(sid);
+});
 
 const curWf = computed<WfDef>(() => wfDefs.value.find((w) => w.id === wfKind.value) || wfDefs.value[0] || buildFallbackWf()[0]);
 const STAGES = computed(() => curWf.value.stages);
@@ -574,13 +579,13 @@ onBeforeUnmount(() => {
 
     <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerCollapsed }" :style="{ height: (composerCollapsed ? 40 : composerH) + 'px' }">
       <div class="cbar" @mousedown="onComposerDragDown">
-        <div class="wfbtns" @mousedown.stop>
+        <div v-if="activeIsAgent" class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
         </div>
-        <button v-if="activeIsAgent" class="cmin" :title="composerCollapsed ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerCollapsed ? '❐' : '—' }}</button>
+        <button class="cmin" :title="composerCollapsed ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerCollapsed ? '❐' : '—' }}</button>
       </div>
       <template v-if="!composerCollapsed">
-        <div class="flowbar">
+        <div v-if="activeIsAgent" class="flowbar">
           <template v-for="(g, gi) in stageGroups" :key="gi">
             <div class="fgroup">
               <span v-if="g.name" class="fglabel">{{ g.name }}</span>
@@ -592,7 +597,7 @@ onBeforeUnmount(() => {
             <span v-if="gi < stageGroups.length - 1" class="fgap" />
           </template>
         </div>
-        <div v-if="chips.length" class="chipbar" :title="$t('term.phase_hints')">
+        <div v-if="activeIsAgent && chips.length" class="chipbar" :title="$t('term.phase_hints')">
           <span class="chips-label">{{ $t('term.common') }}</span>
           <button
             v-for="(p, i) in chips"
