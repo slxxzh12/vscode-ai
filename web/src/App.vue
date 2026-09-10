@@ -198,7 +198,8 @@ function openFile(projectId: string, path: string) {
   center.openFile(projectId, path, name);
 }
 function openAgentSettings() {
-  if (rail.value === 'contacts') { rail.value = 'explorer'; }
+  // 设置弹窗在 TerminalView 内，仅在「目录/历史」视图挂载；通讯录/统计页需先切回目录
+  if (rail.value === 'contacts' || rail.value === 'stat') { rail.value = 'explorer'; }
   setTimeout(() => window.dispatchEvent(new Event('df-open-agent-settings')), 120);
 }
 onMounted(() => {
