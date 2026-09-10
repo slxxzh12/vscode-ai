@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import type { CollabInboxItem, CollabOutItem } from './types';
+import { t, locale } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
@@ -21,7 +22,7 @@ const toolErr = ref('');
 
 onMounted(async () => {
   await Promise.all([
-    props.collab.getTool().then((t) => { toolKind.value = t.tool.kind; customRoot.value = t.tool.customRoot || ''; activeRoot.value = t.root; }).catch(() => {}),
+    props.collab.getTool().then((info) => { toolKind.value = info.tool.kind; customRoot.value = info.tool.customRoot || ''; activeRoot.value = info.root; }).catch(() => {}),
     props.collab.getDirs().then((d) => { dirs.value = d; }).catch(() => {}),
   ]);
 });
@@ -31,21 +32,21 @@ async function saveTool() {
   try {
     const r = await props.collab.setTool(toolKind.value, toolKind.value === 'custom' ? customRoot.value.trim() : null);
     activeRoot.value = r.root;
-    toolMsg.value = `已切换到 ${toolKind.value === 'claudecode' ? 'claudecode' : toolKind.value === 'custom' ? '自定义' : 'opencode'}（${r.root}）`;
+    toolMsg.value = t('collab.tool.switched', { tool: toolKind.value === 'custom' ? t('collab.tool.custom') : toolKind.value, root: r.root });
     toolOpen.value = false;
     await props.collab.refresh().catch(() => {});
   } catch (e: any) { toolErr.value = String(e?.message || e); }
 }
 
 async function installSkill(it: CollabInboxItem) {
-  if (!confirm('skill 含未知脚本，将安装到所选开发工具的 skills 目录。确认？')) return;
+  if (!confirm(t('collab.task.install_confirm'))) return;
   toolMsg.value = ''; toolErr.value = '';
   try { await props.collab.installInbox(it.id); await props.collab.refresh(); }
   catch (e: any) { toolErr.value = String(e?.message || e); }
 }
 async function ignoreIn(it: CollabInboxItem) { await props.collab.ignoreInbox(it.id); await props.collab.refresh(); }
-async function removeIn(it: CollabInboxItem) { if (confirm('删除该任务？')) await props.collab.removeInbox(it.id); }
-async function removeOut(it: CollabOutItem) { if (confirm('删除该任务并清掉 upload 留档？')) await props.collab.removeOutTask(it.id); }
+async function removeIn(it: CollabInboxItem) { if (confirm(t('collab.task.remove_confirm'))) await props.collab.removeInbox(it.id); }
+async function removeOut(it: CollabOutItem) { if (confirm(t('collab.task.remove_out_confirm'))) await props.collab.removeOutTask(it.id); }
 async function saveFile(it: CollabInboxItem) {
   try {
     const res = await fetch(`/api/collab/download/${it.id}`);
@@ -58,79 +59,79 @@ async function saveFile(it: CollabInboxItem) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  } catch (e: any) { alert(`下载失败：${e?.message || e}`); }
+  } catch (e: any) { alert(t('common.download_failed', { msg: e?.message || e })); }
 }
 function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n > 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`; }
-function fmtTime(ts: number) { return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false }); }
+function fmtTime(ts: number) { return new Date(ts).toLocaleTimeString(locale.value, { hour12: false }); }
 </script>
 
 <template>
   <div class="tk">
     <div class="toolbar">
       <div class="toolsel">
-        <span class="tl">我的开发工具</span>
+        <span class="tl">{{ $t('collab.tool.mine') }}</span>
         <button class="toolbtn" @click="toolOpen = !toolOpen">
-          {{ toolKind === 'claudecode' ? 'claudecode' : toolKind === 'custom' ? '自定义' : 'opencode' }}
+          {{ toolKind === 'custom' ? $t('collab.tool.custom') : toolKind }}
           <span class="root" v-if="activeRoot" :title="activeRoot">{{ activeRoot }}</span> ▾
         </button>
         <div v-if="toolOpen" class="toolpop">
           <select v-model="toolKind" class="tkind">
             <option value="opencode">opencode</option>
             <option value="claudecode">claudecode</option>
-            <option value="custom">自定义路径</option>
+            <option value="custom">{{ $t('collab.tool.custom_path') }}</option>
           </select>
-          <input v-if="toolKind === 'custom'" v-model="customRoot" placeholder="skills 目录绝对路径" class="tcus" @keyup.enter="saveTool" />
+          <input v-if="toolKind === 'custom'" v-model="customRoot" :placeholder="$t('collab.tool.custom_placeholder')" class="tcus" @keyup.enter="saveTool" />
           <div class="tacts">
-            <button class="tgo" @click="saveTool">保存</button>
-            <span class="tclose" @click="toolOpen = false">取消</span>
+            <button class="tgo" @click="saveTool">{{ $t('common.save') }}</button>
+            <span class="tclose" @click="toolOpen = false">{{ $t('common.cancel') }}</span>
           </div>
           <div v-if="toolMsg" class="tmsg ok">{{ toolMsg }}</div>
           <div v-if="toolErr" class="tmsg err">{{ toolErr }}</div>
         </div>
       </div>
-      <div v-if="activeRoot" class="inst-hint">技能安装到：<code>{{ activeRoot }}</code>，重启对应 CLI 生效</div>
+      <div v-if="activeRoot" class="inst-hint">{{ $t('collab.task.install_hint', { root: activeRoot }) }}</div>
       <div class="dirinfo" v-if="dirs.download">
-        <span title="接收目录">↓ {{ dirs.download }}</span>
-        <span v-if="dirs.upload" title="发出目录" class="up">↑ {{ dirs.upload }}</span>
+        <span :title="$t('collab.task.download_dir')">↓ {{ dirs.download }}</span>
+        <span v-if="dirs.upload" :title="$t('collab.task.upload_dir')" class="up">↑ {{ dirs.upload }}</span>
       </div>
     </div>
 
-    <div v-if="inbound.length === 0 && outbound.length === 0" class="empty">暂无任务（群内「📎 发文件 / 🛠 分发技能」会生成这里与对方）</div>
+    <div v-if="inbound.length === 0 && outbound.length === 0" class="empty">{{ $t('collab.task.empty') }}</div>
 
     <template v-if="inbound.length">
-      <h4>收到（{{ inbound.length }}）</h4>
+      <h4>{{ $t('collab.task.inbound', { count: inbound.length }) }}</h4>
       <div v-for="it in inbound" :key="'in-' + it.id" class="task" :class="{ skill: (it.kind ?? 'skill') === 'skill' }">
         <span class="tic">{{ (it.kind ?? 'skill') === 'skill' ? '🛠' : '📄' }}</span>
         <div class="info">
           <span class="nm">{{ (it.kind ?? 'skill') === 'skill' ? it.skillName : it.fileName }}</span>
           <span class="meta">
-            {{ fmtTime(it.receivedAt) }} · {{ it.kind === 'file' ? '文件' : '技能' }} · {{ groupName(it.groupId) || '未知群' }} · {{ fmtSize(it.size) }}
+            {{ fmtTime(it.receivedAt) }} · {{ it.kind === 'file' ? $t('collab.task.kind.file') : $t('collab.task.kind.skill') }} · {{ groupName(it.groupId) || $t('collab.task.unknown_group') }} · {{ fmtSize(it.size) }}
           </span>
         </div>
         <div class="acts">
           <template v-if="it.status === 'received'">
-            <button v-if="(it.kind ?? 'skill') === 'skill'" @click="installSkill(it)">安装</button>
-            <button v-if="(it.kind ?? 'skill') === 'skill'" class="ghost" @click="ignoreIn(it)">忽略</button>
-            <button v-if="it.kind === 'file'" @click="saveFile(it)">下载</button>
+            <button v-if="(it.kind ?? 'skill') === 'skill'" @click="installSkill(it)">{{ $t('collab.task.install') }}</button>
+            <button v-if="(it.kind ?? 'skill') === 'skill'" class="ghost" @click="ignoreIn(it)">{{ $t('collab.task.ignore') }}</button>
+            <button v-if="it.kind === 'file'" @click="saveFile(it)">{{ $t('collab.task.download') }}</button>
           </template>
-          <span v-else-if="it.status === 'installed'" class="state ok" :title="'已装到 ' + activeRoot">已安装·重启生效</span>
-          <span v-else-if="it.status === 'ignored'" class="state">已忽略</span>
-          <span v-else-if="it.status === 'invalid'" class="state bad">无效包</span>
-          <button class="ghost del" @click="removeIn(it)">删除</button>
+          <span v-else-if="it.status === 'installed'" class="state ok" :title="$t('collab.task.installed_at', { root: activeRoot })">{{ $t('collab.task.installed') }}</span>
+          <span v-else-if="it.status === 'ignored'" class="state">{{ $t('collab.task.ignored') }}</span>
+          <span v-else-if="it.status === 'invalid'" class="state bad">{{ $t('collab.task.invalid') }}</span>
+          <button class="ghost del" @click="removeIn(it)">{{ $t('common.delete') }}</button>
         </div>
       </div>
     </template>
 
     <template v-if="outbound.length">
-      <h4>发出（{{ outbound.length }}）</h4>
+      <h4>{{ $t('collab.task.outbound', { count: outbound.length }) }}</h4>
       <div v-for="it in outbound" :key="'out-' + it.id" class="task out">
         <span class="tic">{{ it.kind === 'skill' ? '🛠' : '📄' }}</span>
         <div class="info">
           <span class="nm">{{ it.kind === 'skill' ? it.skillName : it.fileName }}</span>
-          <span class="meta">{{ fmtTime(it.createdAt) }} · {{ it.kind === 'file' ? '文件' : '技能' }} → {{ groupName(it.groupId) || '未知群' }} · {{ fmtSize(it.size) }}</span>
+          <span class="meta">{{ fmtTime(it.createdAt) }} · {{ it.kind === 'file' ? $t('collab.task.kind.file') : $t('collab.task.kind.skill') }} → {{ groupName(it.groupId) || $t('collab.task.unknown_group') }} · {{ fmtSize(it.size) }}</span>
         </div>
         <div class="acts">
-          <button class="ghost del" @click="removeOut(it)">删除</button>
+          <button class="ghost del" @click="removeOut(it)">{{ $t('common.delete') }}</button>
         </div>
       </div>
     </template>
