@@ -37,6 +37,7 @@ server/scheduler/http-mount.js       REST 路由
 shared/scheduler.js               # SchedulerS2C 事件常量（仿 shared/collab.js）
 shared/scheduler.d.ts             # 类型定义
 server/scheduler/store.js
+server/scheduler/schedule.js
 server/scheduler/runner.js
 server/scheduler/engine.js
 server/scheduler/ai-commands.js
