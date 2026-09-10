@@ -124,7 +124,7 @@ export function createCollabMount({ engine, logger = console }) {
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'invite-link' && m === 'POST') {
         const r = engine.createInviteLink({ groupId: seg[1], ttlMs: body.ttlMs });
         if (r.code !== 'ok') return ok(res, r);
-        const origin = (typeof body.origin === 'string' && body.origin) ? body.origin.replace(/\/+$/, '') : 'http://127.0.0.1:3001';
+        const origin = (typeof body.origin === 'string' && body.origin) ? body.origin.replace(/\/+$/, '') : `http://127.0.0.1:${engine.pub.port || 3001}`;
         return ok(res, { token: r.token, url: `${origin}/?invite=${encodeURIComponent(r.token)}`, expiresAt: r.expiresAt, jti: r.jti });
       }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'invite-revoke' && m === 'POST') {
