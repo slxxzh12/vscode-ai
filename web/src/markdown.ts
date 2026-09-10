@@ -1,5 +1,6 @@
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js/lib/common';
+import { t } from './i18n';
 
 export interface MarkdownOptions {
   projectId: string;
@@ -116,7 +117,7 @@ export async function renderMermaid(container: HTMLElement): Promise<void> {
       if (holder) holder.remove();
       pre.outerHTML = svg;
     } catch (e) {
-      pre.innerHTML = `<div class="mermaid-err">Mermaid 渲染失败：${escHtml(String((e as Error)?.message || e))}</div>`;
+      pre.innerHTML = `<div class="mermaid-err">${escHtml(t('markdown.mermaid_error', { msg: String((e as Error)?.message || e) }))}</div>`;
     }
   }));
 }

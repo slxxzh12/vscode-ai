@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 export type GitStatus = 'added' | 'modified' | 'deleted' | 'renamed';
 
 export interface GitFileChange { status: GitStatus; path: string; oldPath?: string; }
@@ -16,9 +18,9 @@ export interface GitChangesResult {
 }
 export interface GitChangesParams { repo: string; since: string; until: string; }
 
-const LABELS: Record<GitStatus, string> = { added: '新增', modified: '修改', deleted: '删除', renamed: '重命名' };
+const LABELS: Record<GitStatus, string> = { added: 'git.status.added', modified: 'git.status.modified', deleted: 'git.status.deleted', renamed: 'git.status.renamed' };
 
-export function statusLabel(s: GitStatus): string { return LABELS[s] || s; }
+export function statusLabel(s: GitStatus): string { return LABELS[s] ? t(LABELS[s]) : s; }
 export function statusClass(s: GitStatus): string { return `st-${s}`; }
 
 function pad(n: number): string { return String(n).padStart(2, '0'); }

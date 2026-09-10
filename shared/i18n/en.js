@@ -215,4 +215,9 @@ export const messages = {
   'sched.status.failed': 'Failed',
   'sched.status.timeout': 'Timeout',
   'sched.status.killed': 'Stopped',
+  'git.status.added': 'Added',
+  'git.status.modified': 'Modified',
+  'git.status.deleted': 'Deleted',
+  'git.status.renamed': 'Renamed',
+  'markdown.mermaid_error': 'Mermaid render failed: {msg}',
 };
