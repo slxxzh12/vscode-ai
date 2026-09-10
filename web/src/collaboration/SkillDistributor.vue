@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
+import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi; groupId: string }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
@@ -29,7 +30,7 @@ const pkg = ref<{ id: string; fileName: string; size: number } | null>(null);
 const sent = ref(false);
 
 onMounted(async () => {
-  props.collab.getTool().then((t) => { toolRoot.value = t.root; }).catch(() => {});
+  props.collab.getTool().then((info) => { toolRoot.value = info.root; }).catch(() => {});
   loadAssets();
 });
 async function loadAssets() {
@@ -43,12 +44,12 @@ function toggleAll(on: boolean) {
 }
 function reset() { pkg.value = null; sent.value = false; msg.value = ''; }
 async function doPack() {
-  if (!selectedCount.value) { msg.value = '请先勾选 skills/command/agents'; return; }
+  if (!selectedCount.value) { msg.value = t('collab.dist.select_first'); return; }
   msg.value = ''; msgErr.value = ''; working.value = true;
   try {
     const r = await props.collab.buildPackage(selected.value);
     pkg.value = r.package;
-    msg.value = '打包完成';
+    msg.value = t('collab.dist.packed');
   } catch (e: any) { msgErr.value = String(e?.message || e); }
   finally { working.value = false; }
 }
@@ -57,9 +58,9 @@ async function doSend() {
   msg.value = ''; msgErr.value = ''; working.value = true;
   try {
     const r = await props.collab.sendPackage(pkg.value.id, props.groupId);
-    if (r.code !== 'ok') { msgErr.value = `发送失败：${r.code}`; return; }
+    if (r.code !== 'ok') { msgErr.value = t('common.send_failed', { msg: r.code }); return; }
     sent.value = true;
-    msg.value = `已发送到 ${r.pushed} 个成员${r.failures?.length ? `，失败 ${r.failures.length}` : ''}`;
+    msg.value = t('collab.dist.sent', { count: r.pushed }) + (r.failures?.length ? t('collab.dist.sent_fail', { n: r.failures.length }) : '');
   } catch (e: any) { msgErr.value = String(e?.message || e); }
   finally { working.value = false; }
 }
@@ -74,7 +75,7 @@ async function downloadPkg() {
     a.download = pkg.value.fileName || 'assets.zip';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  } catch (e: any) { msgErr.value = `下载失败：${e?.message || e}`; }
+  } catch (e: any) { msgErr.value = t('common.download_failed', { msg: e?.message || e }); }
 }
 function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n > 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`; }
 </script>
@@ -82,29 +83,29 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
 <template>
   <div class="sd">
     <div class="head">
-      <span class="htitle">🛠 分发配置 <span class="gn">{{ group?.name || '' }}</span></span>
-      <button class="mini" @click="toggleAll(selectedCount !== totalCount)">{{ selectedCount === totalCount ? '全不选' : '全选' }}</button>
+      <span class="htitle">{{ $t('collab.dist.title') }} <span class="gn">{{ group?.name || '' }}</span></span>
+      <button class="mini" @click="toggleAll(selectedCount !== totalCount)">{{ selectedCount === totalCount ? $t('collab.dist.none') : $t('collab.dist.all') }}</button>
     </div>
-    <div v-if="toolRoot" class="root" :title="toolRoot">技能根：<code>{{ toolRoot }}</code>（command/agent 取同配置根；「任务」页可切工具）</div>
+    <div v-if="toolRoot" class="root" :title="toolRoot">{{ $t('collab.dist.skill_root') }}<code>{{ toolRoot }}</code>{{ $t('collab.dist.skill_root_hint') }}</div>
 
     <div class="skilllist">
-      <div v-if="totalCount === 0" class="empty">所选工具目录下暂无 skills/command/agent 可分发</div>
+      <div v-if="totalCount === 0" class="empty">{{ $t('collab.dist.empty') }}</div>
       <template v-if="assets.skills.length">
-        <div class="sec">技能 skills/（{{ assets.skills.length }}）</div>
+        <div class="sec">{{ $t('collab.dist.skills', { count: assets.skills.length }) }}</div>
         <label v-for="s in assets.skills" :key="'skills:' + s.name" class="skill">
           <input type="checkbox" v-model="checked[keyOf('skills', s.name)]" />
           <span class="snm">🛠 {{ s.name }}</span>
         </label>
       </template>
       <template v-if="assets.command.length">
-        <div class="sec">命令 command/（{{ assets.command.length }}）</div>
+        <div class="sec">{{ $t('collab.dist.command', { count: assets.command.length }) }}</div>
         <label v-for="c in assets.command" :key="'command:' + c.name" class="skill">
           <input type="checkbox" v-model="checked[keyOf('command', c.name)]" />
           <span class="snm">⌨ {{ c.name }}</span>
         </label>
       </template>
       <template v-if="assets.agent.length">
-        <div class="sec">代理 agent/（{{ assets.agent.length }}）</div>
+        <div class="sec">{{ $t('collab.dist.agent', { count: assets.agent.length }) }}</div>
         <label v-for="a in assets.agent" :key="'agent:' + a.name" class="skill">
           <input type="checkbox" v-model="checked[keyOf('agent', a.name)]" />
           <span class="snm">🤖 {{ a.name }}</span>
@@ -114,15 +115,15 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
 
     <div class="acts">
       <template v-if="!pkg">
-        <button class="go" :disabled="working || !selectedCount" @click="doPack">{{ working ? '打包中…' : `① 打包（${selectedCount}）` }}</button>
+        <button class="go" :disabled="working || !selectedCount" @click="doPack">{{ working ? $t('common.packing') : $t('collab.dist.pack', { count: selectedCount }) }}</button>
       </template>
       <template v-else>
-        <button class="go" :disabled="working || sent" @click="doSend">{{ working ? '发送中…' : sent ? '✓ 已发送' : '② 发送到本群' }}</button>
-        <button class="ghostgo" :disabled="working" @click="downloadPkg">下载包</button>
-        <button class="ghostgo" :disabled="working" @click="reset">重新打包</button>
+        <button class="go" :disabled="working || sent" @click="doSend">{{ working ? $t('common.sending') : sent ? $t('collab.dist.sent_ok') : $t('collab.dist.send') }}</button>
+        <button class="ghostgo" :disabled="working" @click="downloadPkg">{{ $t('collab.dist.download') }}</button>
+        <button class="ghostgo" :disabled="working" @click="reset">{{ $t('collab.dist.repack') }}</button>
       </template>
       <div class="msgs">
-        <span v-if="pkg" class="pkgname">包：{{ pkg.fileName }}（{{ fmtSize(pkg.size) }}）</span>
+        <span v-if="pkg" class="pkgname">{{ $t('collab.dist.package') }}{{ pkg.fileName }}（{{ fmtSize(pkg.size) }}）</span>
         <span v-if="msg" class="ok">{{ msg }}</span>
         <span v-if="msgErr" class="err">{{ msgErr }}</span>
       </div>
