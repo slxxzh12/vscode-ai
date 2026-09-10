@@ -1,7 +1,7 @@
 export interface CollabProfile { machineId: string; username: string; host: string; port: number; publicKey: string; }
 export interface CollabFriend extends CollabProfile { addedAt?: number; }
 export interface CollabMember extends CollabProfile { role: 'owner' | 'admin' | 'member'; }
-export interface CollabGroup { id: string; name: string; ownerId: string | null; createdAt: number; members: CollabMember[]; }
+export interface CollabGroup { id: string; name: string; ownerId: string | null; createdAt: number; members: CollabMember[]; inviteEpoch?: number; }
 export interface CollabInboxItem { id: string; fromId: string; groupId: string | null; kind?: 'skill' | 'file'; skillName: string | null; fileName?: string | null; hash: string; size: number; status: 'received' | 'installed' | 'ignored' | 'invalid'; receivedAt: number; }
 export interface CollabGroupSkill { groupId: string; skillName: string; hash: string; distributedBy: string; installed: boolean; }
 export interface CollabOutItem { id: string; kind: 'skill' | 'file'; groupId: string | null; skillName: string | null; fileName: string; size: number; hash: string; createdAt: number; }
@@ -31,3 +31,8 @@ export interface CollabChatMessage {
   meta: CollabChatMeta | null; ts: number; seq: number;
 }
 export interface CollabPendingCmd { id: string; groupId: string; fromId: string; text: string; receivedAt: number; }
+export interface CollabInvitePreview {
+  code: string; error?: string;
+  groupId?: string; groupName?: string;
+  inviter?: CollabProfile; expiresAt?: number; alreadyMember?: boolean;
+}
