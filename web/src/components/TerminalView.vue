@@ -201,31 +201,34 @@ const wfDefs = ref<WfDef[]>(FALLBACK_WF);
 const composerText = ref('');
 function fillPrompt(text: string) { composerText.value = text; }
 
-// —— 输入历史（按节点公钥指纹持久化）——
-const MSG_HISTORY_KEY = 'devflow-msg-history';
+// —— 输入历史（由服务端存到用户数据目录的 message-history.jsonc）——
 const HISTORY_MAX = 200;
-let histKey = `${MSG_HISTORY_KEY}-none`;
 const history = ref<string[]>([]);
 const histOpen = ref(false);
-function loadHistory() {
+async function loadHistory() {
   try {
-    const raw = localStorage.getItem(histKey);
-    const arr = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(arr)) history.value = arr.filter((x) => typeof x === 'string');
+    const r = await fetch('/api/history').then((x) => x.json());
+    if (Array.isArray(r?.messages)) history.value = r.messages.filter((x: unknown) => typeof x === 'string');
   } catch { /* ignore */ }
 }
-function saveHistory() {
-  try { localStorage.setItem(histKey, JSON.stringify(history.value.slice(0, HISTORY_MAX))); } catch { /* ignore */ }
+async function persistHistory() {
+  try {
+    await fetch('/api/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: history.value.slice(0, HISTORY_MAX) }),
+    });
+  } catch { /* ignore */ }
 }
 function pushHistory(text: string) {
   const t = text.trim();
   if (!t) return;
   if (history.value[0] === t) return;                 // 连续重复不记录
   history.value = [t, ...history.value.filter((x) => x !== t)].slice(0, HISTORY_MAX);
-  saveHistory();
+  void persistHistory();
 }
 function useHistory(h: string) { composerText.value = h; histOpen.value = false; }
-function clearHistory() { history.value = []; saveHistory(); }
+function clearHistory() { history.value = []; void persistHistory(); }
 
 // 底部框高度（可上下拖动）+ 最小化
 const COMPOSER_H_KEY = 'devflow-composer-h';
@@ -448,7 +451,6 @@ onMounted(async () => {
   window.addEventListener('df-open-agent-settings', onOpenSettings);
   const fp = await nodeFp();
   cfgKey = `devflow-agent-cfg-${fp}`;
-  histKey = `${MSG_HISTORY_KEY}-${fp}`;
   loadCfg();
   loadHistory();
   cfgLoaded = true;
@@ -515,21 +517,18 @@ onBeforeUnmount(() => {
         </footer>
       </div>
     </div>
-    <div v-if="histOpen" class="setmask" @click.self="histOpen = false">
-      <div class="histmodal">
-        <header class="seth">
-          <span>输入历史（{{ history.length }}）</span>
-          <button class="setx" @click="histOpen = false">×</button>
-        </header>
-        <div class="histbody">
-          <div v-if="!history.length" class="histempty">暂无历史消息</div>
-          <button v-for="(h, i) in history" :key="i" class="histitem" :title="h" @click="useHistory(h)">{{ h }}</button>
-        </div>
-        <footer class="setf">
-          <button class="ghostcfg" :disabled="!history.length" @click="clearHistory">清空历史</button>
-          <button class="ago" @click="histOpen = false">关闭</button>
-        </footer>
+    <div v-if="histOpen" class="histpop" :style="{ bottom: (composerMin ? 48 : composerH + 8) + 'px' }">
+      <header class="histpop-h">
+        <span>输入历史（{{ history.length }}）</span>
+        <button class="setx" @click="histOpen = false">×</button>
+      </header>
+      <div class="histbody">
+        <div v-if="!history.length" class="histempty">暂无历史消息</div>
+        <button v-for="(h, i) in history" :key="i" class="histitem" :title="h" @click="useHistory(h)">{{ h }}</button>
       </div>
+      <footer class="histpop-f">
+        <button class="ghostcfg" :disabled="!history.length" @click="clearHistory">清空历史</button>
+      </footer>
     </div>
     <div class="tabstrip">
       <div v-for="t in center.tabs.value" :key="t.id" class="tab"
@@ -555,8 +554,7 @@ onBeforeUnmount(() => {
         <div class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
         </div>
-        <button class="chist" :class="{ on: histOpen }" title="查看输入历史" @mousedown.stop @click="histOpen = true">🕘 历史</button>
-        <button class="cmin" :title="composerMin ? '展开' : '最小化'" @mousedown.stop @click="composerMin = !composerMin">{{ composerMin ? '▲' : '▼' }}</button>
+        <button class="cmin" :title="composerMin ? '展开' : '最小化'" @mousedown.stop @click="composerMin = !composerMin">{{ composerMin ? '❐' : '—' }}</button>
       </div>
       <template v-if="!composerMin">
         <div class="flowbar">
@@ -580,6 +578,9 @@ onBeforeUnmount(() => {
             :class="{ on: composerText === p }"
             @click="composerText = p"
           ><span class="cdot" />{{ p }}</button>
+        </div>
+        <div class="qtool" @mousedown.stop>
+          <button class="qtbtn" :class="{ on: histOpen }" title="查看输入历史" @click="histOpen = !histOpen">🕘 历史</button>
         </div>
         <div class="cwrap">
           <textarea
@@ -611,14 +612,15 @@ onBeforeUnmount(() => {
 .cstart { padding: 2px 14px; }
 .cbar .gear { margin-left: 4px; }
 .cbar .asel { height: 20px; padding: 0 6px; }
-.chist { margin-left: auto; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 0 10px; line-height: 18px; cursor: pointer; font-size: 11px; }
-.chist:hover, .chist.on { border-color: var(--ac2); color: var(--ac2); }
-.cmin { margin-left: 6px; }
+.qtool { display: flex; align-items: center; gap: 6px; flex: none; }
+.qtbtn { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 1px 10px; line-height: 18px; cursor: pointer; font-size: 11px; }
+.qtbtn:hover, .qtbtn.on { border-color: var(--ac2); color: var(--ac2); }
+.cmin { margin-left: auto; background: none; border: 1px solid transparent; color: var(--tx2); border-radius: 4px; width: 28px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; }
+.cmin:hover { background: color-mix(in srgb, var(--tx1) 14%, transparent); color: var(--tx1); }
 .wfbtns { display: flex; gap: 0; flex: none; align-items: stretch; border-bottom: 2px solid transparent; }
 .wfbtn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--tx3); padding: 2px 12px 3px; cursor: pointer; font-size: 11px; }
 .wfbtn:hover { color: var(--tx1); }
 .wfbtn.on { color: var(--ac2); border-bottom-color: var(--ac2); font-weight: 700; }
-.cmin { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 0 8px; line-height: 18px; cursor: pointer; font-size: 11px; }
 .flowbar { display: flex; align-items: center; gap: 0; flex: none; flex-wrap: wrap; }
 .fgroup { display: flex; align-items: center; gap: 0; border: 1px dashed color-mix(in srgb, var(--tx1) 45%, transparent); border-radius: 12px; padding: 2px 8px 2px 6px; margin: 2px 0; background: color-mix(in srgb, var(--ac) 3%, transparent); }
 .fglabel { font-size: 10px; color: var(--tx4); margin-right: 6px; padding: 0 4px; border-right: 1px solid color-mix(in srgb, var(--tx1) 40%, transparent); white-space: nowrap; }
