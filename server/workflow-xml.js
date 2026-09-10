@@ -35,7 +35,7 @@ export function parseWorkflowXml(xml) {
     const stRe = /<stage\b([^>]*)>([\s\S]*?)<\/stage>/g;
     let sm;
     while ((sm = stRe.exec(wm[2]))) {
-      const st = { id: attr(sm[1], 'id') || `st-${wf.stages.length}`, label: attr(sm[1], 'label') || attr(sm[1], 'id'), prompts: [] };
+      const st = { id: attr(sm[1], 'id') || `st-${wf.stages.length}`, label: attr(sm[1], 'label') || attr(sm[1], 'id'), group: attr(sm[1], 'group') || '', prompts: [] };
       const prRe = /<prompt>([\s\S]*?)<\/prompt>/g;
       let pm;
       while ((pm = prRe.exec(sm[2]))) { const t = decode(pm[1]); if (t) st.prompts.push(t); }

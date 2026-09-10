@@ -54,6 +54,25 @@ const agentCliReady = ref(false);   // agent CLI 是否已在固定会话里启�
 const wfCmds = ref<Record<string, string>>({ dev: '/dev', test: '/test', doc: '/doc' });
 const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent id
 const settingsOpen = ref(false);
+const serverPort = ref<number | null>(null);
+const portMsg = ref('');
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/settings').then((x) => x.json());
+    serverPort.value = r?.settings?.port ?? r?.currentPort ?? null;
+  } catch { /* ignore */ }
+}
+async function savePort() {
+  portMsg.value = '';
+  const p = Number(serverPort.value);
+  if (!p || p < 1 || p > 65535) { portMsg.value = '端口需为 1-65535'; return; }
+  try {
+    const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: p }) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    portMsg.value = '已保存，重启服务后生效';
+  } catch (e: any) { portMsg.value = `保存失败：${e?.message || e}`; }
+}
+function onOpenSettings() { settingsOpen.value = true; loadSettings(); }
 let cfgKey = 'devflow-agent-cfg-none';
 let cfgLoaded = false;
 function loadCfg() {
@@ -139,18 +158,20 @@ function sendAgentText(text: string) {
 }
 
 // 工作流定义来自 config/workflow.xml（GET /api/workflows-xml）；下面为兜底
-interface StageDef { id: string; label: string; prompts: string[]; }
+interface StageDef { id: string; label: string; prompts: string[]; group?: string; }
 interface WfDef { id: string; label: string; stages: StageDef[]; }
 const FALLBACK_WF: WfDef[] = [
   {
     id: 'dev', label: '开发工作流',
     stages: [
-      { id: 'design', label: '需求设计', prompts: ['请使用 superpower brainstorm 来拆解下面需求：', '请澄清边界、非目标与验收标准。'] },
-      { id: 'design-review', label: '需求 Review', prompts: ['请使用 gstack 的 autoplan skills 对刚才输入的文档进行 review'] },
-      { id: 'code', label: '代码实现', prompts: ['请按需求文档实现功能，遵循仓库 AGENTS 约定，改完先跑测试与类型检查。'] },
-      { id: 'optimize', label: '代码优化', prompts: ['请在不改变行为的前提下重构优化，每步跑测试确保不回归。'] },
-      { id: 'test', label: '开发自测', prompts: ['请补齐并运行测试与类型检查，报告结果与风险。'] },
-      { id: 'deploy', label: '环境部署', prompts: ['请给出构建/打包/发布步骤并执行，说明回滚方案。'] },
+      { id: 'design', label: '需求设计', group: '需求', prompts: ['请使用 superpower brainstorm 来拆解下面需求：', '请澄清边界、非目标与验收标准。'] },
+      { id: 'design-review', label: '需求 Review', group: '需求', prompts: ['请使用 gstack 的 autoplan skills 对刚才输入的文档进行 review'] },
+      { id: 'code', label: '代码实现', group: '开发交付', prompts: ['请按需求文档实现功能，遵循仓库 AGENTS 约定，改完先跑测试与类型检查。'] },
+      { id: 'optimize', label: '代码优化', group: '开发交付', prompts: ['请在不改变行为的前提下重构优化，每步跑测试确保不回归。'] },
+      { id: 'test', label: '开发自测', group: '开发交付', prompts: ['请补齐并运行测试与类型检查，报告结果与风险。'] },
+      { id: 'push-merge', label: 'Push&Merge 代码', group: '开发交付', prompts: ['请提交并 push 当前改动到当前分支，再合并到目标分支，写清提交信息。'] },
+      { id: 'deploy', label: '环境部署', group: '交付运维', prompts: ['请给出构建/打包/发布步骤并执行，说明回滚方案。'] },
+      { id: 'troubleshoot', label: '问题定位', group: '交付运维', prompts: ['请基于现象收集日志与复现步骤，列出可能原因并给出验证方法。'] },
     ],
   },
   { id: 'test', label: '测试工作流', stages: [{ id: 'scope', label: '测试范围', prompts: ['请梳理本次改动影响面，产出测试范围与优先级。'] }] },
@@ -160,8 +181,43 @@ const wfDefs = ref<WfDef[]>(FALLBACK_WF);
 const composerText = ref('');
 function fillPrompt(text: string) { composerText.value = text; }
 
+// 底部框高度（可上下拖动）+ 最小化
+const COMPOSER_H_KEY = 'devflow-composer-h';
+const composerH = ref(240);
+const composerMin = ref(false);
+function loadComposerH() {
+  try {
+    const h = Number(localStorage.getItem(COMPOSER_H_KEY));
+    if (h >= 120 && h <= 900) composerH.value = h;
+  } catch { /* ignore */ }
+}
+function saveComposerH() { try { localStorage.setItem(COMPOSER_H_KEY, String(Math.round(composerH.value))); } catch { /* ignore */ } }
+function onComposerDragDown(e: MouseEvent) {
+  e.preventDefault();
+  const startY = e.clientY;
+  const startH = composerH.value;
+  composerMin.value = false;
+  const move = (ev: MouseEvent) => {
+    const max = Math.max(200, window.innerHeight * 0.7);
+    composerH.value = Math.min(max, Math.max(120, startH + (startY - ev.clientY)));
+  };
+  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); saveComposerH(); };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+
 const curWf = computed<WfDef>(() => wfDefs.value.find((w) => w.id === wfKind.value) || wfDefs.value[0] || FALLBACK_WF[0]);
 const STAGES = computed(() => curWf.value.stages);
+const stageGroups = computed(() => {
+  const out: { name: string; stages: StageDef[] }[] = [];
+  for (const s of STAGES.value) {
+    const name = s.group || '';
+    const last = out[out.length - 1];
+    if (!last || last.name !== name) out.push({ name, stages: [s] });
+    else last.stages.push(s);
+  }
+  return out;
+});
 const activeStage = ref('');
 const chips = computed<string[]>(() => {
   const st = curWf.value.stages.find((s) => s.id === activeStage.value) || curWf.value.stages[0];
@@ -325,14 +381,17 @@ watch([agentId, agents, wfKind, wfCmds], saveCfg, { deep: true });
 onMounted(async () => {
   init();
   window.addEventListener('resize', onResize);
+  window.addEventListener('df-open-agent-settings', onOpenSettings);
   const fp = await nodeFp();
   cfgKey = `devflow-agent-cfg-${fp}`;
   loadCfg();
   cfgLoaded = true;
   loadWorkflows();
+  loadComposerH();
 });
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize);
+  window.removeEventListener('df-open-agent-settings', onOpenSettings);
   unsubList?.();
   dataSub?.dispose();
   term?.dispose();
@@ -378,6 +437,12 @@ onBeforeUnmount(() => {
             <div class="cfgrow"><span>测试命令</span><input v-model="wfCmds.test" placeholder="/test" /></div>
             <div class="cfgrow"><span>文档命令</span><input v-model="wfCmds.doc" placeholder="/doc" /></div>
           </div>
+          <div class="setsec">
+            <div class="settitle">服务</div>
+            <div class="cfgrow"><span>启动端口</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="3001" /><button class="ghostcfg" @click="savePort">保存</button></div>
+            <div v-if="portMsg" class="cfghint">{{ portMsg }}</div>
+            <div class="cfghint">写入 config/server.json；端口修改需重启服务后生效（可用环境变量 DEVFLOW_PORT 覆盖）。</div>
+          </div>
         </div>
         <footer class="setf">
           <button class="ghostcfg" @click="resetCfg">恢复默认</button>
@@ -404,28 +469,40 @@ onBeforeUnmount(() => {
         :detail-token="detailToken" :detail-path="detailPath" />
     </div>
 
-    <div v-if="isSessionView" class="composer">
-      <div class="flowbar">
-        <template v-for="(s, i) in STAGES" :key="s.id">
-          <button class="stage" :class="{ on: activeStage === s.id }" @click="pickStage(s)">{{ s.label }}</button>
-          <span v-if="i < STAGES.length - 1" class="flowline" />
-        </template>
+    <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerMin }" :style="{ height: (composerMin ? 40 : composerH) + 'px' }">
+      <div class="cbar" @mousedown="onComposerDragDown">
+        <span class="grip" title="拖动调整高度">⋯⋯</span>
+        <span class="clabel">输入 / 提示语</span>
+        <button class="cmin" :title="composerMin ? '展开' : '最小化'" @mousedown.stop @click="composerMin = !composerMin">{{ composerMin ? '▲' : '▼' }}</button>
       </div>
-      <div class="chipbar">
-        <button v-for="(p, i) in chips" :key="i" class="chip" :title="p" @click="fillPrompt(p)">
-          <span class="cdot" />{{ p }}
-        </button>
-      </div>
-      <div class="cwrap">
-        <textarea
-          v-model="composerText"
-          class="cinput"
-          rows="6"
-          placeholder="输入内容，回车送入上方 Agent 会话；Shift+Enter 换行"
-          @keydown="onComposerKey"
-        />
-        <button class="csend" @click="submitComposer">发送</button>
-      </div>
+      <template v-if="!composerMin">
+        <div class="flowbar">
+          <template v-for="(g, gi) in stageGroups" :key="gi">
+            <div class="fgroup">
+              <span v-if="g.name" class="fglabel">{{ g.name }}</span>
+              <template v-for="(s, i) in g.stages" :key="s.id">
+                <button class="stage" :class="{ on: activeStage === s.id }" @click="pickStage(s)">{{ s.label }}</button>
+                <span v-if="i < g.stages.length - 1" class="flowline" />
+              </template>
+            </div>
+            <span v-if="gi < stageGroups.length - 1" class="fgap" />
+          </template>
+        </div>
+        <div class="chipbar">
+          <button v-for="(p, i) in chips" :key="i" class="chip" :title="p" @click="fillPrompt(p)">
+            <span class="cdot" />{{ p }}
+          </button>
+        </div>
+        <div class="cwrap">
+          <textarea
+            v-model="composerText"
+            class="cinput"
+            placeholder="输入内容，回车送入上方 Agent 会话；Shift+Enter 换行"
+            @keydown="onComposerKey"
+          />
+          <button class="csend" @click="submitComposer">发送</button>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -438,20 +515,31 @@ onBeforeUnmount(() => {
 .ago { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 2px 12px; cursor: pointer; font-size: 12px; font-weight: 600; }
 .acfg { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 1px 8px; cursor: pointer; font-size: 12px; }
 .ahint { margin-left: auto; color: var(--tx6); font-size: 11px; }
-.composer { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; background: var(--bg2); border-top: 1px solid var(--bd2); flex: none; }
-.flowbar { display: flex; align-items: center; gap: 0; }
+.composer { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 0 10px 10px; background: var(--bg2); border-top: 1px solid var(--bd2); flex: none; overflow: hidden; box-sizing: border-box; }
+.composer.min { padding-bottom: 6px; }
+.cbar { flex: none; display: flex; align-items: center; gap: 8px; height: 26px; cursor: row-resize; user-select: none; }
+.grip { color: var(--tx6); font-size: 11px; letter-spacing: -2px; cursor: row-resize; }
+.clabel { color: var(--tx3); font-size: 11px; }
+.cmin { margin-left: auto; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 0 8px; line-height: 18px; cursor: pointer; font-size: 11px; }
+.flowbar { display: flex; align-items: center; gap: 0; flex: none; flex-wrap: wrap; }
+.fgroup { display: flex; align-items: center; gap: 0; border: 1px dashed var(--bd3); border-radius: 12px; padding: 2px 8px 2px 6px; margin: 2px 0; background: color-mix(in srgb, var(--ac) 6%, transparent); }
+.fglabel { font-size: 10px; color: var(--ac2); margin-right: 6px; padding: 0 4px; border-right: 1px solid var(--bd3); white-space: nowrap; }
+.fgap { width: 14px; flex: none; }
 .stage { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 14px; padding: 3px 12px; cursor: pointer; font-size: 12px; }
 .stage:hover { border-color: var(--ac2); color: var(--ac2); }
 .stage.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .flowline { flex: 1; height: 2px; min-width: 10px; background: linear-gradient(90deg, var(--ac2), var(--bd3)); margin: 0 4px; border-radius: 2px; }
-.cwrap { position: relative; display: flex; align-items: flex-end; gap: 8px; }
-.chipbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.cwrap { position: relative; display: flex; align-items: stretch; gap: 8px; flex: 1; min-height: 0; }
+.chipbar { display: flex; flex-wrap: wrap; gap: 6px; flex: none; max-height: 56px; overflow-y: auto; }
 .chip { display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip:hover { border-color: var(--ac2); color: var(--ac2); }
 .cdot { width: 5px; height: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
-.cinput { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: vertical; font-family: inherit; min-height: 140px; }
+.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
-.csend { background: var(--ac); color: var(--onac); border: none; border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: 12px; font-weight: 600; flex: none; }
+/* 浅色（白天）主题下输入文字用红色，避免黄色 */
+.composer.light .cinput { color: #d21f3c; caret-color: #d21f3c; }
+.composer.light .cinput:focus { border-color: #d21f3c; box-shadow: 0 0 0 2px rgba(210,31,60,.22); }
+.csend { background: var(--ac); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
 .cfgrow span { width: 62px; flex: none; }

@@ -19,10 +19,14 @@ import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
 import { CollabS2C } from '@devflow/shared/collab';
 import { loadWorkflowXml, defaultWorkflowFile } from './workflow-xml.js';
+import { defaultSettingsFile, readSettings, writeSettings } from './settings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
 const workflowXmlFile = defaultWorkflowFile(path.join(__dirname, '..'));
+const settingsFile = defaultSettingsFile(path.join(__dirname, '..'));
+const HOST = process.env.DEVFLOW_HOST || '127.0.0.1';
+const PORT = Number(process.env.DEVFLOW_PORT || readSettings(settingsFile).port || 3001);
 
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
 process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
@@ -121,6 +125,26 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ workflows }));
     return;
   }
+  if (url.pathname === '/api/settings' && req.method === 'GET') {
+    const s = readSettings(settingsFile);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ settings: s, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT }));
+    return;
+  }
+  if (url.pathname === '/api/settings' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const port = Number(body.port);
+      if (!port || port < 1 || port > 65535) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid port' })); return; }
+      const next = writeSettings(settingsFile, { port });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ settings: next, needRestart: true }));
+    });
+    return;
+  }
   if (url.pathname.startsWith('/api/collab')) { await collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/')) {
     await createHttpApi({ projects })(req, res);
@@ -134,8 +158,6 @@ const server = http.createServer(async (req, res) => {
 
 gateway = createGateway({ httpServer: server, sessionManager, workflowRunner, requireAuthWs, log });
 
-const HOST = process.env.DEVFLOW_HOST || '127.0.0.1';
-const PORT = Number(process.env.DEVFLOW_PORT || 3001);
 server.listen(PORT, HOST, () => {
   collabEngine.setAdvertised({ host: HOST, port: PORT });
   log.info(`listening on http://${HOST}:${PORT}  (ws: ws://${HOST}:${PORT}/ws)`);
