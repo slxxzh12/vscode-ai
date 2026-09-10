@@ -9,4 +9,5 @@ export const S2C = Object.freeze({
   ERROR: 'error', PONG: 'pong',
   WF_LIST_RESULT: 'wf-list-result', WF_STARTED: 'wf-started',
   WF_STATUS: 'wf-status', WF_FINISHED: 'wf-finished',
+  CONFIG_CHANGED: 'config-changed',
 });

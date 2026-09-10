@@ -19,6 +19,7 @@ import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
 import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
+import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
 import { defaultConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, DEFAULT_PORT } from './devflow-config.js';
 import { setLocale } from './i18n.js';
@@ -226,6 +227,22 @@ const server = http.createServer(async (req, res) => {
 });
 
 gateway = createGateway({ httpServer: server, sessionManager, workflowRunner, requireAuthWs, log });
+
+// 配置热重载：config/devflow.xml 变更 → 重载语言并向已连浏览器推送（端口需重启才生效）
+try {
+  let cfgTimer = null;
+  fs.watch(configFile, () => {
+    clearTimeout(cfgTimer);
+    cfgTimer = setTimeout(() => {
+      try {
+        const c = loadDevflowConfig(configFile);
+        setLocale(c.server.language);
+        for (const conn of gateway.conns) conn.send({ type: S2C.CONFIG_CHANGED });
+        log.info('config/devflow.xml reloaded');
+      } catch (e) { log.warn?.('config reload failed', e && e.message); }
+    }, 300);
+  });
+} catch (e) { log.warn?.('config watch failed', e && e.message); }
 
 server.listen(PORT, HOST, () => {
   collabEngine.setAdvertised({ host: HOST, port: PORT });

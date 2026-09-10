@@ -9,6 +9,7 @@ export declare const S2C: Readonly<{
   ERROR: 'error'; PONG: 'pong';
   WF_LIST_RESULT: 'wf-list-result'; WF_STARTED: 'wf-started';
   WF_STATUS: 'wf-status'; WF_FINISHED: 'wf-finished';
+  CONFIG_CHANGED: 'config-changed';
 }>;
 export declare type WfAdvance = 'auto' | 'manual';
 export declare type StepStatus = 'waiting' | 'running' | 'manual' | 'done' | 'error';

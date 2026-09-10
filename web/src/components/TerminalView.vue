@@ -26,6 +26,7 @@ let term: Terminal | null = null;
 let fit: FitAddon | null = null;
 let dataSub: { dispose(): void } | null = null;
 let unsubList: (() => void) | null = null;
+let unsubCfg: (() => void) | null = null;
 let autoTried = false;
 
 const activeFile = computed(() => (props.center.active.value?.kind === 'file' ? props.center.active.value : null));
@@ -114,7 +115,12 @@ function loadCfg() {
     const c = JSON.parse(raw);
     if (Array.isArray(c.agents) && c.agents.length) {
       const ok = c.agents.filter((a: any) => a && typeof a.id === 'string' && typeof a.cmd === 'string');
-      if (ok.length) agents.value = ok.map((a: any) => ({ id: a.id, name: a.name || a.id, cmd: a.cmd }));
+      if (ok.length) {
+        const merged: AgentDef[] = ok.map((a: any) => ({ id: a.id, name: a.name || a.id, cmd: a.cmd }));
+        const ids = new Set(merged.map((a) => a.id));
+        for (const d of defaultAgents.value) if (!ids.has(d.id)) merged.push({ ...d });   // 配置里新增的 Agent 始终保留
+        agents.value = merged;
+      }
     }
     if (typeof c.agentId === 'string' && agents.value.some((a) => a.id === c.agentId)) agentId.value = c.agentId;
     else if (c.engine === 'opencode' || c.engine === 'claudecode') agentId.value = c.engine;   // 兼容旧配置
@@ -381,6 +387,12 @@ function init() {
       startAgent();   // 首标签固定为 Agent 会话（opencode/claudecode）
     }
   });
+  unsubCfg = props.terminal.on(S2C.CONFIG_CHANGED, async () => {
+    await loadAgents();
+    loadCfg();
+    loadWorkflows();
+    loadSettings();
+  });
 }
 
 // 会话列表 → 统一页签栏同步（保证顺序：会话在前，文件在后）
@@ -462,6 +474,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('df-open-agent-settings', onOpenSettings);
   window.removeEventListener('df-fill-composer', onFillComposer);
   unsubList?.();
+  unsubCfg?.();
   dataSub?.dispose();
   term?.dispose();
   term = null;
