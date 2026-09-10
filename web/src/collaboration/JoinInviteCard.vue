@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import type { CollabApi } from './useCollab';
 import type { CollabInvitePreview, CollabGroup } from './types';
+import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi; token: string }>();
 const emit = defineEmits<{ (e: 'joined', group: CollabGroup | undefined): void; (e: 'cancel'): void }>();
@@ -11,24 +12,24 @@ const loading = ref(false);
 const joining = ref(false);
 const error = ref('');
 
-async function load(t: string) {
+async function load(token: string) {
   error.value = ''; preview.value = null; loading.value = true;
   try {
-    const r = await props.collab.previewInvite(t);
-    if (r.code !== 'ok') error.value = r.code === 'expired' ? '邀请链接已过期' : '邀请码无效或已损坏';
+    const r = await props.collab.previewInvite(token);
+    if (r.code !== 'ok') error.value = r.code === 'expired' ? t('collab.join.expired') : t('collab.join.invalid');
     else preview.value = r;
   } catch (e) { error.value = String((e as Error).message || e); }
   finally { loading.value = false; }
 }
-watch(() => props.token, (t) => { if (t) load(t); }, { immediate: true });
+watch(() => props.token, (tok) => { if (tok) load(tok); }, { immediate: true });
 
 function joinErrorText(code: string): string {
   switch (code) {
-    case 'expired': return '邀请链接已过期';
-    case 'invite-revoked': return '邀请链接已失效';
-    case 'no-group': return '该群已不存在';
-    case 'bad-token': return '邀请码无效';
-    default: return '无法连接邀请方，可能不在线';
+    case 'expired': return t('collab.join.expired');
+    case 'invite-revoked': return t('collab.join.revoked');
+    case 'no-group': return t('collab.join.no_group');
+    case 'bad-token': return t('collab.join.bad_token');
+    default: return t('collab.join.unreachable');
   }
 }
 async function join() {
@@ -45,22 +46,22 @@ function fmt(ts?: number) { return ts ? new Date(ts).toLocaleString() : ''; }
 
 <template>
   <div class="jcard">
-    <div class="jtitle">入群邀请</div>
-    <div v-if="loading" class="jsub">正在读取邀请…</div>
+    <div class="jtitle">{{ $t('collab.join.title') }}</div>
+    <div v-if="loading" class="jsub">{{ $t('collab.join.loading') }}</div>
     <template v-else-if="preview">
       <div class="jgroup">{{ preview.groupName }}</div>
-      <div class="jsub">邀请人：{{ preview.inviter?.username }} · {{ preview.inviter?.host }}:{{ preview.inviter?.port }}</div>
-      <div class="jsub">有效期至：{{ fmt(preview.expiresAt) }}</div>
-      <div v-if="preview.alreadyMember" class="jok">你已在该群</div>
+      <div class="jsub">{{ $t('collab.join.inviter') }} {{ preview.inviter?.username }} · {{ preview.inviter?.host }}:{{ preview.inviter?.port }}</div>
+      <div class="jsub">{{ $t('collab.join.expires') }} {{ fmt(preview.expiresAt) }}</div>
+      <div v-if="preview.alreadyMember" class="jok">{{ $t('collab.join.already') }}</div>
       <div v-if="error" class="jerr">{{ error }}</div>
       <div class="jbtns">
-        <button :disabled="joining" @click="join">{{ joining ? '处理中…' : (preview.alreadyMember ? '打开群' : '加入') }}</button>
-        <button class="ghost" @click="emit('cancel')">取消</button>
+        <button :disabled="joining" @click="join">{{ joining ? $t('common.processing') : (preview.alreadyMember ? $t('collab.join.open') : $t('common.join')) }}</button>
+        <button class="ghost" @click="emit('cancel')">{{ $t('common.cancel') }}</button>
       </div>
     </template>
     <template v-else>
-      <div class="jerr">{{ error || '无法读取邀请' }}</div>
-      <div class="jbtns"><button class="ghost" @click="emit('cancel')">关闭</button></div>
+      <div class="jerr">{{ error || $t('collab.join.unreadable') }}</div>
+      <div class="jbtns"><button class="ghost" @click="emit('cancel')">{{ $t('common.close') }}</button></div>
     </template>
   </div>
 </template>
