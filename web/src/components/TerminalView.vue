@@ -50,6 +50,7 @@ const agentCmd = computed(() => currentAgent.value.cmd || 'opencode');
 const wfKind = ref<string>('dev');
 const agentStarted = ref(false);
 const agentCliReady = ref(false);   // agent CLI 是否已在固定会话里启动
+let agentLaunching = false;         // 启动命令注入中，避免重复注入
 // 工作流 → opencode 自定义命令（可配置，按节点公钥指纹持久化）
 const wfCmds = ref<Record<string, string>>({ dev: '/dev', test: '/test', doc: '/doc' });
 const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent id
@@ -145,6 +146,7 @@ async function startAgent() {
   agentSid.value = s.id;
   agentStarted.value = true;
   agentCliReady.value = false;
+  agentLaunching = false;
   agentAtStart.value = agentId.value;
   props.center.ensureSession(s.id, `◈ ${currentAgent.value.name}`, s.state || 'running');
   ensureAgentOrder();
@@ -153,11 +155,14 @@ async function startAgent() {
 }
 function launchAgentCmd() {
   if (!agentSid.value || !agentActive()) return;
+  if (agentCliReady.value || agentLaunching) return;   // 已就绪/正在启动：绝不重复注入启动命令
+  agentLaunching = true;
   props.terminal.switchTo(agentSid.value);
   const cmd = agentCmd.value;
   // 先输入命令，稍后单独发回车（避免部分环境下 \r 未触发提交）
   props.terminal.input(cmd);
   setTimeout(() => {
+    agentLaunching = false;
     if (!agentSid.value || !agentActive()) return;
     props.terminal.input('\r');
     agentCliReady.value = true;
@@ -259,12 +264,9 @@ async function sendToAgent(text: string) {
   if (!t) return;
   if (agentSid.value && agentActive()) {
     props.terminal.switchTo(agentSid.value);
-    if (!agentCliReady.value) {
-      launchAgentCmd();
-      setTimeout(() => sendAgentText(t), 3600);
-    } else {
-      setTimeout(() => sendAgentText(t), 150);
-    }
+    // 注意：这里绝不能再次注入 Agent 启动命令（否则会把 opencode 之类的命令敲进输入框）。
+    // CLI 尚在启动中时，多等一会儿再写入用户内容。
+    setTimeout(() => sendAgentText(t), agentCliReady.value ? 150 : 2200);
     return;
   }
   await startAgent();
