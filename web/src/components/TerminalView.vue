@@ -8,6 +8,7 @@ import type { useTerminal } from '../useTerminal';
 import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
 import { useTheme } from '../theme';
+import { nodeFp } from '../nodeKey';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -37,12 +38,36 @@ function sessionLabel(id: string) {
 
 // —— 固定 Agent 首标签：交互式 opencode/claudecode + 工作流（跑 opencode 自定义命令）——
 const WF_LABELS: Record<string, string> = { dev: '开发工作流', test: '测试工作流', doc: '文档工作流' };
-// command/ 目录下的 opencode 自定义命令名（前端送 /<cmd> 回车给 TUI）
-const WF_CMDS: Record<string, string> = { dev: '/dev', test: '/test', doc: '/doc' };
 const agentSid = ref<string | null>(null);
 const agentEngine = ref<'opencode' | 'claudecode'>('opencode');
 const wfKind = ref<'dev' | 'test' | 'doc'>('dev');
 const agentStarted = ref(false);
+// 工作流 → opencode 自定义命令（可配置，按节点公钥指纹持久化）
+const wfCmds = ref<Record<'dev' | 'test' | 'doc', string>>({ dev: '/dev', test: '/test', doc: '/doc' });
+const agentEngineAtStart = ref<'opencode' | 'claudecode'>('opencode');
+const cfgOpen = ref(false);
+let cfgKey = 'devflow-agent-cfg-none';
+let cfgLoaded = false;
+const CFG_DEFAULT = { engine: 'opencode', wf: 'dev', cmds: { dev: '/dev', test: '/test', doc: '/doc' } };
+function loadCfg() {
+  try {
+    const raw = localStorage.getItem(cfgKey);
+    if (!raw) return;
+    const c = JSON.parse(raw);
+    if (c.engine === 'opencode' || c.engine === 'claudecode') agentEngine.value = c.engine;
+    if (c.wf === 'dev' || c.wf === 'test' || c.wf === 'doc') wfKind.value = c.wf;
+    if (c.cmds) for (const k of ['dev', 'test', 'doc'] as const) if (typeof c.cmds[k] === 'string') wfCmds.value[k] = c.cmds[k];
+  } catch { /* ignore */ }
+}
+function saveCfg() {
+  if (!cfgLoaded) return;   // 避免加载前用默认值覆盖
+  try { localStorage.setItem(cfgKey, JSON.stringify({ engine: agentEngine.value, wf: wfKind.value, cmds: wfCmds.value })); } catch { /* ignore */ }
+}
+function resetCfg() {
+  agentEngine.value = CFG_DEFAULT.engine as 'opencode';
+  wfKind.value = CFG_DEFAULT.wf as 'dev';
+  wfCmds.value = { ...CFG_DEFAULT.cmds };
+}
 
 function ensureAgentOrder() {
   if (!agentSid.value) return;
@@ -64,6 +89,7 @@ async function startAgent() {
   const s = await props.terminal.createSession({ projectId: props.projectId, cols: 80, rows: 24 });
   agentSid.value = s.id;
   agentStarted.value = true;
+  agentEngineAtStart.value = agentEngine.value;
   props.center.ensureSession(s.id, `◈ ${agentEngine.value}`, s.state || 'running');
   ensureAgentOrder();
   props.terminal.switchTo(s.id);
@@ -78,16 +104,22 @@ function sendAgentText(text: string) {
   if (!agentSid.value || !agentActive()) return;
   props.terminal.input(`${text}\r`);
 }
-function runWorkflow() {
-  const cmd = WF_CMDS[wfKind.value] || '';
+async function runWorkflow() {
+  const cmd = wfCmds.value[wfKind.value] || '';
   if (!cmd) return;
+  // Agent CLI 变更时先重启固定会话
+  if (agentSid.value && agentActive() && agentEngineAtStart.value !== agentEngine.value) {
+    props.terminal.killSession(agentSid.value);
+    agentSid.value = null;
+    await new Promise((r) => setTimeout(r, 400));
+  }
   if (agentSid.value && agentActive()) {
     props.terminal.switchTo(agentSid.value);
-    // TUI 输入需要一点时间聚焦；直接送入命令
     setTimeout(() => sendAgentText(cmd), 600);
     return;
   }
-  startAgent().then(() => setTimeout(() => sendAgentText(cmd), 4200));
+  await startAgent();
+  setTimeout(() => sendAgentText(cmd), 4400);
 }
 
 function init() {
@@ -172,9 +204,15 @@ function onTabClose(id: string, ev: Event) {
   }
 }
 
-onMounted(() => {
+watch([agentEngine, wfKind, wfCmds], saveCfg, { deep: true });
+
+onMounted(async () => {
   init();
   window.addEventListener('resize', onResize);
+  const fp = await nodeFp();
+  cfgKey = `devflow-agent-cfg-${fp}`;
+  loadCfg();
+  cfgLoaded = true;
 });
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize);
@@ -200,6 +238,14 @@ onBeforeUnmount(() => {
         <option value="doc">文档工作流</option>
       </select>
       <button class="ago" @click="runWorkflow">▶ 启动/执行</button>
+      <button class="acfg" title="配置工作流命令" @click.stop="cfgOpen = !cfgOpen">⚙</button>
+      <div v-if="cfgOpen" class="cfgpop" @click.stop>
+        <div class="cfgrow"><span>开发命令</span><input v-model="wfCmds.dev" placeholder="/dev" /></div>
+        <div class="cfgrow"><span>测试命令</span><input v-model="wfCmds.test" placeholder="/test" /></div>
+        <div class="cfgrow"><span>文档命令</span><input v-model="wfCmds.doc" placeholder="/doc" /></div>
+        <div class="cfgacts"><button class="ghostcfg" @click="resetCfg">恢复默认</button><span class="closecfg" @click="cfgOpen = false">关闭</span></div>
+        <div class="cfghint">命令为 opencode 自定义命令（command/ 目录），如 /dev</div>
+      </div>
       <span class="ahint">首标签固定为 Agent 会话（不可关闭）</span>
     </div>
     <div class="tabstrip">
@@ -225,11 +271,20 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .center-wrap { display: flex; flex-direction: column; height: 100%; background: var(--bg3); position: relative; }
-.agentbar { display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 30px; background: var(--bg1); border-bottom: 1px solid var(--bd2); flex: none; }
+.agentbar { display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 30px; background: var(--bg1); border-bottom: 1px solid var(--bd2); flex: none; position: relative; }
 .alab { color: var(--tx3); font-size: 11px; }
 .asel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
 .ago { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 2px 12px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.acfg { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 1px 8px; cursor: pointer; font-size: 12px; }
 .ahint { margin-left: auto; color: var(--tx6); font-size: 11px; }
+.cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
+.cfgrow span { width: 62px; flex: none; }
+.cfgrow input { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 3px 6px; font-family: Consolas, monospace; font-size: 12px; }
+.cfgacts { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.ghostcfg { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+.closecfg { color: var(--tx3); font-size: 12px; cursor: pointer; }
+.cfghint { color: var(--tx6); font-size: 11px; }
 .tabstrip { display: flex; align-items: center; gap: 2px; background: var(--bg2); border-bottom: 1px solid var(--bd); padding: 0 8px; height: 32px; overflow-x: auto; flex: none; }
 .tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--tx2); padding: 0 10px; height: 100%; cursor: pointer; border-right: 1px solid var(--bd); flex: none; max-width: 220px; }
 .tab.active { background: var(--bg3); color: var(--tx1); }
