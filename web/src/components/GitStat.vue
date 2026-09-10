@@ -7,6 +7,8 @@ import {
 } from '../gitStat';
 import { t } from '../i18n';
 
+const props = defineProps<{ projectRoot?: string }>();
+
 const FILTERS = ['all', 'added', 'modified', 'deleted', 'renamed'] as const;
 
 const repoPath = ref('');
@@ -27,7 +29,8 @@ onMounted(async () => {
     const a = JSON.parse(localStorage.getItem(recentKey) || '[]');
     recents.value = Array.isArray(a) ? a.filter((x) => typeof x === 'string').slice(0, 20) : [];
   } catch { recents.value = []; }
-  if (recents.value.length) repoPath.value = recents.value[0];
+  if (props.projectRoot) repoPath.value = props.projectRoot;
+  else if (recents.value.length) repoPath.value = recents.value[0];
 });
 
 function remember(p: string) {

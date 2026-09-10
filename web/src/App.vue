@@ -271,7 +271,7 @@ function onInviteJoined(_g?: CollabGroup) {
       </template>
       <template v-else-if="rail === 'stat'">
         <section class="center">
-          <GitStat />
+          <GitStat :project-root="currentProjectInfo?.root || ''" />
         </section>
       </template>
       <template v-else-if="rail === 'scheduler'">
