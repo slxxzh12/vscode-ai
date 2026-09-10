@@ -22,6 +22,13 @@ const OUT_ROOT = path.join(ROOT, "dist-portable");
 const APP = path.join(OUT_ROOT, "DevflowTerminal");
 const ZIP = path.join(OUT_ROOT, "DevflowTerminal-portable.zip");
 const noZip = process.argv.includes("--no-zip");
+const CFG_PORT = (() => {
+  try {
+    const xml = fs.readFileSync(path.join(ROOT, "config", "devflow.xml"), "utf8");
+    const m = xml.match(/<server\b[^>]*\bport\s*=\s*"(\d+)"/i);
+    return m ? m[1] : "3001";
+  } catch { return "3001"; }
+})();
 
 function check(cond, msg) {
   if (!cond) {
@@ -93,6 +100,7 @@ function copyServerTree(from, to) {
 }
 copyServerTree(path.join(ROOT, "server"), path.join(APP, "server"));
 cpDir(path.join(ROOT, "web", "dist"), path.join(APP, "web", "dist"));
+cpDir(path.join(ROOT, "config"), path.join(APP, "config"));
 
 // 运行时依赖（真实拷贝，含 node-pty 原生 .node）
 fs.mkdirSync(path.join(APP, "node_modules", "@devflow"), { recursive: true });
@@ -114,11 +122,11 @@ const bat = [
   "@echo off",
   "setlocal",
   'cd /d "%~dp0"',
-  "echo Devflow Terminal 启动中：http://127.0.0.1:3001",
+  "echo Devflow Terminal 启动中：http://127.0.0.1:" + CFG_PORT,
   "echo 关闭弹出的 Devflow Terminal 窗口即停止服务。",
   'start "Devflow Terminal" /min cmd /c "runtime\\node.exe server\\index.js"',
   "timeout /t 2 /nobreak >nul",
-  'start "" "http://127.0.0.1:3001"',
+  'start "" "http://127.0.0.1:' + CFG_PORT + '"',
   "",
 ].join("\r\n");
 fs.writeFileSync(path.join(APP, "start.bat"), bat);
@@ -126,8 +134,10 @@ fs.writeFileSync(path.join(APP, "start.bat"), bat);
 const usage = [
   "Devflow Terminal（绿色免安装版）",
   "",
-  "启动：双击 start.bat（自动打开 http://127.0.0.1:3001）",
+  "启动：双击 start.bat（自动打开 http://127.0.0.1:" + CFG_PORT + "）",
   '停止：关闭弹出的 "Devflow Terminal" 最小化窗口',
+  "",
+  "端口/Agent/工作流配置：编辑 config/devflow.xml 后重启",
   "",
   "Node 运行时版本：" + nodeVer,
   "",
@@ -147,6 +157,7 @@ const entries = [
   ["pty", "node_modules/node-pty/prebuilds/win32-x64/conpty.node"],
   ["ws", "node_modules/ws/package.json"],
   ["shared", "node_modules/@devflow/shared/index.js"],
+  ["config", "config/devflow.xml"],
 ];
 for (const [label, rel] of entries) {
   const p = path.join(APP, rel);
