@@ -494,8 +494,8 @@ onBeforeUnmount(() => {
             <div v-for="a in agents" :key="a.id" class="agentrow">
               <input v-model="a.name" class="ainput aname" :placeholder="$t('term.name')" />
               <input v-model="a.cmd" class="ainput acmd" :placeholder="$t('term.agent_cmd_placeholder')" />
-              <button class="ghostcfg" :class="{ on: a.id === agentId }" :disabled="a.id === agentId" @click="agentId = a.id">{{ a.id === agentId ? $t('term.current') : $t('term.set_current') }}</button>
-              <button class="ghostcfg" :disabled="agents.length <= 1" @click="removeAgent(a.id)">{{ $t('term.delete') }}</button>
+              <button class="ghostcfg setbtn" :class="{ on: a.id === agentId }" :disabled="a.id === agentId" @click="agentId = a.id">{{ a.id === agentId ? $t('term.is_default') : $t('term.set_default') }}</button>
+              <button class="ghostcfg delbtn" :disabled="agents.length <= 1" @click="removeAgent(a.id)">{{ $t('term.delete') }}</button>
             </div>
             <div class="cfghint">{{ $t('term.agent_hint') }}</div>
           </div>
@@ -629,6 +629,8 @@ onBeforeUnmount(() => {
 .cfgrow input { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 3px 6px; font-family: Consolas, monospace; font-size: 12px; }
 .cfgacts { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
 .ghostcfg { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+.ghostcfg:disabled { opacity: .6; cursor: default; }
+.ghostcfg.on:disabled { opacity: 1; background: var(--ac); color: var(--onac); border-color: var(--ac); }
 .closecfg { color: var(--tx3); font-size: 12px; cursor: pointer; }
 .cfghint { color: var(--tx6); font-size: 11px; }
 .acfg.gear { flex: none; }
@@ -640,8 +642,11 @@ onBeforeUnmount(() => {
 .setsec { display: flex; flex-direction: column; gap: 6px; }
 .settitle { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: var(--tx2); }
 .agentrow { display: flex; align-items: center; gap: 8px; }
+.agentrow .ghostcfg { flex: none; }
+.agentrow .setbtn { min-width: 76px; }
+.agentrow .delbtn { min-width: 48px; }
 .ainput { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 4px 8px; font-size: 12px; min-width: 0; }
-.aname { width: 140px; flex: none; }
+.aname { width: 110px; flex: none; }
 .acmd { flex: 1; font-family: Consolas, monospace; }
 .setf { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--bd2); flex: none; }
 .newmodal { width: 420px; max-width: 92vw; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); overflow: hidden; }
