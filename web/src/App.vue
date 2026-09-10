@@ -15,11 +15,14 @@ import FileTree from './components/FileTree.vue';
 import GitStat from './components/GitStat.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
+import { useI18n } from './i18n';
 
 const terminal = useTerminal({});
 const center = useCenter();
 const projectsApi = useProjects();
 const { theme, toggle } = useTheme();
+const { locale, setLocale, t } = useI18n();
+function toggleLang() { setLocale(locale.value === 'en' ? 'zh-CN' : 'en'); }
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler'>('explorer');
@@ -100,7 +103,7 @@ function openFromHistory(it: FileRec & { name: string; projName: string }) {
   center.openFile(it.projectId, it.path, it.name);
 }
 
-const projectName = computed(() => projects.value.find((p) => p.id === currentProject.value)?.name || '未选择项目');
+const projectName = computed(() => projects.value.find((p) => p.id === currentProject.value)?.name || t('app.no_project'));
 const currentProjectInfo = computed(() => projects.value.find((p) => p.id === currentProject.value) || null);
 // 顶栏展示：优先「选中文件的绝对路径」，无选中文件则显示项目根绝对路径
 const displayPath = computed(() => {
@@ -136,7 +139,7 @@ function fmtRecent(ts: number): string {
   const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const sameDay = d.toDateString() === now.toDateString();
   const thisYear = d.getFullYear() === now.getFullYear();
-  if (sameDay) return `今天 ${hm}`;
+  if (sameDay) return t('time.today', { hm });
   if (thisYear) return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm}`;
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
@@ -247,18 +250,19 @@ function onInviteJoined(_g?: CollabGroup) {
         </option>
       </select>
       <div class="spacer" />
-      <span v-if="terminal.state.status === 'reconnecting'" class="net">重连中…</span>
-      <button class="theme-btn" :title="theme === 'dark' ? '切换到浅色' : '切换到深色'" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
+      <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
+      <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
+      <button class="theme-btn" :title="theme === 'dark' ? $t('app.theme.to_light') : $t('app.theme.to_dark')" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
     </header>
 
     <div class="main">
       <aside class="activity">
-        <button class="a-btn" :class="{ on: rail === 'explorer' }" title="目录" @click="rail = 'explorer'">▤</button>
-        <button class="a-btn" :class="{ on: rail === 'history' }" title="历史" @click="rail = 'history'">🕘</button>
-        <button class="a-btn" :class="{ on: rail === 'contacts' }" title="通讯录" @click="rail = 'contacts'">👥</button>
-        <button class="a-btn" :class="{ on: rail === 'stat' }" title="提交统计" @click="rail = 'stat'">📊</button>
-        <button class="a-btn" :class="{ on: rail === 'scheduler' }" title="定时任务" @click="rail = 'scheduler'">⏰</button>
-        <button class="a-btn gearbot" title="设置" @click="openAgentSettings">⚙</button>
+        <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
+        <button class="a-btn" :class="{ on: rail === 'history' }" :title="$t('nav.history')" @click="rail = 'history'">🕘</button>
+        <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
+        <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
+        <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">⏰</button>
+        <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings">⚙</button>
       </aside>
       <template v-if="rail === 'contacts'">
         <section class="center">
@@ -305,6 +309,8 @@ function onInviteJoined(_g?: CollabGroup) {
 .spacer { flex: 1; }
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .theme-btn:hover { border-color: var(--ac2); }
+.lang-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
+.lang-btn:hover { border-color: var(--ac2); }
 .net { color: var(--warn); font-size: 12px; }
 .main { flex: 1; display: flex; min-height: 0; }
 .activity { width: 40px; background: var(--bg6); border-right: 1px solid var(--bd); display: flex; flex-direction: column; align-items: center; padding-top: 6px; gap: 2px; flex: none; }
