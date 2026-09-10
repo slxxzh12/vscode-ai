@@ -34,6 +34,13 @@
 - `shared/` — WS 协议常量/类型（唯一事实源）；`server/` — Node ESM 后端（ws + node-pty，测试在 `server/test/`，`node --test`）；`web/` — Vue3+Vite+TS+xterm（vitest + vue-tsc）。
 - 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`。
 
+## 配置（统一 XML）
+- 唯一配置文件：`config/devflow.xml`（`<server port language/>` + `<agents default>` + `<workflows>`）。
+- 端口/语言可在 UI 设置面板修改，服务端会**就地改写** `<server>` 属性；Agent 列表与工作流提示语直接编辑 XML。
+- 改 `config/devflow.xml` 后需**重启后端**（dev:server 的 `--watch` 不监听 xml）。
+- 环境变量 `DEVFLOW_PORT` 优先于 XML 的 `port`。
+- `config/server.json`、`config/workflow.xml` 已废弃。
+
 ## 国际化（i18n，强制）
 - **后续所有提示/文案用语必须支持国际化，至少中文（zh-CN）与英文（en）**；禁止在代码里写死单语言（含中文）的用户可见文案。
 - 单一词条源：`shared/i18n/zh-CN.js` + `shared/i18n/en.js`；运行时 `@devflow/shared/i18n` 的 `translate(locale, key, params)`（`{name}` 插值；缺失回退 当前语言→en→key）。
