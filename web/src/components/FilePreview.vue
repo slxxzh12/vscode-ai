@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue';
+import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useTheme } from '../theme';
@@ -163,28 +163,45 @@ function setSaveError(e: any) {
 }
 async function doWrite(content: string) {
   saveState.value = 'saving';
-  try {
-    await write(props.projectId, props.path, content);
-    if (disposed) return;
-    saveState.value = 'saved';
-    saveMsg.value = nowTime();
-    dirty.value = false;
-  } catch (e: unknown) {
-    dirty.value = true;
-    setSaveError(e);
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await write(props.projectId, props.path, content);
+      if (disposed) return;
+      saveState.value = 'saved';
+      saveMsg.value = nowTime();
+      dirty.value = false;
+      return;
+    } catch (e: unknown) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
   }
+  dirty.value = true;
+  setSaveError(lastErr);
 }
 function scheduleSave() {
   dirty.value = true;
   saveState.value = 'idle';
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => flush(), 800);
+  saveTimer = setTimeout(() => flush(), 10000);
 }
 function flush() {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
   if (!view || !dirty.value) return;
   const snapshot = view.state.doc.toString();
   saveChain = saveChain.then(() => doWrite(snapshot)).catch(() => { /* doWrite 已处理 */ });
+}
+function saveNow() {
+  if (!view || !dirty.value) return;
+  saveState.value = 'idle';
+  flush();
+}
+function onGlobalKey(e: KeyboardEvent) {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's') return;
+  if (status.value !== 'ok' || !showEditor.value || isBinary.value) return;
+  e.preventDefault();
+  saveNow();
 }
 function docChanged() {
   if (!view) return;
@@ -621,8 +638,11 @@ watch(viewMode, (m) => {
 });
 watch([status, viewMode], applyPreview);
 
+onMounted(() => { window.addEventListener('keydown', onGlobalKey); });
+
 onBeforeUnmount(() => {
   disposed = true;
+  window.removeEventListener('keydown', onGlobalKey);
   unbindTools?.();
   if (fmtTimer) clearTimeout(fmtTimer);
   if (runTimer) clearTimeout(runTimer);
@@ -673,6 +693,7 @@ onBeforeUnmount(() => {
           </span>
           <span v-if="runMsg" class="save runmsg">{{ runMsg }}</span>
           <button v-if="status === 'ok'" class="fmt-btn" :class="{ on: detailOpen }" title="文件详细信息" @click="toggleDetail()">ⓘ 详细信息</button>
+          <button v-if="status === 'ok' && showEditor && !isBinary" class="fmt-btn savebtn" :disabled="!dirty" title="保存 (Ctrl+S)" @click="saveNow">💾 保存{{ dirty ? ' *' : '' }}</button>
         </div>
       </div>
       <div v-if="status === 'loading'" class="note">加载中…</div>
@@ -800,6 +821,9 @@ onBeforeUnmount(() => {
 .fmt-btn { background: none; border: 1px solid var(--bd); color: var(--tx2); font-size: 11px; padding: 1px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .fmt-btn:hover, .fmt-btn.on { border-color: var(--ac2); color: var(--ac2); }
 .fmt-btn:disabled { opacity: .5; cursor: default; }
+.savebtn { border-color: var(--ac2); color: var(--ac2); font-weight: 600; }
+.savebtn:hover:not(:disabled) { background: color-mix(in srgb, var(--ac) 12%, transparent); }
+.savebtn:disabled { opacity: .45; }
 .save { font-size: 11px; line-height: 1; white-space: nowrap; }
 .save.saveing { color: var(--warn); }
 .save.saveok { color: var(--ok); }

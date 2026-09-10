@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue';
-import type { CollabSnapshot, CollabChatMessage, CollabPendingCmd } from './types';
+import type { CollabSnapshot, CollabChatMessage, CollabPendingCmd, CollabInvitePreview, CollabGroup } from './types';
 
 async function http<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -93,6 +93,17 @@ export function useCollab() {
     async deleteGroup(groupId: string) { await http(`/api/collab/groups/${groupId}`, { method: 'DELETE' }); return refresh(); },
     acceptInvite: (inviteId: string) => post(`/api/collab/invites/${inviteId}/accept`),
     rejectInvite: (inviteId: string) => post(`/api/collab/invites/${inviteId}/reject`),
+    createInviteLink: (groupId: string, origin?: string) =>
+      post<{ token: string; url: string; expiresAt: number; jti: string }>(`/api/collab/groups/${groupId}/invite-link`, { origin }),
+    revokeInvites: (groupId: string) =>
+      post<{ code: string; epoch: number }>(`/api/collab/groups/${groupId}/invite-revoke`),
+    previewInvite: (token: string) =>
+      http<CollabInvitePreview>(`/api/collab/join/preview?token=${encodeURIComponent(token)}`),
+    async joinByInvite(token: string) {
+      const r = await post<{ code: string; group?: CollabGroup }>('/api/collab/join', { token });
+      await refresh();
+      return r;
+    },
     listSkills: () => http<{ skills: { name: string }[] }>('/api/collab/skills'),
     async sendGroupFile(groupId: string, fileName: string, blob: Blob) {
       if (blob.size > 40 * 1024 * 1024) throw new Error('文件超过 40MB 上限');

@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import { useTerminal } from './useTerminal';
 import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
+import { useMessageHistory } from './useMessageHistory';
 import CollaborationView from './collaboration/CollaborationView.vue';
 import SchedulerView from './scheduler/SchedulerView.vue';
+import JoinInviteCard from './collaboration/JoinInviteCard.vue';
+import { useCollab } from './collaboration/useCollab';
+import type { CollabGroup } from './collaboration/types';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import FileTree from './components/FileTree.vue';
@@ -19,6 +23,19 @@ const { theme, toggle } = useTheme();
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler'>('explorer');
+const inviteCollab = useCollab();
+const inviteToken = ref('');
+const historyTab = ref<'files' | 'messages'>('files');
+const msgHistory = useMessageHistory();
+function onOpenHistory(e: Event) {
+  const d = (e as CustomEvent).detail || {};
+  rail.value = 'history';
+  historyTab.value = d.tab === 'messages' ? 'messages' : 'files';
+}
+function onOpenMessage(text: string) {
+  rail.value = 'history';
+  window.dispatchEvent(new CustomEvent('df-fill-composer', { detail: { text } }));
+}
 const detailToken = ref(0);
 const detailPath = ref('');
 function onDetailFile(projectId: string, path: string) {
@@ -187,14 +204,35 @@ function openFile(projectId: string, path: string) {
   center.openFile(projectId, path, name);
 }
 function openAgentSettings() {
-  if (rail.value === 'contacts') { rail.value = 'explorer'; }
+  // 设置弹窗在 TerminalView 内，仅在「目录/历史」视图挂载；通讯录/统计页需先切回目录
+  if (rail.value === 'contacts' || rail.value === 'stat') { rail.value = 'explorer'; }
   setTimeout(() => window.dispatchEvent(new Event('df-open-agent-settings')), 120);
 }
 onMounted(() => {
+  const sp = new URLSearchParams(window.location.search);
+  const it = sp.get('invite');
+  if (it) inviteToken.value = it;
   initFileHistory();
   loadProjects();
+  msgHistory.load();
+  window.addEventListener('df-open-history', onOpenHistory);
   terminal.connect();
 });
+onBeforeUnmount(() => {
+  window.removeEventListener('df-open-history', onOpenHistory);
+});
+function clearInvite() {
+  inviteToken.value = '';
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.delete('invite');
+    window.history.replaceState({}, '', u.pathname + (u.search ? u.search : ''));
+  } catch { /* ignore */ }
+}
+function onInviteJoined(_g?: CollabGroup) {
+  clearInvite();
+  rail.value = 'contacts';
+}
 </script>
 
 <template>
@@ -239,7 +277,9 @@ onMounted(() => {
       </template>
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
-          <HistoryList v-if="rail === 'history'" :items="historyItems" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)" @clear="clearFileHistory" />
+          <HistoryList v-if="rail === 'history'" :items="historyItems" :tab="historyTab" :messages="msgHistory.messages.value"
+            @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
+            @clear="clearFileHistory" @open-message="onOpenMessage" @clear-messages="msgHistory.clear()" />
           <FileTree v-else :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
@@ -247,6 +287,10 @@ onMounted(() => {
           <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" />
         </section>
       </template>
+    </div>
+
+    <div v-if="inviteToken" class="joinmask" @click.self="clearInvite()">
+      <JoinInviteCard :collab="inviteCollab" :token="inviteToken" @joined="onInviteJoined" @cancel="clearInvite" />
     </div>
   </div>
 </template>
@@ -272,4 +316,5 @@ onMounted(() => {
 .divider:hover, .divider.on { background: var(--ac); opacity: .55; }
 .center { flex: 1; min-width: 0; }
 body.dragging-side { cursor: col-resize; user-select: none; }
+.joinmask { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
 </style>

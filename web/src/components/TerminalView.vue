@@ -9,6 +9,7 @@ import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
+import { useMessageHistory } from '../useMessageHistory';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -50,6 +51,7 @@ const agentCmd = computed(() => currentAgent.value.cmd || 'opencode');
 const wfKind = ref<string>('dev');
 const agentStarted = ref(false);
 const agentCliReady = ref(false);   // agent CLI 是否已在固定会话里启动
+let agentLaunching = false;         // 启动命令注入中，避免重复注入
 // 工作流 → opencode 自定义命令（可配置，按节点公钥指纹持久化）
 const wfCmds = ref<Record<string, string>>({ dev: '/dev', test: '/test', doc: '/doc' });
 const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent id
@@ -73,6 +75,21 @@ async function savePort() {
   } catch (e: any) { portMsg.value = `保存失败：${e?.message || e}`; }
 }
 function onOpenSettings() { settingsOpen.value = true; loadSettings(); }
+
+// 新建会话：先选择要执行的命令（终端 cmd / 各 Agent）
+const newOpen = ref(false);
+const newChoices = computed(() => [
+  { id: 'cmd', label: '终端（cmd / shell）', cmd: '' },
+  ...agents.value.map((a) => ({ id: a.id, label: a.name, cmd: a.cmd })),
+]);
+async function createNew(id: string) {
+  newOpen.value = false;
+  const c = newChoices.value.find((x) => x.id === id) || newChoices.value[0];
+  const s = await props.terminal.createSession({ projectId: props.projectId, cols: 80, rows: 24 });
+  props.center.ensureSession(s.id, c.cmd ? `◈ ${c.label}` : c.label, s.state || 'running');
+  props.terminal.switchTo(s.id);
+  if (c.cmd) setTimeout(() => { props.terminal.input(`${c.cmd}`); setTimeout(() => props.terminal.input('\r'), 200); }, 1200);
+}
 let cfgKey = 'devflow-agent-cfg-none';
 let cfgLoaded = false;
 function loadCfg() {
@@ -130,6 +147,7 @@ async function startAgent() {
   agentSid.value = s.id;
   agentStarted.value = true;
   agentCliReady.value = false;
+  agentLaunching = false;
   agentAtStart.value = agentId.value;
   props.center.ensureSession(s.id, `◈ ${currentAgent.value.name}`, s.state || 'running');
   ensureAgentOrder();
@@ -138,11 +156,14 @@ async function startAgent() {
 }
 function launchAgentCmd() {
   if (!agentSid.value || !agentActive()) return;
+  if (agentCliReady.value || agentLaunching) return;   // 已就绪/正在启动：绝不重复注入启动命令
+  agentLaunching = true;
   props.terminal.switchTo(agentSid.value);
   const cmd = agentCmd.value;
   // 先输入命令，稍后单独发回车（避免部分环境下 \r 未触发提交）
   props.terminal.input(cmd);
   setTimeout(() => {
+    agentLaunching = false;
     if (!agentSid.value || !agentActive()) return;
     props.terminal.input('\r');
     agentCliReady.value = true;
@@ -180,6 +201,16 @@ const FALLBACK_WF: WfDef[] = [
 const wfDefs = ref<WfDef[]>(FALLBACK_WF);
 const composerText = ref('');
 function fillPrompt(text: string) { composerText.value = text; }
+
+// —— 输入历史：点击工具栏「历史」→ 打开左侧历史面板的「消息」页签 ——
+const { push: pushMsg } = useMessageHistory();
+function openHistory() {
+  window.dispatchEvent(new CustomEvent('df-open-history', { detail: { tab: 'messages' } }));
+}
+function onFillComposer(e: Event) {
+  const t = (e as CustomEvent).detail?.text;
+  if (typeof t === 'string') composerText.value = t;
+}
 
 // 底部框高度（可上下拖动）+ 最小化
 const COMPOSER_H_KEY = 'devflow-composer-h';
@@ -244,25 +275,39 @@ async function sendToAgent(text: string) {
   if (!t) return;
   if (agentSid.value && agentActive()) {
     props.terminal.switchTo(agentSid.value);
-    if (!agentCliReady.value) {
-      launchAgentCmd();
-      setTimeout(() => sendAgentText(t), 3600);
-    } else {
-      setTimeout(() => sendAgentText(t), 150);
-    }
+    // 注意：这里绝不能再次注入 Agent 启动命令（否则会把 opencode 之类的命令敲进输入框）。
+    // CLI 尚在启动中时，多等一会儿再写入用户内容。
+    setTimeout(() => sendAgentText(t), agentCliReady.value ? 150 : 2200);
     return;
   }
   await startAgent();
   setTimeout(() => sendAgentText(t), 4400);
 }
+// 把输入框内容直接打进「当前上面显示的会话」（opencode / claudecode / cmd 等一律适配）
+function sendToActive(text: string) {
+  const t = text.trim();
+  if (!t) return;
+  const sid = props.terminal.state.activeSessionId;
+  if (!sid) { sendToAgent(t); return; }   // 没有任何会话时回退：启动 Agent 会话再发送
+  props.terminal.input(t);
+  setTimeout(() => {
+    if (props.terminal.state.activeSessionId !== sid) return;
+    props.terminal.input('\r');
+  }, 150);
+}
 function submitComposer() {
   const t = composerText.value.trim();
   if (!t) return;
   composerText.value = '';
-  sendToAgent(t);
+  void pushMsg(t);
+  sendToActive(t);
 }
 function onComposerKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComposer(); }
+}
+async function selectWf(id: string) {
+  wfKind.value = id;
+  await onWfChange();
 }
 async function onWfChange() {
   const first = curWf.value.stages[0];
@@ -348,9 +393,12 @@ function onResize() {
   if (d) props.terminal.resize(d.cols, d.rows);
 }
 function termTheme(dark: boolean) {
-  return dark
+  const base = dark
     ? { background: '#0e1116', foreground: '#d5dae1', cursor: '#6aa2ff', selectionBackground: '#2f6feb66' }
     : { background: '#ffffff', foreground: '#1f2937', cursor: '#2563eb', selectionBackground: '#93c5fd99' };
+  // 浅色（白天）背景：把 PowerShell 命令行高亮的黄改为黑色；深色保持原黄色
+  if (dark) return base;
+  return { ...base, yellow: '#111111', brightYellow: '#000000' };
 }
 watch(isDark, (d) => { if (term) { term.options.theme = termTheme(d); requestAnimationFrame(() => onResize()); } });
 
@@ -359,7 +407,8 @@ function onTabClick(id: string) {
   if (!t) return;
   if (t.kind === 'session' && t.id.startsWith('s:')) {
     const sid = t.id.slice(2);
-    props.terminal.switchTo(sid);       // 触发 activeSessionId watcher → activateSession
+    props.center.activateSession(sid);  // 直接激活中心页签（避免 activeSessionId 未变导致 watcher 不触发）
+    props.terminal.switchTo(sid);
   } else {
     props.center.activateFileTab(id);
   }
@@ -382,6 +431,7 @@ onMounted(async () => {
   init();
   window.addEventListener('resize', onResize);
   window.addEventListener('df-open-agent-settings', onOpenSettings);
+  window.addEventListener('df-fill-composer', onFillComposer);
   const fp = await nodeFp();
   cfgKey = `devflow-agent-cfg-${fp}`;
   loadCfg();
@@ -392,6 +442,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize);
   window.removeEventListener('df-open-agent-settings', onOpenSettings);
+  window.removeEventListener('df-fill-composer', onFillComposer);
   unsubList?.();
   dataSub?.dispose();
   term?.dispose();
@@ -401,20 +452,18 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="center-wrap">
-    <div class="agentbar">
-      <button class="acfg gear" title="设置" @click.stop="settingsOpen = true">⚙</button>
-      <span class="alab">Agent</span>
-      <select v-model="agentId" class="asel">
-        <option v-for="a in agents" :key="a.id" :value="a.id">{{ a.name }}</option>
-      </select>
-      <span class="alab">工作流</span>
-      <select v-model="wfKind" class="asel" @change="onWfChange">
-        <option v-for="w in wfDefs" :key="w.id" :value="w.id">{{ w.label }}</option>
-      </select>
-      <button class="ago" @click="runWorkflow">▶ 启动/执行</button>
-      <span class="ahint">首标签固定为 Agent 会话（不可关闭）</span>
-    </div>
 
+    <div v-if="newOpen" class="setmask" @click.self="newOpen = false">
+      <div class="newmodal">
+        <header class="seth"><span>新建会话 —— 选择要执行的命令</span><button class="setx" @click="newOpen = false">×</button></header>
+        <div class="newlist">
+          <button v-for="c in newChoices" :key="c.id" class="newitem" @click="createNew(c.id)">
+            <span class="ni-label">{{ c.label }}</span>
+            <span class="ni-cmd">{{ c.cmd || '默认 shell' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
     <div v-if="settingsOpen" class="setmask" @click.self="settingsOpen = false">
       <div class="setmodal">
         <header class="seth">
@@ -427,6 +476,7 @@ onBeforeUnmount(() => {
             <div v-for="a in agents" :key="a.id" class="agentrow">
               <input v-model="a.name" class="ainput aname" placeholder="名称" />
               <input v-model="a.cmd" class="ainput acmd" placeholder="启动命令，如 opencode" />
+              <button class="ghostcfg" :class="{ on: a.id === agentId }" :disabled="a.id === agentId" @click="agentId = a.id">{{ a.id === agentId ? '当前' : '设为当前' }}</button>
               <button class="ghostcfg" :disabled="agents.length <= 1" @click="removeAgent(a.id)">删除</button>
             </div>
             <div class="cfghint">启动命令会作为该固定会话的第一条命令输入（如 opencode / claudecode）。</div>
@@ -458,7 +508,7 @@ onBeforeUnmount(() => {
         <span class="nm" :title="t.kind === 'file' ? t.path : t.label">{{ t.label }}</span>
         <span v-if="t.id !== 's:' + agentSid" class="x" @click="onTabClose(t.id, $event)">×</span>
       </div>
-      <button class="new" @click="terminal.createSession({ projectId, cols: 80, rows: 24 })">＋ 新建会话</button>
+      <button class="new" @click="newOpen = true">＋ 新建会话</button>
       <span v-if="terminal.state.status === 'reconnecting'" class="net">重连中…</span>
     </div>
 
@@ -471,9 +521,10 @@ onBeforeUnmount(() => {
 
     <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerMin }" :style="{ height: (composerMin ? 40 : composerH) + 'px' }">
       <div class="cbar" @mousedown="onComposerDragDown">
-        <span class="grip" title="拖动调整高度">⋯⋯</span>
-        <span class="clabel">输入 / 提示语</span>
-        <button class="cmin" :title="composerMin ? '展开' : '最小化'" @mousedown.stop @click="composerMin = !composerMin">{{ composerMin ? '▲' : '▼' }}</button>
+        <div class="wfbtns" @mousedown.stop>
+          <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
+        </div>
+        <button class="cmin" :title="composerMin ? '展开' : '最小化'" @mousedown.stop @click="composerMin = !composerMin">{{ composerMin ? '❐' : '—' }}</button>
       </div>
       <template v-if="!composerMin">
         <div class="flowbar">
@@ -488,18 +539,26 @@ onBeforeUnmount(() => {
             <span v-if="gi < stageGroups.length - 1" class="fgap" />
           </template>
         </div>
-        <div class="chipbar">
-          <button v-for="(p, i) in chips" :key="i" class="chip" :title="p" @click="fillPrompt(p)">
-            <span class="cdot" />{{ p }}
-          </button>
+        <div v-if="chips.length" class="chipbar" title="该阶段常用提示：点击填入输入框">
+          <span class="chips-label">常用</span>
+          <button
+            v-for="(p, i) in chips"
+            :key="i"
+            class="chip"
+            :class="{ on: composerText === p }"
+            @click="composerText = p"
+          ><span class="cdot" />{{ p }}</button>
         </div>
         <div class="cwrap">
-          <textarea
-            v-model="composerText"
-            class="cinput"
-            placeholder="输入内容，回车送入上方 Agent 会话；Shift+Enter 换行"
-            @keydown="onComposerKey"
-          />
+          <div class="cinputwrap">
+            <textarea
+              v-model="composerText"
+              class="cinput"
+              placeholder="输入内容，回车送入上方当前会话；Shift+Enter 换行"
+              @keydown="onComposerKey"
+            />
+            <button class="chist" title="查看输入历史" @mousedown.stop @click="openHistory">🕘 历史</button>
+          </div>
           <button class="csend" @click="submitComposer">发送</button>
         </div>
       </template>
@@ -518,27 +577,39 @@ onBeforeUnmount(() => {
 .composer { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 0 10px 10px; background: var(--bg2); border-top: 1px solid var(--bd2); flex: none; overflow: hidden; box-sizing: border-box; }
 .composer.min { padding-bottom: 6px; }
 .cbar { flex: none; display: flex; align-items: center; gap: 8px; height: 26px; cursor: row-resize; user-select: none; }
-.grip { color: var(--tx6); font-size: 11px; letter-spacing: -2px; cursor: row-resize; }
+.cbar button, .cbar select { cursor: pointer; }
 .clabel { color: var(--tx3); font-size: 11px; }
-.cmin { margin-left: auto; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 0 8px; line-height: 18px; cursor: pointer; font-size: 11px; }
+.cstart { padding: 2px 14px; }
+.cbar .gear { margin-left: 4px; }
+.cbar .asel { height: 20px; padding: 0 6px; }
+.chist { position: absolute; top: 6px; right: 8px; z-index: 2; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx3); border-radius: 6px; padding: 1px 8px; line-height: 18px; cursor: pointer; font-size: 11px; }
+.chist:hover { border-color: var(--ac2); color: var(--ac2); }
+.cmin { margin-left: auto; background: none; border: 1px solid transparent; color: var(--tx2); border-radius: 4px; width: 28px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; }
+.cmin:hover { background: color-mix(in srgb, var(--tx1) 14%, transparent); color: var(--tx1); }
+.wfbtns { display: flex; gap: 0; flex: none; align-items: stretch; border-bottom: 2px solid transparent; }
+.wfbtn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--tx3); padding: 2px 12px 3px; cursor: pointer; font-size: 11px; }
+.wfbtn:hover { color: var(--tx1); }
+.wfbtn.on { color: var(--ac2); border-bottom-color: var(--ac2); font-weight: 700; }
 .flowbar { display: flex; align-items: center; gap: 0; flex: none; flex-wrap: wrap; }
-.fgroup { display: flex; align-items: center; gap: 0; border: 1px dashed var(--bd3); border-radius: 12px; padding: 2px 8px 2px 6px; margin: 2px 0; background: color-mix(in srgb, var(--ac) 6%, transparent); }
-.fglabel { font-size: 10px; color: var(--ac2); margin-right: 6px; padding: 0 4px; border-right: 1px solid var(--bd3); white-space: nowrap; }
+.fgroup { display: flex; align-items: center; gap: 0; border: 1px dashed color-mix(in srgb, var(--tx1) 45%, transparent); border-radius: 12px; padding: 2px 8px 2px 6px; margin: 2px 0; background: color-mix(in srgb, var(--ac) 3%, transparent); }
+.fglabel { font-size: 10px; color: var(--tx4); margin-right: 6px; padding: 0 4px; border-right: 1px solid color-mix(in srgb, var(--tx1) 40%, transparent); white-space: nowrap; }
 .fgap { width: 14px; flex: none; }
 .stage { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 14px; padding: 3px 12px; cursor: pointer; font-size: 12px; }
 .stage:hover { border-color: var(--ac2); color: var(--ac2); }
 .stage.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .flowline { flex: 1; height: 2px; min-width: 10px; background: linear-gradient(90deg, var(--ac2), var(--bd3)); margin: 0 4px; border-radius: 2px; }
 .cwrap { position: relative; display: flex; align-items: stretch; gap: 8px; flex: 1; min-height: 0; }
-.chipbar { display: flex; flex-wrap: wrap; gap: 6px; flex: none; max-height: 56px; overflow-y: auto; }
-.chip { display: inline-flex; align-items: center; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cinputwrap { position: relative; flex: 1; min-width: 0; display: flex; }
+.chipbar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: none; max-height: 84px; overflow-y: auto; }
+.chips-label { color: var(--tx3); font-size: 11px; flex: none; margin-right: 2px; line-height: 20px; }
+.chip { display: inline-flex; align-items: flex-start; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; text-align: left; white-space: normal; max-width: 100%; }
 .chip:hover { border-color: var(--ac2); color: var(--ac2); }
-.cdot { width: 5px; height: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
-.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
+.chip.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
+.cdot { width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
+.chip.on .cdot { background: var(--onac); }
+.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 86px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
-/* 浅色（白天）主题下输入文字用红色，避免黄色 */
-.composer.light .cinput { color: #d21f3c; caret-color: #d21f3c; }
-.composer.light .cinput:focus { border-color: #d21f3c; box-shadow: 0 0 0 2px rgba(210,31,60,.22); }
+.cinput::placeholder { color: var(--tx3); }
 .csend { background: var(--ac); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
@@ -561,6 +632,12 @@ onBeforeUnmount(() => {
 .aname { width: 140px; flex: none; }
 .acmd { flex: 1; font-family: Consolas, monospace; }
 .setf { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--bd2); flex: none; }
+.newmodal { width: 420px; max-width: 92vw; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); overflow: hidden; }
+.newlist { display: flex; flex-direction: column; padding: 8px; gap: 4px; }
+.newitem { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: none; border: 1px solid var(--bd); color: var(--tx1); border-radius: 6px; padding: 8px 12px; cursor: pointer; text-align: left; }
+.newitem:hover { border-color: var(--ac2); background: color-mix(in srgb, var(--ac) 8%, transparent); }
+.ni-label { font-size: 13px; font-weight: 600; }
+.ni-cmd { color: var(--tx6); font-family: Consolas, monospace; font-size: 11px; }
 .tabstrip { display: flex; align-items: center; gap: 2px; background: var(--bg2); border-bottom: 1px solid var(--bd); padding: 0 8px; height: 32px; overflow-x: auto; flex: none; }
 .tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--tx2); padding: 0 10px; height: 100%; cursor: pointer; border-right: 1px solid var(--bd); flex: none; max-width: 220px; }
 .tab.active { background: var(--bg3); color: var(--tx1); }
