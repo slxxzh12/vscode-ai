@@ -66,7 +66,7 @@ const RAW_MIME = {
   '.pdf': 'application/pdf',
 };
 
-export function createHttpApi({ projects }) {
+export function createHttpApi({ projects, saveProjects = null }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -92,6 +92,32 @@ export function createHttpApi({ projects }) {
     try {
       if (url.pathname === '/api/projects' && req.method === 'GET') {
         sendJson(res, 200, { projects: projects.listProjects() });
+        return;
+      }
+      if (url.pathname === '/api/projects' && req.method === 'POST') {
+        let body;
+        try { body = await readJsonBody(req); } catch { sendJson(res, 400, { error: 'bad body' }); return; }
+        const raw = typeof body.path === 'string' ? body.path.trim() : '';
+        if (!raw) { sendJson(res, 400, { error: 'path required' }); return; }
+        const abs = path.resolve(raw);
+        let st;
+        try { st = fs.statSync(abs); } catch { sendJson(res, 404, { error: 'path not found' }); return; }
+        if (!st.isDirectory()) { sendJson(res, 400, { error: 'not a directory' }); return; }
+        const list = projects.rawProjects();
+        const norm = abs.replace(/[\\/]+$/, '').toLowerCase();
+        if (list.some((p) => path.resolve(p.root).replace(/[\\/]+$/, '').toLowerCase() === norm)) {
+          sendJson(res, 409, { error: 'already added' });
+          return;
+        }
+        const base = path.basename(abs) || abs;
+        const slug = base.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'project';
+        const ids = new Set(list.map((p) => p.id));
+        let id = slug, i = 2;
+        while (ids.has(id)) id = `${slug}-${i++}`;
+        const name = (typeof body.name === 'string' && body.name.trim()) || base;
+        const proj = projects.addProject({ id, name, root: abs });
+        try { saveProjects?.(); } catch { /* ignore */ }
+        sendJson(res, 200, { project: { id: proj.id, name: proj.name, root: proj.root } });
         return;
       }
       if (url.pathname === '/api/tree' && req.method === 'GET') {

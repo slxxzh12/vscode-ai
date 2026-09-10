@@ -16,6 +16,20 @@ export function useProjects() {
       const r = await get<{ projects: ProjectInfo[] }>('/api/projects');
       return r.projects;
     },
+    async add(path: string, name?: string): Promise<ProjectInfo> {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, name }),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep */ }
+        throw new Error(msg);
+      }
+      const r = await res.json() as { project: ProjectInfo };
+      return r.project;
+    },
     async tree(project: string, rel: string): Promise<TreeItem[]> {
       const r = await get<{ items: TreeItem[] }>(`/api/tree?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`);
       return r.items;

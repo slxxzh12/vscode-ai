@@ -11,6 +11,15 @@ export class Projects {
   listProjects() {
     return this.projects.map((p) => ({ id: p.id, name: p.name, root: path.resolve(p.root) }));
   }
+  rawProjects() {
+    return this.projects.map((p) => ({ id: p.id, name: p.name, root: p.root }));
+  }
+  addProject({ id, name, root }) {
+    const proj = { id, name, root };
+    this.projects.push(proj);
+    this._byId.set(id, proj);
+    return proj;
+  }
   _project(id) {
     const p = this._byId.get(id);
     if (!p) { const e = new Error('project not found'); e.code = 'not-found'; throw e; }

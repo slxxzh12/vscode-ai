@@ -199,6 +199,15 @@ function selectProject(id: string) {
   currentProject.value = id;
   if (id) touchRecent(id);
 }
+async function addFolder() {
+  const p = window.prompt(t('top.add_folder_prompt'));
+  if (!p || !p.trim()) return;
+  try {
+    const proj = await projectsApi.add(p.trim());
+    await loadProjects();
+    if (proj?.id) selectProject(proj.id);
+  } catch (e) { alert(t('top.add_failed', { msg: (e as Error).message || String(e) })); }
+}
 function openFile(projectId: string, path: string) {
   const q = path.replace(/\\/g, '/');
   const i = q.lastIndexOf('/');
@@ -241,10 +250,11 @@ function onInviteJoined(_g?: CollabGroup) {
 <template>
   <div class="app">
     <header class="top">
-      <span class="logo">◈ devflow</span>
+      <span class="logo">◈ vscode-ai</span>
+      <button class="addproj" :title="$t('top.add_folder')" @click="addFolder">＋</button>
       <span class="proj">{{ projectName }}</span>
       <span v-if="displayPath" class="projpath" :title="displayPath">{{ displayPath }}</span>
-      <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" @change="(e: any) => selectProject(e.target.value)">
+      <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="$t('top.recent_folders')" @change="(e: any) => selectProject(e.target.value)">
         <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id">
           {{ it.project.name }}{{ it.ts ? ' · ' + fmtRecent(it.ts) : '' }}
         </option>
@@ -303,6 +313,8 @@ function onInviteJoined(_g?: CollabGroup) {
 .app { display: flex; flex-direction: column; height: 100%; position: relative; }
 .top { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--bd); flex: none; }
 .logo { color: var(--ac3); font-weight: 700; }
+.addproj { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
+.addproj:hover { border-color: var(--ac2); color: var(--ac2); }
 .proj { color: var(--tx2); font-size: 12px; white-space: nowrap; }
 .projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proj-sel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; max-width: 320px; }

@@ -39,6 +39,10 @@ process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
 
 const files = resolveFiles();
 const projects = new Projects({ projects: loadProjects(files.projectsFile), logger: log });
+const saveProjects = () => {
+  try { fs.writeFileSync(files.projectsFile, JSON.stringify({ projects: projects.rawProjects() }, null, 2), 'utf8'); }
+  catch (e) { log.warn?.('save projects failed', e && e.message); }
+};
 const workflows = loadWorkflows(files.workflowsFile);
 const sessionManager = new SessionManager({
   logger: log,
@@ -217,7 +221,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/collab')) { await collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/scheduler')) { await scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/')) {
-    await createHttpApi({ projects })(req, res);
+    await createHttpApi({ projects, saveProjects })(req, res);
     return;
   }
   createStaticServer(path.join(__dirname, '..', 'web', 'dist'))(req, res, () => {
