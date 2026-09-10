@@ -485,12 +485,6 @@ onBeforeUnmount(() => {
             <div class="cfghint">{{ $t('term.agent_hint') }}</div>
           </div>
           <div class="setsec">
-            <div class="settitle">{{ $t('term.wf_cmds') }}</div>
-            <div class="cfgrow"><span>{{ $t('term.wf_dev') }}</span><input v-model="wfCmds.dev" placeholder="/dev" /></div>
-            <div class="cfgrow"><span>{{ $t('term.wf_test') }}</span><input v-model="wfCmds.test" placeholder="/test" /></div>
-            <div class="cfgrow"><span>{{ $t('term.wf_doc') }}</span><input v-model="wfCmds.doc" placeholder="/doc" /></div>
-          </div>
-          <div class="setsec">
             <div class="settitle">{{ $t('term.service') }}</div>
             <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="3001" /><button class="ghostcfg" @click="savePort">{{ $t('common.save') }}</button></div>
             <div v-if="portMsg" class="cfghint">{{ portMsg }}</div>
