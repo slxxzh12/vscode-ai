@@ -1,0 +1,16 @@
+export const messages = {
+  'lang.zh_short': '中文',
+  'lang.en_short': 'EN',
+  'lang.switch': '语言',
+  'nav.explorer': '目录',
+  'nav.history': '历史',
+  'nav.contacts': '通讯录',
+  'nav.stat': '提交统计',
+  'nav.scheduler': '定时任务',
+  'nav.settings': '设置',
+  'app.no_project': '未选择项目',
+  'app.reconnecting': '重连中…',
+  'app.theme.to_light': '切换到浅色',
+  'app.theme.to_dark': '切换到深色',
+  'time.today': '今天 {hm}',
+};

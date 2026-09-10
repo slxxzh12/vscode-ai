@@ -8,6 +8,7 @@
   "exports": {
     ".": { "types": "./index.d.ts", "default": "./index.js" },
     "./collab": { "types": "./collab.d.ts", "default": "./collab.js" },
-    "./scheduler": { "types": "./scheduler.d.ts", "default": "./scheduler.js" }
+    "./scheduler": { "types": "./scheduler.d.ts", "default": "./scheduler.js" },
+    "./i18n": { "types": "./i18n/index.d.ts", "default": "./i18n/index.js" }
   }
 }
