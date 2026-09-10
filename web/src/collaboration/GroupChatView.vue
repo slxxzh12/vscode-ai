@@ -5,6 +5,7 @@ import type { CollabApi } from './useCollab';
 import { filterMentions, parseComposer, splitAtCommand, highlightMentions } from './chat-parser';
 import type { CollabChatMessage } from './types';
 import SkillDistributor from './SkillDistributor.vue';
+import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi; groupId: string }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
@@ -32,9 +33,9 @@ async function onFilePick(e: Event) {
   fileSending.value = true;
   try {
     await props.collab.sendGroupFile(props.groupId, f.name, f);
-    fileMsg.value = `已发送文件：${f.name}`;
+    fileMsg.value = t('collab.chat.file_sent', { name: f.name });
   } catch (err: any) {
-    fileMsg.value = `发送失败：${err?.message || err}`;
+    fileMsg.value = t('common.send_failed', { msg: err?.message || err });
   } finally {
     fileSending.value = false;
   }
@@ -66,7 +67,7 @@ async function submit() {
   const atMember = group.value?.members.find((m) => m.username === (atMatch?.[1] ?? '')) ?? null;
   const parsed = parseComposer(raw, atMember);
   if (parsed.isCommand) {
-    if (parsed.missingTarget) { alert('先 @ 一个群成员再发命令'); return; }
+    if (parsed.missingTarget) { alert(t('collab.chat.need_mention')); return; }
     const seg = splitAtCommand(raw, atMember!.username, atMember!.machineId);
     await props.collab.sendCmd(props.groupId, seg.text, seg.toId!);
   }
@@ -102,8 +103,8 @@ onMounted(async () => {
   <div class="gcv">
     <!-- 群聊工具条 -->
     <div class="tools">
-      <button class="tool" :class="{ on: skillOpen }" title="把本机技能分发给该群所有成员" @click="skillOpen = !skillOpen">🛠 分发技能</button>
-      <button class="tool" :disabled="fileSending" title="把本机文件发送给该群所有成员（≤40MB）" @click="fileInput?.click()">{{ fileSending ? '发送中…' : '📎 发文件' }}</button>
+      <button class="tool" :class="{ on: skillOpen }" :title="$t('collab.chat.distribute_title')" @click="skillOpen = !skillOpen">{{ $t('collab.chat.distribute') }}</button>
+      <button class="tool" :disabled="fileSending" :title="$t('collab.chat.file_title')" @click="fileInput?.click()">{{ fileSending ? $t('common.sending') : $t('collab.chat.send_file') }}</button>
       <span v-if="fileMsg" class="filemsg">{{ fileMsg }}</span>
       <input ref="fileInput" type="file" class="filepick" @change="onFilePick" />
     </div>
@@ -111,37 +112,37 @@ onMounted(async () => {
 
     <!-- 本机待确认执行卡片（按当前群过滤） -->
     <div v-for="p in myPending" :key="p.id" class="pend">
-      <div class="pend-txt">@{{ nameOf(p.fromId) }} 请求在你这执行：<code>{{ p.text }}</code></div>
-      <button @click="decide(p, true)">允许</button>
-      <button class="ghost" @click="decide(p, false)">拒绝</button>
+      <div class="pend-txt">{{ $t('collab.chat.cmd_request', { name: nameOf(p.fromId) }) }}<code>{{ p.text }}</code></div>
+      <button @click="decide(p, true)">{{ $t('common.allow') }}</button>
+      <button class="ghost" @click="decide(p, false)">{{ $t('common.reject') }}</button>
     </div>
 
     <div class="msgs" ref="msgListEl">
       <div v-for="m in chat.messages" :key="m.id" class="msg" :class="{ mine: isMine(m) }">
         <div class="meta">
-          <span class="who">{{ isMine(m) ? '我' : nameOf(m.fromId) }}</span>
+          <span class="who">{{ isMine(m) ? $t('collab.chat.me') : nameOf(m.fromId) }}</span>
           <span class="time">{{ fmtTime(m.ts) }}</span>
-          <span v-if="m.kind === 'system'" class="tag sys">系统</span>
+          <span v-if="m.kind === 'system'" class="tag sys">{{ $t('collab.chat.system') }}</span>
         </div>
         <template v-if="m.kind === 'cmd-result'">
-          <div class="res-head">执行结果<template v-if="m.meta"> · 退出码 {{ m.meta.exitCode ?? '-' }}</template></div>
+          <div class="res-head">{{ $t('collab.chat.result') }}<template v-if="m.meta"> · {{ $t('collab.chat.exit_code', { code: m.meta.exitCode ?? '-' }) }}</template></div>
           <pre class="res-body">{{ resultText(m) }}</pre>
         </template>
         <div v-else class="bubble">
           <span v-for="(seg, i) in highlightMentions(m.text, nameById)" :key="i" :class="{ at: seg.mention }">{{ seg.text }}</span>
         </div>
       </div>
-      <div v-if="chat.messages.length === 0" class="empty">还没有消息</div>
+      <div v-if="chat.messages.length === 0" class="empty">{{ $t('collab.chat.empty') }}</div>
     </div>
 
     <div class="compose">
       <div v-if="showMentions" class="mentions">
         <button v-for="mm in mentionMembers" :key="mm.machineId" @click="pickMention(mm)">@{{ mm.username }}</button>
-        <div v-if="mentionMembers.length === 0" class="empty">无匹配成员</div>
+        <div v-if="mentionMembers.length === 0" class="empty">{{ $t('collab.chat.no_match') }}</div>
       </div>
       <div class="row">
-        <input v-model="composer" placeholder="输入消息；@ 选择成员；/command 触发远程执行" @input="onComposerInput" @keyup.enter="submit" />
-        <button @click="submit">发送</button>
+        <input v-model="composer" :placeholder="$t('collab.chat.input_placeholder')" @input="onComposerInput" @keyup.enter="submit" />
+        <button @click="submit">{{ $t('common.send') }}</button>
       </div>
     </div>
   </div>
