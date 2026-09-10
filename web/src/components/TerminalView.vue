@@ -381,7 +381,8 @@ function onTabClick(id: string) {
   if (!t) return;
   if (t.kind === 'session' && t.id.startsWith('s:')) {
     const sid = t.id.slice(2);
-    props.terminal.switchTo(sid);       // 触发 activeSessionId watcher → activateSession
+    props.center.activateSession(sid);  // 直接激活中心页签（避免 activeSessionId 未变导致 watcher 不触发）
+    props.terminal.switchTo(sid);
   } else {
     props.center.activateFileTab(id);
   }
