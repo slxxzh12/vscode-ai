@@ -492,7 +492,6 @@ onBeforeUnmount(() => {
 
     <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerMin }" :style="{ height: (composerMin ? 40 : composerH) + 'px' }">
       <div class="cbar" @mousedown="onComposerDragDown">
-        <span class="grip" title="拖动调整高度">⋯⋯</span>
         <div class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
         </div>
@@ -537,7 +536,6 @@ onBeforeUnmount(() => {
 .composer.min { padding-bottom: 6px; }
 .cbar { flex: none; display: flex; align-items: center; gap: 8px; height: 26px; cursor: row-resize; user-select: none; }
 .cbar button, .cbar select { cursor: pointer; }
-.grip { color: var(--tx6); font-size: 11px; letter-spacing: -2px; cursor: row-resize; }
 .clabel { color: var(--tx3); font-size: 11px; }
 .cstart { padding: 2px 14px; }
 .cbar .gear { margin-left: 4px; }
