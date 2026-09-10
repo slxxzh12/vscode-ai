@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue';
 import type { CollabSnapshot, CollabChatMessage, CollabPendingCmd, CollabInvitePreview, CollabGroup } from './types';
+import { t } from '../i18n';
 
 async function http<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -106,7 +107,7 @@ export function useCollab() {
     },
     listSkills: () => http<{ skills: { name: string }[] }>('/api/collab/skills'),
     async sendGroupFile(groupId: string, fileName: string, blob: Blob) {
-      if (blob.size > 40 * 1024 * 1024) throw new Error('文件超过 40MB 上限');
+      if (blob.size > 40 * 1024 * 1024) throw new Error(t('collab.file.too_large'));
       const res = await fetch(`/api/collab/groups/${groupId}/files?name=${encodeURIComponent(fileName)}`, { method: 'POST', body: blob });
       if (!res.ok) {
         let msg = `HTTP ${res.status}`;
