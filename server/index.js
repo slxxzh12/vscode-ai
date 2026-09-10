@@ -20,19 +20,18 @@ import { createEventBus } from './collaboration/event-bus.js';
 import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { createScheduler } from './scheduler/index.js';
-import { loadWorkflowXml, defaultWorkflowFile } from './workflow-xml.js';
-import { defaultSettingsFile, readSettings, writeSettings } from './settings.js';
+import { defaultConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, DEFAULT_PORT } from './devflow-config.js';
 import { setLocale } from './i18n.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
-const workflowXmlFile = defaultWorkflowFile(path.join(__dirname, '..'));
-const settingsFile = defaultSettingsFile(path.join(__dirname, '..'));
-setLocale(readSettings(settingsFile).language);
+const configFile = defaultConfigFile(path.join(__dirname, '..'));
+ensureConfigFile(configFile);
 const HOST = process.env.DEVFLOW_HOST || '127.0.0.1';
-const PORT = Number(process.env.DEVFLOW_PORT || readSettings(settingsFile).port || 3001);
+const PORT = Number(process.env.DEVFLOW_PORT || loadDevflowConfig(configFile).server.port || DEFAULT_PORT);
+setLocale(loadDevflowConfig(configFile).server.language);
 
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
 process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
@@ -145,13 +144,19 @@ const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/workflows-xml' && req.method === 'GET') {
-    const workflows = loadWorkflowXml(workflowXmlFile);
+    const workflows = loadDevflowConfig(configFile).workflows;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ workflows }));
     return;
   }
+  if (url.pathname === '/api/agents' && req.method === 'GET') {
+    const c = loadDevflowConfig(configFile);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ default: c.agents.default, agents: c.agents.list }));
+    return;
+  }
   if (url.pathname === '/api/settings' && req.method === 'GET') {
-    const s = readSettings(settingsFile);
+    const s = loadDevflowConfig(configFile).server;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ settings: s, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT }));
     return;
@@ -164,7 +169,7 @@ const server = http.createServer(async (req, res) => {
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       const port = Number(body.port);
       if (!port || port < 1 || port > 65535) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid port' })); return; }
-      const next = writeSettings(settingsFile, { port });
+      const next = updateServerAttrs(configFile, { port });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ settings: next, needRestart: true }));
     });
@@ -181,7 +186,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: 'invalid language' }));
         return;
       }
-      writeSettings(settingsFile, { language: body.language });
+      updateServerAttrs(configFile, { language: body.language });
       setLocale(body.language);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ language: body.language }));
