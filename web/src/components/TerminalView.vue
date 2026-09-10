@@ -515,7 +515,7 @@ onBeforeUnmount(() => {
       <div class="newmodal">
         <header class="seth"><span>{{ $t('term.new_session') }}</span><button class="setx" @click="closeNew">×</button></header>
         <div class="newlist">
-          <button v-for="c in newChoices" :key="c.id" class="newitem" :class="{ on: newSelected === c.id }" @click="newSelected = c.id">
+          <button v-for="c in newChoices" :key="c.id" class="newitem" :class="{ on: newSelected === c.id }" @click="createNew(c.id)">
             <span class="ni-label">{{ c.label }}</span>
             <span class="ni-cmd">{{ c.cmd || $t('term.default_shell') }}</span>
           </button>
