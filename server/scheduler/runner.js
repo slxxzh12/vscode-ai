@@ -18,6 +18,7 @@ export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null 
     if (ext === '.ps1') return { bin: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', abs], cwd };
     if (ext === '.bat' || ext === '.cmd') return { bin: 'cmd.exe', args: ['/c', abs], cwd };
     if (ext === '.sh') return { bin: 'bash', args: [abs], cwd };
+    if (ext === '.py') return { bin: 'python', args: [abs], cwd };
     throw Object.assign(new Error('unsupported script type'), { code: 'unsupported-script' });
   }
   throw Object.assign(new Error('unknown task type'), { code: 'bad-task' });

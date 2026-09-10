@@ -30,6 +30,10 @@ export function useProjects() {
       const r = await res.json() as { project: ProjectInfo };
       return r.project;
     },
+    async pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string }> {
+      const res = await fetch('/api/projects/pick', { method: 'POST' });
+      return res.json();
+    },
     async tree(project: string, rel: string): Promise<TreeItem[]> {
       const r = await get<{ items: TreeItem[] }>(`/api/tree?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`);
       return r.items;

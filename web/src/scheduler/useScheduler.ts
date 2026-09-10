@@ -73,6 +73,9 @@ export function useScheduler(terminal?: TerminalLike) {
       state.aiCommands = d.commands || [];
     } catch { state.aiCommands = []; }
   }
+  function pickFile(): Promise<{ path?: string; content?: string | null; cancelled?: boolean; error?: string }> {
+    return api('POST', '/api/scheduler/pick-file');
+  }
 
   const unsubs: Array<() => void> = [];
   if (terminal) {
@@ -82,5 +85,5 @@ export function useScheduler(terminal?: TerminalLike) {
     unsubs.push(terminal.on(SchedulerS2C.SCHED_RUN_END, onAny));
   }
 
-  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadRuns, loadLog, loadAiCommands, dispose: () => unsubs.forEach((u) => u()) };
+  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadRuns, loadLog, loadAiCommands, pickFile, dispose: () => unsubs.forEach((u) => u()) };
 }

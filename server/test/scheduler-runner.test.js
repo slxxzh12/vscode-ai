@@ -40,6 +40,10 @@ test('buildSpawnSpec：shell / ai / script', () => {
   const ps = buildSpawnSpec({ type: 'script', script: { path: 'x/y.ps1' } }, { cwd: 'C:/p' });
   assert.deepEqual(ps.args.slice(0, 4), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File']);
   assert.ok(ps.args[4].endsWith(path.join('x', 'y.ps1')));
+
+  const py = buildSpawnSpec({ type: 'script', script: { path: 'x/y.py' } }, { cwd: 'C:/p' });
+  assert.equal(py.bin, 'python');
+  assert.ok(py.args[0].endsWith(path.join('x', 'y.py')));
 });
 
 test('buildSpawnSpec：不支持的脚本扩展名抛错', () => {

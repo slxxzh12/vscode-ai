@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { transformSync } from 'esbuild';
 import { collectGitChanges } from './git-log.js';
+import { pickFolder } from './native-dialog.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
 
@@ -93,6 +94,12 @@ export function createHttpApi({ projects, saveProjects = null }) {
       if (url.pathname === '/api/projects' && req.method === 'GET') {
         sendJson(res, 200, { projects: projects.listProjects() });
         return;
+      }
+      if (url.pathname === '/api/projects/pick' && req.method === 'POST') {
+        const r = await pickFolder();
+        if (r.error) return sendJson(res, 200, { error: r.error });
+        if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
+        return sendJson(res, 200, { path: r.path });
       }
       if (url.pathname === '/api/projects' && req.method === 'POST') {
         let body;

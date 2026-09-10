@@ -199,10 +199,11 @@ function selectProject(id: string) {
   if (id) touchRecent(id);
 }
 async function addFolder() {
-  const p = window.prompt(t('top.add_folder_prompt'));
-  if (!p || !p.trim()) return;
   try {
-    const proj = await projectsApi.add(p.trim());
+    const r = await projectsApi.pickFolder();
+    if (r.error) { alert(t('top.pick_unsupported')); return; }
+    if (r.cancelled || !r.path) return;
+    const proj = await projectsApi.add(r.path);
     await loadProjects();
     if (proj?.id) selectProject(proj.id);
   } catch (e) { alert(t('top.add_failed', { msg: (e as Error).message || String(e) })); }

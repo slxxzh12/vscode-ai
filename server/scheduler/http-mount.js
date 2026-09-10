@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { listAiCommands } from './ai-commands.js';
+import { pickFile } from '../native-dialog.js';
 
 const LOG_TAIL_MAX = 256 * 1024;
 
@@ -82,6 +83,14 @@ export function createSchedulerMount({ engine, store, logger = console }) {
       }
       if (p === '/api/scheduler/ai-commands' && req.method === 'GET') {
         return sendJson(res, 200, { commands: listAiCommands() });
+      }
+      if (p === '/api/scheduler/pick-file' && req.method === 'POST') {
+        const r = await pickFile();
+        if (r.error) return sendJson(res, 200, { error: r.error });
+        if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
+        let content = null;
+        try { if (/\.md$/i.test(r.path)) content = fs.readFileSync(r.path, 'utf8').slice(0, 65536); } catch { /* ignore */ }
+        return sendJson(res, 200, { path: r.path, content });
       }
       return sendJson(res, 404, { error: 'not found' });
     } catch (err) {

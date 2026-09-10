@@ -40,6 +40,27 @@ function openEdit(task: TaskView) {
   }));
   showEditor.value = true;
 }
+function extOf(p: string): string { const i = p.lastIndexOf('.'); return i >= 0 ? p.slice(i).toLowerCase() : ''; }
+function dirOf(p: string): string { const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')); return i > 0 ? p.slice(0, i) : p; }
+async function pickCommandFile() {
+  state.error = '';
+  try {
+    const r = await sched.pickFile();
+    if (r.error) { state.error = t('sched.pick_unsupported'); return; }
+    if (r.cancelled || !r.path) return;
+    const ext = extOf(r.path);
+    form.value.cwd = dirOf(r.path);
+    if (ext === '.md') {
+      form.value.type = 'ai';
+      form.value.ai = { source: 'prompt', commandName: '', prompt: r.content || '' };
+    } else if (['.py', '.bat', '.cmd', '.ps1', '.sh'].includes(ext)) {
+      form.value.type = 'script';
+      form.value.script = { path: r.path };
+    } else {
+      state.error = t('sched.unsupported_file', { ext: ext || '?' });
+    }
+  } catch (e: any) { state.error = String(e?.message || e); }
+}
 async function save() {
   const body = JSON.parse(JSON.stringify(form.value));
   if (!body.projectId) body.projectId = null;
@@ -147,6 +168,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <option value="script">{{ $t('sched.type.script') }}</option>
           </select>
         </label>
+        <button class="pickfile" @click="pickCommandFile">{{ $t('sched.pick_file') }}</button>
         <template v-if="form.type === 'shell'">
           <label>{{ $t('sched.field.command') }} <textarea v-model="form.command" rows="3" /></label>
         </template>
@@ -255,6 +277,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .modal input, .modal select, .modal textarea { background: var(--bg4, var(--bg5)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 6px; font-family: inherit; }
 .wd { color: var(--tx3); font-size: 12px; }
 .wditem { display: inline-flex; flex-direction: row; align-items: center; gap: 2px; margin-right: 6px; }
+.pickfile { align-self: flex-start; background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; }
 .modalacts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .histwrap { display: flex; gap: 8px; min-height: 260px; }
 .histlist { width: 220px; overflow: auto; border-right: 1px solid var(--bd); }
