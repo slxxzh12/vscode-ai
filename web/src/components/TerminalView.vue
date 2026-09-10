@@ -511,16 +511,15 @@ onBeforeUnmount(() => {
             <span v-if="gi < stageGroups.length - 1" class="fgap" />
           </template>
         </div>
-        <div v-if="chips.length" class="dotbar" title="该阶段常用提示：悬停查看，点击填入输入框">
+        <div v-if="chips.length" class="chipbar" title="该阶段常用提示：点击填入输入框">
           <span class="chips-label">常用</span>
           <button
             v-for="(p, i) in chips"
             :key="i"
-            class="pdot"
+            class="chip"
             :class="{ on: composerText === p }"
-            :title="p"
             @click="composerText = p"
-          >{{ i + 1 }}</button>
+          ><span class="cdot" />{{ p }}</button>
         </div>
         <div class="cwrap">
           <textarea
@@ -567,11 +566,13 @@ onBeforeUnmount(() => {
 .stage.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .flowline { flex: 1; height: 2px; min-width: 10px; background: linear-gradient(90deg, var(--ac2), var(--bd3)); margin: 0 4px; border-radius: 2px; }
 .cwrap { position: relative; display: flex; align-items: stretch; gap: 8px; flex: 1; min-height: 0; }
-.dotbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: none; }
-.chips-label { color: var(--tx3); font-size: 11px; flex: none; margin-right: 2px; }
-.pdot { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--bd); background: none; color: var(--tx3); font-size: 10px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-.pdot:hover { border-color: var(--ac2); color: var(--ac2); background: color-mix(in srgb, var(--ac) 10%, transparent); }
-.pdot.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
+.chipbar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: none; max-height: 84px; overflow-y: auto; }
+.chips-label { color: var(--tx3); font-size: 11px; flex: none; margin-right: 2px; line-height: 20px; }
+.chip { display: inline-flex; align-items: flex-start; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; text-align: left; white-space: normal; max-width: 100%; }
+.chip:hover { border-color: var(--ac2); color: var(--ac2); }
+.chip.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
+.cdot { width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
+.chip.on .cdot { background: var(--onac); }
 .cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cinput::placeholder { color: var(--tx3); }
