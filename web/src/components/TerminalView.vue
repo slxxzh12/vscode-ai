@@ -549,16 +549,16 @@ onBeforeUnmount(() => {
             @click="composerText = p"
           ><span class="cdot" />{{ p }}</button>
         </div>
-        <div class="qtool" @mousedown.stop>
-          <button class="qtbtn" title="查看输入历史" @click="openHistory">🕘 历史</button>
-        </div>
         <div class="cwrap">
-          <textarea
-            v-model="composerText"
-            class="cinput"
-            placeholder="输入内容，回车送入上方当前会话；Shift+Enter 换行"
-            @keydown="onComposerKey"
-          />
+          <div class="cinputwrap">
+            <textarea
+              v-model="composerText"
+              class="cinput"
+              placeholder="输入内容，回车送入上方当前会话；Shift+Enter 换行"
+              @keydown="onComposerKey"
+            />
+            <button class="chist" title="查看输入历史" @mousedown.stop @click="openHistory">🕘 历史</button>
+          </div>
           <button class="csend" @click="submitComposer">发送</button>
         </div>
       </template>
@@ -582,9 +582,8 @@ onBeforeUnmount(() => {
 .cstart { padding: 2px 14px; }
 .cbar .gear { margin-left: 4px; }
 .cbar .asel { height: 20px; padding: 0 6px; }
-.qtool { display: flex; align-items: center; gap: 6px; flex: none; }
-.qtbtn { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 1px 10px; line-height: 18px; cursor: pointer; font-size: 11px; }
-.qtbtn:hover, .qtbtn.on { border-color: var(--ac2); color: var(--ac2); }
+.chist { position: absolute; top: 6px; right: 8px; z-index: 2; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx3); border-radius: 6px; padding: 1px 8px; line-height: 18px; cursor: pointer; font-size: 11px; }
+.chist:hover { border-color: var(--ac2); color: var(--ac2); }
 .cmin { margin-left: auto; background: none; border: 1px solid transparent; color: var(--tx2); border-radius: 4px; width: 28px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; }
 .cmin:hover { background: color-mix(in srgb, var(--tx1) 14%, transparent); color: var(--tx1); }
 .wfbtns { display: flex; gap: 0; flex: none; align-items: stretch; border-bottom: 2px solid transparent; }
@@ -600,6 +599,7 @@ onBeforeUnmount(() => {
 .stage.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .flowline { flex: 1; height: 2px; min-width: 10px; background: linear-gradient(90deg, var(--ac2), var(--bd3)); margin: 0 4px; border-radius: 2px; }
 .cwrap { position: relative; display: flex; align-items: stretch; gap: 8px; flex: 1; min-height: 0; }
+.cinputwrap { position: relative; flex: 1; min-width: 0; display: flex; }
 .chipbar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: none; max-height: 84px; overflow-y: auto; }
 .chips-label { color: var(--tx3); font-size: 11px; flex: none; margin-right: 2px; line-height: 20px; }
 .chip { display: inline-flex; align-items: flex-start; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; text-align: left; white-space: normal; max-width: 100%; }
@@ -607,7 +607,7 @@ onBeforeUnmount(() => {
 .chip.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .cdot { width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
 .chip.on .cdot { background: var(--onac); }
-.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
+.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 86px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cinput::placeholder { color: var(--tx3); }
 .csend { background: var(--ac); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
