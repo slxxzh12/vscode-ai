@@ -2,8 +2,9 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
-import type { CollabFriend, CollabMember } from './types';
+import type { CollabFriend, CollabMember, CollabGroup } from './types';
 import GroupChatView from './GroupChatView.vue';
+import JoinInviteCard from './JoinInviteCard.vue';
 
 const props = defineProps<{ collab: CollabApi }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
@@ -33,6 +34,11 @@ const myAllow = computed(() => props.collab.allowlistState.value);
 const activeGroup = computed(() => groups.value.find((g) => g.id === activeGroupId.value) || null);
 const activeFriend = computed(() => friends.value.find((f) => f.machineId === activeFriendId.value) || null);
 const myRole = computed(() => activeGroup.value?.members.find((m) => m.machineId === me.value)?.role || null);
+const canInvite = computed(() => myRole.value === 'owner' || myRole.value === 'admin');
+const inviteUrl = ref('');
+const inviteErr = ref('');
+const pasteInvite = ref('');
+const pasteToken = ref('');
 
 watch(groups, (gs) => {
   if (activeFriendId.value) return;
@@ -80,6 +86,37 @@ async function dissolveGroup() {
   if (confirm(`解散群「${g.name}」？`)) { await props.collab.deleteGroup(g.id); await props.collab.refresh(); }
 }
 function roleLabel(r: string) { return r === 'owner' ? '群主' : r === 'admin' ? '管理员' : '成员'; }
+async function genInviteLink() {
+  const g = activeGroup.value; if (!g) return;
+  inviteErr.value = '';
+  try {
+    const r = await props.collab.createInviteLink(g.id, window.location.origin);
+    inviteUrl.value = (r as { url?: string }).url || '';
+  } catch (e) { inviteErr.value = String((e as Error).message || e); }
+}
+async function resetInviteLink() {
+  const g = activeGroup.value; if (!g) return;
+  if (!confirm('重置邀请链接？旧链接将立即失效')) return;
+  inviteErr.value = '';
+  try { await props.collab.revokeInvites(g.id); await genInviteLink(); }
+  catch (e) { inviteErr.value = String((e as Error).message || e); }
+}
+async function copyInvite() {
+  if (!inviteUrl.value) return;
+  try { await navigator.clipboard.writeText(inviteUrl.value); } catch { /* ignore */ }
+}
+function extractToken(s: string): string {
+  const t = s.trim();
+  const m = t.match(/[?&]invite=([^&\s]+)/);
+  if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
+  return t;
+}
+function openPaste() { const t = pasteInvite.value.trim(); if (t) pasteToken.value = extractToken(t); }
+async function onPasteJoined(g: CollabGroup | undefined) {
+  pasteToken.value = ''; pasteInvite.value = '';
+  await props.collab.refresh();
+  if (g) { activeGroupId.value = g.id; activeFriendId.value = null; }
+}
 async function addAllowPrefix() { if (newPrefix.value.trim()) { await props.collab.addAllow(newPrefix.value.trim()); newPrefix.value = ''; } }
 async function delAllowPrefix(p: string) { await props.collab.removeAllow(p); }
 
@@ -130,6 +167,10 @@ async function inviteFriendToGroup(friendId: string) {
           <input v-model="addHost" placeholder="好友 IP" class="ip" @keyup.enter="addFriend" />
           <input v-model.number="addPort" type="number" placeholder="端口" class="pt" @keyup.enter="addFriend" />
           <button title="加好友" @click="addFriend">＋友</button>
+        </div>
+        <div class="addrow">
+          <input v-model="pasteInvite" placeholder="粘贴邀请链接/邀请码" @keyup.enter="openPaste" />
+          <button title="预览邀请" @click="openPaste">预览</button>
         </div>
         <div v-if="ferr" class="err">{{ ferr }}</div>
       </div>
@@ -188,6 +229,15 @@ async function inviteFriendToGroup(friendId: string) {
             <button title="邀请入群" @click="inviteMemberByMachineId">＋</button>
           </div>
           <div v-if="merr" class="merr">{{ merr }}</div>
+          <div v-if="canInvite" class="invlink">
+            <button class="genbtn" @click="genInviteLink">生成邀请链接</button>
+            <div v-if="inviteUrl" class="linkrow">
+              <input :value="inviteUrl" readonly @focus="($event.target as HTMLInputElement).select()" />
+              <button @click="copyInvite">复制</button>
+            </div>
+            <button v-if="inviteUrl" class="ghost resetlink" @click="resetInviteLink">重置链接</button>
+            <div v-if="inviteErr" class="merr">{{ inviteErr }}</div>
+          </div>
           <div class="mlist">
             <div v-for="m in activeGroup.members" :key="m.machineId" class="mrow" :class="{ me: m.machineId === me }">
               <span class="mav" :class="m.role">{{ m.username.charAt(0) || '?' }}</span>
@@ -226,6 +276,10 @@ async function inviteFriendToGroup(friendId: string) {
         <div class="ph">选择左侧好友或群组开始吧</div>
       </div>
     </section>
+
+    <div v-if="pasteToken" class="joinmask" @click.self="pasteToken = ''">
+      <JoinInviteCard :collab="collab" :token="pasteToken" @joined="onPasteJoined" @cancel="pasteToken = ''" />
+    </div>
   </div>
 </template>
 
@@ -299,4 +353,11 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .frow code { color: var(--tx1); font-family: Consolas, monospace; }
 .invite-to { display: flex; align-items: center; gap: 10px; margin-top: 18px; font-size: 13px; color: var(--tx2); }
 .invite-to select { flex: 1; }
+.invlink { padding: 4px 14px 10px; display: flex; flex-direction: column; gap: 6px; }
+.invlink .genbtn { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+.linkrow { display: flex; gap: 6px; }
+.linkrow input { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 4px 6px; font-size: 11px; box-sizing: border-box; }
+.linkrow button { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+.resetlink { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+.joinmask { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
 </style>
