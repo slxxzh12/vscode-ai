@@ -6,6 +6,7 @@ import { CollabPeer } from '@devflow/shared/collab';
 import { CollabStore } from './store.js';
 import { loadIdentity, toPublicProfile } from './identity.js';
 import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
+import { makeInviteToken, parseInviteToken, INVITE_TTL_MS } from './invite.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
 import { buildZip } from './zip.js';
@@ -279,7 +280,7 @@ export class CollabEngine {
   async createGroup(name) {
     const g = {
       id: crypto.randomUUID(), name, ownerId: this.pub.machineId, createdAt: Date.now(),
-      members: [{ ...this.pub, role: 'owner' }],
+      members: [{ ...this.pub, role: 'owner' }], inviteEpoch: 0,
     };
     this.store.addGroup(g);
     this._emit('synced', {});
@@ -376,6 +377,35 @@ export class CollabEngine {
     await this._broadcastMemberSync(g);
     this._emit('synced', {});
     return { code: 'kicked' };
+  }
+
+  // ---- 邀请链接 ----
+  _inviteRole(groupId) {
+    const g = this.store.findGroup(groupId);
+    const me = g && g.members.find((m) => m.machineId === this.pub.machineId);
+    if (!g || !me) return { code: 'not-member', group: null };
+    if (me.role !== 'owner' && me.role !== 'admin') return { code: 'forbidden', group: g };
+    return { code: 'ok', group: g };
+  }
+  createInviteLink({ groupId, ttlMs } = {}) {
+    const r = this._inviteRole(groupId);
+    if (r.code !== 'ok') return { code: r.code };
+    const exp = Date.now() + (typeof ttlMs === 'number' && ttlMs > 0 ? ttlMs : INVITE_TTL_MS);
+    const jti = crypto.randomUUID();
+    const token = makeInviteToken(this.identity.privateKey, {
+      groupId: r.group.id, groupName: r.group.name, inviter: this.pub,
+      epoch: r.group.inviteEpoch || 0, exp, jti,
+    });
+    return { code: 'ok', token, expiresAt: exp, jti };
+  }
+  async revokeInvites(groupId) {
+    const r = this._inviteRole(groupId);
+    if (r.code !== 'ok') return { code: r.code };
+    r.group.inviteEpoch = (r.group.inviteEpoch || 0) + 1;
+    this.store.saveGroup(r.group);
+    await this._broadcastMemberSync(r.group);
+    this._emit('synced', {});
+    return { code: 'ok', epoch: r.group.inviteEpoch };
   }
 
   // ---- skill 分发 ----
