@@ -3,6 +3,7 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import type { useTerminal } from '../useTerminal';
 import type { RunSnapshot, RunStep, WorkflowTemplate } from '@devflow/shared';
 import { C2S, S2C } from '@devflow/shared';
+import { t } from '../i18n';
 
 const props = defineProps<{ terminal: ReturnType<typeof useTerminal> }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
@@ -29,7 +30,7 @@ onMounted(() => props.terminal.send(C2S.WF_LIST));
 function activeSession() { return props.terminal.state.activeSessionId; }
 
 async function runWf(w: WorkflowTemplate) {
-  if (!activeSession()) { alert('请先新建/选中一个终端会话'); return; }
+  if (!activeSession()) { alert(t('wf.select_session')); return; }
   busy.value = true;
   run.value = null;
   props.terminal.send(C2S.WF_RUN, { workflowId: w.id, sessionId: activeSession() });
@@ -44,8 +45,8 @@ function abort() { if (run.value) props.terminal.send(C2S.WF_ABORT, { runId: run
     <div v-if="run" class="run">
       <div class="run-title">{{ run.workflowName }}
         <span class="tag" :class="run.status">{{ run.status }}</span>
-        <button v-if="run.status === 'paused' || run.status === 'running'" class="btn primary" @click="next">下一步 ▶</button>
-        <button v-if="run.status === 'paused' || run.status === 'running'" class="btn" @click="abort">中止</button>
+        <button v-if="run.status === 'paused' || run.status === 'running'" class="btn primary" @click="next">{{ $t('wf.next') }}</button>
+        <button v-if="run.status === 'paused' || run.status === 'running'" class="btn" @click="abort">{{ $t('wf.abort') }}</button>
       </div>
       <div v-for="(s, i) in run.steps" :key="s.id" class="step" :class="{ cur: i === run.currentIndex }">
         <span class="ic" :class="s.status">{{ icon(s.status) }}</span>
@@ -57,11 +58,11 @@ function abort() { if (run.value) props.terminal.send(C2S.WF_ABORT, { runId: run
     <div v-else class="list">
       <div v-for="w in workflows" :key="w.id" class="wf" @click="runWf(w)">
         <b>{{ w.name }}</b>
-        <span class="meta">{{ w.steps.length }} 步 · {{ w.steps.filter((x) => x.advance === 'auto').length }} 自动 / {{ w.steps.filter((x) => x.advance === 'manual').length }} 手动</span>
+        <span class="meta">{{ $t('wf.steps_meta', { steps: w.steps.length, auto: w.steps.filter((x) => x.advance === 'auto').length, manual: w.steps.filter((x) => x.advance === 'manual').length }) }}</span>
       </div>
-      <div v-if="workflows.length === 0" class="empty">无模板（编辑 server/workflows.json）</div>
+      <div v-if="workflows.length === 0" class="empty">{{ $t('wf.empty') }}</div>
     </div>
-    <div v-if="terminal.state.status !== 'open'" class="offline">连接已断开</div>
+    <div v-if="terminal.state.status !== 'open'" class="offline">{{ $t('wf.offline') }}</div>
   </div>
 </template>
 

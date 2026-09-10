@@ -220,4 +220,10 @@ export const messages = {
   'git.status.deleted': '删除',
   'git.status.renamed': '重命名',
   'markdown.mermaid_error': 'Mermaid 渲染失败：{msg}',
+  'wf.select_session': '请先新建/选中一个终端会话',
+  'wf.next': '下一步 ▶',
+  'wf.abort': '中止',
+  'wf.steps_meta': '{steps} 步 · {auto} 自动 / {manual} 手动',
+  'wf.empty': '无模板（编辑 server/workflows.json）',
+  'wf.offline': '连接已断开',
 };

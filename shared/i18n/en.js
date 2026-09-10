@@ -220,4 +220,10 @@ export const messages = {
   'git.status.deleted': 'Deleted',
   'git.status.renamed': 'Renamed',
   'markdown.mermaid_error': 'Mermaid render failed: {msg}',
+  'wf.select_session': 'Create or select a terminal session first',
+  'wf.next': 'Next ▶',
+  'wf.abort': 'Abort',
+  'wf.steps_meta': '{steps} steps · {auto} auto / {manual} manual',
+  'wf.empty': 'No templates (edit server/workflows.json)',
+  'wf.offline': 'Disconnected',
 };
