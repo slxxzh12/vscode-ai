@@ -1,0 +1,119 @@
+import crypto from 'node:crypto';
+import { computeNextRun } from './schedule.js';
+import { buildSpawnSpec, createRunner } from './runner.js';
+
+const TICK_MS = 1000;
+const runIdGen = () => 'r_' + crypto.randomBytes(4).toString('hex');
+
+function timeoutFor(task) {
+  const env = Number(process.env.DEVFLOW_SCHED_TIMEOUT_MS);
+  if (Number.isFinite(env) && env >= 0) return env;
+  return task.type === 'ai' ? 1800000 : 600000;
+}
+
+export function createEngine({
+  store, runner = createRunner(), logger = console,
+  now = () => Date.now(), tickMs = TICK_MS,
+  maxConcurrent = Number(process.env.DEVFLOW_SCHED_MAX_CONCURRENT) || 3,
+} = {}) {
+  const nextAt = new Map();
+  const taskRuns = new Map();
+  const listeners = new Set();
+  let timer = null;
+  let projectResolver = () => null;
+  let aiPromptLoader = null;
+
+  function emit(evt, payload) { for (const cb of listeners) { try { cb(evt, payload); } catch (e) { logger.error('sched listener', e); } } }
+  function onEvent(cb) { listeners.add(cb); return () => listeners.delete(cb); }
+  function setProjectResolver(fn) { projectResolver = fn; }
+  function setAiPromptLoader(fn) { aiPromptLoader = fn; }
+
+  function scheduleTask(task, from = now()) {
+    if (!task.enabled) { nextAt.delete(task.id); return null; }
+    const n = computeNextRun(task.schedule, from);
+    if (n == null) nextAt.delete(task.id); else nextAt.set(task.id, n);
+    return n;
+  }
+  function nextRunAtOf(id) { return nextAt.has(id) ? nextAt.get(id) : null; }
+  function refreshAll() { for (const t of store.listTasks()) scheduleTask(t); }
+  function reschedule(task) { scheduleTask(task); }
+  function notifyTasksChanged() { emit('tasks-changed', {}); }
+
+  function finishImmediate(task, trigger, message) {
+    const id = runIdGen();
+    const logFile = store.logFileFor(task.id, id);
+    const run = { id, taskId: task.id, status: 'failed', trigger, startedAt: now(), finishedAt: now(), exitCode: null, durationMs: 0, logFile, error: message };
+    store.addRun(run);
+    emit('run-end', { run: { ...run } });
+    return run;
+  }
+
+  function startRun(task, trigger) {
+    if (taskRuns.has(task.id)) return { error: 'already-running' };
+    if (runner.count() >= maxConcurrent) return { error: 'max-concurrent' };
+    const cwd = task.cwd || projectResolver(task.projectId) || process.cwd();
+    let aiPrompt = null;
+    if (task.type === 'ai') {
+      aiPrompt = task.ai.source === 'command' ? (aiPromptLoader ? aiPromptLoader(task.ai.commandName) : '') : (task.ai.prompt || '');
+    }
+    let spec;
+    try { spec = buildSpawnSpec(task, { cwd, aiPrompt }); }
+    catch (e) { return { run: finishImmediate(task, trigger, String(e.message)) }; }
+    const id = runIdGen();
+    const logFile = store.logFileFor(task.id, id);
+    const run = { id, taskId: task.id, status: 'running', trigger, startedAt: now(), finishedAt: null, exitCode: null, durationMs: null, logFile, error: null };
+    store.addRun(run);
+    taskRuns.set(task.id, id);
+    emit('run-start', { run: { ...run } });
+    runner.run({ runId: id, spec, logPath: store.logPath(logFile), timeoutMs: timeoutFor(task) })
+      .then((res) => {
+        const status = res.spawnError ? 'failed' : res.timedOut ? 'timeout' : (res.exitCode === 0 ? 'success' : 'failed');
+        complete(task, id, status, res);
+      })
+      .catch((e) => complete(task, id, 'failed', { exitCode: null, durationMs: 0, error: String(e && e.message || e) }));
+    return { run: { ...run } };
+  }
+
+  function complete(task, id, status, res) {
+    taskRuns.delete(task.id);
+    const patch = { status, finishedAt: now(), exitCode: res.exitCode ?? null, durationMs: res.durationMs ?? null, error: res.error || null };
+    const run = store.updateRun(id, patch);
+    const fresh = store.getTask(task.id);
+    if (fresh) scheduleTask(fresh, now());
+    emit('run-end', { run: run ? { ...run } : { id, taskId: task.id, ...patch } });
+  }
+
+  function manualRun(taskId) {
+    const task = store.getTask(taskId);
+    if (!task) return { error: 'not-found' };
+    return startRun(task, 'manual');
+  }
+  function stop(taskId) {
+    const rid = taskRuns.get(taskId);
+    if (!rid) return false;
+    return runner.stop(rid);
+  }
+  function tick() {
+    const t = now();
+    for (const task of store.listTasks()) {
+      if (!task.enabled) continue;
+      if (!nextAt.has(task.id)) { scheduleTask(task, t); continue; }
+      if (nextAt.get(task.id) > t) continue;
+      scheduleTask(task, t);
+      if (taskRuns.has(task.id)) continue;
+      startRun(task, 'schedule');
+    }
+  }
+  function start() {
+    refreshAll();
+    if (!timer) { timer = setInterval(tick, tickMs); if (timer.unref) timer.unref(); }
+  }
+  function stopAll() { if (timer) { clearInterval(timer); timer = null; } }
+
+  return {
+    start, stopAll, tick, onEvent, manualRun, stop, scheduleTask, reschedule,
+    nextRunAtOf, refreshAll, notifyTasksChanged, setProjectResolver, setAiPromptLoader,
+    isRunning: (id) => taskRuns.has(id),
+    runIdOf: (id) => (taskRuns.has(id) ? taskRuns.get(id) : null),
+  };
+}
