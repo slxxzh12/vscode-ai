@@ -201,6 +201,32 @@ const wfDefs = ref<WfDef[]>(FALLBACK_WF);
 const composerText = ref('');
 function fillPrompt(text: string) { composerText.value = text; }
 
+// —— 输入历史（按节点公钥指纹持久化）——
+const MSG_HISTORY_KEY = 'devflow-msg-history';
+const HISTORY_MAX = 200;
+let histKey = `${MSG_HISTORY_KEY}-none`;
+const history = ref<string[]>([]);
+const histOpen = ref(false);
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(histKey);
+    const arr = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(arr)) history.value = arr.filter((x) => typeof x === 'string');
+  } catch { /* ignore */ }
+}
+function saveHistory() {
+  try { localStorage.setItem(histKey, JSON.stringify(history.value.slice(0, HISTORY_MAX))); } catch { /* ignore */ }
+}
+function pushHistory(text: string) {
+  const t = text.trim();
+  if (!t) return;
+  if (history.value[0] === t) return;                 // 连续重复不记录
+  history.value = [t, ...history.value.filter((x) => x !== t)].slice(0, HISTORY_MAX);
+  saveHistory();
+}
+function useHistory(h: string) { composerText.value = h; histOpen.value = false; }
+function clearHistory() { history.value = []; saveHistory(); }
+
 // 底部框高度（可上下拖动）+ 最小化
 const COMPOSER_H_KEY = 'devflow-composer-h';
 const composerH = ref(240);
@@ -288,6 +314,7 @@ function submitComposer() {
   const t = composerText.value.trim();
   if (!t) return;
   composerText.value = '';
+  pushHistory(t);
   sendToActive(t);
 }
 function onComposerKey(e: KeyboardEvent) {
@@ -421,7 +448,9 @@ onMounted(async () => {
   window.addEventListener('df-open-agent-settings', onOpenSettings);
   const fp = await nodeFp();
   cfgKey = `devflow-agent-cfg-${fp}`;
+  histKey = `${MSG_HISTORY_KEY}-${fp}`;
   loadCfg();
+  loadHistory();
   cfgLoaded = true;
   loadWorkflows();
   loadComposerH();
@@ -486,6 +515,22 @@ onBeforeUnmount(() => {
         </footer>
       </div>
     </div>
+    <div v-if="histOpen" class="setmask" @click.self="histOpen = false">
+      <div class="histmodal">
+        <header class="seth">
+          <span>输入历史（{{ history.length }}）</span>
+          <button class="setx" @click="histOpen = false">×</button>
+        </header>
+        <div class="histbody">
+          <div v-if="!history.length" class="histempty">暂无历史消息</div>
+          <button v-for="(h, i) in history" :key="i" class="histitem" :title="h" @click="useHistory(h)">{{ h }}</button>
+        </div>
+        <footer class="setf">
+          <button class="ghostcfg" :disabled="!history.length" @click="clearHistory">清空历史</button>
+          <button class="ago" @click="histOpen = false">关闭</button>
+        </footer>
+      </div>
+    </div>
     <div class="tabstrip">
       <div v-for="t in center.tabs.value" :key="t.id" class="tab"
         :class="{ active: center.activeId.value === t.id }" @click="onTabClick(t.id)">
@@ -510,6 +555,7 @@ onBeforeUnmount(() => {
         <div class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
         </div>
+        <button class="chist" :class="{ on: histOpen }" title="查看输入历史" @mousedown.stop @click="histOpen = true">🕘 历史</button>
         <button class="cmin" :title="composerMin ? '展开' : '最小化'" @mousedown.stop @click="composerMin = !composerMin">{{ composerMin ? '▲' : '▼' }}</button>
       </div>
       <template v-if="!composerMin">
@@ -565,7 +611,9 @@ onBeforeUnmount(() => {
 .cstart { padding: 2px 14px; }
 .cbar .gear { margin-left: 4px; }
 .cbar .asel { height: 20px; padding: 0 6px; }
-.cmin { margin-left: auto; }
+.chist { margin-left: auto; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 0 10px; line-height: 18px; cursor: pointer; font-size: 11px; }
+.chist:hover, .chist.on { border-color: var(--ac2); color: var(--ac2); }
+.cmin { margin-left: 6px; }
 .wfbtns { display: flex; gap: 0; flex: none; align-items: stretch; border-bottom: 2px solid transparent; }
 .wfbtn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--tx3); padding: 2px 12px 3px; cursor: pointer; font-size: 11px; }
 .wfbtn:hover { color: var(--tx1); }
@@ -618,6 +666,11 @@ onBeforeUnmount(() => {
 .newitem:hover { border-color: var(--ac2); background: color-mix(in srgb, var(--ac) 8%, transparent); }
 .ni-label { font-size: 13px; font-weight: 600; }
 .ni-cmd { color: var(--tx6); font-family: Consolas, monospace; font-size: 11px; }
+.histmodal { width: 620px; max-width: 92vw; max-height: 80vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
+.histbody { padding: 10px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.histitem { background: none; border: 1px solid var(--bd); color: var(--tx1); border-radius: 6px; padding: 8px 10px; cursor: pointer; text-align: left; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.histitem:hover { border-color: var(--ac2); background: color-mix(in srgb, var(--ac) 8%, transparent); }
+.histempty { color: var(--tx3); font-size: 12px; text-align: center; padding: 24px 0; }
 .tabstrip { display: flex; align-items: center; gap: 2px; background: var(--bg2); border-bottom: 1px solid var(--bd); padding: 0 8px; height: 32px; overflow-x: auto; flex: none; }
 .tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--tx2); padding: 0 10px; height: 100%; cursor: pointer; border-right: 1px solid var(--bd); flex: none; max-width: 220px; }
 .tab.active { background: var(--bg3); color: var(--tx1); }
