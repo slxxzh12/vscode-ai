@@ -6,16 +6,17 @@ import { EMPTY_SNAPSHOT } from './types';
 import type { useTerminal } from '../useTerminal';
 import ContactsView from './ContactsView.vue';
 import TasksView from './TasksView.vue';
+import { t } from '../i18n';
 
 type CollabTab = 'contacts' | 'tasks';
 const props = defineProps<{ terminal: ReturnType<typeof useTerminal> }>();
 const collab = useCollab();
 const snap = computed(() => collab.state.value ?? EMPTY_SNAPSHOT);
 const tab = ref<CollabTab>('contacts');
-const tabs = [
-  { id: 'contacts' as const, label: '联系人' },
-  { id: 'tasks' as const, label: '任务' },
-];
+const tabs = computed(() => [
+  { id: 'contacts' as const, label: t('collab.tabs.contacts') },
+  { id: 'tasks' as const, label: t('collab.tabs.tasks') },
+]);
 const pendingCount = computed(() => snap.value.pendingFriends.length + snap.value.pendingInvites.length + snap.value.skillsInbox.filter((i) => i.status === 'received').length);
 
 let unsubs: (() => void)[] = [];
@@ -36,7 +37,7 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
 <template>
   <div class="cv">
     <header class="topbar">
-      <span class="title">👥 通讯录</span>
+      <span class="title">{{ $t('collab.title') }}</span>
       <nav class="tabs">
         <button v-for="t in tabs" :key="t.id" class="tab" :class="{ on: tab === t.id }" @click="tab = t.id">
           {{ t.label }}<span v-if="t.id === 'contacts' && pendingCount" class="badge">{{ pendingCount }}</span>
