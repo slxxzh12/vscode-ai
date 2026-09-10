@@ -22,12 +22,15 @@ import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { createScheduler } from './scheduler/index.js';
 import { loadWorkflowXml, defaultWorkflowFile } from './workflow-xml.js';
 import { defaultSettingsFile, readSettings, writeSettings } from './settings.js';
+import { setLocale } from './i18n.js';
+import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
 const workflowXmlFile = defaultWorkflowFile(path.join(__dirname, '..'));
 const settingsFile = defaultSettingsFile(path.join(__dirname, '..'));
+setLocale(readSettings(settingsFile).language);
 const HOST = process.env.DEVFLOW_HOST || '127.0.0.1';
 const PORT = Number(process.env.DEVFLOW_PORT || readSettings(settingsFile).port || 3001);
 
@@ -164,6 +167,24 @@ const server = http.createServer(async (req, res) => {
       const next = writeSettings(settingsFile, { port });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ settings: next, needRestart: true }));
+    });
+    return;
+  }
+  if (url.pathname === '/api/settings/language' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      if (!LOCALES.includes(body.language)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'invalid language' }));
+        return;
+      }
+      writeSettings(settingsFile, { language: body.language });
+      setLocale(body.language);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ language: body.language }));
     });
     return;
   }
