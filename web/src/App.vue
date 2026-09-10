@@ -252,13 +252,14 @@ function onInviteJoined(_g?: CollabGroup) {
     <header class="top">
       <span class="logo">◈ vscode-ai</span>
       <button class="addproj" :title="$t('top.add_folder')" @click="addFolder">＋</button>
-      <span class="proj">{{ projectName }}</span>
-      <span v-if="displayPath" class="projpath" :title="displayPath">{{ displayPath }}</span>
       <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="$t('top.recent_folders')" @change="(e: any) => selectProject(e.target.value)">
         <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id">
           {{ it.project.name }}{{ it.ts ? ' · ' + fmtRecent(it.ts) : '' }}
         </option>
       </select>
+      <span class="selltip">{{ $t('top.recent_folders') }}</span>
+      <span class="proj">{{ projectName }}</span>
+      <span v-if="displayPath" class="projpath" :title="displayPath">{{ displayPath }}</span>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
       <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
@@ -318,6 +319,7 @@ function onInviteJoined(_g?: CollabGroup) {
 .proj { color: var(--tx2); font-size: 12px; white-space: nowrap; }
 .projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proj-sel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; max-width: 320px; }
+.selltip { color: var(--tx6); font-size: 11px; white-space: nowrap; }
 .spacer { flex: 1; }
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .theme-btn:hover { border-color: var(--ac2); }
