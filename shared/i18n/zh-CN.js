@@ -343,6 +343,7 @@ export const messages = {
   'term.history': '🕘 历史',
   'term.new_session_btn': '＋ 新建会话',
   'term.create': '创建',
+  'term.auto_start_in': '{n} 秒后自动创建选中项',
   'term.kill_confirm': '结束该会话？',
   'term.disconnected': '-- 已断开，正在重连 --',
   'termwf.group.requirement': '需求',

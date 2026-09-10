@@ -343,6 +343,7 @@ export const messages = {
   'term.history': '🕘 History',
   'term.new_session_btn': '＋ New session',
   'term.create': 'Create',
+  'term.auto_start_in': 'Creating selected in {n}s',
   'term.kill_confirm': 'End this session?',
   'term.disconnected': '-- Disconnected, reconnecting --',
   'termwf.group.requirement': 'Requirement',

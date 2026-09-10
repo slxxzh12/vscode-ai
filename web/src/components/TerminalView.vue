@@ -92,19 +92,30 @@ async function savePort() {
 }
 function onOpenSettings() { settingsOpen.value = true; loadSettings(); }
 
-// 新建会话：先选择要执行的命令（终端 cmd / 各 Agent）
+// 新建会话：先选择要执行的命令（终端 cmd / 各 Agent），3 秒后自动执行选中项
 const newOpen = ref(false);
 const newSelected = ref('cmd');
+const newCountdown = ref(3);
+let newTimer: ReturnType<typeof setInterval> | null = null;
 const newChoices = computed(() => [
   { id: 'cmd', label: t('term.new_cmd'), cmd: '' },
   ...agents.value.map((a) => ({ id: a.id, label: a.name, cmd: a.cmd })),
 ]);
+function stopNewTimer() { if (newTimer) { clearInterval(newTimer); newTimer = null; } }
 function openNew() {
   const ids = newChoices.value.map((c) => c.id);
   newSelected.value = ids.includes(agentId.value) ? agentId.value : (ids[0] || 'cmd');
   newOpen.value = true;
+  newCountdown.value = 3;
+  stopNewTimer();
+  newTimer = setInterval(() => {
+    newCountdown.value -= 1;
+    if (newCountdown.value <= 0) { stopNewTimer(); createNew(newSelected.value); }
+  }, 1000);
 }
+function closeNew() { stopNewTimer(); newOpen.value = false; }
 async function createNew(id: string) {
+  stopNewTimer();
   newOpen.value = false;
   const c = newChoices.value.find((x) => x.id === id) || newChoices.value[0];
   const s = await props.terminal.createSession({ projectId: props.projectId, cols: 80, rows: 24 });
@@ -481,6 +492,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('df-fill-composer', onFillComposer);
   unsubList?.();
   unsubCfg?.();
+  stopNewTimer();
   dataSub?.dispose();
   term?.dispose();
   term = null;
@@ -490,19 +502,16 @@ onBeforeUnmount(() => {
 <template>
   <div class="center-wrap">
 
-    <div v-if="newOpen" class="setmask" @click.self="newOpen = false">
+    <div v-if="newOpen" class="setmask" @click.self="closeNew">
       <div class="newmodal">
-        <header class="seth"><span>{{ $t('term.new_session') }}</span><button class="setx" @click="newOpen = false">×</button></header>
+        <header class="seth"><span>{{ $t('term.new_session') }}</span><button class="setx" @click="closeNew">×</button></header>
         <div class="newlist">
-          <button v-for="c in newChoices" :key="c.id" class="newitem" :class="{ on: newSelected === c.id }" @click="newSelected = c.id" @dblclick="createNew(c.id)">
+          <button v-for="c in newChoices" :key="c.id" class="newitem" :class="{ on: newSelected === c.id }" @click="newSelected = c.id">
             <span class="ni-label">{{ c.label }}</span>
             <span class="ni-cmd">{{ c.cmd || $t('term.default_shell') }}</span>
           </button>
         </div>
-        <footer class="newfoot">
-          <button class="ghostcfg" @click="newOpen = false">{{ $t('common.cancel') }}</button>
-          <button class="newgo" @click="createNew(newSelected)">{{ $t('term.create') }}</button>
-        </footer>
+        <div class="newhint">{{ $t('term.auto_start_in', { n: newCountdown }) }}</div>
       </div>
     </div>
     <div v-if="settingsOpen" class="setmask" @click.self="settingsOpen = false">
@@ -677,8 +686,7 @@ onBeforeUnmount(() => {
 .newitem { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: none; border: 1px solid var(--bd); color: var(--tx1); border-radius: 6px; padding: 8px 12px; cursor: pointer; text-align: left; }
 .newitem:hover { border-color: var(--ac2); background: color-mix(in srgb, var(--ac) 8%, transparent); }
 .newitem.on { border-color: var(--ac); background: color-mix(in srgb, var(--ac) 16%, transparent); }
-.newfoot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--bd2); }
-.newgo { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 4px 16px; cursor: pointer; font-size: 12px; }
+.newhint { padding: 6px 14px 12px; color: var(--tx6); font-size: 12px; text-align: center; }
 .ni-label { font-size: 13px; font-weight: 600; }
 .ni-cmd { color: var(--tx6); font-family: Consolas, monospace; font-size: 11px; }
 .tabstrip { display: flex; align-items: center; gap: 2px; background: var(--bg2); border-bottom: 1px solid var(--bd); padding: 0 8px; height: 32px; overflow-x: auto; flex: none; }
