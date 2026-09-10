@@ -1,15 +1,19 @@
 import type { Schedule } from '@devflow/shared/scheduler';
+import { t } from '../i18n';
 
-const UNIT_LABEL: Record<string, string> = { second: '秒', minute: '分钟', hour: '小时', day: '天' };
-const WD = ['', '一', '二', '三', '四', '五', '六', '日'];
+const UNIT_KEY: Record<string, string> = { second: 'sched.unit.second', minute: 'sched.unit.minute', hour: 'sched.unit.hour', day: 'sched.unit.day' };
+const WD_KEY: Record<number, string> = { 1: 'sched.wd.1', 2: 'sched.wd.2', 3: 'sched.wd.3', 4: 'sched.wd.4', 5: 'sched.wd.5', 6: 'sched.wd.6', 7: 'sched.wd.7' };
 
 export function scheduleSummary(s: Schedule): string {
-  if (s.mode === 'interval') return `每 ${s.interval.every} ${UNIT_LABEL[s.interval.unit] || s.interval.unit}`;
+  if (s.mode === 'interval') {
+    const unit = UNIT_KEY[s.interval.unit] ? t(UNIT_KEY[s.interval.unit]) : s.interval.unit;
+    return t('sched.every', { every: s.interval.every, unit });
+  }
   const days = (s.daily.weekdays || []).slice().sort((a, b) => a - b);
   let dayText: string;
-  if (days.length === 0) dayText = '每天';
-  else if (days.length === 5 && [1, 2, 3, 4, 5].every((d) => days.includes(d))) dayText = '工作日';
-  else dayText = days.map((d) => '周' + WD[d]).join('、');
+  if (days.length === 0) dayText = t('sched.every_day');
+  else if (days.length === 5 && [1, 2, 3, 4, 5].every((d) => days.includes(d))) dayText = t('sched.workdays');
+  else dayText = days.map((d) => (WD_KEY[d] ? t(WD_KEY[d]) : String(d))).join(t('sched.list_sep'));
   return `${dayText} ${s.daily.at}`;
 }
 
@@ -20,7 +24,7 @@ export function formatTime(ts: number | null | undefined): string {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-const STATUS_LABEL: Record<string, string> = { running: '运行中', success: '成功', failed: '失败', timeout: '超时', killed: '已停止' };
+const STATUS_KEY: Record<string, string> = { running: 'sched.status.running', success: 'sched.status.success', failed: 'sched.status.failed', timeout: 'sched.status.timeout', killed: 'sched.status.killed' };
 export function runStatusLabel(s: string): string {
-  return STATUS_LABEL[s] || s;
+  return STATUS_KEY[s] ? t(STATUS_KEY[s]) : s;
 }

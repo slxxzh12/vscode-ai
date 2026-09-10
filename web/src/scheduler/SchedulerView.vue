@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useScheduler, type TaskView } from './useScheduler';
 import { scheduleSummary, formatTime, runStatusLabel } from './format';
 import type { SchedulerRun } from '@devflow/shared/scheduler';
+import { t } from '../i18n';
 
 const props = defineProps<{ terminal: any }>();
 const sched = useScheduler(props.terminal);
@@ -30,12 +31,12 @@ async function loadProjects() {
   catch { projects.value = []; }
 }
 function openCreate() { editingId.value = null; form.value = emptyForm(); showEditor.value = true; }
-function openEdit(t: TaskView) {
-  editingId.value = t.id;
+function openEdit(task: TaskView) {
+  editingId.value = task.id;
   form.value = JSON.parse(JSON.stringify({
-    name: t.name, enabled: t.enabled, projectId: t.projectId || '', cwd: t.cwd || '', type: t.type,
-    command: t.command || '', ai: t.ai || { source: 'command', commandName: '', prompt: '' },
-    script: t.script || { path: '' }, schedule: t.schedule,
+    name: task.name, enabled: task.enabled, projectId: task.projectId || '', cwd: task.cwd || '', type: task.type,
+    command: task.command || '', ai: task.ai || { source: 'command', commandName: '', prompt: '' },
+    script: task.script || { path: '' }, schedule: task.schedule,
   }));
   showEditor.value = true;
 }
@@ -52,19 +53,19 @@ async function save() {
     showEditor.value = false;
   } catch (e: any) { state.error = String(e?.message || e); }
 }
-async function remove(t: TaskView) {
-  if (!confirm(`删除任务「${t.name}」？`)) return;
-  await sched.removeTask(t.id);
+async function remove(task: TaskView) {
+  if (!confirm(t('sched.remove_confirm', { name: task.name }))) return;
+  await sched.removeTask(task.id);
 }
-async function runNow(t: TaskView) {
-  try { await sched.runNow(t.id); await sched.refresh(); }
+async function runNow(task: TaskView) {
+  try { await sched.runNow(task.id); await sched.refresh(); }
   catch (e: any) { state.error = String(e?.message || e); }
 }
-async function stop(t: TaskView) { await sched.stopTask(t.id); await sched.refresh(); }
-async function toggle(t: TaskView) { await sched.updateTask(t.id, { enabled: !t.enabled }); }
-async function openRuns(t: TaskView) {
-  runsTaskId.value = t.id;
-  runs.value = await sched.loadRuns(t.id);
+async function stop(task: TaskView) { await sched.stopTask(task.id); await sched.refresh(); }
+async function toggle(task: TaskView) { await sched.updateTask(task.id, { enabled: !task.enabled }); }
+async function openRuns(task: TaskView) {
+  runsTaskId.value = task.id;
+  runs.value = await sched.loadRuns(task.id);
   logText.value = '';
   logRunId.value = null;
   startLogTimer();
@@ -80,7 +81,7 @@ function startLogTimer() {
 }
 function stopLogTimer() { if (logTimer) { clearInterval(logTimer); logTimer = null; } }
 function closeRuns() { runsTaskId.value = null; logRunId.value = null; logText.value = ''; stopLogTimer(); }
-const WEEKDAYS = [{ v: 1, t: '一' }, { v: 2, t: '二' }, { v: 3, t: '三' }, { v: 4, t: '四' }, { v: 5, t: '五' }, { v: 6, t: '六' }, { v: 7, t: '日' }];
+const WEEKDAYS = computed(() => [1, 2, 3, 4, 5, 6, 7].map((v) => ({ v, t: t('sched.wdshort.' + v) })));
 function toggleWeekday(v: number) {
   const arr: number[] = form.value.schedule.daily.weekdays;
   const i = arr.indexOf(v);
@@ -94,35 +95,35 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 <template>
   <div class="sched">
     <header class="bar">
-      <span class="title">定时任务</span>
+      <span class="title">{{ $t('sched.title') }}</span>
       <span v-if="state.error" class="err">{{ state.error }}</span>
       <div class="spacer" />
-      <button @click="sched.refresh()">刷新</button>
-      <button class="primary" @click="openCreate">新建任务</button>
+      <button @click="sched.refresh()">{{ $t('sched.refresh') }}</button>
+      <button class="primary" @click="openCreate">{{ $t('sched.create') }}</button>
     </header>
 
     <div class="body">
       <div class="list">
-        <div v-if="!state.tasks.length" class="empty">暂无定时任务，点右上角新建</div>
+        <div v-if="!state.tasks.length" class="empty">{{ $t('sched.empty') }}</div>
         <div v-for="t in state.tasks" :key="t.id" class="row">
           <div class="rowmain">
             <div class="name">
-              <span class="badge" :class="t.type">{{ t.type === 'shell' ? '命令' : t.type === 'ai' ? 'AI' : '脚本' }}</span>
+              <span class="badge" :class="t.type">{{ t.type === 'shell' ? $t('sched.type.shell') : t.type === 'ai' ? 'AI' : $t('sched.type.script') }}</span>
               {{ t.name }}
               <span class="dim">{{ scheduleSummary(t.schedule) }}</span>
             </div>
             <div class="meta">
-              <span v-if="t.runningRunId" class="dot running" />{{ t.runningRunId ? '运行中' : '' }}
-              <span class="dim">下次 {{ formatTime(t.nextRunAt) }}</span>
+              <span v-if="t.runningRunId" class="dot running" />{{ t.runningRunId ? $t('sched.running') : '' }}
+              <span class="dim">{{ $t('sched.next', { time: formatTime(t.nextRunAt) }) }}</span>
             </div>
           </div>
           <div class="acts">
-            <label class="sw"><input type="checkbox" :checked="t.enabled" @change="toggle(t)" /> 启用</label>
-            <button v-if="!t.runningRunId" @click="runNow(t)">运行</button>
-            <button v-else @click="stop(t)">停止</button>
-            <button @click="openRuns(t)">历史</button>
-            <button @click="openEdit(t)">编辑</button>
-            <button @click="remove(t)">删除</button>
+            <label class="sw"><input type="checkbox" :checked="t.enabled" @change="toggle(t)" /> {{ $t('sched.enabled') }}</label>
+            <button v-if="!t.runningRunId" @click="runNow(t)">{{ $t('sched.run') }}</button>
+            <button v-else @click="stop(t)">{{ $t('sched.stop') }}</button>
+            <button @click="openRuns(t)">{{ $t('sched.history') }}</button>
+            <button @click="openEdit(t)">{{ $t('sched.edit') }}</button>
+            <button @click="remove(t)">{{ $t('sched.delete') }}</button>
           </div>
         </div>
       </div>
@@ -130,64 +131,64 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 
     <div v-if="showEditor" class="overlay" @click.self="showEditor = false">
       <div class="modal">
-        <h3>{{ editingId ? '编辑任务' : '新建任务' }}</h3>
-        <label>名称 <input v-model="form.name" /></label>
-        <label>项目
+        <h3>{{ editingId ? $t('sched.edit_task') : $t('sched.new_task') }}</h3>
+        <label>{{ $t('sched.field.name') }} <input v-model="form.name" /></label>
+        <label>{{ $t('sched.field.project') }}
           <select v-model="form.projectId">
-            <option value="">（不绑定）</option>
+            <option value="">{{ $t('sched.field.no_project') }}</option>
             <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
         </label>
-        <label>目录覆盖（可选） <input v-model="form.cwd" placeholder="留空则用项目根" /></label>
-        <label>类型
+        <label>{{ $t('sched.field.cwd') }} <input v-model="form.cwd" :placeholder="$t('sched.field.cwd_placeholder')" /></label>
+        <label>{{ $t('sched.field.type') }}
           <select v-model="form.type">
-            <option value="shell">命令</option>
-            <option value="ai">AI 命令</option>
-            <option value="script">脚本</option>
+            <option value="shell">{{ $t('sched.type.shell') }}</option>
+            <option value="ai">AI {{ $t('sched.type.shell') }}</option>
+            <option value="script">{{ $t('sched.type.script') }}</option>
           </select>
         </label>
         <template v-if="form.type === 'shell'">
-          <label>命令内容 <textarea v-model="form.command" rows="3" /></label>
+          <label>{{ $t('sched.field.command') }} <textarea v-model="form.command" rows="3" /></label>
         </template>
         <template v-else-if="form.type === 'ai'">
-          <label>来源
+          <label>{{ $t('sched.field.source') }}
             <select v-model="form.ai.source">
-              <option value="command">从 command 列表选</option>
-              <option value="prompt">手写 prompt</option>
+              <option value="command">{{ $t('sched.source.command') }}</option>
+              <option value="prompt">{{ $t('sched.source.prompt') }}</option>
             </select>
           </label>
           <label v-if="form.ai.source === 'command'">Command
             <select v-model="form.ai.commandName">
-              <option value="">请选择</option>
+              <option value="">{{ $t('sched.field.choose') }}</option>
               <option v-for="c in state.aiCommands" :key="c.name" :value="c.name">{{ c.name }}</option>
             </select>
           </label>
           <label v-else>Prompt <textarea v-model="form.ai.prompt" rows="4" /></label>
         </template>
         <template v-else>
-          <label>脚本路径（相对项目根或绝对） <input v-model="form.script.path" /></label>
+          <label>{{ $t('sched.field.script_path') }} <input v-model="form.script.path" /></label>
         </template>
 
-        <label>调度方式
+        <label>{{ $t('sched.field.mode') }}
           <select v-model="form.schedule.mode">
-            <option value="interval">按周期</option>
-            <option value="daily">每日时刻</option>
+            <option value="interval">{{ $t('sched.mode.interval') }}</option>
+            <option value="daily">{{ $t('sched.mode.daily') }}</option>
           </select>
         </label>
         <template v-if="form.schedule.mode === 'interval'">
-          <label>每 <input type="number" min="1" v-model.number="form.schedule.interval.every" style="width:80px" />
+          <label>{{ $t('sched.field.every') }} <input type="number" min="1" v-model.number="form.schedule.interval.every" style="width:80px" />
             <select v-model="form.schedule.interval.unit">
-              <option value="second">秒</option>
-              <option value="minute">分钟</option>
-              <option value="hour">小时</option>
-              <option value="day">天</option>
+              <option value="second">{{ $t('sched.unit.second') }}</option>
+              <option value="minute">{{ $t('sched.unit.minute') }}</option>
+              <option value="hour">{{ $t('sched.unit.hour') }}</option>
+              <option value="day">{{ $t('sched.unit.day') }}</option>
             </select>
           </label>
         </template>
         <template v-else>
-          <label>时刻 <input type="time" v-model="form.schedule.daily.at" /></label>
+          <label>{{ $t('sched.field.at') }} <input type="time" v-model="form.schedule.daily.at" /></label>
           <div class="wd">
-            星期（不选=每天）：
+            {{ $t('sched.field.weekdays') }}
             <label v-for="w in WEEKDAYS" :key="w.v" class="wditem">
               <input type="checkbox" :checked="form.schedule.daily.weekdays.includes(w.v)" @change="toggleWeekday(w.v)" />{{ w.t }}
             </label>
@@ -195,26 +196,26 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
         </template>
 
         <div class="modalacts">
-          <button @click="showEditor = false">取消</button>
-          <button class="primary" @click="save">保存</button>
+          <button @click="showEditor = false">{{ $t('sched.cancel') }}</button>
+          <button class="primary" @click="save">{{ $t('sched.save') }}</button>
         </div>
       </div>
     </div>
 
     <div v-if="runsTaskId" class="overlay" @click.self="closeRuns">
       <div class="modal wide">
-        <h3>运行历史</h3>
+        <h3>{{ $t('sched.runs.title') }}</h3>
         <div class="histwrap">
           <div class="histlist">
             <div v-for="r in runs" :key="r.id" class="histitem" :class="{ on: r.id === logRunId }" @click="openLog(r)">
               <span class="dot" :class="r.status" />{{ formatTime(r.startedAt) }}
               <span class="dim">{{ runStatusLabel(r.status) }} · {{ r.durationMs ?? '—' }}ms</span>
             </div>
-            <div v-if="!runs.length" class="empty">暂无运行记录</div>
+            <div v-if="!runs.length" class="empty">{{ $t('sched.runs.empty') }}</div>
           </div>
-          <pre class="logview">{{ logText || '（选择一次运行查看输出）' }}</pre>
+          <pre class="logview">{{ logText || $t('sched.runs.select') }}</pre>
         </div>
-        <div class="modalacts"><button @click="closeRuns">关闭</button></div>
+        <div class="modalacts"><button @click="closeRuns">{{ $t('sched.close') }}</button></div>
       </div>
     </div>
   </div>
