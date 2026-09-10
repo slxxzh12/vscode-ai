@@ -6,7 +6,9 @@
 
 需要按「起始日期 ~ 结束日期」查询某个 git 仓库的提交记录，并据此得出区间内**新增的文件**与**修改的文件**分别是哪些。目标：
 
-- 前端输入/选择本地 git 仓库路径，选择日期区间，发起查询；
+- 前端输入**本地仓库路径或远程 git 地址**，选择日期区间，发起查询；
+  - 本地路径：直接分析；
+  - 远程地址（`https://` / `git://` / `ssh://` / `file://` / `git@host:path`）：后端先 `git clone --bare` 到系统临时目录，分析完删除临时目录。
 - 后端调用系统 `git` CLI 读取提交与文件变动（`--name-status`），解析后返回；
 - 结果同时提供两种视图：**文件汇总**（去重、带状态）与**提交明细**（按 commit 分组）；
 - 状态不仅区分新增/修改，还包含删除/重命名。
@@ -28,23 +30,32 @@ GitStat.vue（路径 + 日期）
 
 ### A. `server/git-log.js`
 
-导出 `collectGitChanges({ repoPath, since, until })`，异步返回结构化数据。
+导出 `collectGitChanges({ repo, since, until })`，异步返回结构化数据。`repo` 为本地路径或远程地址。
+
+**来源判定与克隆**
+
+1. 以 `repo`（本地路径或 URL）为准；若首字符为 `-` 直接拒绝（防参数注入）。
+2. URL 判定：匹配 `^(https?|git|ssh|file)://` 或 scp 形式 `user@host:path`。
+3. 远程地址：在系统临时目录建父目录，`git clone --quiet --bare <repo> <parent>/repo`（`--bare` 免工作区、更快；完整克隆以保证历史与日期区间准确），分析结束在 `finally` 删除父目录。克隆设 `GIT_TERMINAL_PROMPT=0`（私有库不挂起等待输入）与 120s 超时。
+4. 本地路径：直接在其上执行，不复制。
 
 **校验**
 
-1. `repoPath` 存在且为目录，否则抛 `not-found`。
-2. `git -C <repoPath> rev-parse --is-inside-work-tree` 返回 `true`，否则抛 `not-a-repo`（400）。
+1. `repo` 存在且为目录（本地）或可克隆（远程），否则抛 `not-found` / `clone-failed`。
+2. `git -C <target> rev-parse --git-dir` 成功即为仓库，否则抛 `not-a-repo`（400）。**注意用 `--git-dir` 而非 `--is-inside-work-tree`**：`--bare` 克隆下后者返回 `false`。
 3. 系统无 git（spawn `ENOENT`）→ 抛 `git-unavailable`（500）。
 4. `since`/`until` 需为 `YYYY-MM-DD`，否则抛 `bad-date`（400）；`since > until` 抛 `bad-range`（400）。
 
 **命令**
 
 ```
-git -C <repoPath> -c core.quotepath=false log \
+git -C <target> -c core.quotepath=false log \
   --since=<since>T00:00:00 --until=<until>T23:59:59 \
   --no-merges -M --name-status \
   --pretty=format:"@@%x01%H%x01%an%x01%ae%x01%aI%x01%s"
 ```
+
+`<target>` 为本地路径或克隆出的裸仓库目录。
 
 - 起止均含当天：起始 `00:00:00`，结束 `23:59:59`。
 - `--no-merges` 排除合并提交噪声。
@@ -73,15 +84,15 @@ git -C <repoPath> -c core.quotepath=false log \
 
 ### B. 路由 `POST /api/git/changes`
 
-- body：`{ repoPath, since, until }`，复用现有 `readJsonBody`。
-- 成功：`200 { repo, range, stats, summary, commits }`，其中 `repo = { path, branch }`（`branch` 由 `git rev-parse --abbrev-ref HEAD` 得到，失败则 `null`）。
-- 错误码沿用现有 `http-api.js` 的 catch 分支：`not-found`→404，`not-a-repo`/`bad-date`/`bad-range`→400，`git-unavailable`→500（附 `message`）。
+- body：`{ repo, since, until }`，复用现有 `readJsonBody`。`repo` 为本地路径或远程 git 地址。
+- 成功：`200 { repo, range, stats, summary, commits }`，其中 `repo = { path, branch, cloned }`（`path` 为原始输入；`cloned` 标识是否来自远程克隆；`branch` 由 `git rev-parse --abbrev-ref HEAD` 得到，失败则 `null`）。
+- 错误码沿用现有 `http-api.js` 的 catch 分支：`not-found`→404；`not-a-repo`/`bad-date`/`bad-range`/`bad-repo`/`clone-failed`/`clone-timeout`→400；`git-unavailable`→500（附 `message`）。
 
 ## 返回结构
 
 ```jsonc
 {
-  "repo": { "path": "D:/repo", "branch": "master" },
+  "repo": { "path": "D:/repo", "branch": "master", "cloned": false },
   "range": { "since": "2026-09-01", "until": "2026-09-10" },
   "stats": { "commits": 12, "files": 30, "added": 8, "modified": 19, "deleted": 2, "renamed": 1 },
   "summary": [
@@ -103,7 +114,7 @@ git -C <repoPath> -c core.quotepath=false log \
 
 ### B. `web/src/components/GitStat.vue`
 
-- **仓库路径**：文本框输入（浏览器无法获取本地目录绝对路径，故以手输为主）；「最近路径」下拉从 `localStorage`（复用现有按节点指纹隔离的 key 思路）读取与写入。
+- **仓库**：文本框输入本地路径或远程 git 地址（浏览器无法获取本地目录绝对路径，故以手输为主）；「最近输入」下拉从 `localStorage`（复用现有按节点指纹隔离的 key 思路）读取与写入。输入为远程地址时后端会 clone 到临时目录，耗时会变长，`loading` 文案提示「克隆/查询中…」。
 - **日期**：两个 `<input type="date">`，默认「近 7 天」（`until`=今天，`since`=今天-6）。
 - **查询**：按钮触发；期间 loading；失败在表单下方红字显示。
 - **结果**：
@@ -119,7 +130,7 @@ git -C <repoPath> -c core.quotepath=false log \
 
 ## 测试
 
-- 后端 `server/test/git-log.test.js`：在临时目录 `git init`，用 `GIT_AUTHOR_DATE` / `GIT_COMMITTER_DATE` 环境变量制造跨日期的提交（新增 / 修改 / 删除 / 重命名），断言 `stats`、`summary` 状态与 `touches`、`commits` 内容；再断言非仓库路径抛 `not-a-repo`、坏日期抛 `bad-date`、空区间返回空数组。`npm.cmd test` 全绿。
+- 后端 `server/test/git-log.test.js`：在临时目录 `git init`，用 `GIT_AUTHOR_DATE` / `GIT_COMMITTER_DATE` 环境变量制造跨日期的提交（新增 / 修改 / 删除 / 重命名），断言 `stats`、`summary` 状态与 `touches`、`commits` 内容；再断言非仓库路径抛 `not-a-repo`、坏日期抛 `bad-date`、空区间返回空数组；以及用 `file://` 地址验证远程 clone 路径（返回 `repo.cloned === true` 且临时目录被清理）。`npm.cmd test` 全绿。
 - 前端 `web/src/gitStat.test.ts`：测 `statusLabel`/`statusClass`/日期默认值等纯函数。
 - `npm.cmd run typecheck` 通过。
 
@@ -129,6 +140,7 @@ git -C <repoPath> -c core.quotepath=false log \
 - 超大仓库：命令 `maxBuffer` 设为足够大（如 64MB），截断保护避免前端卡死。
 - 路径含特殊字符：`spawn` 数组传参 + `quotepath=false`；路径展示不强行接入 FilePreview（任意仓库未必是已登记项目）。
 - `spawn` 失败 / 非零退出：返回 500 并带 stderr 摘要。
+- 远程克隆：`--bare` 免工作区；`GIT_TERMINAL_PROMPT=0` 防认证挂起；120s 超时（`clone-timeout`）；`finally` 清理临时目录；`repo` 首字符为 `-` 直接拒绝以防参数注入。
 
 ## 涉及文件
 
