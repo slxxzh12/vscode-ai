@@ -370,9 +370,9 @@ function termTheme(dark: boolean) {
   const base = dark
     ? { background: '#0e1116', foreground: '#d5dae1', cursor: '#6aa2ff', selectionBackground: '#2f6feb66' }
     : { background: '#ffffff', foreground: '#1f2937', cursor: '#2563eb', selectionBackground: '#93c5fd99' };
-  // 浅色（白天）背景：把 ANSI 黄映射为红色，输入/黄字统一变红；深色保持原黄色
+  // 浅色（白天）背景：把 PowerShell 命令行高亮的黄改为黑色；深色保持原黄色
   if (dark) return base;
-  return { ...base, yellow: '#d21f3c', brightYellow: '#e54861' };
+  return { ...base, yellow: '#111111', brightYellow: '#000000' };
 }
 watch(isDark, (d) => { if (term) { term.options.theme = termTheme(d); requestAnimationFrame(() => onResize()); } });
 
