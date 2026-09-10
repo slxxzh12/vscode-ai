@@ -8,6 +8,7 @@ import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import FileTree from './components/FileTree.vue';
 import WorkflowPanel from './components/WorkflowPanel.vue';
+import GitStat from './components/GitStat.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
 
@@ -17,7 +18,7 @@ const projectsApi = useProjects();
 const { theme, toggle } = useTheme();
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
-const rail = ref<'explorer' | 'history' | 'contacts'>('explorer');
+const rail = ref<'explorer' | 'history' | 'contacts' | 'stat'>('explorer');
 const showWf = ref(false);
 const detailToken = ref(0);
 const detailPath = ref('');
@@ -215,10 +216,16 @@ onMounted(() => {
         <button class="a-btn" :class="{ on: rail === 'explorer' }" title="目录" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'history' }" title="历史" @click="rail = 'history'; showWf = false">🕘</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" title="通讯录" @click="rail = 'contacts'; showWf = false">👥</button>
+        <button class="a-btn" :class="{ on: rail === 'stat' }" title="提交统计" @click="rail = 'stat'; showWf = false">📊</button>
       </aside>
       <template v-if="rail === 'contacts'">
         <section class="center">
           <CollaborationView :terminal="terminal" />
+        </section>
+      </template>
+      <template v-else-if="rail === 'stat'">
+        <section class="center">
+          <GitStat />
         </section>
       </template>
       <template v-else>
