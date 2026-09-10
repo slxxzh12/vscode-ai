@@ -34,6 +34,16 @@
 - `shared/` — WS 协议常量/类型（唯一事实源）；`server/` — Node ESM 后端（ws + node-pty，测试在 `server/test/`，`node --test`）；`web/` — Vue3+Vite+TS+xterm（vitest + vue-tsc）。
 - 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`。
 
+## 临时/生成文件（禁止入库）
+- 提交前先看 `git status`，**未跟踪的临时/生成文件不要 `git add -A` 一把梭**；只 `git add` 本次改动涉及的文件。
+- 明确禁止入库（同时写入 `.gitignore`）：
+  - IDE/编辑器：`.idea/`、`.vscode/`、`*.iml`、`*.swp`、`*.swo`；
+  - OS：`Thumbs.db`、`desktop.ini`、`.DS_Store`；
+  - 构建产物/依赖：`node_modules/`、`dist/`、`dist-portable/`、`env/`、`*.log`；
+  - 运行时数据/密钥：`server/collaboration/*.json`（含 Ed25519 私钥）、`server/collaboration/inbox/`、`.env`、`.env.*`；
+  - superpowers 本地状态：`.superpowers/`。
+- 若不慎已入库：`git rm -r --cached <路径>` 移出版本库（保留本地文件），补进 `.gitignore` 后再提交。
+
 ## 提交/推送
 - 一律在 `master` 操作（无远程 PR 需求时）。`git push origin master`。
 - 仓库远端残留 `feat/web-terminal` 分支，已合并删除需求时：`git push origin --delete feat/web-terminal`。

@@ -5,6 +5,18 @@ env/
 .superpowers/
 *.log
 .DS_Store
+# IDE / 编辑器临时文件（禁止入库）
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+# OS 临时文件
+Thumbs.db
+desktop.ini
+# 本地环境变量（含密钥，禁止入库）
+.env
+.env.*
 # 协作子系统运行时数据（含本机 Ed25519 私钥，禁止入库）
 server/collaboration/*.json
 server/collaboration/inbox/
