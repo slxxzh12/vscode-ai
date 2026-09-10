@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { transformSync } from 'esbuild';
+import { collectGitChanges } from './git-log.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
 
@@ -186,7 +187,19 @@ export function createHttpApi({ projects }) {
         fs.createReadStream(file).pipe(res);
         return;
       }
+      if (url.pathname === '/api/git/changes' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, await collectGitChanges({ repo: body.repo, since: body.since, until: body.until }));
+        return;
+      }
     } catch (err) {
+      if (err.code === 'not-a-repo') return sendJson(res, 400, { error: 'not a git repo' });
+      if (err.code === 'bad-repo') return sendJson(res, 400, { error: 'bad repo', message: String(err.message) });
+      if (err.code === 'bad-date') return sendJson(res, 400, { error: 'bad date' });
+      if (err.code === 'bad-range') return sendJson(res, 400, { error: 'bad range' });
+      if (err.code === 'clone-failed') return sendJson(res, 400, { error: 'clone failed', message: String(err.message) });
+      if (err.code === 'clone-timeout') return sendJson(res, 400, { error: 'clone timeout', message: String(err.message) });
+      if (err.code === 'git-unavailable') return sendJson(res, 500, { error: 'git unavailable', message: String(err.message) });
       if (err.code === 'forbidden') return sendJson(res, 403, { error: 'forbidden' });
       if (err.code === 'not-found') return sendJson(res, 404, { error: 'not found' });
       if (err.code === 'not-file') return sendJson(res, 400, { error: 'not a file' });

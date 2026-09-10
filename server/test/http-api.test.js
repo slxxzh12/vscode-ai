@@ -7,6 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { Projects } from '../projects.js';
 import { createHttpApi } from '../http-api.js';
+import { seedRepo } from './helpers/git-fixture.js';
 
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'dfapi-')); }
 
@@ -307,4 +308,28 @@ test('/api/file/hash 目录返回 400；不存在 404；越界 403', async (t) =
   assert.equal(miss.status, 404);
   const esc = await request(server, '/api/file/hash?project=a&path=..%2F..%2F..');
   assert.equal(esc.status, 403);
+});
+
+test('/api/git/changes POST 返回统计与汇总', async (t) => {
+  const repo = seedRepo();
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/git/changes', { repo: repo, since: '2026-09-01', until: '2026-09-10' });
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.equal(j.stats.commits, 4);
+  assert.equal(j.summary.length, 4);
+  assert.equal(j.commits[0].files.length, 1);
+});
+
+test('/api/git/changes POST 非仓库 400、坏日期 400、路径不存在 404', async (t) => {
+  const empty = tmpDir();
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const nr = await post(server, '/api/git/changes', { repo: empty, since: '2026-09-01', until: '2026-09-10' });
+  assert.equal(nr.status, 400);
+  const bd = await post(server, '/api/git/changes', { repo: empty, since: 'x', until: '2026-09-10' });
+  assert.equal(bd.status, 400);
+  const nf = await post(server, '/api/git/changes', { repo: path.join(empty, 'nope'), since: '2026-09-01', until: '2026-09-10' });
+  assert.equal(nf.status, 404);
 });
