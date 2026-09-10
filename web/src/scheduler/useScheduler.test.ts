@@ -29,10 +29,10 @@ describe('useScheduler', () => {
   });
 
   it('订阅 WS 事件后自动 refresh', async () => {
-    const handlers: Record<string, () => void> = {};
-    const terminal = { on: (t: string, h: () => void) => { handlers[t] = h; return () => {}; } };
+    const handlers: Record<string, (msg: any) => void> = {};
+    const terminal = { on: (t: string, h: (msg: any) => void) => { handlers[t] = h; return () => {}; } };
     const s = useScheduler(terminal);
-    handlers['sched-run-end']?.();
+    handlers['sched-run-end']?.({});
     await new Promise((r) => setTimeout(r, 0));
     expect(calls.some((c) => c.method === 'GET')).toBe(true);
   });

@@ -4,6 +4,7 @@ import { useTerminal } from './useTerminal';
 import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
 import CollaborationView from './collaboration/CollaborationView.vue';
+import SchedulerView from './scheduler/SchedulerView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import FileTree from './components/FileTree.vue';
@@ -17,7 +18,7 @@ const projectsApi = useProjects();
 const { theme, toggle } = useTheme();
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
-const rail = ref<'explorer' | 'history' | 'contacts' | 'stat'>('explorer');
+const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler'>('explorer');
 const detailToken = ref(0);
 const detailPath = ref('');
 function onDetailFile(projectId: string, path: string) {
@@ -218,6 +219,7 @@ onMounted(() => {
         <button class="a-btn" :class="{ on: rail === 'history' }" title="历史" @click="rail = 'history'">🕘</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" title="通讯录" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'stat' }" title="提交统计" @click="rail = 'stat'">📊</button>
+        <button class="a-btn" :class="{ on: rail === 'scheduler' }" title="定时任务" @click="rail = 'scheduler'">⏰</button>
         <button class="a-btn gearbot" title="设置" @click="openAgentSettings">⚙</button>
       </aside>
       <template v-if="rail === 'contacts'">
@@ -228,6 +230,11 @@ onMounted(() => {
       <template v-else-if="rail === 'stat'">
         <section class="center">
           <GitStat />
+        </section>
+      </template>
+      <template v-else-if="rail === 'scheduler'">
+        <section class="center">
+          <SchedulerView :terminal="terminal" />
         </section>
       </template>
       <template v-else>
