@@ -5,6 +5,9 @@ import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
 import { useMessageHistory } from './useMessageHistory';
 import CollaborationView from './collaboration/CollaborationView.vue';
+import JoinInviteCard from './collaboration/JoinInviteCard.vue';
+import { useCollab } from './collaboration/useCollab';
+import type { CollabGroup } from './collaboration/types';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import FileTree from './components/FileTree.vue';
@@ -19,6 +22,8 @@ const { theme, toggle } = useTheme();
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts' | 'stat'>('explorer');
+const inviteCollab = useCollab();
+const inviteToken = ref('');
 const historyTab = ref<'files' | 'messages'>('files');
 const msgHistory = useMessageHistory();
 function onOpenHistory(e: Event) {
@@ -203,6 +208,9 @@ function openAgentSettings() {
   setTimeout(() => window.dispatchEvent(new Event('df-open-agent-settings')), 120);
 }
 onMounted(() => {
+  const sp = new URLSearchParams(window.location.search);
+  const it = sp.get('invite');
+  if (it) inviteToken.value = it;
   initFileHistory();
   loadProjects();
   msgHistory.load();
@@ -212,6 +220,18 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('df-open-history', onOpenHistory);
 });
+function clearInvite() {
+  inviteToken.value = '';
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.delete('invite');
+    window.history.replaceState({}, '', u.pathname + (u.search ? u.search : ''));
+  } catch { /* ignore */ }
+}
+function onInviteJoined(_g?: CollabGroup) {
+  clearInvite();
+  rail.value = 'contacts';
+}
 </script>
 
 <template>
@@ -261,6 +281,10 @@ onBeforeUnmount(() => {
         </section>
       </template>
     </div>
+
+    <div v-if="inviteToken" class="joinmask" @click.self="clearInvite()">
+      <JoinInviteCard :collab="inviteCollab" :token="inviteToken" @joined="onInviteJoined" @cancel="clearInvite" />
+    </div>
   </div>
 </template>
 
@@ -285,4 +309,5 @@ onBeforeUnmount(() => {
 .divider:hover, .divider.on { background: var(--ac); opacity: .55; }
 .center { flex: 1; min-width: 0; }
 body.dragging-side { cursor: col-resize; user-select: none; }
+.joinmask { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
 </style>
