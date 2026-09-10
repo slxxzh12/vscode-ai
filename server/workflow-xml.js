@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { t } from './i18n.js';
 
 // config/workflow.xml 的极简解析（仅支持本项目自用结构，无第三方依赖）
 function decode(s) {
@@ -14,17 +15,19 @@ function attr(tag, name) {
 }
 
 // 内置兜底（配置文件缺失/损坏时使用）
-export const FALLBACK_WORKFLOWS = [
-  {
-    id: 'dev', label: '开发工作流',
-    stages: [
-      { id: 'design', label: '需求设计', prompts: ['请使用 superpower brainstorm 来拆解下面需求：'] },
-      { id: 'code', label: '代码实现', prompts: ['请按需求文档实现功能，遵循仓库 AGENTS 约定，改完先跑测试与类型检查。'] },
-      { id: 'test', label: '开发自测', prompts: ['请补齐并运行测试与类型检查，报告结果与风险。'] },
-      { id: 'deploy', label: '环境部署', prompts: ['请给出构建/打包/发布步骤并执行，说明回滚方案。'] },
-    ],
-  },
-];
+export function fallbackWorkflows() {
+  return [
+    {
+      id: 'dev', label: t('workflowxml.dev.title'),
+      stages: [
+        { id: 'design', label: t('workflowxml.design.label'), prompts: [t('workflowxml.design.prompt')] },
+        { id: 'code', label: t('workflowxml.code.label'), prompts: [t('workflowxml.code.prompt')] },
+        { id: 'test', label: t('workflowxml.test.label'), prompts: [t('workflowxml.test.prompt')] },
+        { id: 'deploy', label: t('workflowxml.deploy.label'), prompts: [t('workflowxml.deploy.prompt')] },
+      ],
+    },
+  ];
+}
 
 export function parseWorkflowXml(xml) {
   const workflows = [];
@@ -53,7 +56,7 @@ export function loadWorkflowXml(file) {
       if (wfs.length) return wfs;
     }
   } catch { /* fallthrough */ }
-  return FALLBACK_WORKFLOWS;
+  return fallbackWorkflows();
 }
 
 // 默认配置文件位置：仓库根 config/workflow.xml（server/ 的上一级）

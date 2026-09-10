@@ -11,6 +11,7 @@ import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
 import { buildZip } from './zip.js';
 import { createOpenCodeRunner } from './remote-runner.js';
+import { t } from '../i18n.js';
 
 // 递归收集目录内文件（跳过隐藏/.git）
 function collectTree(dir, rel, out) {
@@ -98,7 +99,7 @@ export class CollabEngine {
     for (const n of sSel) {
       assertSafeRel(n);
       const dir = path.join(this.skillRoot(), n);
-      if (!fs.existsSync(path.join(dir, 'SKILL.md'))) throw new Error(`不是合法技能目录: ${n}`);
+      if (!fs.existsSync(path.join(dir, 'SKILL.md'))) throw new Error(t('collab.err.not_skill_dir', { name: n }));
       collectTree(dir, `skills/${n}`, files);
     }
     for (const kind of ['command', 'agent']) {
@@ -109,19 +110,19 @@ export class CollabEngine {
         assertSafeRel(n);
         const full = path.join(root, n);
         const rl = path.relative(root, full);
-        if (rl.startsWith('..') || path.isAbsolute(rl)) throw new Error('越界选择');
+        if (rl.startsWith('..') || path.isAbsolute(rl)) throw new Error(t('collab.err.out_of_range'));
         if (fs.existsSync(full)) {
           if (fs.statSync(full).isDirectory()) collectTree(full, `${kind}/${n}`, files);
           else files.push({ rel: `${kind}/${n}`, data: fs.readFileSync(full) });
         }
       }
     }
-    if (!files.length) throw new Error('未选择任何内容');
+    if (!files.length) throw new Error(t('collab.err.no_content'));
     const zip = buildZip(files);
     const hash = crypto.createHash('sha256').update(zip).digest('hex');
     const total = sSel.length + cSel.length + aSel.length;
     const label = `assets-${total}-${hash.slice(0, 6)}.zip`;
-    if (!this.uploadDir) throw new Error('upload 目录未配置');
+    if (!this.uploadDir) throw new Error(t('collab.err.no_upload_dir'));
     fs.mkdirSync(this.uploadDir, { recursive: true });
     fs.writeFileSync(path.join(this.uploadDir, label), zip);
     const rec = this.store.addOutbox({
@@ -167,10 +168,10 @@ export class CollabEngine {
     rec.package.sent = true;
     this.store.save();
     const parts = [];
-    if ((pkg.skills || []).length) parts.push(`技能 ${pkg.skills.join('、')}`);
-    if ((pkg.command || []).length) parts.push(`命令 ${pkg.command.join('、')}`);
-    if ((pkg.agent || []).length) parts.push(`代理 ${pkg.agent.join('、')}`);
-    this._addSystemMessage(groupId, `已向群分发配置包：${parts.join('；')}`);
+    if ((pkg.skills || []).length) parts.push(t('collab.sys.part.skills', { names: pkg.skills.join('、') }));
+    if ((pkg.command || []).length) parts.push(t('collab.sys.part.command', { names: pkg.command.join('、') }));
+    if ((pkg.agent || []).length) parts.push(t('collab.sys.part.agent', { names: pkg.agent.join('、') }));
+    this._addSystemMessage(groupId, t('collab.sys.pkg_distributed', { parts: parts.join(t('collab.sys.part_sep')) }));
     this._emit('synced', {});
     return { code: 'ok', pushed, failures };
   }
@@ -494,7 +495,7 @@ export class CollabEngine {
       });
     }
     if (packedOk.length) {
-      this._addSystemMessage(groupId, `已向群分发技能：${packedOk.join('、')}`);
+      this._addSystemMessage(groupId, t('collab.sys.skills_distributed', { names: packedOk.join('、') }));
     }
     this._emit('synced', {});
     return { code: 'ok', pushed, failures, packed: packedOk };
@@ -565,7 +566,7 @@ export class CollabEngine {
       if (res.ok) pushed++;
       else failures.push({ machineId: m.machineId, error: res.error || 'push-failed' });
     }
-    this._addSystemMessage(groupId, `已向群发送文件：${name}（${(data.length / 1024).toFixed(1)} KB）`);
+    this._addSystemMessage(groupId, t('collab.sys.file_sent', { name, kb: (data.length / 1024).toFixed(1) }));
     this._emit('synced', {});
     return { code: 'ok', pushed, failures };
   }
@@ -716,7 +717,7 @@ export function _extendChat(engine) {
     const env = this._sign(CollabPeer.CMD_REQ, { groupId, text, toId, reqId });
     const res = await this._post(target.host, target.port, env);
     if (!res.ok) {
-      const msg = { id: crypto.randomUUID(), groupId, kind: 'system', fromId: this.pub.machineId, text: `远程执行未送达（@${target.username} 可能离线）`, toId, ts: Date.now(), seq: this.store.nextChatSeq(), meta: null };
+      const msg = { id: crypto.randomUUID(), groupId, kind: 'system', fromId: this.pub.machineId, text: t('collab.sys.cmd_undelivered', { name: target.username }), toId, ts: Date.now(), seq: this.store.nextChatSeq(), meta: null };
       this.store.addChatMessage(msg);
       this._emit('chat', { groupId, msg });
       return { code: 'undelivered', reqId };
@@ -755,7 +756,7 @@ export function _extendChat(engine) {
     this.store.removePendingCmd(reqId);
     if (!approve) {
       const msg = { id: crypto.randomUUID(), groupId: pending.groupId, kind: 'system', fromId: this.pub.machineId,
-        text: `拒绝了 @${pending.fromId} 的远程执行`, toId: pending.fromId, ts: Date.now(), seq: this.store.nextChatSeq(), meta: null };
+        text: t('collab.sys.cmd_denied', { from: pending.fromId }), toId: pending.fromId, ts: Date.now(), seq: this.store.nextChatSeq(), meta: null };
       this.store.addChatMessage(msg);
       this._broadcastChat(pending.groupId, msg);
       this._emit('chat', { groupId: pending.groupId, msg });

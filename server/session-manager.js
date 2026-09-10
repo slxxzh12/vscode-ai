@@ -2,9 +2,10 @@ import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
 import { RingBuffer } from './ring-buffer.js';
 import { createPty } from './pty-runner.js';
+import { t, getLocale } from './i18n.js';
 
 const shortId = () => 's_' + crypto.randomBytes(4).toString('hex');
-const timeLabel = () => new Date().toLocaleTimeString('zh-CN', { hour12: false });
+const timeLabel = () => new Date().toLocaleTimeString(getLocale(), { hour12: false });
 
 export class SessionManager extends EventEmitter {
   constructor({ ptyFactory = createPty, ringMaxBytes = 256 * 1024, logger = console, projectResolver = null } = {}) {
@@ -21,7 +22,7 @@ export class SessionManager extends EventEmitter {
     const workdir = cwd || projRoot || process.cwd();
     const pty = await this.ptyFactory({ cwd: workdir, cols, rows });
     const session = {
-      id: shortId(), name: name || (projectId ? `${projectId} · ${timeLabel()}` : `会话 · ${timeLabel()}`),
+      id: shortId(), name: name || (projectId ? `${projectId} · ${timeLabel()}` : `${t('session.default')} · ${timeLabel()}`),
       projectId, cwd: workdir, pty, alive: true,
       ring: new RingBuffer(this.ringMaxBytes), clients: new Set(),
       cols, rows, state: 'running', exitCode: null,

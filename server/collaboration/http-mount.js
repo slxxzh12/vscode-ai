@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { t } from '../i18n.js';
 
 const MAX_BODY = 64 * 1024 * 1024; // 64MB（zip base64）
 const MAX_UPLOAD = 40 * 1024 * 1024; // 40MB（raw 文件）
@@ -108,7 +109,7 @@ export function createCollabMount({ engine, logger = console }) {
       if (seg[0] === 'tool' && m === 'GET') return ok(res, engine.getToolInfo());
       if (seg[0] === 'tool' && m === 'POST') {
         const r = engine.setTool(body.kind, body.customRoot);
-        if (r.code !== 'ok') return sendJson(res, 400, { error: r.code === 'need-custom-root' ? '自定义路径必填' : r.code });
+        if (r.code !== 'ok') return sendJson(res, 400, { error: r.code === 'need-custom-root' ? t('collab.err.need_custom_root') : r.code });
         return ok(res, r);
       }
       // 我的 upload/download 目录（下载页/收件箱辅助展示）
