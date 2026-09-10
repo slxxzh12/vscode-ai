@@ -5,6 +5,7 @@ import {
   fetchGitChanges, statusLabel, statusClass, defaultRange,
   type GitChangesResult, type GitStatus, type GitSummaryRow,
 } from '../gitStat';
+import { t } from '../i18n';
 
 const FILTERS = ['all', 'added', 'modified', 'deleted', 'renamed'] as const;
 
@@ -38,8 +39,8 @@ function remember(p: string) {
 
 async function run() {
   const p = repoPath.value.trim();
-  if (!p) { error.value = '请填写仓库路径'; return; }
-  if (since.value > until.value) { error.value = '起始日期不能晚于结束日期'; return; }
+  if (!p) { error.value = t('gitstat.need_repo'); return; }
+  if (since.value > until.value) { error.value = t('gitstat.bad_range'); return; }
   loading.value = true;
   error.value = '';
   result.value = null;
@@ -63,7 +64,7 @@ function toggleCommit(hash: string) {
   if (s.has(hash)) s.delete(hash); else s.add(hash);
   openCommits.value = s;
 }
-function filterLabel(f: GitStatus | 'all'): string { return f === 'all' ? '全部' : statusLabel(f); }
+function filterLabel(f: GitStatus | 'all'): string { return f === 'all' ? t('gitstat.all') : statusLabel(f); }
 function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -74,42 +75,42 @@ function fmtDate(iso: string): string {
 
 <template>
   <div class="gs">
-    <header class="bar"><span class="ttl">📊 Git 提交统计</span></header>
+    <header class="bar"><span class="ttl">{{ $t('gitstat.title') }}</span></header>
 
     <div class="form">
       <label class="fld grow">
-        <span>仓库路径或 git 地址</span>
-        <input v-model="repoPath" list="gitstat-recents" placeholder="本地路径，或 https://… / git@…（远程会先 clone）" @keyup.enter="run" />
+        <span>{{ $t('gitstat.repo_label') }}</span>
+        <input v-model="repoPath" list="gitstat-recents" :placeholder="$t('gitstat.repo_placeholder')" @keyup.enter="run" />
         <datalist id="gitstat-recents"><option v-for="p in recents" :key="p" :value="p" /></datalist>
       </label>
-      <label class="fld"><span>起始日期</span><input v-model="since" type="date" /></label>
-      <label class="fld"><span>结束日期</span><input v-model="until" type="date" /></label>
-      <button class="go" :disabled="loading" @click="run">{{ loading ? '克隆/查询中…' : '查询' }}</button>
+      <label class="fld"><span>{{ $t('gitstat.since') }}</span><input v-model="since" type="date" /></label>
+      <label class="fld"><span>{{ $t('gitstat.until') }}</span><input v-model="until" type="date" /></label>
+      <button class="go" :disabled="loading" @click="run">{{ loading ? $t('gitstat.querying') : $t('gitstat.query') }}</button>
     </div>
     <div v-if="error" class="err">{{ error }}</div>
 
     <div v-if="result" class="res">
       <div class="cards">
-        <div class="card"><b>{{ result.stats.commits }}</b><span>提交</span></div>
-        <div class="card"><b>{{ result.stats.files }}</b><span>文件</span></div>
-        <div class="card st-added"><b>{{ result.stats.added }}</b><span>新增</span></div>
-        <div class="card st-modified"><b>{{ result.stats.modified }}</b><span>修改</span></div>
-        <div class="card st-deleted"><b>{{ result.stats.deleted }}</b><span>删除</span></div>
-        <div class="card st-renamed"><b>{{ result.stats.renamed }}</b><span>重命名</span></div>
+        <div class="card"><b>{{ result.stats.commits }}</b><span>{{ $t('gitstat.stat.commits') }}</span></div>
+        <div class="card"><b>{{ result.stats.files }}</b><span>{{ $t('gitstat.stat.files') }}</span></div>
+        <div class="card st-added"><b>{{ result.stats.added }}</b><span>{{ $t('gitstat.stat.added') }}</span></div>
+        <div class="card st-modified"><b>{{ result.stats.modified }}</b><span>{{ $t('gitstat.stat.modified') }}</span></div>
+        <div class="card st-deleted"><b>{{ result.stats.deleted }}</b><span>{{ $t('gitstat.stat.deleted') }}</span></div>
+        <div class="card st-renamed"><b>{{ result.stats.renamed }}</b><span>{{ $t('gitstat.stat.renamed') }}</span></div>
       </div>
-      <div v-if="result.truncated" class="warn">结果过多已截断，请缩小日期范围。</div>
+      <div v-if="result.truncated" class="warn">{{ $t('gitstat.truncated') }}</div>
       <div class="repoline">
-        仓库：{{ result.repo.path }}<template v-if="result.repo.branch"> @ {{ result.repo.branch }}</template>
+        {{ $t('gitstat.repo_prefix') }}{{ result.repo.path }}<template v-if="result.repo.branch"> @ {{ result.repo.branch }}</template>
         · {{ result.range.since }} ~ {{ result.range.until }}
       </div>
 
-      <div v-if="result.summary.length === 0" class="empty">该区间没有文件变动</div>
+      <div v-if="result.summary.length === 0" class="empty">{{ $t('gitstat.empty') }}</div>
       <template v-else>
         <div class="filters">
           <button v-for="f in FILTERS" :key="f" :class="{ on: filter === f }" @click="filter = f">{{ filterLabel(f) }}</button>
         </div>
         <table class="tbl">
-          <thead><tr><th>状态</th><th>文件</th><th>次数</th><th>最后变动</th></tr></thead>
+          <thead><tr><th>{{ $t('gitstat.col.status') }}</th><th>{{ $t('gitstat.col.file') }}</th><th>{{ $t('gitstat.col.touches') }}</th><th>{{ $t('gitstat.col.last') }}</th></tr></thead>
           <tbody>
             <tr v-for="row in filteredSummary" :key="row.path">
               <td><span class="badge" :class="statusClass(row.status)">{{ statusLabel(row.status) }}</span></td>
@@ -121,7 +122,7 @@ function fmtDate(iso: string): string {
         </table>
       </template>
 
-      <h3 class="sub">提交明细（{{ result.commits.length }}）</h3>
+      <h3 class="sub">{{ $t('gitstat.commits_title', { count: result.commits.length }) }}</h3>
       <div v-for="c in result.commits" :key="c.hash" class="cmt">
         <button class="chead" @click="toggleCommit(c.hash)">
           <span class="cx">{{ openCommits.has(c.hash) ? '▾' : '▸' }}</span>

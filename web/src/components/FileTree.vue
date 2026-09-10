@@ -2,6 +2,7 @@
 import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useProjects } from '../useProjects';
 import TreeNode from './TreeNode.vue';
+import { t } from '../i18n';
 
 export interface TreeNode {
   name: string;
@@ -118,16 +119,16 @@ async function revealOs() {
   const target = m.path;
   closeMenu();
   try { await reveal(props.projectId, target); }
-  catch (e: any) { alert(`无法在系统资源管理器中打开：${e?.message || e}`); }
+  catch (e: any) { alert(t('tree.reveal_failed', { msg: e?.message || e })); }
 }
 
 // —— 新建文件 / 文件夹 ——
 function promptCreate(kind: CreateKind, dir = currentDir.value) {
-  const label = kind === 'file' ? '文件名' : '文件夹名';
-  const where = dir ? `（目录：${dir}）` : '（项目根目录）';
-  const name = window.prompt(`新建${label}${where}，留空取消`);
+  const label = kind === 'file' ? t('tree.file_name') : t('tree.dir_name');
+  const where = dir ? t('tree.in_dir', { dir }) : t('tree.in_root');
+  const name = window.prompt(t('tree.prompt_create', { label, where }));
   if (!name) return;
-  if (/[\\/:*?"<>|]/.test(name)) { alert('名称不能包含 \\ / : * ? " < > |'); return; }
+  if (/[\\/:*?"<>|]/.test(name)) { alert(t('tree.bad_name')); return; }
   const rel = dir ? `${dir}/${name}` : name;
   doCreate(kind, rel, name);
 }
@@ -146,7 +147,7 @@ async function doCreate(kind: CreateKind, rel: string, name: string) {
       await expandTo(rel);
     }
   } catch (e: any) {
-    alert(`新建失败：${e?.message || e}`);
+    alert(t('tree.create_failed', { msg: e?.message || e }));
   }
 }
 function newAtRoot(kind: CreateKind) {
@@ -163,11 +164,11 @@ defineExpose({ refresh });
 <template>
   <div class="ft" @contextmenu.prevent>
     <div class="head">
-      <span class="title">资源管理器</span>
+      <span class="title">{{ $t('tree.title') }}</span>
       <div class="acts">
-        <button class="ic" title="刷新目录" @click="refresh">⟳</button>
-        <button class="ic" title="新建文件（当前目录）" @click.stop="promptCreate('file')">📄＋</button>
-        <button class="ic" title="新建文件夹（当前目录）" @click.stop="promptCreate('dir')">📁＋</button>
+        <button class="ic" :title="$t('tree.refresh')" @click="refresh">⟳</button>
+        <button class="ic" :title="$t('tree.new_file')" @click.stop="promptCreate('file')">📄＋</button>
+        <button class="ic" :title="$t('tree.new_dir')" @click.stop="promptCreate('dir')">📁＋</button>
       </div>
     </div>
 
@@ -175,19 +176,19 @@ defineExpose({ refresh });
       @open-file="(p, name) => projectId && emit('open-file', projectId, p, name)"
       @dir-open="(p) => currentDir = p"
       @ctx="onCtx" />
-    <div v-if="projectId && nodes.length === 0" class="empty">空目录</div>
-    <div v-if="!projectId" class="empty">未选择项目</div>
+    <div v-if="projectId && nodes.length === 0" class="empty">{{ $t('tree.empty_dir') }}</div>
+    <div v-if="!projectId" class="empty">{{ $t('tree.no_project') }}</div>
 
     <div v-if="menu" class="ctx" :style="{ left: menu.x + 'px', top: menu.y + 'px' }" @click.stop>
-      <button @click="revealOs">在系统资源管理器中显示</button>
+      <button @click="revealOs">{{ $t('tree.reveal_os') }}</button>
       <div class="sep" />
-      <button @click="ctxCreateDir('file')">新建文件</button>
-      <button @click="ctxCreateDir('dir')">新建文件夹</button>
+      <button @click="ctxCreateDir('file')">{{ $t('tree.ctx.new_file') }}</button>
+      <button @click="ctxCreateDir('dir')">{{ $t('tree.ctx.new_dir') }}</button>
       <div class="sep" />
-      <button v-if="menu.type === 'file'" @click="copyContent">复制文件内容</button>
-      <button v-if="menu.type === 'file'" @click="detailFile">ⓘ 详细信息</button>
-      <button @click="copyName">{{ menu.type === 'dir' ? '复制文件夹名' : '复制文件名' }}</button>
-      <button @click="copyPath">复制路径</button>
+      <button v-if="menu.type === 'file'" @click="copyContent">{{ $t('tree.copy_content') }}</button>
+      <button v-if="menu.type === 'file'" @click="detailFile">{{ $t('tree.detail') }}</button>
+      <button @click="copyName">{{ menu.type === 'dir' ? $t('tree.copy_dir_name') : $t('tree.copy_file_name') }}</button>
+      <button @click="copyPath">{{ $t('tree.copy_path') }}</button>
     </div>
   </div>
 </template>

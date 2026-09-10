@@ -59,16 +59,16 @@ function fmtTime(ts: number) {
   <div class="hl">
     <header class="hh">
       <div class="tabs">
-        <button class="tabbtn" :class="{ on: tab === 'files' }" @click="emit('update:tab', 'files')">📄 文件</button>
-        <button class="tabbtn" :class="{ on: tab === 'messages' }" @click="emit('update:tab', 'messages')">💬 消息</button>
+        <button class="tabbtn" :class="{ on: tab === 'files' }" @click="emit('update:tab', 'files')">{{ $t('hist.tab.files') }}</button>
+        <button class="tabbtn" :class="{ on: tab === 'messages' }" @click="emit('update:tab', 'messages')">{{ $t('hist.tab.messages') }}</button>
       </div>
-      <button v-if="tab === 'files' && items.length" class="clear" title="清空文件历史" @click="emit('clear')">清空</button>
-      <button v-else-if="tab === 'messages' && messages.length" class="clear" title="清空消息历史" @click="emit('clear-messages')">清空</button>
+      <button v-if="tab === 'files' && items.length" class="clear" :title="$t('hist.clear_files')" @click="emit('clear')">{{ $t('hist.clear') }}</button>
+      <button v-else-if="tab === 'messages' && messages.length" class="clear" :title="$t('hist.clear_messages')" @click="emit('clear-messages')">{{ $t('hist.clear') }}</button>
     </header>
 
     <div class="list" @scroll.passive="onScroll">
       <template v-if="tab === 'files'">
-        <div v-if="items.length === 0" class="empty">还没有打开过文件，从「目录」点开文件会记录在这里</div>
+        <div v-if="items.length === 0" class="empty">{{ $t('hist.empty_files') }}</div>
         <div v-for="g in grouped" :key="g.proj" class="grp">
           <div class="gname">{{ g.proj }}</div>
           <button v-for="r in g.recs" :key="r.projectId + '|' + r.path" class="row" @click="emit('open', r)">
@@ -78,21 +78,21 @@ function fmtTime(ts: number) {
               <span class="sub">{{ r.path }}</span>
             </span>
             <span class="ts">{{ fmtTime(r.ts) }}</span>
-            <span class="x" title="移出历史" @click.stop="emit('remove', r.projectId, r.path)">×</span>
+            <span class="x" :title="$t('hist.remove')" @click.stop="emit('remove', r.projectId, r.path)">×</span>
           </button>
         </div>
       </template>
 
       <template v-else>
-        <div v-if="messages.length === 0" class="empty">还没有发送过消息，在底部输入框发送后会记录在这里</div>
+        <div v-if="messages.length === 0" class="empty">{{ $t('hist.empty_messages') }}</div>
         <button v-for="(m, i) in shownMessages" :key="i" class="mrow" :title="m" @click="emit('open-message', m)">
           <span class="ic">💬</span>
           <span class="mtext">{{ m }}</span>
         </button>
       </template>
 
-      <div v-if="hasMore" class="more">继续下拉加载更多…</div>
-      <div v-else-if="(tab === 'files' ? items.length : messages.length) > 0" class="foot">已加载全部</div>
+      <div v-if="hasMore" class="more">{{ $t('hist.more') }}</div>
+      <div v-else-if="(tab === 'files' ? items.length : messages.length) > 0" class="foot">{{ $t('hist.foot') }}</div>
     </div>
   </div>
 </template>
