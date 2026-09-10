@@ -10,6 +10,7 @@ import FilePreview from './FilePreview.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
+import { t } from '../i18n';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -67,19 +68,19 @@ async function loadSettings() {
 async function savePort() {
   portMsg.value = '';
   const p = Number(serverPort.value);
-  if (!p || p < 1 || p > 65535) { portMsg.value = '端口需为 1-65535'; return; }
+  if (!p || p < 1 || p > 65535) { portMsg.value = t('term.port_invalid'); return; }
   try {
     const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: p }) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    portMsg.value = '已保存，重启服务后生效';
-  } catch (e: any) { portMsg.value = `保存失败：${e?.message || e}`; }
+    portMsg.value = t('term.port_saved');
+  } catch (e: any) { portMsg.value = t('term.save_failed', { msg: e?.message || e }); }
 }
 function onOpenSettings() { settingsOpen.value = true; loadSettings(); }
 
 // 新建会话：先选择要执行的命令（终端 cmd / 各 Agent）
 const newOpen = ref(false);
 const newChoices = computed(() => [
-  { id: 'cmd', label: '终端（cmd / shell）', cmd: '' },
+  { id: 'cmd', label: t('term.new_cmd'), cmd: '' },
   ...agents.value.map((a) => ({ id: a.id, label: a.name, cmd: a.cmd })),
 ]);
 async function createNew(id: string) {
@@ -118,7 +119,7 @@ function resetCfg() {
   wfCmds.value = { dev: '/dev', test: '/test', doc: '/doc' };
 }
 function addAgent() {
-  agents.value.push({ id: `agent-${Date.now().toString(36)}`, name: '新 Agent', cmd: '' });
+  agents.value.push({ id: `agent-${Date.now().toString(36)}`, name: t('term.new_agent_name'), cmd: '' });
 }
 function removeAgent(id: string) {
   if (agents.value.length <= 1) return;
@@ -181,24 +182,26 @@ function sendAgentText(text: string) {
 // 工作流定义来自 config/workflow.xml（GET /api/workflows-xml）；下面为兜底
 interface StageDef { id: string; label: string; prompts: string[]; group?: string; }
 interface WfDef { id: string; label: string; stages: StageDef[]; }
-const FALLBACK_WF: WfDef[] = [
-  {
-    id: 'dev', label: '开发工作流',
-    stages: [
-      { id: 'design', label: '需求设计', group: '需求', prompts: ['请使用 superpower brainstorm 来拆解下面需求：', '请澄清边界、非目标与验收标准。'] },
-      { id: 'design-review', label: '需求 Review', group: '需求', prompts: ['请使用 gstack 的 autoplan skills 对刚才输入的文档进行 review'] },
-      { id: 'code', label: '代码实现', group: '开发交付', prompts: ['请按需求文档实现功能，遵循仓库 AGENTS 约定，改完先跑测试与类型检查。'] },
-      { id: 'optimize', label: '代码优化', group: '开发交付', prompts: ['请在不改变行为的前提下重构优化，每步跑测试确保不回归。'] },
-      { id: 'test', label: '开发自测', group: '开发交付', prompts: ['请补齐并运行测试与类型检查，报告结果与风险。'] },
-      { id: 'push-merge', label: 'Push&Merge 代码', group: '开发交付', prompts: ['请提交并 push 当前改动到当前分支，再合并到目标分支，写清提交信息。'] },
-      { id: 'deploy', label: '环境部署', group: '交付运维', prompts: ['请给出构建/打包/发布步骤并执行，说明回滚方案。'] },
-      { id: 'troubleshoot', label: '问题定位', group: '交付运维', prompts: ['请基于现象收集日志与复现步骤，列出可能原因并给出验证方法。'] },
-    ],
-  },
-  { id: 'test', label: '测试工作流', stages: [{ id: 'scope', label: '测试范围', prompts: ['请梳理本次改动影响面，产出测试范围与优先级。'] }] },
-  { id: 'doc', label: '文档工作流', stages: [{ id: 'scan', label: '盘点文档', prompts: ['请梳理本次改动需要更新哪些文档。'] }] },
-];
-const wfDefs = ref<WfDef[]>(FALLBACK_WF);
+function buildFallbackWf(): WfDef[] {
+  return [
+    {
+      id: 'dev', label: t('termwf.dev.title'),
+      stages: [
+        { id: 'design', label: t('termwf.design.label'), group: t('termwf.group.requirement'), prompts: [t('termwf.design.prompt1'), t('termwf.design.prompt2')] },
+        { id: 'design-review', label: t('termwf.design_review.label'), group: t('termwf.group.requirement'), prompts: [t('termwf.design_review.prompt')] },
+        { id: 'code', label: t('termwf.code.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.code.prompt')] },
+        { id: 'optimize', label: t('termwf.optimize.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.optimize.prompt')] },
+        { id: 'test', label: t('termwf.test.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.test.prompt')] },
+        { id: 'push-merge', label: t('termwf.push.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.push.prompt')] },
+        { id: 'deploy', label: t('termwf.deploy.label'), group: t('termwf.group.ops'), prompts: [t('termwf.deploy.prompt')] },
+        { id: 'troubleshoot', label: t('termwf.troubleshoot.label'), group: t('termwf.group.ops'), prompts: [t('termwf.troubleshoot.prompt')] },
+      ],
+    },
+    { id: 'test', label: t('termwf.testflow.title'), stages: [{ id: 'scope', label: t('termwf.testflow.scope'), prompts: [t('termwf.testflow.prompt')] }] },
+    { id: 'doc', label: t('termwf.docflow.title'), stages: [{ id: 'scan', label: t('termwf.docflow.scan'), prompts: [t('termwf.docflow.prompt')] }] },
+  ];
+}
+const wfDefs = ref<WfDef[]>(buildFallbackWf());
 const composerText = ref('');
 function fillPrompt(text: string) { composerText.value = text; }
 
@@ -237,7 +240,7 @@ function onComposerDragDown(e: MouseEvent) {
   document.addEventListener('mouseup', up);
 }
 
-const curWf = computed<WfDef>(() => wfDefs.value.find((w) => w.id === wfKind.value) || wfDefs.value[0] || FALLBACK_WF[0]);
+const curWf = computed<WfDef>(() => wfDefs.value.find((w) => w.id === wfKind.value) || wfDefs.value[0] || buildFallbackWf()[0]);
 const STAGES = computed(() => curWf.value.stages);
 const stageGroups = computed(() => {
   const out: { name: string; stages: StageDef[] }[] = [];
@@ -355,7 +358,7 @@ function init() {
     replay: (d) => { term?.clear(); term?.write(d); requestAnimationFrame(() => onResize()); },
   });
   watch(() => props.terminal.state.status, (s) => {
-    if (s === 'reconnecting') term?.write('\x1b[33m-- 已断开，正在重连 --\x1b[0m\r\n');
+    if (s === 'reconnecting') term?.write('\x1b[33m' + t('term.disconnected') + '\x1b[0m\r\n');
   });
   const dims = () => { const d = fit?.proposeDimensions(); return { cols: d?.cols || 80, rows: d?.rows || 24 }; };
   unsubList = props.terminal.on(S2C.SESSION_LIST, () => {
@@ -415,11 +418,11 @@ function onTabClick(id: string) {
 }
 function onTabClose(id: string, ev: Event) {
   ev.stopPropagation();
-  const t = props.center.tabs.value.find((x) => x.id === id);
-  if (!t) return;
-  if (t.kind === 'session' && t.id.startsWith('s:')) {
-    const sid = t.id.slice(2);
-    if (confirm('结束该会话？')) { props.terminal.killSession(sid); }
+  const tab = props.center.tabs.value.find((x) => x.id === id);
+  if (!tab) return;
+  if (tab.kind === 'session' && tab.id.startsWith('s:')) {
+    const sid = tab.id.slice(2);
+    if (confirm(t('term.kill_confirm'))) { props.terminal.killSession(sid); }
   } else {
     props.center.closeById(id);
   }
@@ -455,11 +458,11 @@ onBeforeUnmount(() => {
 
     <div v-if="newOpen" class="setmask" @click.self="newOpen = false">
       <div class="newmodal">
-        <header class="seth"><span>新建会话 —— 选择要执行的命令</span><button class="setx" @click="newOpen = false">×</button></header>
+        <header class="seth"><span>{{ $t('term.new_session') }}</span><button class="setx" @click="newOpen = false">×</button></header>
         <div class="newlist">
           <button v-for="c in newChoices" :key="c.id" class="newitem" @click="createNew(c.id)">
             <span class="ni-label">{{ c.label }}</span>
-            <span class="ni-cmd">{{ c.cmd || '默认 shell' }}</span>
+            <span class="ni-cmd">{{ c.cmd || $t('term.default_shell') }}</span>
           </button>
         </div>
       </div>
@@ -467,36 +470,36 @@ onBeforeUnmount(() => {
     <div v-if="settingsOpen" class="setmask" @click.self="settingsOpen = false">
       <div class="setmodal">
         <header class="seth">
-          <span>设置</span>
+          <span>{{ $t('term.settings') }}</span>
           <button class="setx" @click="settingsOpen = false">×</button>
         </header>
         <div class="setbody">
           <div class="setsec">
-            <div class="settitle">Agent 列表 <button class="ghostcfg" @click="addAgent">＋ 新增</button></div>
+            <div class="settitle">{{ $t('term.agent_list') }} <button class="ghostcfg" @click="addAgent">{{ $t('term.add') }}</button></div>
             <div v-for="a in agents" :key="a.id" class="agentrow">
-              <input v-model="a.name" class="ainput aname" placeholder="名称" />
-              <input v-model="a.cmd" class="ainput acmd" placeholder="启动命令，如 opencode" />
-              <button class="ghostcfg" :class="{ on: a.id === agentId }" :disabled="a.id === agentId" @click="agentId = a.id">{{ a.id === agentId ? '当前' : '设为当前' }}</button>
-              <button class="ghostcfg" :disabled="agents.length <= 1" @click="removeAgent(a.id)">删除</button>
+              <input v-model="a.name" class="ainput aname" :placeholder="$t('term.name')" />
+              <input v-model="a.cmd" class="ainput acmd" :placeholder="$t('term.agent_cmd_placeholder')" />
+              <button class="ghostcfg" :class="{ on: a.id === agentId }" :disabled="a.id === agentId" @click="agentId = a.id">{{ a.id === agentId ? $t('term.current') : $t('term.set_current') }}</button>
+              <button class="ghostcfg" :disabled="agents.length <= 1" @click="removeAgent(a.id)">{{ $t('term.delete') }}</button>
             </div>
-            <div class="cfghint">启动命令会作为该固定会话的第一条命令输入（如 opencode / claudecode）。</div>
+            <div class="cfghint">{{ $t('term.agent_hint') }}</div>
           </div>
           <div class="setsec">
-            <div class="settitle">工作流命令（opencode command/）</div>
-            <div class="cfgrow"><span>开发命令</span><input v-model="wfCmds.dev" placeholder="/dev" /></div>
-            <div class="cfgrow"><span>测试命令</span><input v-model="wfCmds.test" placeholder="/test" /></div>
-            <div class="cfgrow"><span>文档命令</span><input v-model="wfCmds.doc" placeholder="/doc" /></div>
+            <div class="settitle">{{ $t('term.wf_cmds') }}</div>
+            <div class="cfgrow"><span>{{ $t('term.wf_dev') }}</span><input v-model="wfCmds.dev" placeholder="/dev" /></div>
+            <div class="cfgrow"><span>{{ $t('term.wf_test') }}</span><input v-model="wfCmds.test" placeholder="/test" /></div>
+            <div class="cfgrow"><span>{{ $t('term.wf_doc') }}</span><input v-model="wfCmds.doc" placeholder="/doc" /></div>
           </div>
           <div class="setsec">
-            <div class="settitle">服务</div>
-            <div class="cfgrow"><span>启动端口</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="3001" /><button class="ghostcfg" @click="savePort">保存</button></div>
+            <div class="settitle">{{ $t('term.service') }}</div>
+            <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="3001" /><button class="ghostcfg" @click="savePort">{{ $t('common.save') }}</button></div>
             <div v-if="portMsg" class="cfghint">{{ portMsg }}</div>
-            <div class="cfghint">写入 config/server.json；端口修改需重启服务后生效（可用环境变量 DEVFLOW_PORT 覆盖）。</div>
+            <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>
         </div>
         <footer class="setf">
-          <button class="ghostcfg" @click="resetCfg">恢复默认</button>
-          <button class="ago" @click="settingsOpen = false">完成</button>
+          <button class="ghostcfg" @click="resetCfg">{{ $t('term.restore_default') }}</button>
+          <button class="ago" @click="settingsOpen = false">{{ $t('term.done') }}</button>
         </footer>
       </div>
     </div>
@@ -508,8 +511,8 @@ onBeforeUnmount(() => {
         <span class="nm" :title="t.kind === 'file' ? t.path : t.label">{{ t.label }}</span>
         <span v-if="t.id !== 's:' + agentSid" class="x" @click="onTabClose(t.id, $event)">×</span>
       </div>
-      <button class="new" @click="newOpen = true">＋ 新建会话</button>
-      <span v-if="terminal.state.status === 'reconnecting'" class="net">重连中…</span>
+      <button class="new" @click="newOpen = true">{{ $t('term.new_session_btn') }}</button>
+      <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
     </div>
 
     <div v-show="isSessionView" class="term-layer" ref="hostRef" />
@@ -524,7 +527,7 @@ onBeforeUnmount(() => {
         <div class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
         </div>
-        <button class="cmin" :title="composerMin ? '展开' : '最小化'" @mousedown.stop @click="composerMin = !composerMin">{{ composerMin ? '❐' : '—' }}</button>
+        <button class="cmin" :title="composerMin ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerMin ? '❐' : '—' }}</button>
       </div>
       <template v-if="!composerMin">
         <div class="flowbar">
@@ -539,8 +542,8 @@ onBeforeUnmount(() => {
             <span v-if="gi < stageGroups.length - 1" class="fgap" />
           </template>
         </div>
-        <div v-if="chips.length" class="chipbar" title="该阶段常用提示：点击填入输入框">
-          <span class="chips-label">常用</span>
+        <div v-if="chips.length" class="chipbar" :title="$t('term.phase_hints')">
+          <span class="chips-label">{{ $t('term.common') }}</span>
           <button
             v-for="(p, i) in chips"
             :key="i"
@@ -554,12 +557,12 @@ onBeforeUnmount(() => {
             <textarea
               v-model="composerText"
               class="cinput"
-              placeholder="输入内容，回车送入上方当前会话；Shift+Enter 换行"
+              :placeholder="$t('term.composer_placeholder')"
               @keydown="onComposerKey"
             />
-            <button class="chist" title="查看输入历史" @mousedown.stop @click="openHistory">🕘 历史</button>
+            <button class="chist" :title="$t('term.history')" @mousedown.stop @click="openHistory">{{ $t('term.history') }}</button>
           </div>
-          <button class="csend" @click="submitComposer">发送</button>
+          <button class="csend" @click="submitComposer">{{ $t('common.send') }}</button>
         </div>
       </template>
     </div>
