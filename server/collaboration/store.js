@@ -4,10 +4,7 @@ import path from 'node:path';
 export function defaultData() {
   return {
     identity: null,      // { machineId, username, host, port, publicKey, privateKey }
-    friends: [],         // 公开 profile
-    pendingFriends: [],  // 待确认好友请求（对方 profile + requestedAt）
-    groups: [],          // { id, name, ownerId, members:[profile+role], createdAt }
-    pendingInvites: [],  // { id, groupId, groupName, inviter: profile, receivedAt }
+    group: null,         // 单例群组 { id:'shared', name, createdAt, hubId, members:[profile] }
     skillsInbox: [],     // { id, kind:'skill'|'file', fromId, groupId|null, skillName|null, fileName|null, hash, size, zipPath, status, receivedAt }
     groupSkills: [],     // { groupId, skillName, hash, distributedBy, installed }
     outbox: [],          // 我发出的传输记录 { id, kind, groupId, skillName|null, fileName|null, size, hash, createdAt }
@@ -38,50 +35,26 @@ export class CollabStore {
     fs.renameSync(tmp, this.file);
   }
 
-  // friends
-  listFriends() { return this.data.friends; }
-  findFriend(machineId) { return this.data.friends.find((f) => f.machineId === machineId) || null; }
-  addFriend(f) {
-    if (this.findFriend(f.machineId)) return;
-    this.data.friends.push({ ...f });
-    this.data.pendingFriends = this.data.pendingFriends.filter((p) => p.machineId !== f.machineId);
+  // ---- 单例群组 ----
+  getGroup() { return this.data.group; }
+  findGroup(id) { return this.data.group && this.data.group.id === id ? this.data.group : null; }
+  listGroups() { return this.data.group ? [this.data.group] : []; }
+  ensureGroup({ name, hubId, self }) {
+    if (this.data.group) return this.data.group;
+    this.data.group = { id: 'shared', name, createdAt: Date.now(), hubId, members: [{ ...self }] };
     this.save();
+    return this.data.group;
   }
-  upsertFriend(f) {
-    const i = this.data.friends.findIndex((x) => x.machineId === f.machineId);
-    if (i >= 0) this.data.friends[i] = { ...f };
-    else this.data.friends.push({ ...f });
+  setGroup(group) { this.data.group = group; this.save(); return group; }
+  saveGroup(group) { this.data.group = group; this.save(); return group; }
+  upsertGroup(group) { this.data.group = group; this.save(); return group; }
+  addGroupMember(profile) {
+    const g = this.data.group;
+    if (!g) return null;
+    if (!g.members.find((m) => m.machineId === profile.machineId)) g.members.push({ ...profile });
     this.save();
+    return g;
   }
-  removeFriend(machineId) {
-    this.data.friends = this.data.friends.filter((f) => f.machineId !== machineId);
-    this.save();
-  }
-
-  // pending friends
-  listPendingFriends() { return this.data.pendingFriends; }
-  findPendingFriend(machineId) { return this.data.pendingFriends.find((p) => p.machineId === machineId) || null; }
-  addPendingFriend(p) { if (!this.findPendingFriend(p.machineId)) this.data.pendingFriends.push({ ...p }); this.save(); }
-  removePendingFriend(machineId) { this.data.pendingFriends = this.data.pendingFriends.filter((p) => p.machineId !== machineId); this.save(); }
-
-  // groups
-  listGroups() { return this.data.groups; }
-  findGroup(id) { return this.data.groups.find((g) => g.id === id) || null; }
-  addGroup(group) { this.data.groups.push(group); this.save(); return group; }
-  removeGroup(id) { this.data.groups = this.data.groups.filter((g) => g.id !== id); this.save(); }
-  upsertGroup(group) {
-    const i = this.data.groups.findIndex((g) => g.id === group.id);
-    if (i >= 0) this.data.groups[i] = group; else this.data.groups.push(group);
-    this.save();
-    return group;
-  }
-  saveGroup(group) { this.upsertGroup(group); }
-
-  // pending invites
-  listPendingInvites() { return this.data.pendingInvites; }
-  findPendingInvite(id) { return this.data.pendingInvites.find((x) => x.id === id) || null; }
-  addPendingInvite(inv) { this.data.pendingInvites.push(inv); this.save(); return inv; }
-  removePendingInvite(id) { this.data.pendingInvites = this.data.pendingInvites.filter((x) => x.id !== id); this.save(); }
 
   // inbox
   listInbox() { return this.data.skillsInbox; }
