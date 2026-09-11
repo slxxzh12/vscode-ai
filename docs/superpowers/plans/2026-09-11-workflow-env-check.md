@@ -244,10 +244,10 @@ git commit -m "feat(web): 工作流兜底新增基础环境检查阶段"
 
 - [ ] **Step 2: 校验活动配置可解析且首阶段正确**
 
-Run（PowerShell，使用项目 Node）：
+Run（PowerShell，使用项目 Node 以 ESM 方式校验）：
 
 ```powershell
-node -e "const fs=require('fs');const {parseDevflowConfig}=require('./server/devflow-config.js');" 2>$null; node --input-type=module -e "import fs from 'node:fs'; import {parseDevflowConfig} from './server/devflow-config.js'; const f=process.env.USERPROFILE+'/.local/share/devflow/downloads/devflow.xml'; const c=parseDevflowConfig(fs.readFileSync(f,'utf8')); const dev=c.workflows.find(w=>w.id==='dev'); console.log(dev.stages[0].id, dev.stages[0].group);"
+node --input-type=module -e "import fs from 'node:fs'; import { parseDevflowConfig } from './server/devflow-config.js'; const f = process.env.USERPROFILE + '/.local/share/devflow/downloads/devflow.xml'; const c = parseDevflowConfig(fs.readFileSync(f, 'utf8')); const dev = c.workflows.find((w) => w.id === 'dev'); console.log(dev.stages[0].id, dev.stages[0].group);"
 ```
 
 Expected: 输出 `env-check 需求`。
