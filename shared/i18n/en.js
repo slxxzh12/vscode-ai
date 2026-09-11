@@ -362,7 +362,7 @@ export const messages = {
   'remote.need_invite': 'This service is local-only by default. For remote access, generate a temporary invite link in Settings on the host machine and open it (valid up to 24 hours).',
   'remote.title': 'Remote access',
   'remote.desc': 'Off by default. After generating, external devices must enter the one-time access password within its validity.',
-  'remote.hours': 'Validity (hours, 1–168, default 24)',
+  'remote.days': 'Validity (days, 1–7, default 1)',
   'remote.generate': 'Generate link & password',
   'remote.revoke': 'Revoke now',
   'remote.copy': 'Copy',

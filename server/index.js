@@ -324,10 +324,10 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
-      const hours = Math.min(168, Math.max(1, Number(body.hours) || 24));   // 默认 1 天，最长 7 天
+      const days = Math.min(7, Math.max(1, Math.floor(Number(body.days) || 1)));   // 默认 1 天，最长 7 天
       const token = crypto.randomBytes(24).toString('hex');
       const password = crypto.randomBytes(16).toString('base64url');        // 22 字符，≥16
-      remoteInvite = { token, password, expiresAt: Date.now() + Math.min(hours * 3600 * 1000, MAX_TTL_MS) };
+      remoteInvite = { token, password, expiresAt: Date.now() + Math.min(days * 24 * 3600 * 1000, MAX_TTL_MS) };
       remoteFails = 0;
       remoteLockedUntil = 0;
       let needRestart = false;

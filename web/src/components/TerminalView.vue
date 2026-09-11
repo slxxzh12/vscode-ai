@@ -114,7 +114,7 @@ async function savePort() {
 function onOpenSettings() { settingsOpen.value = true; loadSettings(); loadRemote(); }
 
 // ---- 远程访问（临时邀请链接，默认关闭，有效期 ≤24h）----
-const remoteHours = ref(24);
+const remoteDays = ref(1);
 const remoteLink = ref('');
 const remotePassword = ref('');
 const remoteMsg = ref('');
@@ -130,7 +130,7 @@ async function loadRemote() {
 async function genRemote() {
   remoteMsg.value = '';
   try {
-    const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hours: Number(remoteHours.value) || 24 }) }).then((x) => x.json());
+    const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days: Number(remoteDays.value) || 1 }) }).then((x) => x.json());
     remoteLink.value = r.link || '';
     remotePassword.value = r.password || '';
     remoteState.value = { enabled: !!r.enabled, expiresAt: r.expiresAt || null, address: r.address, needRestart: !!r.needRestart, host: r.needRestart ? '0.0.0.0' : remoteState.value.host };
@@ -640,8 +640,8 @@ onBeforeUnmount(() => {
             <div class="cfghint">{{ $t('remote.desc') }}</div>
             <div class="remote-warn">{{ $t('remote.warn_title') }}<br>{{ $t('remote.warn_body') }}</div>
             <div class="cfgrow">
-              <span>{{ $t('remote.hours') }}</span>
-              <input v-model.number="remoteHours" type="number" min="1" max="168" style="width:90px" />
+              <span>{{ $t('remote.days') }}</span>
+              <input v-model.number="remoteDays" type="number" min="1" max="7" style="width:70px" />
               <button class="ghostcfg" @click="genRemote">{{ $t('remote.generate') }}</button>
               <button v-if="remoteState.enabled" class="ghostcfg" @click="revokeRemote">{{ $t('remote.revoke') }}</button>
             </div>
