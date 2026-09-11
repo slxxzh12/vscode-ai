@@ -73,17 +73,11 @@ function fmtDay(ts: number) {
   const d = new Date(ts); const p = (x: number) => String(x).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-function fmtTime(ts: number) {
-  const d = new Date(ts); const now = new Date();
-  const p = (x: number) => String(x).padStart(2, '0');
-  if (d.toDateString() === now.toDateString()) return `${p(d.getHours())}:${p(d.getMinutes())}`;
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-// 下面显示的访问时间（日期 + 时分）
+// 下面显示的访问时间（精确到秒）
 function fmtBelow(ts: number) {
   if (!ts) return '';
   const d = new Date(ts); const p = (x: number) => String(x).padStart(2, '0');
-  return `${fmtDay(ts)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${fmtDay(ts)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 // 同一天同一背景色（按日期散列到 4 个淡色）
 function dayClass(ts: number) {
@@ -93,6 +87,22 @@ function dayClass(ts: number) {
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return `d-${h % 4}`;
 }
+
+// 按天插入明显隔断：返回 [{sep:日期} | {item}]
+type DayRow<T> = { sep: string } | { item: T };
+function withDaySeps<T>(items: T[], getTs: (x: T) => number): DayRow<T>[] {
+  const out: DayRow<T>[] = [];
+  let last = '';
+  for (const it of items) {
+    const ts = getTs(it);
+    const key = ts ? fmtDay(ts) : '';
+    if (key && key !== last) { out.push({ sep: key }); last = key; }
+    out.push({ item: it });
+  }
+  return out;
+}
+const msgRows = computed(() => withDaySeps(shownMessages.value, (m) => m.ts));
+const fileGroups = computed(() => grouped.value.map((g) => ({ proj: g.proj, rows: withDaySeps(g.recs, (r) => r.ts) })));
 </script>
 
 <template>
@@ -113,31 +123,37 @@ function dayClass(ts: number) {
       <template v-if="tab === 'files'">
         <div v-if="items.length === 0" class="empty">{{ $t('hist.empty_files') }}</div>
         <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
-        <div v-for="g in grouped" :key="g.proj" class="grp">
+        <div v-for="g in fileGroups" :key="g.proj" class="grp">
           <div class="gname">{{ g.proj }}</div>
-          <button v-for="r in g.recs" :key="r.projectId + '|' + r.path" class="row" :class="dayClass(r.ts)" @click="emit('open', r)">
-            <span class="ic">📄</span>
-            <span class="tx">
-              <span class="nm">{{ r.name }}</span>
-              <span class="sub">{{ r.path }}</span>
-              <span v-if="r.ts" class="mdate">{{ fmtBelow(r.ts) }}</span>
-            </span>
-            <span class="x" :title="$t('hist.remove')" @click.stop="emit('remove', r.projectId, r.path)">×</span>
-          </button>
+          <template v-for="(row, i) in g.rows" :key="i">
+            <div v-if="'sep' in row" class="daysep">{{ row.sep }}</div>
+            <button v-else class="row" :class="dayClass(row.item.ts)" @click="emit('open', row.item)">
+              <span class="ic">📄</span>
+              <span class="tx">
+                <span class="nm">{{ row.item.name }}</span>
+                <span class="sub">{{ row.item.path }}</span>
+                <span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span>
+              </span>
+              <span class="x" :title="$t('hist.remove')" @click.stop="emit('remove', row.item.projectId, row.item.path)">×</span>
+            </button>
+          </template>
         </div>
       </template>
 
       <template v-else>
         <div v-if="messages.length === 0" class="empty">{{ $t('hist.empty_messages') }}</div>
         <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
-        <button v-for="(m, i) in shownMessages" :key="i" class="mrow" :class="dayClass(m.ts)" :title="m.text" @click="emit('open-message', m.text)">
-          <span class="ic">💬</span>
-          <span class="mbody">
-            <span class="mtext">{{ m.text }}</span>
-            <span v-if="m.ts" class="mdate">{{ fmtBelow(m.ts) }}</span>
-          </span>
-          <span class="x" :title="$t('hist.remove_message')" @click.stop="emit('remove-message', m)">×</span>
-        </button>
+        <template v-for="(row, i) in msgRows" :key="i">
+          <div v-if="'sep' in row" class="daysep">{{ row.sep }}</div>
+          <button v-else class="mrow" :class="dayClass(row.item.ts)" :title="row.item.text" @click="emit('open-message', row.item.text)">
+            <span class="ic">💬</span>
+            <span class="mbody">
+              <span class="mtext">{{ row.item.text }}</span>
+              <span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span>
+            </span>
+            <span class="x" :title="$t('hist.remove_message')" @click.stop="emit('remove-message', row.item)">×</span>
+          </button>
+        </template>
       </template>
 
       <div v-if="hasMore" class="more">{{ $t('hist.more') }}</div>
@@ -160,6 +176,8 @@ function dayClass(ts: number) {
 .list { flex: 1; min-height: 0; overflow-y: auto; }
 .grp { flex: none; }
 .gname { color: var(--ac2); font-size: 11px; text-transform: uppercase; padding: 10px 10px 2px; }
+.daysep { display: flex; align-items: center; gap: 8px; padding: 8px 10px 4px; color: var(--tx5); font-size: 11px; font-family: Consolas, monospace; user-select: none; }
+.daysep::before, .daysep::after { content: ''; flex: 1; height: 1px; background: var(--bd); }
 .row { display: flex; align-items: flex-start; gap: 8px; width: 100%; background: none; border: none; text-align: left; padding: 6px 8px; cursor: pointer; }
 .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .nm { color: var(--tx1); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
