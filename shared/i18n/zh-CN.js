@@ -374,6 +374,7 @@ export const messages = {
   'term.about.tab': '关于',
   'term.about.author': '作者',
   'term.about.location': '所在地',
+  'term.about.location_value': '香港&深圳',
   'term.about.contacts_cn': '中国联系方式',
   'term.about.contacts_overseas': '海外联系方式',
   'term.about.email': '邮箱',

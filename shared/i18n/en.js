@@ -374,6 +374,7 @@ export const messages = {
   'term.about.tab': 'About',
   'term.about.author': 'Author',
   'term.about.location': 'Location',
+  'term.about.location_value': 'HongKong&Shenzhen',
   'term.about.contacts_cn': 'China Contacts',
   'term.about.contacts_overseas': 'Overseas Contacts',
   'term.about.email': 'Email',
