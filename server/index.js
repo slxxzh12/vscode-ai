@@ -10,7 +10,7 @@ import { createHttpApi, requireAuthHttp } from './http-api.js';
 import { Projects } from './projects.js';
 import { createLogger } from './log.js';
 import { createStaticServer } from './static.js';
-import { resolveFiles, loadProjects, loadWorkflows } from './config.js';
+import { resolveFiles, ensureDefaults, loadProjects, loadWorkflows } from './config.js';
 import { CollabStore } from './collaboration/store.js';
 import { loadIdentity } from './collaboration/identity.js';
 import { CollabEngine } from './collaboration/engine.js';
@@ -25,6 +25,8 @@ import { defaultConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAtt
 import { setLocale } from './i18n.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
+import { collabDir, uploadDir, downloadDir, seedFromLegacy, instanceName, instanceSeedDir, instanceFpRoot, dataHome } from './data-home.js';
+import { publicFingerprint } from './collaboration/identity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -37,113 +39,101 @@ setLocale(loadDevflowConfig(configFile).server.language);
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
 process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
 
-const files = resolveFiles();
-const projects = new Projects({ projects: loadProjects(files.projectsFile), logger: log });
-const saveProjects = () => {
-  try { fs.writeFileSync(files.projectsFile, JSON.stringify({ projects: projects.rawProjects() }, null, 2), 'utf8'); }
-  catch (e) { log.warn?.('save projects failed', e && e.message); }
-};
-const workflows = loadWorkflows(files.workflowsFile);
-const sessionManager = new SessionManager({
-  logger: log,
-  projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
-});
-const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: log });
-
 // requireAuth 占位钩子（spec §11）：HTTP 用 requireAuthHttp，WS 走 upgrade 处的 requireAuthWs
 const requireAuthWs = () => true; // TODO(安全): 接入 Token 后校验 ws 握手
 
-// ---- 协作子系统（隔离目录 server/collaboration/**，数据存用户数据目录）----
-import { collabDir, uploadDir, downloadDir, seedFromLegacy, instanceName, instanceSeedDir, instanceFpRoot, dataHome } from './data-home.js';
-import { publicFingerprint } from './collaboration/identity.js';
-const HOST_DEFAULT = process.env.DEVFLOW_HOST || '127.0.0.1';
-const PORT_DEFAULT = Number(process.env.DEVFLOW_PORT || 22222);
-const NODE = instanceName();
-
-// 多实例引导：DEVFLOW_NODE=某名 → 该实例自己的 identity（nodes/<名>），其余状态按公钥指纹隔离；
-// 默认实例（未设 DEVFLOW_NODE）沿用老布局 <root>/collab + <root>/upload|download，不迁移。
-let identityFile;
-let storeFile;
-let upDir;
-let downDir;
-let skillDefaultRoot;
-if (NODE) {
-  const seedDir = instanceSeedDir(NODE);
-  identityFile = path.join(seedDir, 'identity.json');
-  storeFile = null; upDir = null; downDir = null;
-} else {
-  const COLLAB_DIR = collabDir();
-  seedFromLegacy(path.join(COLLAB_DIR, 'identity.json'), path.join(__dirname, 'collaboration', 'identity.json'));
-  seedFromLegacy(path.join(COLLAB_DIR, 'collab.json'), path.join(__dirname, 'collaboration', 'collab.json'));
-  identityFile = path.join(COLLAB_DIR, 'identity.json');
-  storeFile = path.join(COLLAB_DIR, 'collab.json');
-  upDir = uploadDir();
-  downDir = downloadDir();
-  skillDefaultRoot = process.env.DEVFLOW_COLLAB_SKILLS || path.join(os.homedir(), '.config', 'opencode', 'skills');
-}
-
-const collabIdentity = loadIdentity({
-  file: identityFile,
-  host: HOST_DEFAULT,
-  port: PORT_DEFAULT,
-});
-const nodeFp = publicFingerprint(collabIdentity.publicKey);
-// 用户输入历史落盘：<dataHome>/nodes/<公钥指纹>/message-history.jsonc
-const historyFile = path.join(instanceFpRoot(nodeFp), 'message-history.jsonc');
-
-if (NODE) {
-  // 状态按本实例公钥指纹隔离（同一密钥永远同一目录；不同密钥互不干扰）
-  const fp = nodeFp;
-  const stateRoot = instanceFpRoot(fp);
-  storeFile = path.join(stateRoot, 'collab.json');
-  upDir = path.join(stateRoot, 'upload');
-  downDir = path.join(stateRoot, 'download');
-  skillDefaultRoot = process.env.DEVFLOW_COLLAB_SKILLS || path.join(stateRoot, 'skills-opencode');
-  fs.mkdirSync(upDir, { recursive: true });
-  fs.mkdirSync(downDir, { recursive: true });
-  fs.mkdirSync(skillDefaultRoot, { recursive: true });
-}
-
-const collabEventBus = createEventBus();
-let gateway;                                  // 后续 createGateway 赋值
+let gateway = null;                                  // createGateway 赋值（档案就绪后）
 const broadcastCollab = (type, payload) => {
   if (!gateway) return;
   for (const c of gateway.conns) c.send({ type, ...payload });
 };
-const collabEngine = new CollabEngine({
-  store: new CollabStore({ file: storeFile, logger: log }),
-  identity: collabIdentity,
-  skillsRoot: skillDefaultRoot,
-  uploadDir: upDir,
-  downloadDir: downDir,
-  events: collabEventBus,
-  logger: log,
-});
-collabEngine.peer = makePeerClient();
-const collabMount = createCollabMount({ engine: collabEngine, logger: log });
-collabEventBus.on('friend-request', (payload) => broadcastCollab(CollabS2C.COLLAB_FRIEND_REQ, payload));
-collabEventBus.on('group-invite', (payload) => broadcastCollab(CollabS2C.COLLAB_GROUP_INVITE, payload));
-collabEventBus.on('inbox', (payload) => broadcastCollab(CollabS2C.COLLAB_INBOX, payload));
-collabEventBus.on('synced', () => broadcastCollab(CollabS2C.COLLAB_SYNCED, {}));
-collabEventBus.on('chat', (payload) => broadcastCollab(CollabS2C.COLLAB_CHAT, { groupId: payload.groupId, msg: payload.msg }));
-collabEventBus.on('cmd-pending', (payload) => broadcastCollab(CollabS2C.COLLAB_CMD_PENDING, payload));
-
-// ---- 定时任务子系统（隔离目录 server/scheduler/**，数据存用户数据目录）----
-const scheduler = createScheduler({
-  dir: path.join(dataHome(), 'scheduler'),
-  projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
-  logger: log,
-});
 const broadcastSched = (type, payload) => {
   if (!gateway) return;
   for (const c of gateway.conns) c.send({ type, ...payload });
 };
-scheduler.engine.onEvent((evt, payload) => {
-  const type = evt === 'run-start' ? SchedulerS2C.SCHED_RUN_START
-    : evt === 'run-end' ? SchedulerS2C.SCHED_RUN_END
-    : SchedulerS2C.SCHED_TASKS_CHANGED;
-  broadcastSched(type, payload);
-});
+
+// ---- 由档案路径构建所有数据模块（不监听端口、不建 gateway）----
+function buildWorkspace({ paths, port }) {
+  const projectsFile = process.env.DEVFLOW_PROJECTS || paths.projectsFile;
+  const workflowsFile = process.env.DEVFLOW_WORKFLOWS || paths.workflowsFile;
+  ensureDefaults(projectsFile, workflowsFile);
+  const projects = new Projects({ projects: loadProjects(projectsFile), logger: log });
+  const saveProjects = () => {
+    try { fs.writeFileSync(projectsFile, JSON.stringify({ projects: projects.rawProjects() }, null, 2), 'utf8'); }
+    catch (e) { log.warn?.('save projects failed', e && e.message); }
+  };
+  const workflows = loadWorkflows(workflowsFile);
+  const sessionManager = new SessionManager({
+    logger: log,
+    projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
+  });
+  const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: log });
+
+  const identity = loadIdentity({ file: paths.identityFile, host: HOST, port });
+  const eventBus = createEventBus();
+  const engine = new CollabEngine({
+    store: new CollabStore({ file: paths.storeFile, logger: log }),
+    identity,
+    skillsRoot: paths.skillsRoot,
+    uploadDir: paths.uploadDir,
+    downloadDir: paths.downloadDir,
+    events: eventBus,
+    logger: log,
+  });
+  engine.peer = makePeerClient();
+  const collabMount = createCollabMount({ engine, logger: log });
+  eventBus.on('friend-request', (payload) => broadcastCollab(CollabS2C.COLLAB_FRIEND_REQ, payload));
+  eventBus.on('group-invite', (payload) => broadcastCollab(CollabS2C.COLLAB_GROUP_INVITE, payload));
+  eventBus.on('inbox', (payload) => broadcastCollab(CollabS2C.COLLAB_INBOX, payload));
+  eventBus.on('synced', () => broadcastCollab(CollabS2C.COLLAB_SYNCED, {}));
+  eventBus.on('chat', (payload) => broadcastCollab(CollabS2C.COLLAB_CHAT, { groupId: payload.groupId, msg: payload.msg }));
+  eventBus.on('cmd-pending', (payload) => broadcastCollab(CollabS2C.COLLAB_CMD_PENDING, payload));
+
+  const scheduler = createScheduler({
+    dir: paths.schedulerDir,
+    projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
+    logger: log,
+  });
+  scheduler.engine.onEvent((evt, payload) => {
+    const type = evt === 'run-start' ? SchedulerS2C.SCHED_RUN_START
+      : evt === 'run-end' ? SchedulerS2C.SCHED_RUN_END
+      : SchedulerS2C.SCHED_TASKS_CHANGED;
+    broadcastSched(type, payload);
+  });
+
+  const httpApi = createHttpApi({ projects, saveProjects, logger: log });
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, historyFile: paths.historyFile, paths };
+}
+
+const HOST_DEFAULT = process.env.DEVFLOW_HOST || '127.0.0.1';
+const PORT_DEFAULT = Number(process.env.DEVFLOW_PORT || 22222);
+const NODE = instanceName();
+
+// 默认实例（未设 DEVFLOW_NODE）沿用老布局 <root>/collab + <root>/upload|download。
+function legacyPaths() {
+  const COLLAB_DIR = collabDir();
+  seedFromLegacy(path.join(COLLAB_DIR, 'identity.json'), path.join(__dirname, 'collaboration', 'identity.json'));
+  seedFromLegacy(path.join(COLLAB_DIR, 'collab.json'), path.join(__dirname, 'collaboration', 'collab.json'));
+  const files = resolveFiles();
+  return {
+    id: 'default',
+    identityFile: path.join(COLLAB_DIR, 'identity.json'),
+    storeFile: path.join(COLLAB_DIR, 'collab.json'),
+    uploadDir: uploadDir(),
+    downloadDir: downloadDir(),
+    skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(os.homedir(), '.config', 'opencode', 'skills'),
+    projectsFile: files.projectsFile,
+    workflowsFile: files.workflowsFile,
+    schedulerDir: path.join(dataHome(), 'scheduler'),
+    historyFile: null,   // 按公钥指纹补
+  };
+}
+
+const _seedPaths = legacyPaths();
+const _seedIdentity = loadIdentity({ file: _seedPaths.identityFile, host: HOST_DEFAULT, port: PORT_DEFAULT });
+const nodeFp = publicFingerprint(_seedIdentity.publicKey);
+_seedPaths.historyFile = path.join(instanceFpRoot(nodeFp), 'message-history.jsonc');
+let ws = buildWorkspace({ paths: _seedPaths, port: PORT_DEFAULT });
 
 const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
@@ -200,7 +190,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/history' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ messages: readHistory(historyFile), file: historyFile }));
+    res.end(JSON.stringify({ messages: readHistory(ws.historyFile), file: ws.historyFile }));
     return;
   }
   if (url.pathname === '/api/history' && req.method === 'POST') {
@@ -210,18 +200,18 @@ const server = http.createServer(async (req, res) => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       let messages;
-      if (typeof body.append === 'string') messages = appendHistory(historyFile, body.append);
-      else if (Array.isArray(body.messages)) messages = writeHistory(historyFile, body.messages);
+      if (typeof body.append === 'string') messages = appendHistory(ws.historyFile, body.append);
+      else if (Array.isArray(body.messages)) messages = writeHistory(ws.historyFile, body.messages);
       else { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'messages[] or append required' })); return; }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ messages }));
     });
     return;
   }
-  if (url.pathname.startsWith('/api/collab')) { await collabMount(req, res); return; }
-  if (url.pathname.startsWith('/api/scheduler')) { await scheduler.mount(req, res); return; }
+  if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }
+  if (url.pathname.startsWith('/api/scheduler')) { await ws.scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/')) {
-    await createHttpApi({ projects, saveProjects, logger: log })(req, res);
+    await ws.httpApi(req, res);
     return;
   }
   createStaticServer(path.join(__dirname, '..', 'web', 'dist'))(req, res, () => {
@@ -230,7 +220,7 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-gateway = createGateway({ httpServer: server, sessionManager, workflowRunner, requireAuthWs, log });
+gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log });
 
 // 配置热重载：config/devflow.xml 变更 → 重载语言并向已连浏览器推送（端口需重启才生效）
 try {
@@ -241,7 +231,7 @@ try {
       try {
         const c = loadDevflowConfig(configFile);
         setLocale(c.server.language);
-        for (const conn of gateway.conns) conn.send({ type: S2C.CONFIG_CHANGED });
+        for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
         log.info('config/devflow.xml reloaded');
       } catch (e) { log.warn?.('config reload failed', e && e.message); }
     }, 300);
@@ -268,12 +258,12 @@ function startListening() {
   const onListening = () => {
     server.removeListener('error', onError);
     const actual = server.address().port;
-    collabEngine.setAdvertised({ host: HOST, port: actual });
+    ws.engine.setAdvertised({ host: HOST, port: actual });
     writeRuntimePort(actual);
     log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)`);
-    log.info(`collab node=${NODE || 'default'} fp=${nodeFp} store=${storeFile}`);
+    log.info(`collab node=${NODE || 'default'} fp=${nodeFp} store=${ws.paths.storeFile}`);
     if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
-      scheduler.engine.start();
+      ws.scheduler.engine.start();
       log.info('scheduler started');
     }
   };
@@ -283,4 +273,4 @@ function startListening() {
 }
 startListening();
 
-export { server, sessionManager, workflowRunner, projects };
+export { server };
