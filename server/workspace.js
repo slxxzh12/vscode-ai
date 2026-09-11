@@ -171,3 +171,46 @@ export function resolveProfile({ root = dataHome(), listenPort, nodeMode = false
   if (profiles.length === 0) return { status: 'ready', profile: null };
   return { status: 'select', profiles };
 }
+
+export function createWorkspaceService({ root = dataHome(), listenPort, onProfile, logger = console } = {}) {
+  const proot = profilesRoot(root);
+  const sfile = stateFile(root);
+
+  function countProjects(id) {
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(proot, id, 'projects.json'), 'utf8'));
+      return Array.isArray(j.projects) ? j.projects.length : 0;
+    } catch { return 0; }
+  }
+  function bind(id) {
+    const st = readState(sfile);
+    st.byListenPort[String(listenPort)] = id;
+    writeState(sfile, st);
+    touchProfile(root, id);
+  }
+  return {
+    state() {
+      const current = readState(sfile).byListenPort[String(listenPort)] || null;
+      const profiles = listProfiles(root).map((p) => ({ ...p, projectCount: countProjects(p.id) }));
+      return { ready: false, needSelect: true, listenPort, current, profiles };
+    },
+    select(id) {
+      const meta = readProfile(root, id);
+      if (!meta) { const e = new Error('profile not found'); e.code = 'not-found'; throw e; }
+      bind(meta.id);
+      logger?.info?.(`workspace: port ${listenPort} -> profile ${meta.id}`);
+      onProfile(profilePaths(root, meta.id));
+      return { ok: true, profile: meta };
+    },
+    create(name) {
+      let id = String(listenPort);
+      let n = 2;
+      while (readProfile(root, id)) id = `${listenPort}-${n++}`;
+      const meta = createProfile(root, { id, name: typeof name === 'string' && name.trim() ? name.trim() : `端口 ${listenPort}`, port: listenPort });
+      bind(meta.id);
+      logger?.info?.(`workspace: created profile ${meta.id} for port ${listenPort}`);
+      onProfile(profilePaths(root, meta.id));
+      return { ok: true, profile: meta };
+    },
+  };
+}
