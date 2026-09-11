@@ -41,9 +41,9 @@
 
 ## 配置（统一 XML）
 
-- 唯一配置文件：`config/devflow.xml`（`<server port language/>` + `<agents default>` + `<workflows>`）。
-- 端口/语言可在 UI 设置面板修改，服务端会**就地改写** `<server>` 属性；Agent 列表与工作流提示语直接编辑 XML。
-- 改 `config/devflow.xml` 后需**重启后端**（dev:server 的 `--watch` 不监听 xml）。
+- 活动配置文件：`<dataHome>/downloads/devflow.xml`（Windows：`%USERPROFILE%\.local\share\devflow\downloads\devflow.xml`）；首次启动从仓库模板 `config/devflow.xml` 复制生成，**已存在则不覆盖**，之后为整份配置（`<server>` + `<agents>` + `<workflows>`）的唯一权威源。
+- 端口/语言可在 UI 设置面板修改，服务端会**就地改写**活动文件的 `<server>` 属性；Agent 列表与工作流提示语直接编辑活动文件。
+- 改活动配置后需**重启后端**（dev:server 的 `--watch` 不监听 xml）；仓库 `config/devflow.xml` 仅作首次 seed 模板，seed 后修改它不生效（删除 `<dataHome>/downloads/devflow.xml` 可重新生成）。
 - 环境变量 `DEVFLOW_PORT` 优先于 XML 的 `port`。
 - `config/server.json`、`config/workflow.xml` 已废弃。
 
