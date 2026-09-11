@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { dataHome } from './data-home.js';
+import { t } from './i18n.js';
 
 export const PROFILE_ID_RE = /^[A-Za-z0-9_-]+$/;
 
@@ -82,7 +83,7 @@ export function createProfile(root, { id, name, port }) {
   for (const sub of ['collab', 'upload', 'download', 'scheduler', 'skills-opencode']) {
     fs.mkdirSync(path.join(dir, sub), { recursive: true });
   }
-  const meta = { id, name: name || `端口 ${port}`, port: Number(port) || 0, createdAt: now, lastUsedAt: now };
+  const meta = { id, name: name || t('ws.default_profile_name', { port }), port: Number(port) || 0, createdAt: now, lastUsedAt: now };
   fs.writeFileSync(path.join(dir, 'profile.json'), JSON.stringify(meta, null, 2), 'utf8');
   return meta;
 }
@@ -153,7 +154,7 @@ export function migrateLegacy(root = dataHome(), id = '22222') {
   if (hist) copyFileIf(hist, path.join(dir, 'message-history.jsonc'));
   const now = Date.now();
   fs.writeFileSync(path.join(dir, 'profile.json'),
-    JSON.stringify({ id, name: '默认 (22222)', port: 22222, createdAt: now, lastUsedAt: now }, null, 2), 'utf8');
+    JSON.stringify({ id, name: t('ws.migrated_profile_name', { port: 22222 }), port: 22222, createdAt: now, lastUsedAt: now }, null, 2), 'utf8');
   fs.writeFileSync(path.join(proot, '.migrated'), String(now), 'utf8');
   return readProfile(root, id);
 }
@@ -206,7 +207,7 @@ export function createWorkspaceService({ root = dataHome(), listenPort, onProfil
       let id = String(listenPort);
       let n = 2;
       while (readProfile(root, id)) id = `${listenPort}-${n++}`;
-      const meta = createProfile(root, { id, name: typeof name === 'string' && name.trim() ? name.trim() : `端口 ${listenPort}`, port: listenPort });
+      const meta = createProfile(root, { id, name: typeof name === 'string' && name.trim() ? name.trim() : t('ws.default_profile_name', { port: listenPort }), port: listenPort });
       bind(meta.id);
       logger?.info?.(`workspace: created profile ${meta.id} for port ${listenPort}`);
       onProfile(profilePaths(root, meta.id));

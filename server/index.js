@@ -22,7 +22,7 @@ import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
 import { defaultConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, DEFAULT_PORT } from './devflow-config.js';
-import { setLocale } from './i18n.js';
+import { setLocale, t } from './i18n.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
@@ -300,7 +300,7 @@ function startListening() {
     migrateLegacy(dataHome());      // 首次：复制旧数据为档案 22222
     const r = resolveProfile({ listenPort: actual });
     if (r.status === 'ready') {
-      const prof = r.profile || createProfile(dataHome(), { id: String(actual), name: `端口 ${actual}`, port: actual });
+      const prof = r.profile || createProfile(dataHome(), { id: String(actual), name: t('ws.default_profile_name', { port: actual }), port: actual });
       bindProfile(dataHome(), actual, prof.id);
       touchProfile(dataHome(), prof.id);
       initWorkspace(profilePaths(dataHome(), prof.id), actual);
