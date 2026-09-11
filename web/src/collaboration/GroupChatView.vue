@@ -9,7 +9,7 @@ import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi; groupId: string }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
-const group = computed(() => snap.value.groups.find((g) => g.id === props.groupId) || null);
+const group = computed(() => (snap.value.group && snap.value.group.id === props.groupId ? snap.value.group : null));
 const chat = computed(() => props.collab.chatState.value[props.groupId] || { messages: [] });
 const me = computed(() => snap.value.identity.machineId);
 const myPending = computed(() => props.collab.pendingCmdState.value.filter((p) => p.groupId === props.groupId));

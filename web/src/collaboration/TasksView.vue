@@ -10,7 +10,7 @@ const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 
 const inbound = computed(() => [...snap.value.skillsInbox].sort((a, b) => b.receivedAt - a.receivedAt));
 const outbound = computed(() => [...snap.value.outbox].sort((a, b) => b.createdAt - a.createdAt));
-const groupName = (gid: string | null) => snap.value.groups.find((g) => g.id === gid)?.name || '';
+const groupName = (gid: string | null) => (snap.value.group && snap.value.group.id === gid ? snap.value.group.name : '');
 
 const dirs = ref<{ upload: string | null; download: string | null }>({ upload: null, download: null });
 const toolOpen = ref(false);

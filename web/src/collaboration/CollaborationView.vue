@@ -4,28 +4,25 @@ import { CollabS2C } from '@devflow/shared/collab';
 import { useCollab } from './useCollab';
 import { EMPTY_SNAPSHOT } from './types';
 import type { useTerminal } from '../useTerminal';
-import ContactsView from './ContactsView.vue';
+import GroupView from './GroupView.vue';
 import TasksView from './TasksView.vue';
 import { t } from '../i18n';
 
-type CollabTab = 'contacts' | 'tasks';
+type CollabTab = 'group' | 'tasks';
 const props = defineProps<{ terminal: ReturnType<typeof useTerminal> }>();
 const collab = useCollab();
 const snap = computed(() => collab.state.value ?? EMPTY_SNAPSHOT);
-const tab = ref<CollabTab>('contacts');
+const tab = ref<CollabTab>('group');
 const tabs = computed(() => [
-  { id: 'contacts' as const, label: t('collab.tabs.contacts') },
+  { id: 'group' as const, label: t('collab.tabs.group') },
   { id: 'tasks' as const, label: t('collab.tabs.tasks') },
 ]);
-const pendingCount = computed(() => snap.value.pendingFriends.length + snap.value.pendingInvites.length + snap.value.skillsInbox.filter((i) => i.status === 'received').length);
 
 let unsubs: (() => void)[] = [];
 onMounted(() => {
   collab.refresh().catch(() => {});
   unsubs = [
     props.terminal.on(CollabS2C.COLLAB_SYNCED, () => collab.refresh().catch(() => {})),
-    props.terminal.on(CollabS2C.COLLAB_FRIEND_REQ, () => collab.refresh().catch(() => {})),
-    props.terminal.on(CollabS2C.COLLAB_GROUP_INVITE, () => collab.refresh().catch(() => {})),
     props.terminal.on(CollabS2C.COLLAB_INBOX, () => collab.refresh().catch(() => {})),
     props.terminal.on(CollabS2C.COLLAB_CHAT, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CHAT, payload)),
     props.terminal.on(CollabS2C.COLLAB_CMD_PENDING, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CMD_PENDING, payload)),
@@ -40,7 +37,7 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
       <span class="title">{{ $t('collab.title') }}</span>
       <nav class="tabs">
         <button v-for="t in tabs" :key="t.id" class="tab" :class="{ on: tab === t.id }" @click="tab = t.id">
-          {{ t.label }}<span v-if="t.id === 'contacts' && pendingCount" class="badge">{{ pendingCount }}</span>
+          {{ t.label }}
         </button>
       </nav>
       <div class="idbar" v-if="snap.identity.machineId">
@@ -50,7 +47,7 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
       <span v-if="collab.lastError" class="err">{{ collab.lastError }}</span>
     </header>
     <section class="body">
-      <ContactsView v-if="tab === 'contacts'" :collab="collab" />
+      <GroupView v-if="tab === 'group'" :collab="collab" />
       <TasksView v-else :collab="collab" />
     </section>
   </div>
@@ -63,7 +60,6 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
 .tabs { display: flex; gap: 4px; }
 .tab { background: none; border: none; color: var(--tx2); padding: 6px 10px; cursor: pointer; border-radius: 4px; }
 .tab.on { background: var(--ac); color: var(--onac); }
-.badge { margin-left: 4px; background: var(--err); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 10px; }
 .idbar { margin-left: auto; color: var(--tx2); font-size: 12px; display: flex; align-items: center; gap: 6px; }
 .fp { color: var(--tx6); font-family: monospace; font-size: 11px; }
 .err { color: var(--err); font-size: 12px; }
