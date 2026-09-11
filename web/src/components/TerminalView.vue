@@ -114,7 +114,7 @@ async function savePort() {
 function onOpenSettings() { settingsOpen.value = true; loadSettings(); loadRemote(); }
 
 // ---- 远程访问（临时邀请链接，默认关闭，有效期 ≤24h）----
-const remoteDays = ref(1);
+const remoteTtl = ref(24);
 const remoteLink = ref('');
 const remotePassword = ref('');
 const remoteMsg = ref('');
@@ -130,7 +130,7 @@ async function loadRemote() {
 async function genRemote() {
   remoteMsg.value = '';
   try {
-    const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days: Number(remoteDays.value) || 1 }) }).then((x) => x.json());
+    const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hours: Number(remoteTtl.value) || 24 }) }).then((x) => x.json());
     remoteLink.value = r.link || '';
     remotePassword.value = r.password || '';
     remoteState.value = { enabled: !!r.enabled, expiresAt: r.expiresAt || null, address: r.address, needRestart: !!r.needRestart, host: r.needRestart ? '0.0.0.0' : remoteState.value.host };
@@ -639,9 +639,15 @@ onBeforeUnmount(() => {
             <div class="settitle">{{ $t('remote.title') }}</div>
             <div class="cfghint">{{ $t('remote.desc') }}</div>
             <div class="remote-warn">{{ $t('remote.warn_title') }}<br>{{ $t('remote.warn_body') }}</div>
-            <div class="cfgrow">
-              <span>{{ $t('remote.days') }}</span>
-              <input v-model.number="remoteDays" type="number" min="1" max="7" style="width:70px" />
+            <div class="cfgrow nowrap">
+              <span>{{ $t('remote.ttl') }}</span>
+              <select v-model.number="remoteTtl">
+                <option :value="4">{{ $t('remote.ttl_4h') }}</option>
+                <option :value="24">{{ $t('remote.ttl_1d') }}</option>
+                <option :value="48">{{ $t('remote.ttl_2d') }}</option>
+                <option :value="120">{{ $t('remote.ttl_5d') }}</option>
+                <option :value="168">{{ $t('remote.ttl_7d') }}</option>
+              </select>
             </div>
             <div class="cfgrow">
               <button class="ghostcfg" @click="genRemote">{{ $t('remote.generate') }}</button>
@@ -834,6 +840,7 @@ onBeforeUnmount(() => {
 .cfghint { color: var(--tx6); font-size: 11px; }
 .cfghint.warn { color: var(--warn2); }
 .remote-warn { background: color-mix(in srgb, var(--err) 12%, transparent); border: 1px solid var(--err); color: var(--errtx); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.7; }
+.cfgrow.nowrap { flex-wrap: nowrap; white-space: nowrap; }
 .pwbox { font-family: ui-monospace, Consolas, monospace; font-weight: 700; }
 .acfg.gear { flex: none; }
 .setmask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; }
