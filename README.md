@@ -32,6 +32,17 @@ node server/index.js   # 访问 http://127.0.0.1:22222
   - `"auto"`：命令后自动注入不可见 OSC 完成标记，跑完自动下一步（跨平台已实测可用，含 Windows ConPTY）
   - `"manual"`：注入命令后面板暂停，需点「下一步」
 
+### 端口数据档案（Port Profiles）
+
+服务按监听端口隔离数据，每个档案是一套完全独立的目录：
+
+- 数据档案根：`%USERPROFILE%\.local\share\devflow\ports\<profileId>\`
+  （含 `projects.json`、`workflows.json`、`scheduler/`、`collab/identity.json`、`message-history.jsonc` 等）
+- 选择记忆：`%USERPROFILE%\.local\share\devflow\ports-state.json` 的 `byListenPort`。
+- 首次启动会自动把旧数据迁移为档案 `22222`（复制，不删除）。
+- 启动时若发现多份档案，界面会弹窗选择；单份自动使用；零份自动新建。
+- `DEVFLOW_NODE` 环境变量仍可用作多实例模拟，此时不进入端口档案系统。
+
 ## 会话语义
 
 - 会话在服务端常驻；网页关闭/断网不影响运行。
