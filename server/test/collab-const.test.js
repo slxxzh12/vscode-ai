@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { CollabS2C, CollabPeer } from '@devflow/shared/collab';
 
 test('collab 常量可 import 且冻结', () => {
-  assert.equal(CollabPeer.FRIEND_REQUEST, 'friend-request');
+  assert.equal(CollabPeer.GROUP_JOIN, 'group-join');
   assert.equal(CollabS2C.COLLAB_INBOX, 'collab-inbox');
   assert.ok(Object.isFrozen(CollabS2C));
   assert.ok(Object.isFrozen(CollabPeer));
