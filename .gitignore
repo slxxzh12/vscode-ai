@@ -20,3 +20,5 @@ desktop.ini
 # 协作子系统运行时数据（含本机 Ed25519 私钥，禁止入库）
 server/collaboration/*.json
 server/collaboration/inbox/
+# 运行时端口记录（服务启动时生成，禁止入库）
+config/runtime-port.txt

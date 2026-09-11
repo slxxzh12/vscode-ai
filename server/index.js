@@ -248,14 +248,39 @@ try {
   });
 } catch (e) { log.warn?.('config watch failed', e && e.message); }
 
-server.listen(PORT, HOST, () => {
-  collabEngine.setAdvertised({ host: HOST, port: PORT });
-  log.info(`listening on http://${HOST}:${PORT}  (ws: ws://${HOST}:${PORT}/ws)`);
-  log.info(`collab node=${NODE || 'default'} fp=${nodeFp} store=${storeFile}`);
-  if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
-    scheduler.engine.start();
-    log.info('scheduler started');
+// 端口占用时自动回退：默认端口 → 33333 → 44444
+const CANDIDATE_PORTS = [...new Set([PORT, 33333, 44444])].filter((p) => Number.isInteger(p) && p >= 1 && p <= 65535);
+let listenAttempt = 0;
+function writeRuntimePort(port) {
+  try { fs.writeFileSync(path.join(__dirname, '..', 'config', 'runtime-port.txt'), String(port), 'utf8'); } catch { /* ignore */ }
+}
+function startListening() {
+  if (listenAttempt >= CANDIDATE_PORTS.length) {
+    log.error(`所有候选端口均被占用：${CANDIDATE_PORTS.join(', ')}`);
+    process.exit(1);
   }
-});
+  const port = CANDIDATE_PORTS[listenAttempt++];
+  const onError = (err) => {
+    server.removeListener('listening', onListening);
+    if (err && err.code === 'EADDRINUSE') { log.warn?.(`端口 ${port} 被占用，尝试下一个`); startListening(); }
+    else { log.error('listen error', err); process.exit(1); }
+  };
+  const onListening = () => {
+    server.removeListener('error', onError);
+    const actual = server.address().port;
+    collabEngine.setAdvertised({ host: HOST, port: actual });
+    writeRuntimePort(actual);
+    log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)`);
+    log.info(`collab node=${NODE || 'default'} fp=${nodeFp} store=${storeFile}`);
+    if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
+      scheduler.engine.start();
+      log.info('scheduler started');
+    }
+  };
+  server.once('error', onError);
+  server.once('listening', onListening);
+  server.listen(port, HOST);
+}
+startListening();
 
 export { server, sessionManager, workflowRunner, projects };

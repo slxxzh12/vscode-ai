@@ -122,11 +122,13 @@ const bat = [
   "@echo off",
   "setlocal",
   'cd /d "%~dp0"',
-  "echo vscode-ai 启动中：http://127.0.0.1:" + CFG_PORT,
+  "echo vscode-ai 启动中...",
   "echo 关闭弹出的 vscode-ai 窗口即停止服务。",
   'start "vscode-ai" /min cmd /c "runtime\\node.exe server\\index.js"',
-  "timeout /t 2 /nobreak >nul",
-  'start "" "http://127.0.0.1:' + CFG_PORT + '"',
+  "timeout /t 3 /nobreak >nul",
+  "set CFGPORT=" + CFG_PORT,
+  'if exist "config\\runtime-port.txt" set /p CFGPORT=<"config\\runtime-port.txt"',
+  'start "" "http://127.0.0.1:%CFGPORT%"',
   "",
 ].join("\r\n");
 fs.writeFileSync(path.join(APP, "start.bat"), bat);
@@ -134,9 +136,10 @@ fs.writeFileSync(path.join(APP, "start.bat"), bat);
 const usage = [
   "vscode-ai（绿色免安装版）",
   "",
-  "启动：双击 start.bat（自动打开 http://127.0.0.1:" + CFG_PORT + "）",
+  "启动：双击 start.bat（自动打开对应端口）",
   '停止：关闭弹出的 "vscode-ai" 最小化窗口',
   "",
+  "端口：默认 22222，被占用时自动切换 33333 / 44444",
   "端口/Agent/工作流配置：编辑 config/devflow.xml 后重启",
   "",
   "Node 运行时版本：" + nodeVer,
