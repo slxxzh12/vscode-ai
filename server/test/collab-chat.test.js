@@ -5,12 +5,11 @@ import { createPairHarness } from '../collaboration/engine.js';
 
 async function groupUp(nodes) {
   const [A, B] = nodes;
-  await A.requestFriend({ host: B.pub.host, port: B.pub.port });
-  await B.acceptFriend(A.pub.machineId);
-  const g = await A.createGroup('team');
-  await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
-  await B.acceptInvite(B.store.listPendingInvites()[0].id);
-  return g;
+  A.verifyAccessToken = (tk) => tk === 'good';
+  A.ensureGroup();
+  const r = await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'good' });
+  assert.equal(r.code, 'joined');
+  return r.group;
 }
 
 test('sendChat 双方落历史（seq 单调）', async () => {
