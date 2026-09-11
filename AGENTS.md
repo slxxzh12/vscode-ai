@@ -37,7 +37,7 @@
 ## 目录速览
 
 - `shared/` — WS 协议常量/类型（唯一事实源）；`server/` — Node ESM 后端（ws + node-pty，测试在 `server/test/`，`node --test`）；`web/` — Vue3+Vite+TS+xterm（vitest + vue-tsc）。
-- 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`。
+- 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`；代码行统计：`npm.cmd run count:code`（去注释/空行/纯括号/无英文行，输出每文件实际代码行）。
 
 ## 配置（统一 XML）
 

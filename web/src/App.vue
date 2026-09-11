@@ -303,7 +303,9 @@ function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b,
 async function loadProjects() {
   try { projects.value = await projectsApi.list(); } catch { projects.value = []; }
   if (!currentProject.value && projects.value.length) {
-    currentProject.value = projects.value[0].id;
+    const byId = new Set(projects.value.map((p) => p.id));
+    const recent = recents.value.slice().sort((a, b) => b.ts - a.ts).find((r) => byId.has(r.id));
+    currentProject.value = recent ? recent.id : projects.value[0].id;
     touchRecent(currentProject.value);
   }
 }

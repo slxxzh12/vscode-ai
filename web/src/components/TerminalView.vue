@@ -388,6 +388,10 @@ const chips = computed<string[]>(() => {
   const st = curWf.value.stages.find((s) => s.id === activeStage.value) || curWf.value.stages[0];
   return st ? st.prompts : [];
 });
+function chipText(s: string) {
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > 40 ? t.slice(0, 40) + '…' : t;
+}
 function pickStage(s: StageDef) {
   activeStage.value = s.id;
   if (s.prompts.length) composerText.value = s.prompts[0];   // 阶段首句填入输入框
@@ -752,8 +756,9 @@ onBeforeUnmount(() => {
             :key="i"
             class="chip"
             :class="{ on: composerText === p }"
+            :title="p"
             @click="composerText = p"
-          ><span class="cdot" />{{ p }}</button>
+          ><span class="cdot" />{{ chipText(p) }}</button>
         </div>
         <div class="cwrap">
           <div class="cinputwrap">

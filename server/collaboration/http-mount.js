@@ -30,6 +30,33 @@ function sendJson(res, status, obj) {
 }
 function ok(res, obj = {}) { sendJson(res, 200, obj); }
 
+// 递归列出共享目录内的真实文件（相对路径），供「默认开放 downloads 目录」浏览/下载
+function listDownloadFiles(root) {
+  const out = [];
+  const walk = (rel) => {
+    let entries;
+    try { entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true }); } catch { return; }
+    for (const d of entries) {
+      const r = rel ? `${rel}/${d.name}` : d.name;
+      if (r === 'manifest.json') continue;                 // 内部索引，不对外列出
+      if (d.isDirectory()) { walk(r); continue; }
+      if (!d.isFile()) continue;
+      try { const st = fs.statSync(path.join(root, r)); out.push({ name: r, size: st.size, updatedAt: st.mtimeMs }); } catch { /* ignore */ }
+    }
+  };
+  walk('');
+  return out.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+// 解析共享目录内的相对路径，越界返回 null
+function resolveInside(root, name) {
+  if (typeof name !== 'string' || !name || name.includes('..') || name.includes('\\')) return null;
+  const base = path.resolve(root);
+  const abs = path.resolve(base, name);
+  if (abs !== base && !abs.startsWith(base + path.sep)) return null;
+  return abs;
+}
+
 export function createCollabMount({ engine, logger = console }) {
   async function route(req, res, url) {
     const m = req.method;
@@ -127,15 +154,23 @@ export function createCollabMount({ engine, logger = console }) {
       if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'sync' && m === 'POST') {
         return ok(res, await engine.pullDownloads());
       }
+      // downloads 目录（默认开放的共享目录）：实时列出目录内真实文件
+      if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'dir' && m === 'GET') {
+        return ok(res, { dir: engine.downloadsDir, files: listDownloadFiles(engine.downloadsDir) });
+      }
       if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'install' && m === 'POST') {
         return ok(res, engine.installDownload(body.name));
       }
       if (seg[0] === 'downloads' && seg.length === 3 && seg[1] === 'file' && m === 'GET') {
         const name = decodeURIComponent(seg[2]);
-        if (name.includes('..') || name.includes('\\')) return sendJson(res, 400, { error: 'bad-name' });
-        const abs = path.join(engine.downloadsDir, name);
-        if (!fs.existsSync(abs)) return sendJson(res, 404, { error: 'not found' });
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(abs).size });
+        const abs = resolveInside(engine.downloadsDir, name);
+        if (!abs) return sendJson(res, 400, { error: 'bad-name' });
+        if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return sendJson(res, 404, { error: 'not found' });
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': fs.statSync(abs).size,
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(name))}`,
+        });
         fs.createReadStream(abs).pipe(res);
         return;
       }

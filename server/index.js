@@ -25,7 +25,7 @@ import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, DEFAULT_PORT } from './devflow-config.js';
 import { setLocale, t } from './i18n.js';
-import { isPeerRequest, matchAccessToken } from './remote-gate.js';
+import { isPeerRequest, matchAccessToken, resolveInviteDays } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
@@ -35,6 +35,8 @@ import {
   profilePaths, createWorkspaceService,
 } from './workspace.js';
 import { createWorkspaceHttp } from './workspace-http.js';
+import { askPortConflict } from './native-dialog.js';
+import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -64,7 +66,7 @@ function parseCookies(req) {
   return out;
 }
 const ACCESS_COOKIE = 'devflow-access';
-const MAX_TTL_MS = 7 * 24 * 3600 * 1000;   // 最长 7 天
+const MAX_TTL_MS = 100 * 24 * 3600 * 1000;   // 密码/链接最长 100 天
 const LOCK_MS = 5 * 60 * 1000;             // 连续错误锁定 5 分钟
 const MAX_FAILS = 5;
 let remoteInvite = null;   // { token, password, expiresAt }（内存态，重启即失效）
@@ -348,10 +350,10 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
-      const hours = Math.min(168, Math.max(1, Math.floor(Number(body.hours) || (Number(body.days) ? Number(body.days) * 24 : 24))));   // 默认 1 天，最长 7 天
+      const days = resolveInviteDays(body);   // 默认 1 天，最长 100 天
       const token = crypto.randomBytes(24).toString('hex');
       const password = crypto.randomBytes(16).toString('base64url');        // 22 字符，≥16
-      remoteInvite = { token, password, expiresAt: Date.now() + Math.min(hours * 3600 * 1000, MAX_TTL_MS) };
+      remoteInvite = { token, password, expiresAt: Date.now() + Math.min(days * 24 * 3600 * 1000, MAX_TTL_MS) };
       remoteFails = 0;
       remoteLockedUntil = 0;
       let needRestart = false;
@@ -364,7 +366,7 @@ const server = http.createServer(async (req, res) => {
       const addr = lanAddress() || HOST;
       const link = `http://${addr}:${actualPort || PORT}/?access=${token}`;
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ enabled: true, token, password, expiresAt: remoteInvite.expiresAt, link, address: addr, needRestart }));
+      res.end(JSON.stringify({ enabled: true, token, password, days, expiresAt: remoteInvite.expiresAt, link, address: addr, needRestart }));
     });
     return;
   }
@@ -472,27 +474,79 @@ try {
   });
 } catch (e) { log.warn?.('config watch failed', e && e.message); }
 
-// 端口占用时自动回退：默认端口 → 33333 → 44444
-const CANDIDATE_PORTS = [...new Set([PORT, 33333, 44444])].filter((p) => Number.isInteger(p) && p >= 1 && p <= 65535);
-let listenAttempt = 0;
+// 端口被占用时弹窗询问（不自动换端口）
+let currentPort = PORT;
+let conflictAttempts = 0;
+const MAX_CONFLICT_ATTEMPTS = 5;
+const PORT_CANDIDATES = [33333, 44444];
+
 function writeRuntimePort(port) {
   try { fs.writeFileSync(path.join(__dirname, '..', 'config', 'runtime-port.txt'), String(port), 'utf8'); } catch { /* ignore */ }
 }
-function startListening() {
-  if (listenAttempt >= CANDIDATE_PORTS.length) {
-    log.error(`all candidate ports are in use: ${CANDIDATE_PORTS.join(', ')}`);
+
+async function freeCandidatePorts() {
+  const free = [];
+  for (const p of PORT_CANDIDATES) {
+    if (p === currentPort) continue;
+    if (await isPortFree(HOST, p)) free.push(p);
+  }
+  return free;
+}
+
+async function handlePortConflict(port) {
+  if (conflictAttempts++ >= MAX_CONFLICT_ATTEMPTS) {
+    log.error(t('port.in_use.exit', { port }));
     process.exit(1);
   }
-  const port = CANDIDATE_PORTS[listenAttempt++];
+  if (process.platform !== 'win32') {
+    log.error(t('port.in_use.unsupported', { port }));
+    process.exit(1);
+  }
+  const candidates = await freeCandidatePorts();
+  const r = await askPortConflict({
+    port,
+    candidates,
+    title: t('port.in_use.title'),
+    message: t('port.in_use.message', { port }),
+    killLabel: t('port.in_use.kill', { port }),
+    switchLabel: t('port.in_use.switch'),
+    warnLabel: t('port.in_use.warn'),
+    okLabel: t('common.ok'),
+    cancelLabel: t('common.cancel'),
+  });
+  if (r && r.action === 'kill') {
+    const pids = await findPidsOnPort(port);
+    const killed = pids.length ? await killPids(pids) : [];
+    if (killed.length) log.info(t('port.in_use.killed', { port, pids: killed.join(',') }));
+    else log.warn(t('port.in_use.kill_failed', { err: `no process found on port ${port}` }));
+    await new Promise((res) => setTimeout(res, 500));
+    startListening(port);
+    return;
+  }
+  if (r && r.action === 'switch' && Number.isInteger(r.port)) {
+    currentPort = r.port;
+    try { updateServerAttrs(configFile, { port: r.port }); log.info(t('port.in_use.switched', { port: r.port })); }
+    catch (e) { log.warn('failed to persist port', e && e.message); }
+    startListening(r.port);
+    return;
+  }
+  log.error(t('port.in_use.exit', { port }));
+  process.exit(1);
+}
+
+function startListening(port = currentPort) {
   const onError = (err) => {
     server.removeListener('listening', onListening);
-    if (err && err.code === 'EADDRINUSE') { log.warn?.(`port ${port} in use, trying next`); startListening(); }
-    else { log.error('listen error', err); process.exit(1); }
+    if (err && err.code === 'EADDRINUSE') {
+      log.warn(`port ${port} in use, asking user`);
+      handlePortConflict(port);
+    } else { log.error('listen error', err); process.exit(1); }
   };
   const onListening = () => {
     server.removeListener('error', onError);
     const actual = server.address().port;
     actualPort = actual;
+    currentPort = actual;
     writeRuntimePort(actual);
     log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)`);
 

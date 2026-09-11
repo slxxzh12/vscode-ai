@@ -11,7 +11,7 @@ const group = computed(() => snap.value.group);
 const me = computed(() => snap.value.identity?.machineId);
 
 // —— 远程访问（自设置迁入）——
-const remoteTtl = ref(24);
+const remoteTtlDays = ref(1);
 const remoteLink = ref('');
 const remotePassword = ref('');
 const remoteMsg = ref('');
@@ -20,13 +20,27 @@ const remoteState = ref<{ enabled: boolean; expiresAt: number | null; address?: 
 async function loadRemote() {
   try { remoteState.value = await fetch('/api/remote/state').then((r) => r.json()); } catch { /* ignore */ }
 }
+// 修改有效天数：>100 收敛到 100；>7 弹安全告警，取消则回退到 7
+function onTtlChange() {
+  remoteMsg.value = '';
+  const v = Number(remoteTtlDays.value);
+  if (!Number.isFinite(v) || v < 1) { remoteTtlDays.value = 1; remoteMsg.value = t('remote.ttl_invalid'); return; }
+  const days = Math.floor(v);
+  if (days > 100) { remoteTtlDays.value = 100; remoteMsg.value = t('remote.ttl_max'); return; }
+  if (days > 7 && !confirm(t('remote.ttl_warn', { days }))) { remoteTtlDays.value = 7; return; }
+  remoteTtlDays.value = days;
+}
 async function genRemote() {
   remoteMsg.value = '';
+  const days = Math.floor(Number(remoteTtlDays.value));
+  if (!Number.isFinite(days) || days < 1 || days > 100) { remoteMsg.value = t('remote.ttl_invalid'); return; }
+  if (days > 7 && !confirm(t('remote.ttl_warn', { days }))) return;
   try {
-    const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hours: Number(remoteTtl.value) || 24 }) }).then((x) => x.json());
+    const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days }) }).then((x) => x.json());
     remoteLink.value = r.link || '';
     remotePassword.value = r.password || '';
     remoteState.value = { ...remoteState.value, enabled: !!r.enabled, expiresAt: r.expiresAt || null, address: r.address, needRestart: !!r.needRestart };
+    await loadDir();
   } catch (e) { remoteMsg.value = t('remote.failed', { msg: (e as Error)?.message || String(e) }); }
 }
 async function revokeRemote() {
@@ -72,6 +86,18 @@ function usageText(machineId: string) {
   return t('collab.heartbeat.usage', { input: fmtNum(u.input), output: fmtNum(u.output), days: u.days ?? '?', messages: u.messages ?? '?' });
 }
 
+// —— downloads 目录（默认开放的共享目录，实时列出）——
+const dirFiles = ref<{ name: string; size: number; updatedAt: number }[]>([]);
+async function loadDir() {
+  try { const r = await fetch('/api/collab/downloads/dir').then((x) => x.json()); dirFiles.value = r.files || []; } catch { /* ignore */ }
+}
+function fmtSize(n: number) {
+  if (n == null) return '';
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+
 // —— master downloads（点击才拉取）——
 const downloads = ref<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] } }>({ manifest: { files: [] } });
 const dlMsg = ref('');
@@ -96,6 +122,7 @@ onMounted(async () => {
   await loadRemote();
   await props.collab.loadAllowlist().catch(() => {});
   await loadDownloads();
+  await loadDir();
 });
 </script>
 
@@ -105,17 +132,11 @@ onMounted(async () => {
       <div class="sec">
         <h4>{{ $t('collab.remote.title') }}</h4>
         <div class="cfgrow">
-          <span>{{ $t('remote.ttl') }}</span>
-          <select v-model.number="remoteTtl">
-            <option :value="4">{{ $t('remote.ttl_4h') }}</option>
-            <option :value="24">{{ $t('remote.ttl_1d') }}</option>
-            <option :value="48">{{ $t('remote.ttl_2d') }}</option>
-            <option :value="120">{{ $t('remote.ttl_5d') }}</option>
-            <option :value="168">{{ $t('remote.ttl_7d') }}</option>
-          </select>
+          <span>{{ $t('remote.ttl_days') }}</span>
+          <input type="number" min="1" max="100" step="1" v-model.number="remoteTtlDays" class="ttlinput" @change="onTtlChange" />
         </div>
         <div class="addrow">
-          <button @click="genRemote">{{ $t('remote.generate') }}</button>
+          <button class="gen" @click="genRemote">{{ $t('remote.generate') }}</button>
           <button v-if="remoteState.enabled" class="ghost" @click="revokeRemote">{{ $t('remote.revoke') }}</button>
         </div>
         <div v-if="remoteState.enabled" class="cfghint">{{ $t('remote.enabled_until', { time: fmtExpire(remoteState.expiresAt) }) }}</div>
@@ -154,6 +175,16 @@ onMounted(async () => {
             <a class="dl" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ $t('collab.downloads.download') }}</a>
             <button class="ghost" @click="install(f.name)">{{ $t('collab.downloads.install') }}</button>
           </template>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h4>{{ $t('collab.downloads.dir_title') }} <span class="tag">{{ $t('collab.downloads.dir_open') }}</span></h4>
+        <div class="cfghint">{{ $t('collab.downloads.dir_hint') }}</div>
+        <div v-if="dirFiles.length === 0" class="empty">{{ $t('collab.downloads.dir_empty') }}</div>
+        <div v-for="f in dirFiles" :key="f.name" class="rowline">
+          <span class="txt">{{ f.name }}<span class="sub">{{ fmtSize(f.size) }}</span></span>
+          <a class="dl" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ $t('collab.downloads.download') }}</a>
         </div>
       </div>
 
@@ -223,6 +254,10 @@ h4 { color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px
 .allow { margin-top: 6px; border-top: 1px solid var(--bd2); padding-top: 4px; }
 button { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
 button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2); }
+button.gen { flex: 1; background: var(--err); color: #fff; font-weight: 700; padding: 8px 10px; }
+button.gen:hover { filter: brightness(1.08); }
+.ttlinput { width: 72px; box-sizing: border-box; }
+.tag { font-size: 10px; font-weight: 400; text-transform: none; color: var(--ok, #22c55e); margin-left: 4px; }
 button.del { color: var(--err); border-color: var(--bd); }
 input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 5px 8px; }
 .linkrow { display: flex; gap: 6px; margin: 4px 0; }

@@ -34,3 +34,13 @@ test('工作流基础环境检查词条中英均存在', () => {
     assert.notEqual(translate(loc, 'termwf.envcheck.prompt'), 'termwf.envcheck.prompt');
   }
 });
+
+test('端口占用词条中英均存在', () => {
+  const suffix = ['title', 'message', 'kill', 'switch', 'warn', 'killed', 'kill_failed', 'switched', 'exit', 'unsupported'];
+  for (const loc of ['zh-CN', 'en']) {
+    for (const s of suffix) {
+      const key = `port.in_use.${s}`;
+      assert.notEqual(translate(loc, key), key);
+    }
+  }
+});

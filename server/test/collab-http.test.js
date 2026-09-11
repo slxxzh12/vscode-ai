@@ -195,3 +195,19 @@ test('downloads REST：列表 / 无 master 同步 / 文件路径穿越防护', a
     assert.equal(bad.status, 400);
   } finally { A.server.close(); }
 });
+
+test('downloads/dir：实时列出共享目录文件并支持下载（含子目录/隐藏索引）', async () => {
+  const A = await startNode('alice-dir');
+  try {
+    A.engine.writeDownload('notes/hello.txt', Buffer.from('hi'), 'file');
+    const list = await fetch(`http://127.0.0.1:${A.port}/api/collab/downloads/dir`).then((r) => r.json());
+    assert.ok(Array.isArray(list.files));
+    const names = list.files.map((f) => f.name);
+    assert.ok(names.includes('notes/hello.txt'), '应列出子目录文件');
+    assert.ok(!names.includes('manifest.json'), '内部索引不应列出');
+    const file = await fetch(`http://127.0.0.1:${A.port}/api/collab/downloads/file/notes%2Fhello.txt`);
+    assert.equal(file.status, 200);
+    assert.match(file.headers.get('content-disposition') || '', /attachment/);
+    assert.equal(await file.text(), 'hi');
+  } finally { A.server.close(); }
+});
