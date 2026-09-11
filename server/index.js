@@ -63,12 +63,24 @@ function parseCookies(req) {
   return out;
 }
 const ACCESS_COOKIE = 'devflow-access';
-let remoteInvite = null;   // { token, expiresAt }（内存态，重启即失效）
+const MAX_TTL_MS = 7 * 24 * 3600 * 1000;   // 最长 7 天
+const LOCK_MS = 5 * 60 * 1000;             // 连续错误锁定 5 分钟
+const MAX_FAILS = 5;
+let remoteInvite = null;   // { token, password, expiresAt }（内存态，重启即失效）
+let remoteFails = 0;
+let remoteLockedUntil = 0;
 function activeInvite() { return remoteInvite && Date.now() < remoteInvite.expiresAt ? remoteInvite : null; }
+function remoteLocked() { return Date.now() < remoteLockedUntil; }
 function remoteAllowed(req) {
   const inv = activeInvite();
   if (!inv) return false;
   return parseCookies(req)[ACCESS_COOKIE] === inv.token;
+}
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  if (ba.length !== bb.length) return false;
+  try { return crypto.timingSafeEqual(ba, bb); } catch { return false; }
 }
 function lanAddress() {
   const ifs = os.networkInterfaces();
@@ -79,10 +91,20 @@ function lanAddress() {
   }
   return null;
 }
+function pageShell(title, body) {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:system-ui,Segoe UI,sans-serif;background:#1e1e1e;color:#ddd;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}.box{max-width:520px;padding:28px 32px;background:#252526;border:1px solid #3c3c3c;border-radius:10px;text-align:center}.box h1{font-size:18px;margin:0 0 12px}.box p{color:#aaa;line-height:1.7;font-size:13px}.box input{width:100%;box-sizing:border-box;margin:14px 0 10px;padding:10px 12px;background:#1e1e1e;border:1px solid #3c3c3c;border-radius:6px;color:#eee;font-size:14px}.box button{width:100%;padding:10px;background:#0e639c;border:none;border-radius:6px;color:#fff;font-size:14px;cursor:pointer}.err{color:#f48771;margin-top:10px}</style></head><body><div class="box"><h1>${title}</h1>${body}</div></body></html>`;
+}
 function remoteBlockPage() {
-  const title = t('remote.block_title');
-  const msg = t('remote.need_invite');
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:system-ui,Segoe UI,sans-serif;background:#1e1e1e;color:#ddd;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}.box{max-width:520px;padding:28px 32px;background:#252526;border:1px solid #3c3c3c;border-radius:10px;text-align:center}.box h1{font-size:18px;margin:0 0 12px}.box p{color:#aaa;line-height:1.7;font-size:13px}</style></head><body><div class="box"><h1>${title}</h1><p>${msg}</p></div></body></html>`;
+  return pageShell(t('remote.block_title'), `<p>${t('remote.need_invite')}</p>`);
+}
+function remoteLoginPage(showError) {
+  const lockedMs = remoteLocked() ? remoteLockedUntil - Date.now() : 0;
+  const note = lockedMs > 0
+    ? `<p class="err">${t('remote.login_locked', { min: Math.ceil(lockedMs / 60000) })}</p>`
+    : (showError ? `<p class="err">${t('remote.login_wrong')}</p>` : '');
+  const dis = lockedMs > 0 ? ' disabled' : '';
+  return pageShell(t('remote.login_title'),
+    `<p>${t('remote.login_hint')}</p><form method="POST" action="/__access"><input type="password" name="password" autocomplete="off" placeholder="${t('remote.password')}"${dis} /><button type="submit"${dis}>${t('remote.login_submit')}</button></form>${note}`);
 }
 
 // requireAuth 占位钩子（spec §11）：HTTP 用 requireAuthHttp；WS 走 upgrade 处，远程需邀请 Cookie
@@ -177,19 +199,10 @@ const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
 
-  // 远程访问门禁：非回环客户端必须持有效邀请（Cookie）或携带 ?access=token
+  // 远程访问门禁：非回环客户端必须持有效 Cookie；否则需输入一次性访问密码
   if (!isLocalReq(req)) {
     const inv = activeInvite();
-    const access = url.searchParams.get('access');
-    if (inv && access && access === inv.token) {
-      const params = new URLSearchParams(url.searchParams); params.delete('access');
-      const loc = url.pathname + (params.toString() ? `?${params.toString()}` : '');
-      const maxAge = Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
-      res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${inv.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`, Location: loc });
-      res.end();
-      return;
-    }
-    if (!remoteAllowed(req)) {
+    if (!inv) {
       if (url.pathname.startsWith('/api/')) {
         res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: 'remote-disabled' }));
@@ -197,6 +210,36 @@ const server = http.createServer(async (req, res) => {
       }
       res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(remoteBlockPage());
+      return;
+    }
+    if (!remoteAllowed(req)) {
+      if (url.pathname === '/__access' && req.method === 'POST') {
+        let body = '';
+        req.on('data', (c) => { body += c; });
+        req.on('end', () => {
+          if (remoteLocked()) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(remoteLoginPage(true)); return; }
+          const pw = new URLSearchParams(body).get('password') || '';
+          if (safeEqual(pw, inv.password)) {
+            remoteFails = 0;
+            const maxAge = Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
+            res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${inv.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`, Location: '/' });
+            res.end();
+          } else {
+            remoteFails += 1;
+            if (remoteFails >= MAX_FAILS) { remoteLockedUntil = Date.now() + LOCK_MS; remoteFails = 0; }
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(remoteLoginPage(true));
+          }
+        });
+        return;
+      }
+      if (url.pathname.startsWith('/api/')) {
+        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'remote-auth-required' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(remoteLoginPage(false));
       return;
     }
   }
@@ -270,6 +313,8 @@ const server = http.createServer(async (req, res) => {
       expiresAt: inv ? inv.expiresAt : null,
       address: lanAddress(),
       needRestart: HOST === '127.0.0.1' || HOST === 'localhost',
+      locked: remoteLocked(),
+      lockedUntil: remoteLocked() ? remoteLockedUntil : null,
     }));
     return;
   }
@@ -279,9 +324,12 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
-      const hours = Math.min(24, Math.max(1, Number(body.hours) || 24));
+      const hours = Math.min(168, Math.max(1, Number(body.hours) || 24));   // 默认 1 天，最长 7 天
       const token = crypto.randomBytes(24).toString('hex');
-      remoteInvite = { token, expiresAt: Date.now() + hours * 3600 * 1000 };
+      const password = crypto.randomBytes(16).toString('base64url');        // 22 字符，≥16
+      remoteInvite = { token, password, expiresAt: Date.now() + Math.min(hours * 3600 * 1000, MAX_TTL_MS) };
+      remoteFails = 0;
+      remoteLockedUntil = 0;
       let needRestart = false;
       // 仍是本机监听时，自动改为 0.0.0.0（需重启生效）
       if (!process.env.DEVFLOW_HOST && (HOST === '127.0.0.1' || HOST === 'localhost')) {
@@ -289,14 +337,16 @@ const server = http.createServer(async (req, res) => {
         needRestart = true;
       }
       const addr = lanAddress() || HOST;
-      const link = `http://${addr}:${actualPort || PORT}/?access=${token}`;
+      const link = `http://${addr}:${actualPort || PORT}/`;
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ enabled: true, token, expiresAt: remoteInvite.expiresAt, link, address: addr, needRestart }));
+      res.end(JSON.stringify({ enabled: true, token, password, expiresAt: remoteInvite.expiresAt, link, address: addr, needRestart }));
     });
     return;
   }
   if (url.pathname === '/api/remote/revoke' && req.method === 'POST') {
     remoteInvite = null;
+    remoteFails = 0;
+    remoteLockedUntil = 0;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ enabled: false }));
     return;
