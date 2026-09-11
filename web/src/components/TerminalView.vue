@@ -60,6 +60,7 @@ interface AgentDef { id: string; name: string; cmd: string; }
 // 仅作接口不可达时的最小兜底；正式列表来自 config/devflow.xml（GET /api/agents）
 const DEFAULT_AGENTS: AgentDef[] = [{ id: 'opencode', name: 'OpenCode', cmd: 'opencode' }];
 const agentSid = ref<string | null>(null);
+const agentProjectId = ref<string | null>(null);   // 固定 Agent 会话创建时所用的项目（用于切换项目后重建）
 const defaultAgents = ref<AgentDef[]>(DEFAULT_AGENTS.map((a) => ({ ...a })));
 const defaultAgentId = ref('opencode');
 const agents = ref<AgentDef[]>(DEFAULT_AGENTS.map((a) => ({ ...a })));
@@ -84,10 +85,12 @@ const wfKind = ref<string>('dev');
 const agentStarted = ref(false);
 const agentCliReady = ref(false);   // agent CLI 是否已在固定会话里启动
 let agentLaunching = false;         // 启动命令注入中，避免重复注入
+let agentGen = 0;                   // 启动代际：切换项目重建会话后，作废旧会话遗留的延时注入
 // 工作流 → opencode 自定义命令（可配置，按节点公钥指纹持久化）
 const wfCmds = ref<Record<string, string>>({ dev: '/dev', test: '/test', doc: '/doc' });
 const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent id
 const settingsOpen = ref(false);
+const settingsTab = ref<'general' | 'about'>('general');
 const serverPort = ref<number | null>(null);
 const portMsg = ref('');
 async function loadSettings() {
@@ -198,8 +201,12 @@ async function startAgent() {
     props.terminal.switchTo(agentSid.value);
     return;
   }
-  const s = await props.terminal.createSession({ projectId: props.projectId, cols: 80, rows: 24 });
+  const gen = ++agentGen;
+  const pid = props.projectId;
+  const s = await props.terminal.createSession({ projectId: pid, cols: 80, rows: 24 });
+  if (gen !== agentGen) return;   // 期间已再次切换项目/重建：丢弃本次结果
   agentSid.value = s.id;
+  agentProjectId.value = pid;
   markAgent(s.id);
   agentStarted.value = true;
   agentCliReady.value = false;
@@ -208,9 +215,11 @@ async function startAgent() {
   props.center.ensureSession(s.id, `◈ ${currentAgent.value.name}`, s.state || 'running');
   ensureAgentOrder();
   props.terminal.switchTo(s.id);
-  setTimeout(() => launchAgentCmd(), 1200);
+  if (props.projectId !== pid) { void restartAgentForProject(); return; }   // 创建期间项目已切换：再来一次
+  setTimeout(() => launchAgentCmd(gen), 1200);
 }
-function launchAgentCmd() {
+function launchAgentCmd(gen = agentGen) {
+  if (gen !== agentGen) return;
   if (!agentSid.value || !agentActive()) return;
   if (agentCliReady.value || agentLaunching) return;   // 已就绪/正在启动：绝不重复注入启动命令
   agentLaunching = true;
@@ -220,11 +229,30 @@ function launchAgentCmd() {
   props.terminal.input(cmd);
   setTimeout(() => {
     agentLaunching = false;
+    if (gen !== agentGen) return;
     if (!agentSid.value || !agentActive()) return;
     props.terminal.input('\r');
     agentCliReady.value = true;
   }, 200);
 }
+// 顶栏切换项目 → 固定 Agent 会话以新项目根为 cwd 重建（相当于“重新加载”）
+async function restartAgentForProject() {
+  const old = agentSid.value;
+  if (!old || !agentActive()) return;
+  props.terminal.killSession(old);
+  if (agentSid.value === old) agentSid.value = null;
+  agentCliReady.value = false;
+  agentLaunching = false;
+  agentStarted.value = false;
+  await new Promise((r) => setTimeout(r, 400));
+  await startAgent();
+}
+watch(() => props.projectId, (nid, oid) => {
+  if (nid === oid) return;
+  if (!agentSid.value || !agentActive()) return;
+  if (agentProjectId.value === nid) return;
+  void restartAgentForProject();
+});
 function sendAgentText(text: string) {
   if (!agentSid.value || !agentActive()) return;
   props.terminal.input(text);
@@ -424,8 +452,12 @@ function init() {
     if (autoTried || props.terminal.state.activeSessionId) return;
     autoTried = true;
     const existing = props.terminal.state.sessions.find((s) => agentSids.value.has(s.id));
-    if (existing) props.terminal.switchTo(existing.id);   // 复用已存在的 Agent 会话
-    else startAgent();                                    // 默认先开一个默认 Agent 会话
+    if (existing) {
+      agentSid.value = existing.id;                       // 重新挂载后绑定回固定 Agent 会话
+      agentProjectId.value = existing.projectId ?? null;
+      props.terminal.switchTo(existing.id);               // 复用已存在的 Agent 会话
+      if (props.projectId && existing.projectId !== props.projectId) void restartAgentForProject();   // 项目已切换：换到当前目录
+    } else startAgent();                                  // 默认先开一个默认 Agent 会话
   });
   unsubCfg = props.terminal.on(S2C.CONFIG_CHANGED, async () => {
     await loadAgents();
@@ -545,7 +577,13 @@ onBeforeUnmount(() => {
           <span>{{ $t('term.settings') }}</span>
           <button class="setx" @click="settingsOpen = false">×</button>
         </header>
-        <div class="setbody">
+        <div class="setmain">
+          <nav class="setnav">
+            <button type="button" :class="{ on: settingsTab === 'general' }" @click="settingsTab = 'general'">{{ $t('term.settings') }}</button>
+            <button type="button" :class="{ on: settingsTab === 'about' }" @click="settingsTab = 'about'">{{ $t('term.about.tab') }}</button>
+          </nav>
+          <div class="setbody">
+          <template v-if="settingsTab === 'general'">
           <div class="setsec">
             <div class="settitle">{{ $t('term.agent_list') }} <button class="ghostcfg" @click="addAgent">{{ $t('term.add') }}</button></div>
             <div v-for="a in agents" :key="a.id" class="agentrow">
@@ -561,6 +599,34 @@ onBeforeUnmount(() => {
             <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="22222" /><button class="ghostcfg" @click="savePort">{{ $t('common.save') }}</button></div>
             <div v-if="portMsg" class="cfghint">{{ portMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
+          </div>
+          </template>
+          <template v-else>
+            <div class="setsec">
+              <div class="settitle">{{ $t('term.about.author') }}</div>
+              <div class="aboutval">Samuel Tsang</div>
+              <div class="cfghint">{{ $t('term.about.location') }}：HongKong&Shenzhen</div>
+            </div>
+            <div class="setsec">
+              <div class="settitle">{{ $t('term.about.contacts_cn') }}</div>
+              <div class="aboutrow"><span class="aboutk">QQ</span><span class="aboutv">914300336</span></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.wechat') }}</span><span class="aboutv">yes8sir</span></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.email') }}</span><a class="aboutv link" href="mailto:914300336@qq.com">914300336@qq.com</a></div>
+            </div>
+            <div class="setsec">
+              <div class="settitle">{{ $t('term.about.contacts_overseas') }}</div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.email') }}</span><a class="aboutv link" href="mailto:samuel.tsang@outlook.com">samuel.tsang@outlook.com</a></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.tiktok') }}</span><span class="aboutv">slxxzh12</span></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.instagram') }}</span><span class="aboutv">slxxzh12</span></div>
+            </div>
+            <div class="setsec">
+              <div class="settitle">{{ $t('term.about.license') }}</div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.repo') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai" target="_blank" rel="noopener">https://gitee.com/slxxzh12/vscode-ai</a></div>
+              <div class="aboutrow"><span class="aboutk"></span><a class="aboutv link" href="https://github.com/slxxzh12/vscode-ai" target="_blank" rel="noopener">https://github.com/slxxzh12/vscode-ai</a></div>
+              <pre class="license">{{ $t('term.about.mit') }}</pre>
+              <div class="licnote">{{ $t('term.about.note') }}</div>
+            </div>
+          </template>
           </div>
         </div>
         <footer class="setf">
@@ -692,11 +758,24 @@ onBeforeUnmount(() => {
 .cfghint { color: var(--tx6); font-size: 11px; }
 .acfg.gear { flex: none; }
 .setmask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; }
-.setmodal { width: 560px; max-width: 92vw; max-height: 84vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
+.setmodal { width: 880px; max-width: 94vw; height: 88vh; max-height: 88vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
 .seth { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg4); color: var(--tx1); font-weight: 700; flex: none; }
 .setx { background: none; border: none; color: var(--tx3); font-size: 16px; cursor: pointer; }
-.setbody { padding: 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.setmain { flex: 1; display: flex; min-height: 0; }
+.setnav { width: 168px; flex: none; border-right: 1px solid var(--bd2); padding: 10px 8px; display: flex; flex-direction: column; gap: 4px; background: var(--bg2); }
+.setnav button { text-align: left; background: none; border: none; color: var(--tx2); font-size: 13px; padding: 9px 12px; cursor: pointer; border-radius: 6px; white-space: nowrap; }
+.setnav button:hover { color: var(--tx1); background: var(--bg3); }
+.setnav button.on { background: var(--ac); color: var(--onac); }
+.setbody { flex: 1; min-width: 0; padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
 .setsec { display: flex; flex-direction: column; gap: 6px; }
+.aboutval { font-size: 15px; font-weight: 700; color: var(--tx1); }
+.aboutrow { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.aboutk { color: var(--tx3); width: 74px; flex: none; }
+.aboutv { color: var(--tx1); font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+.aboutv.link { color: var(--ac2); text-decoration: none; cursor: pointer; }
+.aboutv.link:hover { text-decoration: underline; }
+.license { margin: 0; padding: 10px 12px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; color: var(--tx2); font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
+.licnote { color: var(--warn2); font-size: 12px; line-height: 1.6; }
 .settitle { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: var(--tx2); }
 .agentrow { display: flex; align-items: center; gap: 8px; }
 .agentrow .ghostcfg { flex: none; }
