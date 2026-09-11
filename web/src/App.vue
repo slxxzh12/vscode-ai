@@ -379,7 +379,9 @@ function onInviteJoined(_g?: CollabGroup) {
 .lang-btn:hover { border-color: var(--ac2); }
 .color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
 .top.colored .logo, .top.colored .projpath, .top.colored .net { color: #fff; }
-.top.colored .color-sel, .top.colored .lang-btn, .top.colored .theme-btn, .top.colored .addproj, .top.colored .proj-sel { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
+.top.colored .lang-btn, .top.colored .theme-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
+.top.colored .color-sel, .top.colored .proj-sel { background: var(--bg1); color: var(--tx); border-color: rgba(255,255,255,.45); }
+.top.colored .color-sel option, .top.colored .proj-sel option { color: #111; background: #fff; }
 .net { color: var(--warn); font-size: 12px; }
 .main { flex: 1; display: flex; min-height: 0; }
 .activity { width: 40px; background: var(--bg6); border-right: 1px solid var(--bd); display: flex; flex-direction: column; align-items: center; padding-top: 6px; gap: 2px; flex: none; }
