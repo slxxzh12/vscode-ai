@@ -65,6 +65,7 @@ export function profilePaths(root, id) {
     storeFile: path.join(dir, 'collab', 'collab.json'),
     uploadDir: path.join(dir, 'upload'),
     downloadDir: path.join(dir, 'download'),
+    downloadsDir: path.join(dir, 'downloads'),
     historyFile: path.join(dir, 'message-history.jsonc'),
     skillsRoot: path.join(dir, 'skills-opencode'),
   };

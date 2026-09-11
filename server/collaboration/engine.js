@@ -29,7 +29,7 @@ function assertSafeRel(name) {
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, runner = null, logger = console }) {
+  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, runner = null, logger = console }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.events = events;
@@ -37,6 +37,7 @@ export class CollabEngine {
     this.skillDefaultRoot = skillsRoot;   // opencode 技能根（env 覆盖优先）
     this.uploadDir = uploadDir;           // 发出的 zip 落盘目录
     this.downloadDir = downloadDir || inboxDir;   // 收到的 zip 落盘目录（下载页目录）
+    this.downloadsDir = downloadsDir || path.join(os.tmpdir(), `devflow-downloads-${identity?.machineId || 'x'}`);
     this.runner = runner || createOpenCodeRunner();
     this.log = logger;
     _extendChat(this);
@@ -225,6 +226,8 @@ export class CollabEngine {
       case CollabPeer.CMD_CONFIRM: return this._inCmdConfirm(env);
       case CollabPeer.CMD_RESULT: return this._inCmdResult(env);
       case CollabPeer.CHAT_PULL: return this._inChatPull(env);
+      case CollabPeer.HEARTBEAT: return this._inHeartbeat(env);
+      case CollabPeer.PULL_DOWNLOADS: return this._inPullDownloads(env);
       default: return { ok: false, error: 'unknown-type' };
     }
   }
@@ -282,6 +285,89 @@ export class CollabEngine {
     this._emit('synced', {});
     return { ok: true };
   }
+  // ---- downloads（master 共享目录）与心跳 ----
+  _manifestPath() { return path.join(this.downloadsDir, 'manifest.json'); }
+  readManifest() {
+    try { return JSON.parse(fs.readFileSync(this._manifestPath(), 'utf8')); } catch { return { version: 1, updatedAt: 0, files: [] }; }
+  }
+  _writeManifest(m) {
+    fs.mkdirSync(this.downloadsDir, { recursive: true });
+    fs.writeFileSync(this._manifestPath(), JSON.stringify(m, null, 2));
+  }
+  writeDownload(name, buf, kind) {
+    if (typeof name !== 'string' || name.includes('..') || name.includes('\\')) throw new Error('unsafe name');
+    const abs = path.join(this.downloadsDir, name);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, buf);
+    const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
+    const m = this.readManifest();
+    m.version = 1; m.updatedAt = Date.now();
+    m.files = m.files.filter((f) => f.name !== name);
+    m.files.push({ name, kind, size: buf.length, sha256, updatedAt: Date.now() });
+    this._writeManifest(m);
+    return { name, sha256, size: buf.length };
+  }
+  writeUsageSnapshot() {
+    this.writeDownload('usage.json', Buffer.from(JSON.stringify({ updatedAt: Date.now(), members: this.store.listHeartbeats() }, null, 2)), 'usage');
+    this.writeDownload('group.json', Buffer.from(JSON.stringify(this.store.getGroup() || {}, null, 2)), 'group');
+  }
+  reportHeartbeat(usage) {
+    const g = this.store.getGroup();
+    if (!g) return Promise.resolve({ code: 'no-group' });
+    if (g.hubId === this.pub.machineId) {
+      this.store.setHeartbeat(this.pub.machineId, { ...usage, receivedAt: Date.now() });
+      this.writeUsageSnapshot();
+      this._emit('heartbeat', {});
+      return Promise.resolve({ code: 'local' });
+    }
+    const hub = g.members.find((m) => m.machineId === g.hubId);
+    if (!hub) return Promise.resolve({ code: 'no-hub' });
+    return this._post(hub.host, hub.port, this._sign(CollabPeer.HEARTBEAT, { groupId: g.id, usage }));
+  }
+  _inHeartbeat(env) {
+    const g = this.store.getGroup();
+    if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
+    if (g.hubId !== this.pub.machineId) return { ok: false, error: 'not-hub' };
+    this.store.setHeartbeat(env.from.machineId, { ...(env.payload.usage || {}), receivedAt: Date.now() });
+    this.writeUsageSnapshot();
+    this._emit('heartbeat', {});
+    return { ok: true };
+  }
+  pullDownloads() {
+    const g = this.store.getGroup();
+    const hub = g && g.members.find((m) => m.machineId === g.hubId);
+    if (!hub || hub.machineId === this.pub.machineId) return Promise.resolve({ code: 'no-master' });
+    return this._post(hub.host, hub.port, this._sign(CollabPeer.PULL_DOWNLOADS, {})).then((res) => {
+      if (!res.ok) return { code: 'unreachable', error: res.error };
+      const data = res.data || {};
+      for (const f of data.files || []) {
+        const abs = path.join(this.downloadsDir, f.name);
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, Buffer.from(f.b64, 'base64'));
+      }
+      if (data.manifest) this._writeManifest(data.manifest);
+      if (data.group) this.store.setGroup(data.group);
+      if (data.usage && data.usage.members) {
+        for (const [mid, u] of Object.entries(data.usage.members)) this.store.setHeartbeat(mid, u);
+      }
+      this._emit('synced', {});
+      this._emit('heartbeat', {});
+      return { code: 'ok', files: (data.files || []).map((f) => f.name) };
+    });
+  }
+  _inPullDownloads(env) {
+    const g = this.store.getGroup();
+    if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
+    const manifest = this.readManifest();
+    const files = [];
+    for (const f of manifest.files) {
+      const abs = path.join(this.downloadsDir, f.name);
+      if (!fs.existsSync(abs)) continue;
+      files.push({ name: f.name, b64: fs.readFileSync(abs).toString('base64') });
+    }
+    return { ok: true, data: { manifest, files, group: g, usage: { updatedAt: Date.now(), members: this.store.listHeartbeats() } } };
+  }
+
   // ---- skill 分发 ----
   async distributeToGroup(groupId, skillNames) {
     const g = this.store.findGroup(groupId);
@@ -647,17 +733,18 @@ export async function createPairHarness({ skipSkills = false, dir = null } = {})
     const skillsRoot = path.join(nodeDir, 'skills');
     const uploadDir = path.join(nodeDir, 'upload');
     const downloadDir = path.join(nodeDir, 'download');
+    const downloadsDir = path.join(nodeDir, 'downloads');
     fs.mkdirSync(downloadDir, { recursive: true });
     fs.mkdirSync(uploadDir, { recursive: true });
     if (!skipSkills) fs.mkdirSync(skillsRoot, { recursive: true });
     const store = new CollabStore({ file: path.join(nodeDir, 'collab.json') });
     const identity = loadIdentity({ file: path.join(nodeDir, 'identity.json'), username: name, host: '127.0.0.1', port: ports[idx] });
-    return { store, identity, skillsRoot, uploadDir, downloadDir };
+    return { store, identity, skillsRoot, uploadDir, downloadDir, downloadsDir };
   }
   const A0 = await makeNode(0, 'alice');
   const B0 = await makeNode(1, 'bob');
-  const engA = new CollabEngine({ store: A0.store, identity: A0.identity, skillsRoot: A0.skillsRoot, uploadDir: A0.uploadDir, downloadDir: A0.downloadDir });
-  const engB = new CollabEngine({ store: B0.store, identity: B0.identity, skillsRoot: B0.skillsRoot, uploadDir: B0.uploadDir, downloadDir: B0.downloadDir });
+  const engA = new CollabEngine({ store: A0.store, identity: A0.identity, skillsRoot: A0.skillsRoot, uploadDir: A0.uploadDir, downloadDir: A0.downloadDir, downloadsDir: A0.downloadsDir });
+  const engB = new CollabEngine({ store: B0.store, identity: B0.identity, skillsRoot: B0.skillsRoot, uploadDir: B0.uploadDir, downloadDir: B0.downloadDir, downloadsDir: B0.downloadsDir });
   // 直连 transport：A 发的投给 B 的 handleIncoming，B 发的投给 A（忽略 host/port）
   const forward = async (eng, host, port, envelope) => {
     const r = await eng.handleIncoming(JSON.parse(JSON.stringify(envelope)));

@@ -149,6 +149,7 @@ function buildWorkspace({ paths, port }) {
     skillsRoot: paths.skillsRoot,
     uploadDir: paths.uploadDir,
     downloadDir: paths.downloadDir,
+    downloadsDir: paths.downloadsDir,
     events: eventBus,
     logger: log,
   });
@@ -500,6 +501,7 @@ function startListening() {
         storeFile: path.join(stateRoot, 'collab.json'),
         uploadDir: path.join(stateRoot, 'upload'),
         downloadDir: path.join(stateRoot, 'download'),
+        downloadsDir: path.join(stateRoot, 'downloads'),
         skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(stateRoot, 'skills-opencode'),
         projectsFile: path.join(dataHome(), 'projects.json'),
         workflowsFile: path.join(dataHome(), 'workflows.json'),
@@ -508,6 +510,7 @@ function startListening() {
       };
       fs.mkdirSync(paths.uploadDir, { recursive: true });
       fs.mkdirSync(paths.downloadDir, { recursive: true });
+      fs.mkdirSync(paths.downloadsDir, { recursive: true });
       fs.mkdirSync(paths.skillsRoot, { recursive: true });
       initWorkspace(paths, actual);
       return;
