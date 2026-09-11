@@ -3,7 +3,7 @@ import path from 'node:path';
 import { normalizeLocale, DEFAULT_LOCALE } from '@devflow/shared/i18n';
 import { parseWorkflowXml, fallbackWorkflows } from './workflow-xml.js';
 
-export const DEFAULT_PORT = 3001;
+export const DEFAULT_PORT = 22222;
 export const DEFAULT_AGENT = 'opencode';
 export const DEFAULT_AGENTS = [
   { id: 'opencode', name: 'OpenCode', cmd: 'opencode' },

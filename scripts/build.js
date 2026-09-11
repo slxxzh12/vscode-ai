@@ -26,8 +26,8 @@ const CFG_PORT = (() => {
   try {
     const xml = fs.readFileSync(path.join(ROOT, "config", "devflow.xml"), "utf8");
     const m = xml.match(/<server\b[^>]*\bport\s*=\s*"(\d+)"/i);
-    return m ? m[1] : "3001";
-  } catch { return "3001"; }
+    return m ? m[1] : "22222";
+  } catch { return "22222"; }
 })();
 
 function check(cond, msg) {

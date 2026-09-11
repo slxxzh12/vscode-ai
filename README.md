@@ -13,7 +13,7 @@ Web 通用终端 + 多会话管理 + 多项目目录树 + Workflow（命令编�
 
 ```bash
 npm install            # 根目录 workspaces
-npm run dev:server     # 后端 :3001（首次运行自动生成 projects.json / workflows.json）
+npm run dev:server     # 后端 :22222（首次运行自动生成 projects.json / workflows.json）
 npm run dev:web        # 前端 Vite :5173（代理 /api 与 /ws）
 # 打开 http://localhost:5173
 ```
@@ -22,7 +22,7 @@ npm run dev:web        # 前端 Vite :5173（代理 /api 与 /ws）
 
 ```bash
 npm run build:web
-node server/index.js   # 访问 http://127.0.0.1:3001
+node server/index.js   # 访问 http://127.0.0.1:22222
 ```
 
 ## 配置

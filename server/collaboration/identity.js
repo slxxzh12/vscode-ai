@@ -30,7 +30,7 @@ export function publicFingerprint(publicKeyPem) {
 }
 
 // 读/建 identity 并持久化到 file。返回对象: { machineId, username, host, port, publicKey, privateKey }
-export function loadIdentity({ file, username = detectUsername(), host = detectHost(), port = 3001 }) {
+export function loadIdentity({ file, username = detectUsername(), host = detectHost(), port = 22222 }) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   let cur = {};
   if (fs.existsSync(file)) {

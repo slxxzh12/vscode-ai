@@ -558,7 +558,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="setsec">
             <div class="settitle">{{ $t('term.service') }}</div>
-            <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="3001" /><button class="ghostcfg" @click="savePort">{{ $t('common.save') }}</button></div>
+            <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="22222" /><button class="ghostcfg" @click="savePort">{{ $t('common.save') }}</button></div>
             <div v-if="portMsg" class="cfghint">{{ portMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>

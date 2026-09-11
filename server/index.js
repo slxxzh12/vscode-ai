@@ -57,7 +57,7 @@ const requireAuthWs = () => true; // TODO(安全): 接入 Token 后校验 ws 握
 import { collabDir, uploadDir, downloadDir, seedFromLegacy, instanceName, instanceSeedDir, instanceFpRoot, dataHome } from './data-home.js';
 import { publicFingerprint } from './collaboration/identity.js';
 const HOST_DEFAULT = process.env.DEVFLOW_HOST || '127.0.0.1';
-const PORT_DEFAULT = Number(process.env.DEVFLOW_PORT || 3001);
+const PORT_DEFAULT = Number(process.env.DEVFLOW_PORT || 22222);
 const NODE = instanceName();
 
 // 多实例引导：DEVFLOW_NODE=某名 → 该实例自己的 identity（nodes/<名>），其余状态按公钥指纹隔离；

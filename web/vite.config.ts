@@ -11,7 +11,7 @@ function configPort(): number {
     const m = xml.match(/<server\b[^>]*\bport\s*=\s*"(\d+)"/i);
     if (m) return Number(m[1]);
   } catch { /* ignore */ }
-  return 3001;
+  return 22222;
 }
 const PORT = Number(process.env.DEVFLOW_PORT || configPort());
 
