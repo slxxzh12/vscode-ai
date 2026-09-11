@@ -27,3 +27,10 @@ test('未知 key 回退为 key 本身', () => {
   assert.equal(translate('zh-CN', 'nope.missing'), 'nope.missing');
   assert.equal(translate('en', 'nope.missing'), 'nope.missing');
 });
+
+test('工作流基础环境检查词条中英均存在', () => {
+  for (const loc of ['zh-CN', 'en']) {
+    assert.notEqual(translate(loc, 'termwf.envcheck.label'), 'termwf.envcheck.label');
+    assert.notEqual(translate(loc, 'termwf.envcheck.prompt'), 'termwf.envcheck.prompt');
+  }
+});
