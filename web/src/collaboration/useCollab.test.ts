@@ -10,7 +10,7 @@ describe('useCollab', () => {
   it('refresh 拉取 snapshot 并写入 state', async () => {
     const snap = {
       identity: { machineId: 'm', username: 'u', host: 'h', port: 1, publicKey: 'k' },
-      friends: [], pendingFriends: [], groups: [], pendingInvites: [], skillsInbox: [], groupSkills: [],
+      group: null, heartbeats: {}, skillsInbox: [], groupSkills: [],
     };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonRes(snap));
     const c = useCollab();
@@ -18,15 +18,15 @@ describe('useCollab', () => {
     expect(c.state.value?.identity.machineId).toBe('m');
   });
 
-  it('requestFriend 带 host/port POST', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonRes({ code: 'requested' }));
+  it('join 带 host/port/token POST 到 /join', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonRes({ code: 'joined' }));
     const c = useCollab();
-    const r = await c.requestFriend('192.168.1.5', 3001);
-    expect(r).toEqual({ code: 'requested' });
+    const r = await c.join('192.168.1.5', 3001, 'tok');
+    expect(r).toEqual({ code: 'joined' });
     const [url, init] = fetchSpy.mock.calls[0];
-    expect(String(url)).toContain('/api/collab/friends');
+    expect(String(url)).toContain('/api/collab/join');
     expect(init?.method).toBe('POST');
-    expect(JSON.parse(init?.body as string)).toEqual({ host: '192.168.1.5', port: 3001 });
+    expect(JSON.parse(init?.body as string)).toEqual({ host: '192.168.1.5', port: 3001, token: 'tok' });
   });
 
   it('installInbox 打到正确路由', async () => {
@@ -34,13 +34,6 @@ describe('useCollab', () => {
     const c = useCollab();
     await c.installInbox('in-1');
     expect(String(fetchSpy.mock.calls[0][0])).toContain('/api/collab/inbox/in-1/install');
-  });
-
-  it('kickMember 打到 members/kick 路由', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonRes({ code: 'kicked' }));
-    const c = useCollab();
-    await c.kickMember('g1', 'target');
-    expect(String(fetchSpy.mock.calls[0][0])).toContain('/api/collab/groups/g1/members/target/kick');
   });
 });
 

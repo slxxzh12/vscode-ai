@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue';
-import type { CollabSnapshot, CollabChatMessage, CollabPendingCmd, CollabInvitePreview, CollabGroup } from './types';
+import type { CollabSnapshot, CollabChatMessage, CollabPendingCmd, CollabGroup } from './types';
 import { t } from '../i18n';
 
 async function http<T>(url: string, init?: RequestInit): Promise<T> {
@@ -85,23 +85,8 @@ export function useCollab() {
     chat, sendChat, sendCmd, pullChat, loadPendingCmds, approveCmd,
     loadAllowlist, addAllow, removeAllow, handleS2C,
     async updateIdentity(host: string, port: number) { await post('/api/collab/identity', { host, port }); return refresh(); },
-    requestFriend: (host: string, port: number) => post('/api/collab/friends', { host, port }),
-    async acceptFriend(machineId: string) { return post(`/api/collab/friends/${machineId}/accept`); },
-    async removeFriend(machineId: string) { await http(`/api/collab/friends/${machineId}`, { method: 'DELETE' }); return refresh(); },
-    createGroup: (name: string) => post('/api/collab/groups', { name }),
-    inviteMember: (groupId: string, machineId: string) => post(`/api/collab/groups/${groupId}/invite`, { machineId }),
-    kickMember: (groupId: string, machineId: string) => post(`/api/collab/groups/${groupId}/members/${machineId}/kick`),
-    async deleteGroup(groupId: string) { await http(`/api/collab/groups/${groupId}`, { method: 'DELETE' }); return refresh(); },
-    acceptInvite: (inviteId: string) => post(`/api/collab/invites/${inviteId}/accept`),
-    rejectInvite: (inviteId: string) => post(`/api/collab/invites/${inviteId}/reject`),
-    createInviteLink: (groupId: string, origin?: string) =>
-      post<{ token: string; url: string; expiresAt: number; jti: string }>(`/api/collab/groups/${groupId}/invite-link`, { origin }),
-    revokeInvites: (groupId: string) =>
-      post<{ code: string; epoch: number }>(`/api/collab/groups/${groupId}/invite-revoke`),
-    previewInvite: (token: string) =>
-      http<CollabInvitePreview>(`/api/collab/join/preview?token=${encodeURIComponent(token)}`),
-    async joinByInvite(token: string) {
-      const r = await post<{ code: string; group?: CollabGroup }>('/api/collab/join', { token });
+    async join(host: string, port: number, token: string) {
+      const r = await post<{ code: string; group?: CollabGroup }>('/api/collab/join', { host, port, token });
       await refresh();
       return r;
     },
