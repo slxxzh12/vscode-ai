@@ -607,7 +607,7 @@ onBeforeUnmount(() => {
             <div class="setsec">
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.author') }}</span><span class="aboutval">Samuel Tsang</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.software') }}</span><span class="aboutv">{{ $t('term.about.name_value') }}</span></div>
-              <div class="cfghint">{{ $t('term.about.location') }}：{{ $t('term.about.location_value') }}</div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.location') }}</span><span class="aboutv">{{ $t('term.about.location_value') }}</span></div>
             </div>
             <div class="setsec">
               <div class="settitle">{{ $t('term.about.contacts_cn') }}</div>
@@ -771,7 +771,7 @@ onBeforeUnmount(() => {
 .cfghint { color: var(--tx6); font-size: 11px; }
 .acfg.gear { flex: none; }
 .setmask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; }
-.setmodal { width: 880px; max-width: 94vw; height: 88vh; max-height: 88vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
+.setmodal { width: 1080px; max-width: 96vw; height: 92vh; max-height: 92vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
 .seth { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg4); color: var(--tx1); font-weight: 700; flex: none; }
 .setx { background: none; border: none; color: var(--tx3); font-size: 16px; cursor: pointer; }
 .setmain { flex: 1; display: flex; min-height: 0; }
