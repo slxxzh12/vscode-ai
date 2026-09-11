@@ -6,7 +6,6 @@ import { CollabPeer } from '@devflow/shared/collab';
 import { CollabStore } from './store.js';
 import { loadIdentity, toPublicProfile } from './identity.js';
 import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
-import { makeInviteToken, parseInviteToken, INVITE_TTL_MS } from './invite.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
 import { buildZip } from './zip.js';
@@ -185,15 +184,11 @@ export class CollabEngine {
     try { return await this.peer.post(host, port, env, headers); }
     catch (e) { return { ok: false, error: String(e && e.message || e) }; }
   }
-  // 按公钥反查已知身份（好友 + 我所在的群成员），供接收方头部公钥鉴权
+  // 按公钥反查已知身份（单例群成员），供接收方头部公钥鉴权
   profileByPublicKey(pem) {
     if (!pem) return null;
-    for (const f of this.store.listFriends()) if (f.publicKey === pem) return f;
-    for (const g of this.store.listGroups()) {
-      const m = g.members.find((x) => x.publicKey === pem);
-      if (m) return m;
-    }
-    return null;
+    const g = this.store.getGroup();
+    return g ? (g.members.find((x) => x.publicKey === pem) || null) : null;
   }
   // 文件凭证请求头：对文件 sha256 用本机私钥签名，并附带公钥（base64）供接收方查询
   fileReceiptHeaders(data) {
@@ -220,11 +215,7 @@ export class CollabEngine {
     const pubKey = known ? known.publicKey : (env && env.from && env.from.publicKey);
     if (!pubKey || !verifyEnvelope(pubKey, env)) return { ok: false, error: 'bad-signature' };
     switch (env.type) {
-      case CollabPeer.FRIEND_REQUEST: return this._inFriendRequest(env);
-      case CollabPeer.FRIEND_ACCEPT: return this._inFriendAccept(env);
-      case CollabPeer.GROUP_INVITE: return this._inGroupInvite(env);
-      case CollabPeer.GROUP_ACCEPT: return this._inGroupAccept(env);
-      case CollabPeer.GROUP_JOIN: return this._inGroupJoin(env);
+      case CollabPeer.GROUP_JOIN: return this._inJoin(env);
       case CollabPeer.MEMBER_SYNC: return this._inMemberSync(env);
       case CollabPeer.SKILL_PUSH: return this._inSkillPush(env);
       case CollabPeer.FILE_PUSH: return this._inFilePush(env);
@@ -239,108 +230,38 @@ export class CollabEngine {
   }
   _knownProfile(machineId) {
     if (!machineId) return null;
-    const f = this.store.findFriend(machineId);
-    if (f) return f;
-    for (const g of this.store.listGroups()) {
-      const m = g.members.find((x) => x.machineId === machineId);
-      if (m) return m;
-    }
-    return null;
+    const g = this.store.getGroup();
+    return g ? (g.members.find((m) => m.machineId === machineId) || null) : null;
   }
 
-  // ---- 好友 ----
-  async requestFriend({ host, port }) {
-    const res = await this._post(host, port, this._sign(CollabPeer.FRIEND_REQUEST, {}));
-    if (!res.ok) return { code: 'failed', error: res.error };
-    return { code: 'requested' };
-  }
-  _inFriendRequest(env) {
-    const p = env.from;
-    if (this.store.findFriend(p.machineId)) return { ok: true };           // 已是好友
-    this.store.addPendingFriend({ ...p, requestedAt: Date.now() });
-    this._emit('friend-request', { from: p });
-    return { ok: true };
-  }
-  async acceptFriend(machineId) {
-    const p = this.store.findPendingFriend(machineId);
-    if (!p) return { code: 'not-found' };
-    this.store.removePendingFriend(machineId);
-    this.store.addFriend(p);
-    const res = await this._post(p.host, p.port, this._sign(CollabPeer.FRIEND_ACCEPT, {}));
-    return res.ok ? { code: 'accepted' } : { code: 'accepted', localOnly: true, error: res.error };
-  }
-  _inFriendAccept(env) {
-    const p = env.from;
-    // 双向登记：若本机之前发过请求，清掉 pending；无论如何把对方落为好友
-    if (this.store.findPendingFriend(p.machineId)) this.store.removePendingFriend(p.machineId);
-    this.store.addFriend(p);
-    this._emit('synced', {});
-    return { ok: true };
-  }
-
-  // ---- 群 ----
-  async createGroup(name) {
-    const g = {
-      id: crypto.randomUUID(), name, ownerId: this.pub.machineId, createdAt: Date.now(),
-      members: [{ ...this.pub, role: 'owner' }], inviteEpoch: 0,
-    };
-    this.store.addGroup(g);
+  // ---- 单例群组（hub = 开启远程访问并分享链接者）----
+  ensureGroup() {
+    const g = this.store.ensureGroup({ name: t('collab.group.default_name'), hubId: this.pub.machineId, self: this.pub });
     this._emit('synced', {});
     return g;
   }
-  async inviteMember({ groupId, targetMachineId }) {
-    const g = this.store.findGroup(groupId);
-    const me = g && g.members.find((m) => m.machineId === this.pub.machineId);
-    if (!g || !me) return { code: 'not-member' };
-    if (g.members.find((m) => m.machineId === targetMachineId)) return { code: 'already-member' };
-    const t = this._knownProfile(targetMachineId) || this.store.findPendingFriend(targetMachineId);
-    if (!t) return { code: 'no-target-profile' };
-    const res = await this._post(t.host, t.port, this._sign(CollabPeer.GROUP_INVITE, { group: { id: g.id, name: g.name } }));
-    return res.ok ? { code: 'invited' } : { code: 'failed', error: res.error };
+  joinByLink({ host, port, token }) {
+    const env = this._sign(CollabPeer.GROUP_JOIN, { token });
+    return this._post(host, port, env).then((res) => {
+      if (!res.ok) return { code: res.error === 'bad-token' ? 'bad-token' : 'unreachable', error: res.error };
+      const group = res.data && res.data.group;
+      if (!group) return { code: 'unreachable' };
+      this.store.setGroup(group);
+      this._emit('synced', {});
+      return { code: 'joined', group };
+    });
   }
-  _inGroupInvite(env) {
-    const p = env.from;
-    const { group } = env.payload;
-    const existing = this.store.findGroup(group.id);
-    if (existing && existing.members.find((m) => m.machineId === this.pub.machineId)) return { ok: true };
-    if (this.store.findPendingInvite(group.id)) return { ok: true };
-    const inv = { id: crypto.randomUUID(), groupId: group.id, groupName: group.name, inviter: p, receivedAt: Date.now() };
-    this.store.addPendingInvite(inv);
-    this._emit('group-invite', { invite: inv });
-    return { ok: true };
-  }
-  async acceptInvite(inviteId) {
-    const inv = this.store.findPendingInvite(inviteId);
-    if (!inv) return { code: 'not-found' };
-    this.store.removePendingInvite(inviteId);
-    // 发回 accept，并带上本机 profile
-    const res = await this._post(inv.inviter.host, inv.inviter.port, this._sign(CollabPeer.GROUP_ACCEPT, { groupId: inv.groupId }));
-    if (!res.ok) { this.store.addPendingInvite(inv); return { code: 'failed', error: res.error }; }
-    // 本机建（或并入）群，等待 MEMBER_SYNC 拿全量成员表
-    if (!this.store.findGroup(inv.groupId)) {
-      this.store.addGroup({ id: inv.groupId, name: inv.groupName, ownerId: null, createdAt: Date.now(), members: [{ ...this.pub, role: 'member' }] });
+  async _inJoin(env) {
+    if (typeof this.verifyAccessToken !== 'function' || !this.verifyAccessToken(env.payload && env.payload.token)) {
+      return { ok: false, error: 'bad-token' };
     }
-    this._emit('synced', {});
-    return { code: 'accepted' };
-  }
-  // 入群者自动角色：管理位共 5 个（owner 占 1），owner 之后按入群先后自动把前 4 位置为 admin，其余为 member
-  _assignRole(g) {
-    const adminCount = g.members.filter((m) => m.role === 'owner' || m.role === 'admin').length;
-    return adminCount < 5 ? 'admin' : 'member';
-  }
-  async _inGroupAccept(env) {
-    const p = env.from;
-    const groupId = env.payload.groupId;
-    const g = this.store.findGroup(groupId);
-    if (!g) return { ok: true };
-    if (!g.members.find((m) => m.machineId === p.machineId)) {
-      g.members.push({ ...p, role: this._assignRole(g) });
-      this.store.saveGroup(g);
-    }
-    // 广播全量成员表给所有成员（await，保证发起方应答前对方已收到同步）
+    const g = this.store.getGroup() || this.ensureGroup();
+    this.store.addGroupMember(env.from);
+    g.hubId = this.pub.machineId;
+    this.store.saveGroup(g);
     await this._broadcastMemberSync(g);
     this._emit('synced', {});
-    return { ok: true };
+    return { ok: true, data: { group: g } };
   }
   async _broadcastMemberSync(g) {
     const env = this._sign(CollabPeer.MEMBER_SYNC, { group: g });
@@ -350,114 +271,17 @@ export class CollabEngine {
     }
   }
   _inMemberSync(env) {
-    const group = env.payload.group;
-    if (!group || !group.id) return { ok: false, error: 'bad-group' };
-    // 我已不在成员表 → 被移出/解散，本地删除群
-    if (!(group.members || []).find((m) => m.machineId === this.pub.machineId)) {
-      this.store.removeGroup(group.id);
-      this._emit('synced', {});
-      return { ok: true };
+    const g = env.payload.group;
+    if (!g || !Array.isArray(g.members)) return { ok: false, error: 'bad-payload' };
+    const local = this.store.getGroup();
+    if (!local) { this.store.setGroup({ ...g }); }
+    else {
+      for (const m of g.members) if (!local.members.find((x) => x.machineId === m.machineId)) local.members.push(m);
+      this.store.saveGroup(local);
     }
-    this.store.upsertGroup(group);
     this._emit('synced', {});
     return { ok: true };
   }
-  // 踢人：owner 可踢任何人（含 admin）；admin 只能踢 member；member 无权
-  async kickMember({ groupId, targetMachineId }) {
-    const g = this.store.findGroup(groupId);
-    const me = g && g.members.find((m) => m.machineId === this.pub.machineId);
-    const target = g && g.members.find((m) => m.machineId === targetMachineId);
-    if (!g || !me) return { code: 'not-member' };
-    if (!target) return { code: 'no-target' };
-    if (me.role !== 'owner' && me.role !== 'admin') return { code: 'forbidden' };
-    if (me.role === 'admin' && target.role !== 'member') return { code: 'forbidden' };
-    g.members = g.members.filter((m) => m.machineId !== targetMachineId);
-    this.store.saveGroup(g);
-    // 通知被踢者（其收到后因不在成员表会删本地群）
-    await this._post(target.host, target.port, this._sign(CollabPeer.MEMBER_SYNC, { group: g }));
-    // 同步其余成员
-    await this._broadcastMemberSync(g);
-    this._emit('synced', {});
-    return { code: 'kicked' };
-  }
-
-  // ---- 邀请链接 ----
-  _inviteRole(groupId) {
-    const g = this.store.findGroup(groupId);
-    const me = g && g.members.find((m) => m.machineId === this.pub.machineId);
-    if (!g || !me) return { code: 'not-member', group: null };
-    if (me.role !== 'owner' && me.role !== 'admin') return { code: 'forbidden', group: g };
-    return { code: 'ok', group: g };
-  }
-  createInviteLink({ groupId, ttlMs } = {}) {
-    const r = this._inviteRole(groupId);
-    if (r.code !== 'ok') return { code: r.code };
-    const exp = Date.now() + (typeof ttlMs === 'number' && ttlMs > 0 ? ttlMs : INVITE_TTL_MS);
-    const jti = crypto.randomUUID();
-    const token = makeInviteToken(this.identity.privateKey, {
-      groupId: r.group.id, groupName: r.group.name, inviter: this.pub,
-      epoch: r.group.inviteEpoch || 0, exp, jti,
-    });
-    return { code: 'ok', token, expiresAt: exp, jti };
-  }
-  async revokeInvites(groupId) {
-    const r = this._inviteRole(groupId);
-    if (r.code !== 'ok') return { code: r.code };
-    r.group.inviteEpoch = (r.group.inviteEpoch || 0) + 1;
-    this.store.saveGroup(r.group);
-    await this._broadcastMemberSync(r.group);
-    this._emit('synced', {});
-    return { code: 'ok', epoch: r.group.inviteEpoch };
-  }
-  previewInvite(token) {
-    const r = parseInviteToken(token);
-    if (!r.ok) return { code: 'bad-token' };
-    const b = r.body;
-    if (typeof b.exp !== 'number' || Date.now() > b.exp) return { code: 'expired' };
-    const local = this.store.findGroup(b.groupId);
-    const alreadyMember = !!(local && local.members.find((m) => m.machineId === this.pub.machineId));
-    return { code: 'ok', groupId: b.groupId, groupName: b.groupName, inviter: b.inviter, expiresAt: b.exp, alreadyMember };
-  }
-  async joinByInvite(token) {
-    const r = parseInviteToken(token);
-    if (!r.ok) return { code: 'bad-token' };
-    const b = r.body;
-    if (typeof b.exp !== 'number' || Date.now() > b.exp) return { code: 'expired' };
-    const local = this.store.findGroup(b.groupId);
-    if (local && local.members.find((m) => m.machineId === this.pub.machineId)) {
-      return { code: 'already-member', group: local };
-    }
-    const res = await this._post(b.inviter.host, b.inviter.port, this._sign(CollabPeer.GROUP_JOIN, { token }));
-    if (!res.ok) {
-      const code = res.error === 'invite-revoked' ? 'invite-revoked' : 'unreachable';
-      return { code, error: res.error };
-    }
-    const group = res.data && res.data.group;
-    if (!group) return { code: 'unreachable' };
-    this.store.upsertGroup(group);
-    this._emit('synced', {});
-    return { code: 'joined', group };
-  }
-  async _inGroupJoin(env) {
-    const token = env.payload && env.payload.token;
-    const r = parseInviteToken(token);
-    if (!r.ok) return { ok: false, error: 'bad-token' };
-    const b = r.body;
-    if (!b.inviter || b.inviter.machineId !== this.pub.machineId) return { ok: false, error: 'not-inviter' };
-    if (typeof b.exp !== 'number' || Date.now() > b.exp) return { ok: false, error: 'expired' };
-    const g = this.store.findGroup(b.groupId);
-    const me = g && g.members.find((m) => m.machineId === this.pub.machineId);
-    if (!g || !me) return { ok: false, error: 'no-group' };
-    if (b.epoch !== (g.inviteEpoch || 0)) return { ok: false, error: 'invite-revoked' };
-    const p = env.from;
-    if (g.members.find((m) => m.machineId === p.machineId)) return { ok: true, data: { group: g } };
-    g.members.push({ ...p, role: this._assignRole(g) });
-    this.store.saveGroup(g);
-    await this._broadcastMemberSync(g);
-    this._emit('synced', {});
-    return { ok: true, data: { group: g } };
-  }
-
   // ---- skill 分发 ----
   async distributeToGroup(groupId, skillNames) {
     const g = this.store.findGroup(groupId);
@@ -648,7 +472,7 @@ export class CollabEngine {
     if (!data) return;
     for (const g of data.groups || []) {
       const local = this.store.findGroup(g.id);
-      if (!local) this.store.addGroup({ ...g });
+      if (!local) this.store.upsertGroup({ ...g });
       else {
         for (const m of g.members || []) if (!local.members.find((x) => x.machineId === m.machineId)) local.members.push(m);
         this.store.saveGroup(local);

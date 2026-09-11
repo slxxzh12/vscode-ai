@@ -3,65 +3,46 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { CollabEngine, createPairHarness } from '../collaboration/engine.js';
+import { createPairHarness } from '../collaboration/engine.js';
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'collab-eng-')); }
 
-test('好友握手双向登记', async () => {
-  const h = await createPairHarness({ skipSkills: true });
-  try {
-    const [A, B] = h.nodes;
-    const res = await A.requestFriend({ host: B.pub.host, port: B.pub.port });
-    assert.equal(res.code, 'requested');
-    // B 侧应出现 pending friend
-    assert.equal(B.store.findPendingFriend(A.pub.machineId) !== null, true);
-    await B.acceptFriend(A.pub.machineId);
-    assert.ok(A.store.findFriend(B.pub.machineId), 'A 已登记 B');
-    assert.ok(B.store.findFriend(A.pub.machineId), 'B 已登记 A');
-  } finally { await h.stop(); }
+// A 开启访问（verifyAccessToken）并建群；B 粘贴链接入群
+async function groupUp(A, B) {
+  A.verifyAccessToken = (tk) => tk === 'good';
+  A.ensureGroup();
+  const r = await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'good' });
+  assert.equal(r.code, 'joined');
+  return r.group;
+}
+
+test('single-group: ensureGroup 幂等且成员去重', () => {
+  return createPairHarness({ skipSkills: true }).then(async (h) => {
+    try {
+      const A = h.nodes[0];
+      const g1 = A.ensureGroup();
+      const g2 = A.ensureGroup();
+      assert.equal(g1.id, 'shared');
+      assert.equal(g2.id, 'shared');
+      assert.equal(A.store.getGroup().members.length, 1);
+      assert.equal(A.store.getGroup().hubId, A.pub.machineId);
+    } finally { await h.stop(); }
+  });
 });
 
-test('建群+邀请+接受+成员广播', async () => {
+test('single-group: joinByLink 校验令牌后入群并记录 hub', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {
     const [A, B] = h.nodes;
-    await A.requestFriend({ host: B.pub.host, port: B.pub.port });
-    await B.acceptFriend(A.pub.machineId);
-    const g = await A.createGroup('team');
-    await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
-    const inv = B.store.listPendingInvites()[0];
-    assert.ok(inv, 'B 收到群邀请');
-    await B.acceptInvite(inv.id);
-    const gA = A.store.findGroup(g.id);
-    assert.ok(gA.members.find((m) => m.machineId === B.pub.machineId), 'A 群含 B');
-    const gB = B.store.findGroup(g.id);
-    assert.ok(gB, 'B 也持有群');
-    assert.ok(gB.members.find((m) => m.machineId === A.pub.machineId), 'B 群含 A');
-  } finally { await h.stop(); }
-});
-
-test('角色规则：owner 占 1 管理位；第 2~5 位入群自动为 admin；admin 只能踢 member，owner 可踢任何人', async () => {
-  const h = await createPairHarness({ skipSkills: true });
-  try {
-    const [A, B] = h.nodes;
-    await A.requestFriend({ host: B.pub.host, port: B.pub.port });
-    await B.acceptFriend(A.pub.machineId);
-    const g = await A.createGroup('team');
-    // B 是第 2 位（owner 之后第 1 位）→ 应为 admin
-    await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
-    await B.acceptInvite(B.store.listPendingInvites()[0].id);
-    let gA = A.store.findGroup(g.id);
-    const bRole = gA.members.find((m) => m.machineId === B.pub.machineId).role;
-    assert.equal(bRole, 'admin', '第 2 位入群者应为 admin');
-    // B(admin) 踢 A(owner) 应被拒
-    const badKick = await B.kickMember({ groupId: g.id, targetMachineId: A.pub.machineId });
-    assert.equal(badKick.code, 'forbidden', 'admin 不能踢 owner');
-    // A(owner) 踢 B(admin) 应成功；B 本地收到 MEMBER_SYNC 后群应移除
-    const okKick = await A.kickMember({ groupId: g.id, targetMachineId: B.pub.machineId });
-    assert.equal(okKick.code, 'kicked', JSON.stringify(okKick));
-    gA = A.store.findGroup(g.id);
-    assert.equal(gA.members.find((m) => m.machineId === B.pub.machineId), undefined, 'A 群不再含 B');
-    assert.equal(B.store.findGroup(g.id), null, 'B 本地群已退出');
+    A.verifyAccessToken = (tk) => tk === 'good';
+    A.ensureGroup();
+    const bad = await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'bad' });
+    assert.equal(bad.code, 'bad-token');
+    const ok = await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'good' });
+    assert.equal(ok.code, 'joined');
+    assert.equal(B.store.getGroup().members.length, 2);
+    assert.equal(B.store.getGroup().hubId, A.pub.machineId);
+    assert.equal(A.store.getGroup().members.length, 2);
   } finally { await h.stop(); }
 });
 
@@ -73,11 +54,7 @@ test('群内分发 skill → 对方 inbox → 安装', async () => {
     const skillDir = path.join(A.skillsRoot, 'demo');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# demo', 'utf8');
-    await A.requestFriend({ host: B.pub.host, port: B.pub.port });
-    await B.acceptFriend(A.pub.machineId);
-    const g = await A.createGroup('team');
-    await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
-    await B.acceptInvite(B.store.listPendingInvites()[0].id);
+    const g = await groupUp(A, B);
     const dist = await A.distributeToGroup(g.id, ['demo']);
     assert.equal(dist.failures.length, 0, JSON.stringify(dist.failures));
     const inbox = B.store.listInbox();
@@ -102,11 +79,7 @@ test('切换工具目录：分发源/安装目标跟所选工具走，upload 留
     const skillDir = path.join(A.skillRoot(), 'demo');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# demo', 'utf8');
-    await A.requestFriend({ host: B.pub.host, port: B.pub.port });
-    await B.acceptFriend(A.pub.machineId);
-    const g = await A.createGroup('team');
-    await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
-    await B.acceptInvite(B.store.listPendingInvites()[0].id);
+    const g = await groupUp(A, B);
     const dist = await A.distributeToGroup(g.id, ['demo']);
     assert.equal(dist.failures.length, 0, JSON.stringify(dist.failures));
     // upload 目录留档 + outbox 记录
@@ -133,11 +106,7 @@ test('群内发文件：A 推送 → B 落 download 目录，sha256 校验 + 群
   const h = await createPairHarness({ skipSkills: true });
   try {
     const [A, B] = h.nodes;
-    await A.requestFriend({ host: B.pub.host, port: B.pub.port });
-    await B.acceptFriend(A.pub.machineId);
-    const g = await A.createGroup('team');
-    await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
-    await B.acceptInvite(B.store.listPendingInvites()[0].id);
+    const g = await groupUp(A, B);
     const payload = Buffer.from('hello-devflow-file', 'utf8');
     const sent = await A.sendFileToGroup(g.id, { fileName: 'notes.txt', data: payload });
     assert.equal(sent.code, 'ok', JSON.stringify(sent));
@@ -169,7 +138,7 @@ test('验签失败的消息被丢弃（伪造信封直接进 inbound）', async 
   try {
     const [, B] = h.nodes;
     // 用 B 自己的 profile（公钥有效）但签名坏 → 应被拒
-    const fake = { type: 'friend-request', from: { ...B.pub }, payload: {}, ts: Date.now(), sig: 'bad' };
+    const fake = { type: 'chat-send', from: { ...B.pub }, payload: {}, ts: Date.now(), sig: 'bad' };
     const result = await B.engine.handleIncoming(fake);
     assert.equal(result.ok, false);
   } finally { await h.stop(); }
@@ -182,13 +151,9 @@ test('pull-sync 拉取对方群与 groupSkills', async () => {
     const skillDir = path.join(A.skillsRoot, 'demo');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# demo', 'utf8');
-    await A.requestFriend({ host: B.pub.host, port: B.pub.port });
-    await B.acceptFriend(A.pub.machineId);
-    const g = await A.createGroup('team');
-    await A.inviteMember({ groupId: g.id, targetMachineId: B.pub.machineId });
-    await B.acceptInvite(B.store.listPendingInvites()[0].id);
+    const g = await groupUp(A, B);
     await A.distributeToGroup(g.id, ['demo']);
-    // C：新成员视角——B 向 A pull-sync 后应看到群与 skill 清单
+    // B 向 A pull-sync 后应看到群与 skill 清单
     const r = await B.pullSync(A.pub.machineId, { groupIds: [g.id] });
     assert.equal(r.code, 'ok');
     B.applyPull(r.data);
