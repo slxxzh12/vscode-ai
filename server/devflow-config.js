@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeLocale, DEFAULT_LOCALE } from '@devflow/shared/i18n';
 import { parseWorkflowXml, fallbackWorkflows } from './workflow-xml.js';
+import { downloadsDir } from './data-home.js';
 
 export const DEFAULT_PORT = 22222;
 export const DEFAULT_AGENT = 'opencode';
@@ -110,6 +111,18 @@ export function ensureConfigFile(file) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, serializeDevflowConfig(buildDefaultConfig()), 'utf8');
   return true;
+}
+
+// 解析运行时活动配置：优先 <dataHome>/downloads/devflow.xml；不存在则从仓库模板 seed（不覆盖已存在的）
+export function resolveActiveConfigFile(baseDir) {
+  const dir = downloadsDir();
+  const active = path.join(dir, 'devflow.xml');
+  if (fs.existsSync(active)) return active;
+  fs.mkdirSync(dir, { recursive: true });        // 失败向上抛出 → 启动失败
+  const template = defaultConfigFile(baseDir);
+  if (fs.existsSync(template)) fs.copyFileSync(template, active);
+  else fs.writeFileSync(active, serializeDevflowConfig(buildDefaultConfig()), 'utf8');
+  return active;
 }
 
 export function loadDevflowConfig(file) {

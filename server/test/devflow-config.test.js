@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   parseDevflowConfig, serializeDevflowConfig,
   loadDevflowConfig, ensureConfigFile, updateServerAttrs, buildDefaultConfig,
-  validateWorkflows, updateWorkflows,
+  validateWorkflows, updateWorkflows, resolveActiveConfigFile,
 } from '../devflow-config.js';
 
 function tmpFile() { return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-')), 'devflow.xml'); }
@@ -102,4 +102,56 @@ test('updateWorkflows 覆盖 <workflows> 且保留 server/agents', () => {
   assert.equal(c.server.language, 'en');
   assert.equal(c.workflows[0].id, 'doc');
   assert.ok(c.agents.list.some((a) => a.id === 'opencode'));
+});
+
+function withDataHome(fn) {
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-data-'));
+  const prev = process.env.DEVFLOW_DATA_HOME;
+  process.env.DEVFLOW_DATA_HOME = data;
+  try { return fn(data); }
+  finally {
+    if (prev === undefined) delete process.env.DEVFLOW_DATA_HOME; else process.env.DEVFLOW_DATA_HOME = prev;
+  }
+}
+
+test('resolveActiveConfigFile 首次从模板复制到 dataHome/downloads', () => {
+  withDataHome((data) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
+    fs.mkdirSync(path.join(root, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'config', 'devflow.xml'), SAMPLE, 'utf8');
+    const active = resolveActiveConfigFile(root);
+    assert.equal(active, path.join(data, 'downloads', 'devflow.xml'));
+    assert.equal(fs.readFileSync(active, 'utf8'), SAMPLE);
+  });
+});
+
+test('resolveActiveConfigFile 已存在则不覆盖', () => {
+  withDataHome(() => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
+    fs.mkdirSync(path.join(root, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'config', 'devflow.xml'), SAMPLE, 'utf8');
+    const first = resolveActiveConfigFile(root);
+    fs.writeFileSync(first, '<devflow><server port="9999" language="en"/></devflow>', 'utf8');
+    const second = resolveActiveConfigFile(root);
+    assert.equal(second, first);
+    assert.match(fs.readFileSync(second, 'utf8'), /port="9999"/);
+  });
+});
+
+test('resolveActiveConfigFile 模板缺失写入内置默认', () => {
+  withDataHome(() => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
+    const active = resolveActiveConfigFile(root);
+    const c = loadDevflowConfig(active);
+    assert.equal(c.agents.list.length, buildDefaultConfig().agents.list.length);
+    assert.ok(c.workflows.length >= 1);
+  });
+});
+
+test('resolveActiveConfigFile downloads 不可创建时抛错', () => {
+  withDataHome((data) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
+    fs.writeFileSync(path.join(data, 'downloads'), 'not-a-dir', 'utf8');   // 占位成文件 → mkdir 失败
+    assert.throws(() => resolveActiveConfigFile(root));
+  });
 });
