@@ -329,7 +329,7 @@ function onInviteJoined(_g?: CollabGroup) {
 <template>
   <div class="app">
     <header class="top" :class="{ colored: !!windowColorValue }" :style="windowColorValue ? { background: windowColorValue } : undefined">
-      <span class="logo">◈ vscode-ai</span>
+      <span class="logo">◈ {{ $t('brand.name') }}（{{ $t('brand.alias_cn') }} / {{ $t('brand.alias_en') }}）</span>
       <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
       <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="currentProjectInfo?.root || ''" @change="(e: any) => selectProject(e.target.value)">
         <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id" :title="it.project.root">
@@ -407,7 +407,7 @@ function onInviteJoined(_g?: CollabGroup) {
 <style scoped>
 .app { display: flex; flex-direction: column; height: 100%; position: relative; }
 .top { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--bd); flex: none; }
-.logo { color: var(--ac3); font-weight: 700; }
+.logo { color: var(--ac3); font-weight: 700; white-space: nowrap; }
 .addproj { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
 .addproj:hover { border-color: var(--ac2); color: var(--ac2); }
 .projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
