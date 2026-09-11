@@ -112,40 +112,7 @@ async function savePort() {
     portMsg.value = t('term.port_saved');
   } catch (e: any) { portMsg.value = t('term.save_failed', { msg: e?.message || e }); }
 }
-function onOpenSettings() { settingsOpen.value = true; loadSettings(); loadRemote(); }
-
-// ---- 远程访问（临时邀请链接，默认关闭，有效期 ≤24h）----
-const remoteTtl = ref(24);
-const remoteLink = ref('');
-const remotePassword = ref('');
-const remoteMsg = ref('');
-const remoteState = ref<{ enabled: boolean; expiresAt: number | null; address?: string | null; needRestart?: boolean; host?: string; locked?: boolean; lockedUntil?: number | null }>({ enabled: false, expiresAt: null });
-function fmtExpire(ts: number | null) {
-  if (!ts) return '';
-  const d = new Date(ts); const p = (x: number) => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-async function loadRemote() {
-  try { remoteState.value = await fetch('/api/remote/state').then((r) => r.json()); } catch { /* ignore */ }
-}
-async function genRemote() {
-  remoteMsg.value = '';
-  try {
-    const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hours: Number(remoteTtl.value) || 24 }) }).then((x) => x.json());
-    remoteLink.value = r.link || '';
-    remotePassword.value = r.password || '';
-    remoteState.value = { enabled: !!r.enabled, expiresAt: r.expiresAt || null, address: r.address, needRestart: !!r.needRestart, host: r.needRestart ? '0.0.0.0' : remoteState.value.host };
-  } catch (e: any) { remoteMsg.value = t('remote.failed', { msg: e?.message || e }); }
-}
-async function revokeRemote() {
-  try { await fetch('/api/remote/revoke', { method: 'POST' }); remoteLink.value = ''; remotePassword.value = ''; remoteState.value = { ...remoteState.value, enabled: false, expiresAt: null }; } catch { /* ignore */ }
-}
-async function copyRemote() {
-  try { await navigator.clipboard.writeText(remoteLink.value); remoteMsg.value = t('remote.copied'); setTimeout(() => { remoteMsg.value = ''; }, 1500); } catch { /* ignore */ }
-}
-async function copyPassword() {
-  try { await navigator.clipboard.writeText(remotePassword.value); remoteMsg.value = t('remote.copied'); setTimeout(() => { remoteMsg.value = ''; }, 1500); } catch { /* ignore */ }
-}
+function onOpenSettings() { settingsOpen.value = true; loadSettings(); }
 
 // 新建会话：先选择要执行的命令（终端 cmd / 各 Agent），3 秒后自动执行选中项
 const newOpen = ref(false);
@@ -642,45 +609,6 @@ onBeforeUnmount(() => {
             <div v-if="portMsg" class="cfghint">{{ portMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>
-          <div class="setsec">
-            <div class="settitle">
-              <span>{{ $t('remote.master_title') }}</span>
-              <span class="master-hint">{{ $t('remote.master_hint') }}</span>
-            </div>
-            <div class="cfghint">{{ $t('remote.desc') }}</div>
-            <div class="remote-warn">{{ $t('remote.warn_title') }}<br>{{ $t('remote.warn_body') }}</div>
-            <div class="cfgrow nowrap">
-              <span>{{ $t('remote.ttl') }}</span>
-              <select v-model.number="remoteTtl">
-                <option :value="4">{{ $t('remote.ttl_4h') }}</option>
-                <option :value="24">{{ $t('remote.ttl_1d') }}</option>
-                <option :value="48">{{ $t('remote.ttl_2d') }}</option>
-                <option :value="120">{{ $t('remote.ttl_5d') }}</option>
-                <option :value="168">{{ $t('remote.ttl_7d') }}</option>
-              </select>
-            </div>
-            <div class="cfgrow">
-              <button class="ghostcfg" @click="genRemote">{{ $t('remote.generate') }}</button>
-              <button v-if="remoteState.enabled" class="ghostcfg revokebtn" @click="revokeRemote">{{ $t('remote.revoke') }}</button>
-            </div>
-            <div class="cfghint">{{ remoteState.enabled ? $t('remote.enabled_until', { time: fmtExpire(remoteState.expiresAt) }) : $t('remote.disabled') }}</div>
-            <template v-if="remotePassword">
-              <div class="cfgrow">
-                <span>{{ $t('remote.password') }}</span>
-                <input :value="remotePassword" readonly class="ainput pwbox" style="flex:1;min-width:0" />
-                <button class="ghostcfg" @click="copyPassword">{{ $t('remote.copy_password') }}</button>
-              </div>
-              <div class="cfghint warn">{{ $t('remote.password_once') }}</div>
-            </template>
-            <div v-if="remoteLink" class="cfgrow">
-              <span>{{ $t('remote.link') }}</span>
-              <input :value="remoteLink" readonly class="ainput" style="flex:1;min-width:0" />
-              <button class="ghostcfg" @click="copyRemote">{{ $t('remote.copy') }}</button>
-            </div>
-            <div v-if="remoteState.needRestart" class="cfghint warn">{{ $t('remote.need_restart') }}</div>
-            <div v-if="remoteState.locked" class="cfghint warn">{{ $t('remote.login_locked', { min: 5 }) }}</div>
-            <div v-if="remoteMsg" class="cfghint">{{ remoteMsg }}</div>
-          </div>
           </template>
           <template v-else>
             <div class="setsec">
@@ -849,11 +777,6 @@ onBeforeUnmount(() => {
 .closecfg { color: var(--tx3); font-size: 12px; cursor: pointer; }
 .cfghint { color: var(--tx6); font-size: 11px; }
 .cfghint.warn { color: var(--warn2); }
-.remote-warn { background: color-mix(in srgb, var(--err) 12%, transparent); border: 1px solid var(--err); color: var(--errtx); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.7; }
-.revokebtn { background: var(--err); border-color: var(--err); color: #fff; font-weight: 700; }
-.revokebtn:hover { background: color-mix(in srgb, var(--err) 85%, #000); border-color: color-mix(in srgb, var(--err) 85%, #000); }
-.cfgrow.nowrap { flex-wrap: nowrap; white-space: nowrap; }
-.pwbox { font-family: ui-monospace, Consolas, monospace; font-weight: 700; }
 .acfg.gear { flex: none; }
 .setmask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; }
 .setmodal { width: 1080px; max-width: 96vw; height: 92vh; max-height: 92vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
@@ -879,7 +802,6 @@ onBeforeUnmount(() => {
 .license { margin: 0; padding: 10px 12px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; color: var(--tx2); font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
 .licnote { color: var(--warn2); font-size: 12px; line-height: 1.6; }
 .settitle { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: var(--tx2); }
-.settitle .master-hint { font-weight: 400; font-size: 11px; color: var(--tx6); }
 .agentrow { display: flex; align-items: center; gap: 8px; }
 .agentrow .ghostcfg { flex: none; }
 .agentrow .setbtn { min-width: 76px; }
