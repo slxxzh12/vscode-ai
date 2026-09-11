@@ -361,6 +361,8 @@ export const messages = {
   'remote.block_title': '远程访问未开启',
   'remote.need_invite': '本服务默认仅限本机访问。如需远程访问，请在本机「设置 → 远程访问」生成临时邀请链接，再用该链接打开（有效期不超过 24 小时）。',
   'remote.title': '远程访问',
+  'remote.master_title': '远程访问 (Master模式)',
+  'remote.master_hint': '可以远程编码，可以同步配置给其他机器',
   'remote.desc': '默认关闭。生成邀请链接后，外部设备需输入一次性访问密码，方可在有效期内访问。',
   'remote.ttl': '有效期',
   'remote.ttl_4h': '4 小时',

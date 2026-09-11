@@ -361,6 +361,8 @@ export const messages = {
   'remote.block_title': 'Remote access is off',
   'remote.need_invite': 'This service is local-only by default. For remote access, generate a temporary invite link in Settings on the host machine and open it (valid up to 24 hours).',
   'remote.title': 'Remote access',
+  'remote.master_title': 'Remote access (Master mode)',
+  'remote.master_hint': 'Enables remote coding and syncs config to other machines',
   'remote.desc': 'Off by default. After generating, external devices must enter the one-time access password within its validity.',
   'remote.ttl': 'Validity',
   'remote.ttl_4h': '4 hours',

@@ -25,6 +25,7 @@ const { theme, isDark } = useTheme();
 const hostRef = ref<HTMLDivElement | null>(null);
 let term: Terminal | null = null;
 let fit: FitAddon | null = null;
+let resizeObserver: ResizeObserver | null = null;
 let dataSub: { dispose(): void } | null = null;
 let unsubList: (() => void) | null = null;
 let unsubCfg: (() => void) | null = null;
@@ -474,6 +475,10 @@ function init() {
   term.loadAddon(fit);
   term.open(hostRef.value);
   fit.fit();
+  resizeObserver = new ResizeObserver(() => {
+    requestAnimationFrame(() => onResize());
+  });
+  resizeObserver.observe(hostRef.value!);
   dataSub = term.onData((d: string) => { props.terminal.input(d); });
   props.terminal.bindIO({
     output: (d) => term?.write(d),
@@ -580,6 +585,8 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
   window.removeEventListener('df-open-agent-settings', onOpenSettings);
   window.removeEventListener('df-fill-composer', onFillComposer);
   unsubList?.();
@@ -636,7 +643,10 @@ onBeforeUnmount(() => {
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>
           <div class="setsec">
-            <div class="settitle">{{ $t('remote.title') }}</div>
+            <div class="settitle">
+              <span>{{ $t('remote.master_title') }}</span>
+              <span class="master-hint">{{ $t('remote.master_hint') }}</span>
+            </div>
             <div class="cfghint">{{ $t('remote.desc') }}</div>
             <div class="remote-warn">{{ $t('remote.warn_title') }}<br>{{ $t('remote.warn_body') }}</div>
             <div class="cfgrow nowrap">
@@ -651,7 +661,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="cfgrow">
               <button class="ghostcfg" @click="genRemote">{{ $t('remote.generate') }}</button>
-              <button v-if="remoteState.enabled" class="ghostcfg" @click="revokeRemote">{{ $t('remote.revoke') }}</button>
+              <button v-if="remoteState.enabled" class="ghostcfg revokebtn" @click="revokeRemote">{{ $t('remote.revoke') }}</button>
             </div>
             <div class="cfghint">{{ remoteState.enabled ? $t('remote.enabled_until', { time: fmtExpire(remoteState.expiresAt) }) : $t('remote.disabled') }}</div>
             <template v-if="remotePassword">
@@ -827,7 +837,7 @@ onBeforeUnmount(() => {
 .cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 86px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cinput::placeholder { color: var(--tx3); }
-.csend { background: var(--ac); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
+.csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
 .cfgrow span { width: 62px; flex: none; }
@@ -840,6 +850,8 @@ onBeforeUnmount(() => {
 .cfghint { color: var(--tx6); font-size: 11px; }
 .cfghint.warn { color: var(--warn2); }
 .remote-warn { background: color-mix(in srgb, var(--err) 12%, transparent); border: 1px solid var(--err); color: var(--errtx); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.7; }
+.revokebtn { background: var(--err); border-color: var(--err); color: #fff; font-weight: 700; }
+.revokebtn:hover { background: color-mix(in srgb, var(--err) 85%, #000); border-color: color-mix(in srgb, var(--err) 85%, #000); }
 .cfgrow.nowrap { flex-wrap: nowrap; white-space: nowrap; }
 .pwbox { font-family: ui-monospace, Consolas, monospace; font-weight: 700; }
 .acfg.gear { flex: none; }
@@ -867,6 +879,7 @@ onBeforeUnmount(() => {
 .license { margin: 0; padding: 10px 12px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; color: var(--tx2); font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
 .licnote { color: var(--warn2); font-size: 12px; line-height: 1.6; }
 .settitle { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: var(--tx2); }
+.settitle .master-hint { font-weight: 400; font-size: 11px; color: var(--tx6); }
 .agentrow { display: flex; align-items: center; gap: 8px; }
 .agentrow .ghostcfg { flex: none; }
 .agentrow .setbtn { min-width: 76px; }

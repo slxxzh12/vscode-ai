@@ -30,6 +30,7 @@ const { locale, setLocale, t } = useI18n();
 function toggleLang() { setLocale(locale.value === 'en' ? 'zh-CN' : 'en'); }
 // 窗口颜色（顶栏背景，用于区分多个窗口）；localStorage 持久化
 const COLOR_STORE = 'devflow-window-color';
+const COLOR_REGISTRY = 'devflow-window-color-registry';
 const COLOR_VALUE: Record<string, string> = { none: '', red: '#7f1d1d', yellow: '#6b4e0f', blue: '#1e3a8a', green: '#14532d', purple: '#4c1d95' };
 const colorOptions = [
   { id: 'none', key: 'top.color.none' },
@@ -40,9 +41,54 @@ const colorOptions = [
   { id: 'purple', key: 'top.color.purple' },
   { id: 'random', key: 'top.color.random' },
 ];
+const COLOR_IDS = ['red', 'yellow', 'blue', 'green', 'purple'];
+// 当前窗口唯一标识（同标签页会话内稳定），用于在其它窗口的注册表里区分「谁在用哪个颜色」
+function windowUid(): string {
+  try {
+    let id = sessionStorage.getItem('devflow-window-uid');
+    if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('devflow-window-uid', id); }
+    return id;
+  } catch { return 'win-' + Math.random().toString(36).slice(2); }
+}
+const WIN_UID = windowUid();
+const REGISTRY_TTL = 10000;   // 10 秒无心跳视为该窗口已关闭
+type ColorReg = Record<string, { colorId: string; ts: number }>;
+function readRegistry(): ColorReg {
+  try {
+    const raw = localStorage.getItem(COLOR_REGISTRY);
+    const o: unknown = raw ? JSON.parse(raw) : {};
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return {};
+    const now = Date.now();
+    const clean: ColorReg = {};
+    let changed = false;
+    for (const [id, v] of Object.entries(o as Record<string, unknown>)) {
+      const rec = v as { colorId?: string; ts?: number };
+      if (rec && typeof rec === 'object' && typeof rec.ts === 'number' && now - rec.ts < REGISTRY_TTL) {
+        clean[id] = { colorId: typeof rec.colorId === 'string' ? rec.colorId : 'none', ts: rec.ts };
+      } else {
+        changed = true;
+      }
+    }
+    if (changed) try { localStorage.setItem(COLOR_REGISTRY, JSON.stringify(clean)); } catch { /* ignore */ }
+    return clean;
+  } catch { return {}; }
+}
+function writeRegistry(colorId: string) {
+  try {
+    const reg = readRegistry();
+    reg[WIN_UID] = { colorId, ts: Date.now() };
+    localStorage.setItem(COLOR_REGISTRY, JSON.stringify(reg));
+  } catch { /* ignore */ }
+}
+function usedColors(): Set<string> {
+  const s = new Set<string>();
+  for (const v of Object.values(readRegistry())) if (v && v.colorId && v.colorId !== 'none') s.add(v.colorId);
+  return s;
+}
 function randomColorId(): string {
-  const ids = ['red', 'yellow', 'blue', 'green', 'purple'];
-  return ids[Math.floor(Math.random() * ids.length)];
+  const free = COLOR_IDS.filter((c) => !usedColors().has(c));
+  const pool = free.length ? free : COLOR_IDS;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 function loadWindowColor(): string {
   try {
@@ -57,7 +103,16 @@ const windowColorValue = computed(() => COLOR_VALUE[windowColorId.value] || '');
 function onColorChange() {
   if (windowColorId.value === 'random') windowColorId.value = randomColorId();
   try { localStorage.setItem(COLOR_STORE, windowColorId.value); } catch { /* ignore */ }
+  writeRegistry(windowColorId.value);
 }
+// 发送按钮等强调色跟随窗口颜色（无窗口色时回退到主题主色）
+watch(windowColorValue, (v) => {
+  try {
+    if (v) document.documentElement.style.setProperty('--window-ac', v);
+    else document.documentElement.style.removeProperty('--window-ac');
+  } catch { /* ignore */ }
+}, { immediate: true });
+let colorHeartbeat: ReturnType<typeof setInterval> | null = null;
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler'>('explorer');
@@ -293,7 +348,15 @@ function openAgentSettings() {
   if (rail.value !== 'explorer' && rail.value !== 'history') { rail.value = 'explorer'; }
   setTimeout(() => window.dispatchEvent(new Event('df-open-agent-settings')), 120);
 }
+function releaseWindowColor() {
+  try {
+    const reg = readRegistry();
+    if (WIN_UID in reg) { delete reg[WIN_UID]; localStorage.setItem(COLOR_REGISTRY, JSON.stringify(reg)); }
+  } catch { /* ignore */ }
+}
 onMounted(async () => {
+  writeRegistry(windowColorId.value);
+  colorHeartbeat = setInterval(() => { try { writeRegistry(windowColorId.value); } catch { /* ignore */ } }, 4000);
   try {
     const st = await ws.state();
     if (st && st.needSelect) { wsState.value = st; return; }   // 只显示档案选择弹窗，不连接
@@ -306,11 +369,15 @@ onMounted(async () => {
   msgHistory.load();
   window.addEventListener('df-open-history', onOpenHistory);
   window.addEventListener('beforeunload', persistFileHistory);
+  window.addEventListener('beforeunload', releaseWindowColor);
   terminal.connect();
 });
 onBeforeUnmount(() => {
+  if (colorHeartbeat) { clearInterval(colorHeartbeat); colorHeartbeat = null; }
+  releaseWindowColor();
   window.removeEventListener('df-open-history', onOpenHistory);
   window.removeEventListener('beforeunload', persistFileHistory);
+  window.removeEventListener('beforeunload', releaseWindowColor);
 });
 function clearInvite() {
   inviteToken.value = '';
