@@ -161,6 +161,7 @@ export const messages = {
   'sched.type.script': 'Script',
   'sched.running': 'Running',
   'sched.next': 'Next {time}',
+  'sched.recent_runs': 'Recent runs',
   'sched.enabled': 'Enabled',
   'sched.run': 'Run',
   'sched.stop': 'Stop',

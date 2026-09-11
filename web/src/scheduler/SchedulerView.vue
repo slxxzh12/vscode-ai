@@ -108,6 +108,15 @@ function toggleWeekday(v: number) {
   const i = arr.indexOf(v);
   if (i >= 0) arr.splice(i, 1); else arr.push(v);
 }
+// 最近运行：最新在右（左→右按时间递增）
+function histRuns(task: TaskView) { return (task.recentRuns || []).slice().reverse(); }
+function runIcon(status: string): string {
+  if (status === 'success') return '✓';
+  if (status === 'timeout') return '⏱';
+  if (status === 'killed') return '■';
+  if (status === 'running') return '●';
+  return '✕';
+}
 
 onMounted(async () => { await loadProjects(); await sched.refresh(); sched.loadAiCommands(); });
 onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
@@ -136,6 +145,9 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <div class="meta">
               <span v-if="t.runningRunId" class="dot running" />{{ t.runningRunId ? $t('sched.running') : '' }}
               <span class="dim">{{ $t('sched.next', { time: formatTime(t.nextRunAt) }) }}</span>
+              <span v-if="t.recentRuns && t.recentRuns.length" class="runhist" :title="$t('sched.recent_runs')">
+                <span v-for="r in histRuns(t)" :key="r.id" class="rh" :class="r.status" :title="`${runStatusLabel(r.status)} · ${formatTime(r.startedAt)}`">{{ runIcon(r.status) }}</span>
+              </span>
             </div>
           </div>
           <div class="acts">
@@ -261,6 +273,13 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .badge.script { background: var(--warn, #b58900); color: #000; }
 .meta { color: var(--tx4); font-size: 12px; margin-top: 2px; display: flex; gap: 12px; align-items: center; }
 .dim { color: var(--tx5); font-size: 12px; }
+.runhist { display: inline-flex; gap: 3px; align-items: center; }
+.rh { font-size: 11px; line-height: 1; }
+.rh.success { color: #3fb950; }
+.rh.failed { color: #e5534b; }
+.rh.timeout { color: #d29922; }
+.rh.killed { color: var(--tx5); }
+.rh.running { color: var(--ac2); }
 .acts { display: flex; gap: 4px; align-items: center; flex: none; }
 .acts button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
 .sw { color: var(--tx4); font-size: 12px; display: flex; align-items: center; gap: 3px; }

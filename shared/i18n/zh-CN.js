@@ -161,6 +161,7 @@ export const messages = {
   'sched.type.script': '脚本',
   'sched.running': '运行中',
   'sched.next': '下次 {time}',
+  'sched.recent_runs': '最近运行',
   'sched.enabled': '启用',
   'sched.run': '运行',
   'sched.stop': '停止',

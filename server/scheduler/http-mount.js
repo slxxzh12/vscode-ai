@@ -22,7 +22,12 @@ export function createSchedulerMount({ engine, store, logger = console }) {
     });
     req.on('error', reject);
   });
-  const withNext = (task) => ({ ...task, nextRunAt: engine.nextRunAtOf(task.id), runningRunId: engine.runIdOf(task.id) });
+  const withNext = (task) => ({
+    ...task,
+    nextRunAt: engine.nextRunAtOf(task.id),
+    runningRunId: engine.runIdOf(task.id),
+    recentRuns: store.listRuns({ taskId: task.id, limit: 10 }).map((r) => ({ id: r.id, status: r.status, startedAt: r.startedAt })),
+  });
 
   return async (req, res) => {
     const url = new URL(req.url, 'http://localhost');

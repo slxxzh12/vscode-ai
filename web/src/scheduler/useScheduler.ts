@@ -5,6 +5,7 @@ import type { SchedulerTask, SchedulerRun } from '@devflow/shared/scheduler';
 export interface TaskView extends SchedulerTask {
   nextRunAt: number | null;
   runningRunId: string | null;
+  recentRuns?: { id: string; status: string; startedAt: number }[];
 }
 export interface AiCommandInfo { name: string; preview: string; }
 
