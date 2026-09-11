@@ -30,7 +30,7 @@ export function useProjects() {
       const r = await res.json() as { project: ProjectInfo };
       return r.project;
     },
-    async pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string }> {
+    async pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
       const res = await fetch('/api/projects/pick', { method: 'POST' });
       return res.json();
     },

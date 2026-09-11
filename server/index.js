@@ -221,7 +221,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/collab')) { await collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/scheduler')) { await scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/')) {
-    await createHttpApi({ projects, saveProjects })(req, res);
+    await createHttpApi({ projects, saveProjects, logger: log })(req, res);
     return;
   }
   createStaticServer(path.join(__dirname, '..', 'web', 'dist'))(req, res, () => {

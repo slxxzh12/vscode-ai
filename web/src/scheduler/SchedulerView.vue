@@ -46,7 +46,7 @@ async function pickCommandFile() {
   state.error = '';
   try {
     const r = await sched.pickFile();
-    if (r.error) { state.error = t('sched.pick_unsupported'); return; }
+    if (r.error) { state.error = r.error === 'unsupported' ? t('sched.pick_unsupported') : t('sched.pick_failed', { msg: r.message || r.error }); return; }
     if (r.cancelled || !r.path) return;
     const ext = extOf(r.path);
     form.value.cwd = dirOf(r.path);

@@ -191,6 +191,7 @@ export const messages = {
   'sched.field.weekdays': 'Weekdays (none = every day):',
   'sched.pick_file': 'Choose file',
   'sched.pick_unsupported': 'File picker is not supported on this OS',
+  'sched.pick_failed': 'Failed to choose file: {msg}',
   'sched.unsupported_file': 'Unsupported file type: {ext}',
   'sched.cancel': 'Cancel',
   'sched.save': 'Save',

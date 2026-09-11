@@ -74,7 +74,7 @@ export function useScheduler(terminal?: TerminalLike) {
       state.aiCommands = d.commands || [];
     } catch { state.aiCommands = []; }
   }
-  function pickFile(): Promise<{ path?: string; content?: string | null; cancelled?: boolean; error?: string }> {
+  function pickFile(): Promise<{ path?: string; content?: string | null; cancelled?: boolean; error?: string; message?: string }> {
     return api('POST', '/api/scheduler/pick-file');
   }
 

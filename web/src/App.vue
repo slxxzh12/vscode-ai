@@ -204,7 +204,7 @@ function openAddFolder() { addPath.value = ''; addOpen.value = true; }
 async function chooseFolder() {
   try {
     const r = await projectsApi.pickFolder();
-    if (r.error) { alert(t('top.pick_unsupported')); return; }
+    if (r.error) { alert(r.error === 'unsupported' ? t('top.pick_unsupported') : t('top.add_failed', { msg: r.message || r.error })); return; }
     if (r.path) addPath.value = r.path;
   } catch (e) { alert(t('top.add_failed', { msg: (e as Error).message || String(e) })); }
 }

@@ -67,7 +67,7 @@ const RAW_MIME = {
   '.pdf': 'application/pdf',
 };
 
-export function createHttpApi({ projects, saveProjects = null }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -96,8 +96,10 @@ export function createHttpApi({ projects, saveProjects = null }) {
         return;
       }
       if (url.pathname === '/api/projects/pick' && req.method === 'POST') {
+        logger?.info?.('pick-folder: dialog opened');
         const r = await pickFolder();
-        if (r.error) return sendJson(res, 200, { error: r.error });
+        logger?.info?.('pick-folder:', r.error || (r.path ? 'ok' : 'cancelled'));
+        if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
         if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
         return sendJson(res, 200, { path: r.path });
       }

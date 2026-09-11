@@ -191,6 +191,7 @@ export const messages = {
   'sched.field.weekdays': '星期（不选=每天）：',
   'sched.pick_file': '选择文件',
   'sched.pick_unsupported': '当前系统不支持文件选择对话框',
+  'sched.pick_failed': '选择文件失败：{msg}',
   'sched.unsupported_file': '不支持的文件类型：{ext}',
   'sched.cancel': '取消',
   'sched.save': '保存',

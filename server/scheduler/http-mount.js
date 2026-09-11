@@ -90,8 +90,10 @@ export function createSchedulerMount({ engine, store, logger = console }) {
         return sendJson(res, 200, { commands: listAiCommands() });
       }
       if (p === '/api/scheduler/pick-file' && req.method === 'POST') {
+        logger?.info?.('pick-file: dialog opened');
         const r = await pickFile();
-        if (r.error) return sendJson(res, 200, { error: r.error });
+        logger?.info?.('pick-file:', r.error || (r.path ? 'ok' : 'cancelled'));
+        if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
         if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
         let content = null;
         try { if (/\.md$/i.test(r.path)) content = fs.readFileSync(r.path, 'utf8').slice(0, 65536); } catch { /* ignore */ }
