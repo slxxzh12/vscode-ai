@@ -6,7 +6,7 @@
   - workflows：工作流/阶段/提示语（点击填入输入框）
 -->
 <devflow>
-  <server port="22222" language="zh-CN" />
+  <server port="22222" language="en" />
 
   <agents default="opencode">
     <agent id="opencode" name="OpenCode" cmd="opencode" />

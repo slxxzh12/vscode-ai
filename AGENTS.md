@@ -1,12 +1,14 @@
 # AGENTS.md
 
 ## 环境
+
 - Windows + PowerShell 5.1；**无 bash**；`npm.ps1` 受执行策略拦截 → 一律用 `npm.cmd`。
 - Node v24.18.0（`D:\soft\node-v24.18.0-win-x64\node.exe`）；bun 1.3.14 仅作参考（勿用于本项目运行）。
 - 本仓库运行时**必须用 Node，不能用 bun**：node-pty 原生插件（已实测 bun 编译成 exe 时 `conpty.node` 无法加载；bun 运行时下 pty 交互流不可用）。
 - Git 远端：Gitee `origin`（`https://gitee.com/wglj/devflow.git`）。默认分支 `master`。
 
 ## 服务启动规范（严格遵守，违规即返工）
+
 - **所有常驻进程必须异步（非阻塞）启动**，严禁前台阻塞式命令。
 - 统一做法：PowerShell `Start-Process` 后台运行 + `-RedirectStandardOutput`/`-RedirectStandardError` 指向日志文件；启动命令立即返回。
 - 开发：两个终端分别 `npm.cmd run dev:server`（= `node --watch server/index.js`，改后端自动重启）与 `npm.cmd run dev:web`（Vite :5173，代理 `/api`、`/ws` 到 22222）。访问 http://localhost:5173。
@@ -14,6 +16,7 @@
 - 改 `projects.json` / `workflows.json` 后需重启后端才生效（dev:server 的 `--watch` 不监听 json）。
 
 ## 已验证教训（勿再犯）
+
 - **PowerShell 5.1 不解析 `"\u001b"`**（是 6 字符字面量）；构造 ESC 必须 `[char]27`（如 `buildMarkerCmd` 的 win 分支）。
 - **Node 24 `node --test` 不接受目录参数**：用 glob `node --test "server/test/*.test.js"`（见根 `package.json` test:server）。
 - **npm 新版 `allow-scripts` 默认拦截原生安装脚本**：新克隆后必须先 `npm.cmd approve-scripts node-pty esbuild`，否则 node-pty/esbuild 无产物（node-pty 冒烟见下）。
@@ -25,16 +28,19 @@
 - WS 消息 type 一律引用 `shared` 的 `C2S`/`S2C` 常量，禁止在 server/web 里写死字符串。
 
 ## 打包顺序（先构建前端，再打绿色包）
+
 - 打绿色包前必须先 `npm.cmd run build:web`（产物 `web/dist`）。
 - 一键打包：`node scripts/build.js`（等价 `npm.cmd run build:portable`），产物 `dist-portable/vscode-ai/`（目录）+ `vscode-ai-portable.zip`。
 - 绿色包原理：`env/node.exe` 自带运行时 + 拷贝已编译的 node-pty 原生 `.node` → 目标机免装 Node、免编译。**Node 与 node-pty ABI 必须同大版本**；`env/node.exe` 缺失时 build.js 会自动复制当前 node 过去。
 - `env/`、`dist-portable/`、`node_modules/`、`dist/` 均不入库（.gitignore）。
 
 ## 目录速览
+
 - `shared/` — WS 协议常量/类型（唯一事实源）；`server/` — Node ESM 后端（ws + node-pty，测试在 `server/test/`，`node --test`）；`web/` — Vue3+Vite+TS+xterm（vitest + vue-tsc）。
 - 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`。
 
 ## 配置（统一 XML）
+
 - 唯一配置文件：`config/devflow.xml`（`<server port language/>` + `<agents default>` + `<workflows>`）。
 - 端口/语言可在 UI 设置面板修改，服务端会**就地改写** `<server>` 属性；Agent 列表与工作流提示语直接编辑 XML。
 - 改 `config/devflow.xml` 后需**重启后端**（dev:server 的 `--watch` 不监听 xml）。
@@ -42,6 +48,7 @@
 - `config/server.json`、`config/workflow.xml` 已废弃。
 
 ## 国际化（i18n，强制）
+
 - **后续所有提示/文案用语必须支持国际化，至少中文（zh-CN）与英文（en）**；禁止在代码里写死单语言（含中文）的用户可见文案。
 - 单一词条源：`shared/i18n/zh-CN.js` + `shared/i18n/en.js`；运行时 `@devflow/shared/i18n` 的 `translate(locale, key, params)`（`{name}` 插值；缺失回退 当前语言→en→key）。
 - 前端：`web/src/i18n.ts` 的 `t()`／模板 `$t()`；`<script setup>` 用 `import { t } from '<相对路径>/i18n'`。顶栏「中/EN」开关即时生效并同步服务端。
@@ -50,6 +57,7 @@
 - 提交前跑 `npm.cmd run check:i18n`；`web/src` 与 `server` 用户可见范围内必须零中文命中。排除项：代码注释、`console`/logger 日志、`*.test.*`、配置内容（如 `config/workflow.xml`、用户数据）。
 
 ## 临时/生成文件（禁止入库）
+
 - 提交前先看 `git status`，**未跟踪的临时/生成文件不要 `git add -A` 一把梭**；只 `git add` 本次改动涉及的文件。
 - 明确禁止入库（同时写入 `.gitignore`）：
   - IDE/编辑器：`.idea/`、`.vscode/`、`*.iml`、`*.swp`、`*.swo`；
@@ -60,5 +68,6 @@
 - 若不慎已入库：`git rm -r --cached <路径>` 移出版本库（保留本地文件），补进 `.gitignore` 后再提交。
 
 ## 提交/推送
+
 - 一律在 `master` 操作（无远程 PR 需求时）。`git push origin master`。
 - 仓库远端残留 `feat/web-terminal` 分支，已合并删除需求时：`git push origin --delete feat/web-terminal`。

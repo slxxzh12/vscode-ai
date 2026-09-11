@@ -24,10 +24,15 @@ const ZIP = path.join(OUT_ROOT, "vscode-ai-portable.zip");
 const noZip = process.argv.includes("--no-zip");
 const CFG_PORT = (() => {
   try {
-    const xml = fs.readFileSync(path.join(ROOT, "config", "devflow.xml"), "utf8");
+    const xml = fs.readFileSync(
+      path.join(ROOT, "config", "devflow.xml"),
+      "utf8",
+    );
     const m = xml.match(/<server\b[^>]*\bport\s*=\s*"(\d+)"/i);
     return m ? m[1] : "22222";
-  } catch { return "22222"; }
+  } catch {
+    return "22222";
+  }
 })();
 
 function check(cond, msg) {
@@ -100,7 +105,11 @@ function copyServerTree(from, to) {
 }
 copyServerTree(path.join(ROOT, "server"), path.join(APP, "server"));
 cpDir(path.join(ROOT, "web", "dist"), path.join(APP, "web", "dist"));
-cpDir(path.join(ROOT, "config"), path.join(APP, "config"), (e) => e.name !== "runtime-port.txt");
+cpDir(
+  path.join(ROOT, "config"),
+  path.join(APP, "config"),
+  (e) => e.name !== "runtime-port.txt",
+);
 
 // 运行时依赖（真实拷贝，含 node-pty 原生 .node）
 fs.mkdirSync(path.join(APP, "node_modules", "@devflow"), { recursive: true });
