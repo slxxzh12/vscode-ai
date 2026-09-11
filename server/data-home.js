@@ -32,6 +32,10 @@ export function downloadDir() {
   fs.mkdirSync(d, { recursive: true });
   return d;
 }
+// 活动配置目录（<dataHome>/downloads/devflow.xml）；注意与协作收件目录 downloadDir()（单数）区分
+export function downloadsDir() {
+  return path.join(dataHome(), 'downloads');
+}
 // 老版本把数据写在仓库 server/ 里；首次启动时若新位置没有、旧文件存在则迁移过去
 export function seedFromLegacy(target, legacySource) {
   if (!fs.existsSync(target) && fs.existsSync(legacySource)) {
