@@ -5,6 +5,7 @@ export function defaultData() {
   return {
     identity: null,      // { machineId, username, host, port, publicKey, privateKey }
     group: null,         // 单例群组 { id:'shared', name, createdAt, hubId, members:[profile] }
+    heartbeats: {},      // { [machineId]: { agent, days, ...usage, receivedAt } }
     skillsInbox: [],     // { id, kind:'skill'|'file', fromId, groupId|null, skillName|null, fileName|null, hash, size, zipPath, status, receivedAt }
     groupSkills: [],     // { groupId, skillName, hash, distributedBy, installed }
     outbox: [],          // 我发出的传输记录 { id, kind, groupId, skillName|null, fileName|null, size, hash, createdAt }
@@ -54,6 +55,15 @@ export class CollabStore {
     if (!g.members.find((m) => m.machineId === profile.machineId)) g.members.push({ ...profile });
     this.save();
     return g;
+  }
+
+  // ---- 心跳（最新用量）----
+  listHeartbeats() { return this.data.heartbeats; }
+  getHeartbeat(machineId) { return this.data.heartbeats[machineId] || null; }
+  setHeartbeat(machineId, usage) {
+    this.data.heartbeats[machineId] = { ...usage };
+    this.save();
+    return this.data.heartbeats[machineId];
   }
 
   // inbox
