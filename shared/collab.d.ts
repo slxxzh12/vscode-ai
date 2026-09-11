@@ -3,6 +3,7 @@ export declare const CollabS2C: Readonly<{
   COLLAB_SYNCED: 'collab-synced';
   COLLAB_CHAT: 'collab-chat';
   COLLAB_CMD_PENDING: 'collab-cmd-pending';
+  COLLAB_HEARTBEAT: 'collab-heartbeat';
 }>;
 export declare const CollabPeer: Readonly<{
   GROUP_JOIN: 'group-join';
@@ -15,4 +16,6 @@ export declare const CollabPeer: Readonly<{
   CMD_CONFIRM: 'cmd-confirm';
   CMD_RESULT: 'cmd-result';
   CHAT_PULL: 'chat-pull';
+  HEARTBEAT: 'heartbeat';
+  PULL_DOWNLOADS: 'pull-downloads';
 }>;
