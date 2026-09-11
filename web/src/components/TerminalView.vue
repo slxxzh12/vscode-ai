@@ -642,6 +642,8 @@ onBeforeUnmount(() => {
             <div class="cfgrow">
               <span>{{ $t('remote.days') }}</span>
               <input v-model.number="remoteDays" type="number" min="1" max="7" style="width:70px" />
+            </div>
+            <div class="cfgrow">
               <button class="ghostcfg" @click="genRemote">{{ $t('remote.generate') }}</button>
               <button v-if="remoteState.enabled" class="ghostcfg" @click="revokeRemote">{{ $t('remote.revoke') }}</button>
             </div>
