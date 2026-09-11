@@ -166,7 +166,8 @@ function dayClass(ts: number) {
 .sub { color: var(--tx6); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; }
 .mdate { color: var(--tx6); font-size: 10px; font-family: Consolas, monospace; }
 .ic { flex: none; font-size: 15px; }
-.x { color: var(--tx6); font-size: 14px; flex: none; padding: 0 2px; line-height: 1; }
+.x { color: var(--tx6); font-size: 14px; flex: none; padding: 0 2px; line-height: 1; opacity: 0; pointer-events: none; transition: opacity .12s; }
+.row:hover .x, .mrow:hover .x { opacity: 1; pointer-events: auto; }
 .x:hover { color: var(--err); }
 .empty { color: var(--tx6); padding: 16px 12px; font-size: 12px; }
 .mrow { display: flex; align-items: flex-start; gap: 8px; width: 100%; background: none; border: none; border-bottom: 1px solid var(--bd2); text-align: left; padding: 8px 10px; cursor: pointer; }
