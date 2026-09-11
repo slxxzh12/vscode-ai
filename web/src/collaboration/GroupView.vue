@@ -83,6 +83,14 @@ async function syncMaster() {
   try { await props.collab.syncDownloads(); await loadDownloads(); }
   catch (e) { dlMsg.value = String((e as Error).message || e); }
 }
+const installMsg = ref('');
+async function install(name: string) {
+  installMsg.value = '';
+  try {
+    const r = await props.collab.installDownload(name);
+    installMsg.value = r.code === 'ok' ? t('collab.downloads.installed') : t('common.send_failed', { msg: r.code });
+  } catch (e) { installMsg.value = String((e as Error).message || e); }
+}
 
 onMounted(async () => {
   await loadRemote();
@@ -138,9 +146,14 @@ onMounted(async () => {
           <button @click="syncMaster">{{ $t('collab.downloads.sync') }}</button>
         </div>
         <div v-if="dlMsg" class="err">{{ dlMsg }}</div>
+        <div v-if="installMsg" class="cfghint">{{ installMsg }}</div>
         <div v-if="downloads.manifest.files.length === 0" class="empty">{{ $t('collab.downloads.empty') }}</div>
         <div v-for="f in downloads.manifest.files" :key="f.name" class="rowline">
           <span class="txt">{{ f.name }}</span>
+          <template v-if="f.kind === 'skill'">
+            <a class="dl" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ $t('collab.downloads.download') }}</a>
+            <button class="ghost" @click="install(f.name)">{{ $t('collab.downloads.install') }}</button>
+          </template>
         </div>
       </div>
 
@@ -215,5 +228,6 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .linkrow { display: flex; gap: 6px; margin: 4px 0; }
 .linkrow input { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 4px 6px; font-size: 11px; box-sizing: border-box; }
 .linkrow button { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+.dl { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; text-decoration: none; }
 .placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--tx6); }
 </style>

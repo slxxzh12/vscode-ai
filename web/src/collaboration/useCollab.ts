@@ -113,6 +113,8 @@ export function useCollab() {
     buildPackage: (sel: { skills?: string[]; command?: string[]; agent?: string[] }) =>
       post<{ package: { id: string; fileName: string; size: number } }>('/api/collab/packages', { skills: sel.skills || [], command: sel.command || [], agent: sel.agent || [] }),
     sendPackage: (id: string, groupId: string) => post<{ code: string; pushed: number; failures: unknown[] }>(`/api/collab/packages/${id}/send`, { groupId }),
+    publishPackage: (id: string) => post<{ code: string; name?: string }>(`/api/collab/packages/${id}/publish`),
+    installDownload: (name: string) => post<{ code: string }>('/api/collab/downloads/install', { name }),
     getDirs: () => http<{ upload: string | null; download: string | null }>('/api/collab/dirs'),
     distributeToGroup: (groupId: string, skillNames: string[]) => post(`/api/collab/groups/${groupId}/distribute`, { skillNames }),
     installInbox: (id: string) => post(`/api/collab/inbox/${id}/install`),

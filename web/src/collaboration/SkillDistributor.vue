@@ -7,6 +7,7 @@ import { t } from '../i18n';
 const props = defineProps<{ collab: CollabApi; groupId: string }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const group = computed(() => (snap.value.group && snap.value.group.id === props.groupId ? snap.value.group : null));
+const isMaster = computed(() => !!snap.value.group && snap.value.group.hubId === snap.value.identity.machineId);
 
 const assets = ref<{ skills: { name: string }[]; command: { name: string }[]; agent: { name: string }[] }>({ skills: [], command: [], agent: [] });
 const checked = ref<Record<string, boolean>>({});
@@ -53,14 +54,14 @@ async function doPack() {
   } catch (e: any) { msgErr.value = String(e?.message || e); }
   finally { working.value = false; }
 }
-async function doSend() {
+async function doPublish() {
   if (!pkg.value) return;
   msg.value = ''; msgErr.value = ''; working.value = true;
   try {
-    const r = await props.collab.sendPackage(pkg.value.id, props.groupId);
+    const r = await props.collab.publishPackage(pkg.value.id);
     if (r.code !== 'ok') { msgErr.value = t('common.send_failed', { msg: r.code }); return; }
     sent.value = true;
-    msg.value = t('collab.dist.sent', { count: r.pushed }) + (r.failures?.length ? t('collab.dist.sent_fail', { n: r.failures.length }) : '');
+    msg.value = t('collab.dist.published');
   } catch (e: any) { msgErr.value = String(e?.message || e); }
   finally { working.value = false; }
 }
@@ -118,7 +119,8 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
         <button class="go" :disabled="working || !selectedCount" @click="doPack">{{ working ? $t('common.packing') : $t('collab.dist.pack', { count: selectedCount }) }}</button>
       </template>
       <template v-else>
-        <button class="go" :disabled="working || sent" @click="doSend">{{ working ? $t('common.sending') : sent ? $t('collab.dist.sent_ok') : $t('collab.dist.send') }}</button>
+        <button v-if="isMaster" class="go" :disabled="working || sent" @click="doPublish">{{ working ? $t('common.sending') : sent ? $t('collab.dist.published') : $t('collab.dist.publish') }}</button>
+        <span v-else class="pkgname">{{ $t('collab.dist.master_only') }}</span>
         <button class="ghostgo" :disabled="working" @click="downloadPkg">{{ $t('collab.dist.download') }}</button>
         <button class="ghostgo" :disabled="working" @click="reset">{{ $t('collab.dist.repack') }}</button>
       </template>
