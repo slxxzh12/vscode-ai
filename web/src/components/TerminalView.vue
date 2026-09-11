@@ -605,8 +605,7 @@ onBeforeUnmount(() => {
           </template>
           <template v-else>
             <div class="setsec">
-              <div class="settitle">{{ $t('term.about.author') }}</div>
-              <div class="aboutval"><span class="aboutname">Samuel Tsang</span></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.author') }}</span><span class="aboutval">Samuel Tsang</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.software') }}</span><span class="aboutv">{{ $t('term.about.name_value') }}</span></div>
               <div class="cfghint">{{ $t('term.about.location') }}：{{ $t('term.about.location_value') }}</div>
             </div>
@@ -782,8 +781,7 @@ onBeforeUnmount(() => {
 .setnav button.on { background: var(--ac); color: var(--onac); }
 .setbody { flex: 1; min-width: 0; padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
 .setsec { display: flex; flex-direction: column; gap: 6px; }
-.aboutval { font-size: 15px; font-weight: 700; color: var(--tx1); white-space: nowrap; }
-.aboutname { display: inline-block; white-space: nowrap; }
+.aboutval { font-size: 13px; font-weight: 400; color: var(--tx1); white-space: nowrap; word-break: keep-all; }
 .aboutrow { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 .aboutk { color: var(--tx3); width: 74px; flex: none; }
 .aboutv { color: var(--tx1); font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
