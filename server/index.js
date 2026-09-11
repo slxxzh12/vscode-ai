@@ -10,7 +10,7 @@ import { createHttpApi, requireAuthHttp } from './http-api.js';
 import { Projects } from './projects.js';
 import { createLogger } from './log.js';
 import { createStaticServer } from './static.js';
-import { resolveFiles, ensureDefaults, loadProjects, loadWorkflows } from './config.js';
+import { ensureDefaults, loadProjects, loadWorkflows } from './config.js';
 import { CollabStore } from './collaboration/store.js';
 import { loadIdentity } from './collaboration/identity.js';
 import { CollabEngine } from './collaboration/engine.js';
@@ -25,8 +25,13 @@ import { defaultConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAtt
 import { setLocale } from './i18n.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
-import { collabDir, uploadDir, downloadDir, seedFromLegacy, instanceName, instanceSeedDir, instanceFpRoot, dataHome } from './data-home.js';
+import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
 import { publicFingerprint } from './collaboration/identity.js';
+import {
+  migrateLegacy, resolveProfile, createProfile, bindProfile, touchProfile,
+  profilePaths, createWorkspaceService,
+} from './workspace.js';
+import { createWorkspaceHttp } from './workspace-http.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -35,6 +40,7 @@ ensureConfigFile(configFile);
 const HOST = process.env.DEVFLOW_HOST || '127.0.0.1';
 const PORT = Number(process.env.DEVFLOW_PORT || loadDevflowConfig(configFile).server.port || DEFAULT_PORT);
 setLocale(loadDevflowConfig(configFile).server.language);
+const NODE = instanceName();
 
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
 process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
@@ -105,39 +111,38 @@ function buildWorkspace({ paths, port }) {
   return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, historyFile: paths.historyFile, paths };
 }
 
-const HOST_DEFAULT = process.env.DEVFLOW_HOST || '127.0.0.1';
-const PORT_DEFAULT = Number(process.env.DEVFLOW_PORT || 22222);
-const NODE = instanceName();
+// ---- 工作区（端口档案）----
+let ws = null;               // ready 后指向 bundle
+let actualPort = null;       // 实际监听端口
+let workspaceHttp = null;    // needs-selection 时可用
 
-// 默认实例（未设 DEVFLOW_NODE）沿用老布局 <root>/collab + <root>/upload|download。
-function legacyPaths() {
-  const COLLAB_DIR = collabDir();
-  seedFromLegacy(path.join(COLLAB_DIR, 'identity.json'), path.join(__dirname, 'collaboration', 'identity.json'));
-  seedFromLegacy(path.join(COLLAB_DIR, 'collab.json'), path.join(__dirname, 'collaboration', 'collab.json'));
-  const files = resolveFiles();
-  return {
-    id: 'default',
-    identityFile: path.join(COLLAB_DIR, 'identity.json'),
-    storeFile: path.join(COLLAB_DIR, 'collab.json'),
-    uploadDir: uploadDir(),
-    downloadDir: downloadDir(),
-    skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(os.homedir(), '.config', 'opencode', 'skills'),
-    projectsFile: files.projectsFile,
-    workflowsFile: files.workflowsFile,
-    schedulerDir: path.join(dataHome(), 'scheduler'),
-    historyFile: null,   // 按公钥指纹补
-  };
+function initWorkspace(paths, port) {
+  ws = buildWorkspace({ paths, port });
+  actualPort = port;
+  if (!gateway) {
+    gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log });
+  }
+  ws.engine.setAdvertised({ host: HOST, port });
+  if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
+    ws.scheduler.engine.start();
+    log.info('scheduler started');
+  }
+  log.info(`workspace ready: profile=${paths.id} port=${port}`);
 }
-
-const _seedPaths = legacyPaths();
-const _seedIdentity = loadIdentity({ file: _seedPaths.identityFile, host: HOST_DEFAULT, port: PORT_DEFAULT });
-const nodeFp = publicFingerprint(_seedIdentity.publicKey);
-_seedPaths.historyFile = path.join(instanceFpRoot(nodeFp), 'message-history.jsonc');
-let ws = buildWorkspace({ paths: _seedPaths, port: PORT_DEFAULT });
 
 const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
+
+  // 工作区选择（永远可用）
+  if (url.pathname.startsWith('/api/workspace')) {
+    if (!ws && workspaceHttp) { await workspaceHttp(req, res, url); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ready: true, needSelect: false, listenPort: actualPort, current: ws ? ws.paths.id : null, profiles: [] }));
+    return;
+  }
+
+  // 配置类接口永远可用（不依赖档案）
   if (url.pathname === '/api/workflows-xml' && req.method === 'GET') {
     const workflows = loadDevflowConfig(configFile).workflows;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -188,6 +193,14 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+
+  // 未就绪：其余 /api/* 返回 409，静态页仍可打开以显示选择弹窗
+  if (url.pathname.startsWith('/api/') && !ws) {
+    res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'not-ready' }));
+    return;
+  }
+
   if (url.pathname === '/api/history' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ messages: readHistory(ws.historyFile), file: ws.historyFile }));
@@ -219,8 +232,6 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ error: 'not found' }));
   });
 });
-
-gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log });
 
 // 配置热重载：config/devflow.xml 变更 → 重载语言并向已连浏览器推送（端口需重启才生效）
 try {
@@ -258,13 +269,49 @@ function startListening() {
   const onListening = () => {
     server.removeListener('error', onError);
     const actual = server.address().port;
-    ws.engine.setAdvertised({ host: HOST, port: actual });
+    actualPort = actual;
     writeRuntimePort(actual);
     log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)`);
-    log.info(`collab node=${NODE || 'default'} fp=${nodeFp} store=${ws.paths.storeFile}`);
-    if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
-      ws.scheduler.engine.start();
-      log.info('scheduler started');
+
+    if (NODE) {   // 逃生通道：沿用 nodes/<name> 机制，不进入端口档案系统
+      const seedDir = instanceSeedDir(NODE);
+      const identity = loadIdentity({ file: path.join(seedDir, 'identity.json'), host: HOST, port: actual });
+      const stateRoot = instanceFpRoot(publicFingerprint(identity.publicKey));
+      const paths = {
+        id: `node-${NODE}`,
+        dir: stateRoot,
+        identityFile: path.join(seedDir, 'identity.json'),
+        storeFile: path.join(stateRoot, 'collab.json'),
+        uploadDir: path.join(stateRoot, 'upload'),
+        downloadDir: path.join(stateRoot, 'download'),
+        skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(stateRoot, 'skills-opencode'),
+        projectsFile: path.join(dataHome(), 'projects.json'),
+        workflowsFile: path.join(dataHome(), 'workflows.json'),
+        schedulerDir: path.join(dataHome(), 'scheduler'),
+        historyFile: path.join(stateRoot, 'message-history.jsonc'),
+      };
+      fs.mkdirSync(paths.uploadDir, { recursive: true });
+      fs.mkdirSync(paths.downloadDir, { recursive: true });
+      fs.mkdirSync(paths.skillsRoot, { recursive: true });
+      initWorkspace(paths, actual);
+      return;
+    }
+
+    migrateLegacy(dataHome());      // 首次：复制旧数据为档案 22222
+    const r = resolveProfile({ listenPort: actual });
+    if (r.status === 'ready') {
+      const prof = r.profile || createProfile(dataHome(), { id: String(actual), name: `端口 ${actual}`, port: actual });
+      bindProfile(dataHome(), actual, prof.id);
+      touchProfile(dataHome(), prof.id);
+      initWorkspace(profilePaths(dataHome(), prof.id), actual);
+    } else {
+      const service = createWorkspaceService({
+        root: dataHome(), listenPort: actual,
+        onProfile: (paths) => initWorkspace(paths, actual),
+        logger: log,
+      });
+      workspaceHttp = createWorkspaceHttp({ service });
+      log.info(`workspace: ${r.profiles.length} profiles found, awaiting selection`);
     }
   };
   server.once('error', onError);
