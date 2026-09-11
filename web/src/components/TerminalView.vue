@@ -605,8 +605,8 @@ onBeforeUnmount(() => {
             <div class="setsec">
               <div class="settitle">{{ $t('term.about.author') }}</div>
               <div class="aboutval">Samuel Tsang</div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.software') }}</span><span class="aboutv">vscode-ai</span></div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.alias') }}</span><span class="aboutv">{{ $t('term.about.alias_value') }}</span></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.name_cn') }}</span><span class="aboutv">{{ $t('term.about.name_cn_value') }}</span></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.name_en') }}</span><span class="aboutv">{{ $t('term.about.name_en_value') }}</span></div>
               <div class="cfghint">{{ $t('term.about.location') }}：HongKong&Shenzhen</div>
             </div>
             <div class="setsec">
