@@ -50,3 +50,15 @@ test('readHistory 兼容旧版纯字符串并补 ts=0', () => {
   fs.writeFileSync(f, '// head\n["legacy1","legacy2"]\n', 'utf8');
   assert.deepEqual(readHistory(f), [{ text: 'legacy1', ts: 0 }, { text: 'legacy2', ts: 0 }]);
 });
+
+test('writeHistory/readHistory 保留 sessionId 与 tabName', () => {
+  const f = tmpFile();
+  writeHistory(f, [
+    { text: 'hi', ts: 1, sessionId: 's1', tabName: 'foo' },
+    { text: 'yo', ts: 2 },
+  ]);
+  assert.deepEqual(readHistory(f), [
+    { text: 'hi', ts: 1, sessionId: 's1', tabName: 'foo' },
+    { text: 'yo', ts: 2 },
+  ]);
+});

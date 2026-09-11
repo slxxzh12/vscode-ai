@@ -34,10 +34,15 @@ export function parseJsonc(text) {
   return JSON.parse(out);
 }
 
-// 统一的条目形状：{ text, ts }。兼容旧的纯字符串（ts 记 0）。
+// 统一的条目形状：{ text, ts, sessionId?, tabName? }。兼容旧的纯字符串（ts 记 0）。
 function normEntry(x) {
   if (typeof x === 'string') return { text: x, ts: 0 };
-  if (x && typeof x.text === 'string') return { text: x.text, ts: Number(x.ts) || 0 };
+  if (x && typeof x.text === 'string') {
+    const out = { text: x.text, ts: Number(x.ts) || 0 };
+    if (typeof x.sessionId === 'string') out.sessionId = x.sessionId;
+    if (typeof x.tabName === 'string') out.tabName = x.tabName;
+    return out;
+  }
   return null;
 }
 

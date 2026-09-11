@@ -149,7 +149,10 @@ const fileGroups = computed(() => grouped.value.map((g) => ({ proj: g.proj, rows
             <span class="ic">💬</span>
             <span class="mbody">
               <span class="mtext">{{ row.item.text }}</span>
-              <span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span>
+              <span class="mmeta">
+                <span v-if="row.item.tabName" class="mtab">{{ row.item.tabName }}</span>
+                <span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span>
+              </span>
             </span>
             <span class="x" :title="$t('hist.remove_message')" @click.stop="emit('remove-message', row.item)">×</span>
           </button>
@@ -191,6 +194,8 @@ const fileGroups = computed(() => grouped.value.map((g) => ({ proj: g.proj, rows
 .mrow { display: flex; align-items: flex-start; gap: 8px; width: 100%; background: none; border: none; border-bottom: 1px solid var(--bd2); text-align: left; padding: 8px 10px; cursor: pointer; }
 .mbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .mtext { color: var(--tx1); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.mmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mtab { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ac2); background: color-mix(in srgb, var(--ac2) 14%, transparent); border-radius: 8px; padding: 0 8px; font-size: 10px; line-height: 16px; }
 .more { color: var(--tx5); font-size: 11px; text-align: center; padding: 10px; }
 .foot { color: var(--tx6); font-size: 11px; text-align: center; padding: 10px; }
 .row:hover, .mrow:hover { background: var(--bg3); }

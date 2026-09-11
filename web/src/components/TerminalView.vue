@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue';
+import { onMounted, onBeforeUnmount, ref, watch, computed, nextTick } from 'vue';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { FitAddon } from '@xterm/addon-fit';
@@ -56,6 +56,46 @@ function sessionState(id: string) {
 function sessionLabel(id: string) {
   return props.terminal.state.sessions.find((s) => s.id === id)?.name || id;
 }
+
+// —— 页签重命名（双击会话页签改名；按节点公钥指纹隔离持久化）——
+const tabNames = ref<Record<string, string>>({});
+let tabNamesKey = 'devflow-tab-names-none';
+function loadTabNames() {
+  try {
+    const a = JSON.parse(localStorage.getItem(tabNamesKey) || '{}');
+    tabNames.value = (a && typeof a === 'object' && !Array.isArray(a)) ? a : {};
+  } catch { tabNames.value = {}; }
+}
+function persistTabNames() { try { localStorage.setItem(tabNamesKey, JSON.stringify(tabNames.value)); } catch { /* ignore */ } }
+// 页签显示名：自定义名优先，否则回退到默认（Agent 会话 / 服务端会话名）
+function tabLabel(id: string) {
+  const custom = (tabNames.value[id] || '').trim();
+  if (custom) return custom;
+  return id === agentSid.value ? `◈ ${currentAgent.value.name}` : sessionLabel(id);
+}
+const renamingId = ref<string | null>(null);
+const renameValue = ref('');
+let renameInputEl: HTMLInputElement | null = null;
+function setRenameInput(el: unknown) { renameInputEl = (el as HTMLInputElement | null) || null; }
+function startRename(tabId: string) {
+  if (!tabId.startsWith('s:')) return;   // 仅会话页签支持重命名
+  renamingId.value = tabId;
+  renameValue.value = props.center.tabs.value.find((t) => t.id === tabId)?.label || '';
+  void nextTick(() => { renameInputEl?.focus(); renameInputEl?.select(); });
+}
+function commitRename(tabId: string) {
+  if (renamingId.value !== tabId) return;
+  renamingId.value = null;
+  const sid = tabId.slice(2);
+  const name = renameValue.value.trim();
+  const next = { ...tabNames.value };
+  if (name) next[sid] = name; else delete next[sid];
+  tabNames.value = next;
+  persistTabNames();
+  props.center.ensureSession(sid, tabLabel(sid), sessionState(sid));
+  msgHistory.renameTab(sid, tabLabel(sid));   // 同步更新历史消息里记录的页签名
+}
+function cancelRename() { renamingId.value = null; }
 
 // —— 固定 Agent 首标签：交互式 Agent（列表可配置）+ 工作流（跑 opencode 自定义命令）——
 interface AgentDef { id: string; name: string; cmd: string; }
@@ -292,7 +332,7 @@ const composerText = ref('');
 function fillPrompt(text: string) { composerText.value = text; }
 
 // —— 输入历史：点击工具栏「历史」→ 打开左侧历史面板的「消息」页签 ——
-const { push: pushMsg } = useMessageHistory();
+const msgHistory = useMessageHistory();
 function openHistory() {
   window.dispatchEvent(new CustomEvent('df-open-history', { detail: { tab: 'messages' } }));
 }
@@ -392,7 +432,8 @@ function submitComposer() {
   const t = composerText.value.trim();
   if (!t) return;
   composerText.value = '';
-  void pushMsg(t);
+  const sid = props.terminal.state.activeSessionId;
+  void msgHistory.push(t, sid ? { sessionId: sid, tabName: tabLabel(sid) } : {});
   sendToActive(t);
 }
 function onComposerKey(e: KeyboardEvent) {
@@ -478,19 +519,24 @@ function init() {
 const knownSessions = ref<string[]>([]);
 watch(() => props.terminal.state.sessions.map((s) => s.id), (ids) => {
   for (const id of ids) {
-    const lbl = id === agentSid.value ? `◈ ${currentAgent.value.name}` : sessionLabel(id);
-    props.center.ensureSession(id, lbl, sessionState(id));
+    props.center.ensureSession(id, tabLabel(id), sessionState(id));
   }
   for (const old of knownSessions.value) if (!ids.includes(old)) props.center.removeSession(old);
   knownSessions.value = ids;
   ensureAgentOrder();
 }, { immediate: true });
 
+// 页签自定义名加载/变更后，刷新已存在会话页签的显示名（覆盖加载时序差异）
+watch(tabNames, () => {
+  for (const s of props.terminal.state.sessions) {
+    props.center.ensureSession(s.id, tabLabel(s.id), s.state || 'running');
+  }
+}, { deep: true });
+
 // 激活会话变化 → 中心激活对应会话页签（新建/切换时回到终端视图）
 watch(() => props.terminal.state.activeSessionId, (id) => {
   if (id) props.center.activateSession(id);
 });
-
 // 从文件视图切回终端时重排尺寸
 watch(isSessionView, (v) => { if (v) requestAnimationFrame(() => onResize()); });
 
@@ -543,7 +589,9 @@ onMounted(async () => {
   const fp = await nodeFp();
   cfgKey = `devflow-agent-cfg-${fp}`;
   agentSidsKey = `devflow-agent-sids-${fp}`;
+  tabNamesKey = `devflow-tab-names-${fp}`;
   loadAgentSids();
+  loadTabNames();
   await loadAgents();
   loadCfg();           // 本地已保存配置优先覆盖 API 默认
   cfgLoaded = true;
@@ -654,11 +702,15 @@ onBeforeUnmount(() => {
     </div>
     <div class="tabstrip">
       <div v-for="t in center.tabs.value" :key="t.id" class="tab"
-        :class="{ active: center.activeId.value === t.id }" @click="onTabClick(t.id)">
+        :class="{ active: center.activeId.value === t.id }" @click="onTabClick(t.id)"
+        @dblclick="t.kind === 'session' && startRename(t.id)">
         <span v-if="t.kind === 'session'" :class="['dot', sessionState(t.id.slice(2))]" />
         <span v-else class="file-ic">▤</span>
-        <span class="nm" :title="t.kind === 'file' ? t.path : t.label">{{ t.label }}</span>
-        <span v-if="t.id !== 's:' + agentSid" class="x" @click="onTabClose(t.id, $event)">×</span>
+        <input v-if="renamingId === t.id" v-model="renameValue" class="rename-input"
+          :ref="setRenameInput" :title="$t('term.tab_rename')"
+          @click.stop @dblclick.stop @keyup.enter="commitRename(t.id)" @keyup.esc="cancelRename" @blur="commitRename(t.id)" />
+        <span v-else class="nm" :title="t.kind === 'file' ? t.path : (t.label + ' — ' + $t('term.tab_rename'))">{{ t.label }}</span>
+        <span v-if="t.id !== 's:' + agentSid" class="x" @click="onTabClose(t.id, $event)" @dblclick.stop>×</span>
       </div>
       <button class="new" @click="openNew">{{ $t('term.new_session_btn') }}</button>
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
@@ -822,6 +874,7 @@ onBeforeUnmount(() => {
 .tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--tx2); padding: 0 10px; height: 100%; cursor: pointer; border-right: 1px solid var(--bd); flex: none; max-width: 220px; }
 .tab.active { background: var(--bg3); color: var(--tx1); }
 .tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .rename-input { background: var(--bg4); color: var(--tx1); border: 1px solid var(--ac2); border-radius: 3px; padding: 1px 6px; font-size: 12px; min-width: 60px; max-width: 160px; outline: none; }
 .tab .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .dot.running { background: var(--ok); }
 .dot.exited { background: var(--tx5); }
