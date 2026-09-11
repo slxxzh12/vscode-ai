@@ -89,6 +89,9 @@ export function createCollabMount({ engine, logger = console }) {
         if (r.code !== 'ok') return sendJson(res, 400, { error: r.code });
         return ok(res, r);
       }
+      if (seg[0] === 'packages' && seg.length === 3 && seg[2] === 'publish' && m === 'POST') {
+        return ok(res, engine.publishPackage(seg[1]));
+      }
       // 我发出的文件（upload 目录留档）下载
       if (seg[0] === 'outfile' && seg.length === 2 && m === 'GET') {
         const rec = engine.store.listOutbox().find((r) => r.id === seg[1]);
@@ -123,6 +126,9 @@ export function createCollabMount({ engine, logger = console }) {
       }
       if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'sync' && m === 'POST') {
         return ok(res, await engine.pullDownloads());
+      }
+      if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'install' && m === 'POST') {
+        return ok(res, engine.installDownload(body.name));
       }
       if (seg[0] === 'downloads' && seg.length === 3 && seg[1] === 'file' && m === 'GET') {
         const name = decodeURIComponent(seg[2]);

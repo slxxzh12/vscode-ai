@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { listSkills, packSkill } from '../collaboration/skill-packer.js';
 import { installZip, validateSkillZip } from '../collaboration/skill-installer.js';
+import { createPairHarness } from '../collaboration/engine.js';
 
 function makeSkillRoot() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-skills-'));
@@ -50,4 +51,44 @@ test('恶意 zip（无 SKILL.md）被拒', () => {
   const fake = Buffer.from('this is not a real zip but enough to be refused by validator');
   assert.equal(validateSkillZip(fake, 'demo'), false);
   assert.throws(() => installZip({ zip: fake, skillName: 'demo', destRoot: dest }));
+});
+
+test('master 发布捆绑包 → slave 拉取并安装到本机技能根', async () => {
+  const h = await createPairHarness({ skipSkills: false });
+  try {
+    const [A, B] = h.nodes;
+    A.verifyAccessToken = (tk) => tk === 'good';
+    A.ensureGroup();
+    const jr = await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'good' });
+    assert.equal(jr.code, 'joined');
+
+    const skillDir = path.join(A.skillsRoot, 'foo');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# foo', 'utf8');
+    const rec = await A.buildPackage({ skills: ['foo'] });
+    const pub = A.publishPackage(rec.id);
+    assert.equal(pub.code, 'ok', JSON.stringify(pub));
+    assert.ok(fs.existsSync(path.join(A.downloadsDir, pub.name)));
+    assert.ok(A.readManifest().files.some((f) => f.name === pub.name));
+
+    const pull = await B.pullDownloads();
+    assert.equal(pull.code, 'ok');
+    assert.ok(pull.files.includes(pub.name));
+
+    const inst = B.installDownload(pub.name);
+    assert.equal(inst.code, 'ok', JSON.stringify(inst));
+    assert.ok(fs.existsSync(path.join(B.skillsRoot, 'foo', 'SKILL.md')), '已安装到 B 技能根');
+  } finally { await h.stop(); }
+});
+
+test('非 master 发布被拒', async () => {
+  const h = await createPairHarness({ skipSkills: false });
+  try {
+    const [A, B] = h.nodes;
+    A.verifyAccessToken = (tk) => tk === 'good';
+    A.ensureGroup();
+    await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'good' });
+    const r = B.publishPackage('nope');
+    assert.equal(r.code, 'not-master');
+  } finally { await h.stop(); }
 });

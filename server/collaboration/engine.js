@@ -8,6 +8,7 @@ import { loadIdentity, toPublicProfile } from './identity.js';
 import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
+import { installBundleZip } from './bundle-installer.js';
 import { buildZip } from './zip.js';
 import { createOpenCodeRunner } from './remote-runner.js';
 import { t } from '../i18n.js';
@@ -118,7 +119,7 @@ export class CollabEngine {
       }
     }
     if (!files.length) throw new Error(t('collab.err.no_content'));
-    const zip = buildZip(files);
+    const zip = buildZip(files.map((f) => ({ name: f.rel, data: f.data })));
     const hash = crypto.createHash('sha256').update(zip).digest('hex');
     const total = sSel.length + cSel.length + aSel.length;
     const label = `assets-${total}-${hash.slice(0, 6)}.zip`;
@@ -366,6 +367,35 @@ export class CollabEngine {
       files.push({ name: f.name, b64: fs.readFileSync(abs).toString('base64') });
     }
     return { ok: true, data: { manifest, files, group: g, usage: { updatedAt: Date.now(), members: this.store.listHeartbeats() } } };
+  }
+  // master 发布捆绑包到 downloads/skills（不再 push 成员）
+  publishPackage(packageId) {
+    const g = this.store.getGroup();
+    if (!g || g.hubId !== this.pub.machineId) return { code: 'not-master' };
+    const rec = this.store.listOutbox().find((r) => r.id === packageId);
+    if (!rec || !rec.storedFile || !this.uploadDir) return { code: 'not-found' };
+    const abs = path.join(this.uploadDir, path.basename(rec.storedFile));
+    if (!fs.existsSync(abs)) return { code: 'file-missing' };
+    const buf = fs.readFileSync(abs);
+    const name = `skills/${crypto.randomUUID()}-${path.basename(rec.fileName || 'assets.zip')}`;
+    this.writeDownload(name, buf, 'skill');
+    const pkg = rec.package || {};
+    for (const skillName of (pkg.skills || [])) {
+      this.store.upsertGroupSkill({ groupId: g.id, skillName, hash: rec.hash, distributedBy: this.pub.machineId, installed: true });
+    }
+    this._emit('synced', {});
+    return { code: 'ok', name, size: buf.length };
+  }
+  // slave 从本地 downloads 缓存安装捆绑包
+  installDownload(name) {
+    if (!name || name.includes('..') || name.includes('\\')) return { code: 'bad-name' };
+    const abs = path.join(this.downloadsDir, name);
+    if (!fs.existsSync(abs)) return { code: 'not-found' };
+    try {
+      const r = installBundleZip({ zip: fs.readFileSync(abs), skillRoot: this.skillRoot(), configRoot: this.configRoot() });
+      this._emit('synced', {});
+      return { code: 'ok', ...r };
+    } catch (e) { return { code: 'invalid', error: String((e && e.message) || e) }; }
   }
 
   // ---- skill 分发 ----
