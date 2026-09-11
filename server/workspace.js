@@ -101,3 +101,73 @@ export function bindProfile(root, listenPort, id) {
   st.byListenPort[String(listenPort)] = id;
   writeState(stateFile(root), st);
 }
+
+function copyFileIf(src, dst) {
+  if (!fs.existsSync(src)) return false;
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  if (fs.existsSync(dst)) return false;   // 幂等：已存在跳过
+  fs.copyFileSync(src, dst);
+  return true;
+}
+
+function copyDirIf(src, dst) {
+  if (!fs.existsSync(src)) return false;
+  fs.mkdirSync(dst, { recursive: true });
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, e.name); const d = path.join(dst, e.name);
+    if (e.isDirectory()) copyDirIf(s, d);
+    else copyFileIf(s, d);
+  }
+  return true;
+}
+
+// 在 nodes/<fp>/ 下取最近修改的 message-history.jsonc
+function findNewestMessageHistory(nodesDir) {
+  let best = null; let bestM = -1;
+  let fps = [];
+  try { fps = fs.readdirSync(nodesDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); }
+  catch { return null; }
+  for (const fp of fps) {
+    const f = path.join(nodesDir, fp, 'message-history.jsonc');
+    try { const m = fs.statSync(f).mtimeMs; if (m > bestM) { bestM = m; best = f; } } catch { /* skip */ }
+  }
+  return best;
+}
+
+// 旧数据 -> ports/<id>（只在 ports/ 不存在时执行；复制不删除，幂等）
+export function migrateLegacy(root = dataHome(), id = '22222') {
+  const proot = profilesRoot(root);
+  if (fs.existsSync(proot)) return null;
+  const legacy = ['projects.json', 'workflows.json', 'scheduler', 'collab']
+    .map((n) => path.join(root, n));
+  if (!legacy.some((p) => fs.existsSync(p))) return null;
+  const dir = path.join(proot, id);
+  for (const sub of ['collab', 'upload', 'download', 'scheduler', 'skills-opencode']) {
+    fs.mkdirSync(path.join(dir, sub), { recursive: true });
+  }
+  copyFileIf(path.join(root, 'projects.json'), path.join(dir, 'projects.json'));
+  copyFileIf(path.join(root, 'workflows.json'), path.join(dir, 'workflows.json'));
+  copyDirIf(path.join(root, 'scheduler'), path.join(dir, 'scheduler'));
+  copyDirIf(path.join(root, 'collab'), path.join(dir, 'collab'));
+  const hist = findNewestMessageHistory(path.join(root, 'nodes'));
+  if (hist) copyFileIf(hist, path.join(dir, 'message-history.jsonc'));
+  const now = Date.now();
+  fs.writeFileSync(path.join(dir, 'profile.json'),
+    JSON.stringify({ id, name: '默认 (22222)', port: 22222, createdAt: now, lastUsedAt: now }, null, 2), 'utf8');
+  fs.writeFileSync(path.join(proot, '.migrated'), String(now), 'utf8');
+  return readProfile(root, id);
+}
+
+// 解析：node 模式 / 命中映射 / 单份 / 零份 / 多份
+export function resolveProfile({ root = dataHome(), listenPort, nodeMode = false } = {}) {
+  if (nodeMode) return { status: 'node' };
+  const mapped = readState(stateFile(root)).byListenPort[String(listenPort)];
+  if (mapped) {
+    const meta = readProfile(root, mapped);
+    if (meta) return { status: 'ready', profile: meta };
+  }
+  const profiles = listProfiles(root);
+  if (profiles.length === 1) return { status: 'ready', profile: profiles[0] };
+  if (profiles.length === 0) return { status: 'ready', profile: null };
+  return { status: 'select', profiles };
+}
