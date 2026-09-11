@@ -34,12 +34,19 @@ export function parseJsonc(text) {
   return JSON.parse(out);
 }
 
+// 统一的条目形状：{ text, ts }。兼容旧的纯字符串（ts 记 0）。
+function normEntry(x) {
+  if (typeof x === 'string') return { text: x, ts: 0 };
+  if (x && typeof x.text === 'string') return { text: x.text, ts: Number(x.ts) || 0 };
+  return null;
+}
+
 export function readHistory(file) {
   try {
     if (!fs.existsSync(file)) return [];
     const j = parseJsonc(fs.readFileSync(file, 'utf8'));
     const arr = Array.isArray(j) ? j : (j && Array.isArray(j.messages) ? j.messages : []);
-    return arr.filter((x) => typeof x === 'string');
+    return arr.map(normEntry).filter(Boolean);
   } catch {
     return [];
   }
@@ -47,7 +54,8 @@ export function readHistory(file) {
 
 export function writeHistory(file, messages, max = MAX_MESSAGES) {
   const list = (Array.isArray(messages) ? messages : [])
-    .filter((x) => typeof x === 'string')
+    .map(normEntry)
+    .filter(Boolean)
     .slice(0, max);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const body = `${HEADER}\n${JSON.stringify(list, null, 2)}\n`;
@@ -62,6 +70,6 @@ export function appendHistory(file, message, max = MAX_MESSAGES) {
   const t = String(message || '').trim();
   if (!t) return readHistory(file);
   const cur = readHistory(file);
-  const next = [t, ...cur.filter((x) => x !== t)].slice(0, max);
+  const next = [{ text: t, ts: Date.now() }, ...cur.filter((x) => x.text !== t)].slice(0, max);
   return writeHistory(file, next, max);
 }

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import type { HistoryMessage } from '../useMessageHistory';
 
 export interface HistoryEntry { projectId: string; path: string; name: string; projName: string; ts: number; }
-const props = defineProps<{ items: HistoryEntry[]; tab: 'files' | 'messages'; messages: string[] }>();
+const props = defineProps<{ items: HistoryEntry[]; tab: 'files' | 'messages'; messages: HistoryMessage[] }>();
 const emit = defineEmits<{
   (e: 'update:tab', tab: 'files' | 'messages'): void;
   (e: 'open', it: HistoryEntry): void;
@@ -16,14 +17,35 @@ const emit = defineEmits<{
 const PAGE = 50;
 const fileLimit = ref(PAGE);
 const msgLimit = ref(PAGE);
+const query = ref('');
 watch(() => props.tab, () => { fileLimit.value = PAGE; msgLimit.value = PAGE; });
+watch(query, () => { fileLimit.value = PAGE; msgLimit.value = PAGE; });
+
+function match(text: string, q: string) { return text.toLowerCase().includes(q); }
 
 const sortedItems = computed(() => [...props.items].sort((a, b) => b.ts - a.ts));
-const shownItems = computed(() => sortedItems.value.slice(0, fileLimit.value));
-const shownMessages = computed(() => props.messages.slice(0, msgLimit.value));
+const filteredItems = computed(() => {
+  const q = query.value.trim().toLowerCase();
+  if (!q) return sortedItems.value;
+  return sortedItems.value.filter((it) => match(it.name, q) || match(it.path, q) || match(it.projName, q));
+});
+const filteredMessages = computed(() => {
+  const q = query.value.trim().toLowerCase();
+  if (!q) return props.messages;
+  return props.messages.filter((m) => match(m.text, q));
+});
+
+const shownItems = computed(() => filteredItems.value.slice(0, fileLimit.value));
+const shownMessages = computed(() => filteredMessages.value.slice(0, msgLimit.value));
 const hasMore = computed(() => props.tab === 'files'
-  ? fileLimit.value < sortedItems.value.length
-  : msgLimit.value < props.messages.length);
+  ? fileLimit.value < filteredItems.value.length
+  : msgLimit.value < filteredMessages.value.length);
+const searching = computed(() => query.value.trim().length > 0);
+const noMatch = computed(() => {
+  const total = props.tab === 'files' ? props.items.length : props.messages.length;
+  const shown = props.tab === 'files' ? filteredItems.value.length : filteredMessages.value.length;
+  return searching.value && total > 0 && shown === 0;
+});
 
 const grouped = computed(() => {
   const list = [...shownItems.value];
@@ -40,8 +62,8 @@ function onScroll(e: Event) {
   const el = e.target as HTMLElement;
   if (el.scrollTop + el.clientHeight < el.scrollHeight - 40) return;
   if (props.tab === 'files') {
-    if (fileLimit.value < sortedItems.value.length) fileLimit.value += PAGE;
-  } else if (msgLimit.value < props.messages.length) {
+    if (fileLimit.value < filteredItems.value.length) fileLimit.value += PAGE;
+  } else if (msgLimit.value < filteredMessages.value.length) {
     msgLimit.value += PAGE;
   }
 }
@@ -52,6 +74,12 @@ function fmtTime(ts: number) {
   const pad = (x: number) => String(x).padStart(2, '0');
   if (d.toDateString() === now.toDateString()) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fmtMsgTime(ts: number) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const pad = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 </script>
 
@@ -65,10 +93,14 @@ function fmtTime(ts: number) {
       <button v-if="tab === 'files' && items.length" class="clear" :title="$t('hist.clear_files')" @click="emit('clear')">{{ $t('hist.clear') }}</button>
       <button v-else-if="tab === 'messages' && messages.length" class="clear" :title="$t('hist.clear_messages')" @click="emit('clear-messages')">{{ $t('hist.clear') }}</button>
     </header>
+    <div class="searchbar">
+      <input v-model="query" class="searchinput" type="search" :placeholder="$t('hist.search')" spellcheck="false" />
+    </div>
 
     <div class="list" @scroll.passive="onScroll">
       <template v-if="tab === 'files'">
         <div v-if="items.length === 0" class="empty">{{ $t('hist.empty_files') }}</div>
+        <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
         <div v-for="g in grouped" :key="g.proj" class="grp">
           <div class="gname">{{ g.proj }}</div>
           <button v-for="r in g.recs" :key="r.projectId + '|' + r.path" class="row" @click="emit('open', r)">
@@ -85,14 +117,18 @@ function fmtTime(ts: number) {
 
       <template v-else>
         <div v-if="messages.length === 0" class="empty">{{ $t('hist.empty_messages') }}</div>
-        <button v-for="(m, i) in shownMessages" :key="i" class="mrow" :title="m" @click="emit('open-message', m)">
+        <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
+        <button v-for="(m, i) in shownMessages" :key="i" class="mrow" :title="m.text" @click="emit('open-message', m.text)">
           <span class="ic">💬</span>
-          <span class="mtext">{{ m }}</span>
+          <span class="mbody">
+            <span class="mtext">{{ m.text }}</span>
+            <span v-if="m.ts" class="mdate">{{ fmtMsgTime(m.ts) }}</span>
+          </span>
         </button>
       </template>
 
       <div v-if="hasMore" class="more">{{ $t('hist.more') }}</div>
-      <div v-else-if="(tab === 'files' ? items.length : messages.length) > 0" class="foot">{{ $t('hist.foot') }}</div>
+      <div v-else-if="(tab === 'files' ? filteredItems.length : filteredMessages.length) > 0" class="foot">{{ $t('hist.foot') }}</div>
     </div>
   </div>
 </template>
@@ -105,6 +141,9 @@ function fmtTime(ts: number) {
 .tabbtn:hover { color: var(--tx1); }
 .tabbtn.on { color: var(--ac2); border-bottom-color: var(--ac2); font-weight: 700; }
 .clear { background: none; border: 1px solid var(--bd); color: var(--tx3); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
+.searchbar { flex: none; padding: 6px 10px; border-bottom: 1px solid var(--bd2); }
+.searchinput { width: 100%; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; font-size: 12px; font-family: inherit; }
+.searchinput:focus { outline: none; border-color: var(--ac2); }
 .list { flex: 1; min-height: 0; overflow-y: auto; }
 .grp { flex: none; }
 .gname { color: var(--ac2); font-size: 11px; text-transform: uppercase; padding: 10px 10px 2px; }
@@ -120,7 +159,9 @@ function fmtTime(ts: number) {
 .empty { color: var(--tx6); padding: 16px 12px; font-size: 12px; }
 .mrow { display: flex; align-items: flex-start; gap: 8px; width: 100%; background: none; border: none; border-bottom: 1px solid var(--bd2); text-align: left; padding: 8px 10px; cursor: pointer; }
 .mrow:hover { background: var(--bg3); }
-.mtext { flex: 1; min-width: 0; color: var(--tx1); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.mbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mtext { color: var(--tx1); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.mdate { color: var(--tx6); font-size: 10px; font-family: Consolas, monospace; }
 .more { color: var(--tx5); font-size: 11px; text-align: center; padding: 10px; }
 .foot { color: var(--tx6); font-size: 11px; text-align: center; padding: 10px; }
 </style>
