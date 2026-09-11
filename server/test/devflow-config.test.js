@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   parseDevflowConfig, serializeDevflowConfig,
   loadDevflowConfig, ensureConfigFile, updateServerAttrs, buildDefaultConfig,
+  validateWorkflows, updateWorkflows,
 } from '../devflow-config.js';
 
 function tmpFile() { return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-')), 'devflow.xml'); }
@@ -74,4 +75,31 @@ test('loadDevflowConfig 文件缺失返回默认', () => {
   const c = loadDevflowConfig(tmpFile());
   assert.equal(c.server.port, buildDefaultConfig().server.port);
   assert.ok(c.agents.list.length >= 1);
+});
+
+test('validateWorkflows 规整字段并过滤空提示语', () => {
+  const out = validateWorkflows([
+    { id: 'dev', label: '开发', stages: [{ id: 's1', label: '阶段', group: 'g', prompts: ['a', '  ', 'b'] }] },
+  ]);
+  assert.equal(out[0].id, 'dev');
+  assert.equal(out[0].stages[0].prompts.length, 2);
+});
+
+test('validateWorkflows 非数组抛错', () => {
+  assert.throws(() => validateWorkflows(null), /array/);
+});
+
+test('updateWorkflows 覆盖 <workflows> 且保留 server/agents', () => {
+  const f = tmpFile();
+  ensureConfigFile(f);
+  updateServerAttrs(f, { port: 25000, language: 'en' });
+  const saved = updateWorkflows(f, [
+    { id: 'doc', label: '文档流', stages: [{ id: 'scan', label: '盘点', prompts: ['请盘点'] }] },
+  ]);
+  assert.equal(saved.length, 1);
+  const c = loadDevflowConfig(f);
+  assert.equal(c.server.port, 25000);
+  assert.equal(c.server.language, 'en');
+  assert.equal(c.workflows[0].id, 'doc');
+  assert.ok(c.agents.list.some((a) => a.id === 'opencode'));
 });

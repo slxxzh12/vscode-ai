@@ -21,7 +21,7 @@ import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
-import { defaultConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, DEFAULT_PORT } from './devflow-config.js';
+import { defaultConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, DEFAULT_PORT } from './devflow-config.js';
 import { setLocale, t } from './i18n.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
@@ -190,6 +190,46 @@ const server = http.createServer(async (req, res) => {
       setLocale(body.language);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ language: body.language }));
+    });
+    return;
+  }
+  if (url.pathname === '/api/config/xml' && req.method === 'GET') {
+    ensureConfigFile(configFile);
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+    res.end(fs.readFileSync(configFile, 'utf8'));
+    return;
+  }
+  if (url.pathname === '/api/config/xml' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const xml = typeof body.xml === 'string' ? body.xml : '';
+      if (!xml || !/<devflow\b/i.test(xml)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid config xml' })); return;
+      }
+      const parsed = parseDevflowConfig(xml);
+      fs.writeFileSync(configFile, xml, 'utf8');
+      setLocale(parsed.server.language);
+      for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, workflows: parsed.workflows }));
+    });
+    return;
+  }
+  if (url.pathname === '/api/workflows' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      let saved;
+      try { saved = updateWorkflows(configFile, body.workflows); }
+      catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid workflows', message: String(e && e.message || e) })); return; }
+      for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ workflows: saved }));
     });
     return;
   }

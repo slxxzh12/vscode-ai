@@ -133,3 +133,34 @@ export function updateServerAttrs(file, patch = {}) {
   fs.writeFileSync(file, xml, 'utf8');
   return { port, language };
 }
+
+// 校验一份工作流定义（workflow → stages → prompts）
+export function validateWorkflows(workflows) {
+  if (!Array.isArray(workflows)) throw new Error('workflows must be an array');
+  return workflows.map((w, wi) => {
+    const id = String(w && w.id || `wf-${wi}`).trim();
+    const label = String(w && (w.label || w.id) || id).trim();
+    const stages = Array.isArray(w && w.stages) ? w.stages : [];
+    return {
+      id: id || `wf-${wi}`,
+      label: label || id || `wf-${wi}`,
+      stages: stages.map((s, si) => {
+        const sid = String(s && s.id || `st-${si}`).trim();
+        return {
+          id: sid || `st-${si}`,
+          label: String(s && (s.label || s.id) || sid || `st-${si}`).trim(),
+          group: String(s && s.group || '').trim(),
+          prompts: (Array.isArray(s && s.prompts) ? s.prompts : []).map((p) => String(p)).filter((p) => p.trim() !== ''),
+        };
+      }),
+    };
+  });
+}
+
+// 用新的 workflows 覆盖 config 的 <workflows> 段（保留 server/agents）
+export function updateWorkflows(file, workflows) {
+  const list = validateWorkflows(workflows);
+  const cur = loadDevflowConfig(file);
+  fs.writeFileSync(file, serializeDevflowConfig({ server: cur.server, agents: cur.agents, workflows: list }), 'utf8');
+  return list;
+}

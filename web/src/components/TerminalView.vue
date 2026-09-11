@@ -11,6 +11,7 @@ import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
+import WorkflowEditor from './WorkflowEditor.vue';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -90,6 +91,7 @@ let agentGen = 0;                   // 启动代际：切换项目重建会话�
 const wfCmds = ref<Record<string, string>>({ dev: '/dev', test: '/test', doc: '/doc' });
 const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent id
 const settingsOpen = ref(false);
+const editorOpen = ref(false);
 const settingsTab = ref<'general' | 'about'>('general');
 const serverPort = ref<number | null>(null);
 const portMsg = ref('');
@@ -667,6 +669,7 @@ onBeforeUnmount(() => {
       <div class="cbar" @mousedown="onComposerDragDown">
         <div v-if="activeIsAgent" class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
+          <button class="wfbtn edit" :title="$t('wfe.title')" @click="editorOpen = true">✎</button>
         </div>
         <button class="cmin" :title="composerCollapsed ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerCollapsed ? '❐' : '—' }}</button>
       </div>
@@ -708,6 +711,7 @@ onBeforeUnmount(() => {
       </template>
     </div>
   </div>
+  <WorkflowEditor v-if="editorOpen" @close="editorOpen = false" @saved="loadWorkflows" />
 </template>
 
 <style scoped>
@@ -734,6 +738,7 @@ onBeforeUnmount(() => {
 .wfbtn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--tx3); padding: 2px 12px 3px; cursor: pointer; font-size: 11px; }
 .wfbtn:hover { color: var(--tx1); }
 .wfbtn.on { color: var(--ac2); border-bottom-color: var(--ac2); font-weight: 700; }
+.wfbtn.edit { padding: 2px 7px; color: var(--tx5); }
 .flowbar { display: flex; align-items: center; gap: 0; flex: none; flex-wrap: wrap; }
 .fgroup { display: flex; align-items: center; gap: 0; border: 1px dashed color-mix(in srgb, var(--tx1) 45%, transparent); border-radius: 12px; padding: 2px 8px 2px 6px; margin: 2px 0; background: color-mix(in srgb, var(--ac) 3%, transparent); }
 .fglabel { font-size: 10px; color: var(--tx4); margin-right: 6px; padding: 0 4px; border-right: 1px solid color-mix(in srgb, var(--tx1) 40%, transparent); white-space: nowrap; }
