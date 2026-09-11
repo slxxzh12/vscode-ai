@@ -16,6 +16,11 @@ import GitStat from './components/GitStat.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
 import { useI18n } from './i18n';
+import { useWorkspace, type WorkspaceState } from './useWorkspace';
+import WorkspacePicker from './components/WorkspacePicker.vue';
+
+const ws = useWorkspace();
+const wsState = ref<WorkspaceState | null>(null);
 
 const terminal = useTerminal({});
 const center = useCenter();
@@ -260,7 +265,11 @@ function openAgentSettings() {
   if (rail.value !== 'explorer' && rail.value !== 'history') { rail.value = 'explorer'; }
   setTimeout(() => window.dispatchEvent(new Event('df-open-agent-settings')), 120);
 }
-onMounted(() => {
+onMounted(async () => {
+  try {
+    const st = await ws.state();
+    if (st && st.needSelect) { wsState.value = st; return; }   // 只显示档案选择弹窗，不连接
+  } catch { /* 落回原有流程 */ }
   const sp = new URLSearchParams(window.location.search);
   const it = sp.get('invite');
   if (it) inviteToken.value = it;
@@ -312,8 +321,8 @@ function onInviteJoined(_g?: CollabGroup) {
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'history' }" :title="$t('nav.history')" @click="rail = 'history'">🕘</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
-        <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">⏰</button>
+        <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
         <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings">⚙</button>
       </aside>
       <template v-if="rail === 'contacts'">
@@ -361,6 +370,7 @@ function onInviteJoined(_g?: CollabGroup) {
     <div v-if="inviteToken" class="joinmask" @click.self="clearInvite()">
       <JoinInviteCard :collab="inviteCollab" :token="inviteToken" @joined="onInviteJoined" @cancel="clearInvite" />
     </div>
+    <WorkspacePicker v-if="wsState" :state="wsState" />
   </div>
 </template>
 
