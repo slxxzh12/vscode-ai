@@ -65,10 +65,29 @@ async function addAllowPrefix() { if (newPrefix.value.trim()) { await props.coll
 async function delAllowPrefix(p: string) { await props.collab.removeAllow(p); }
 
 const online = (receivedAt?: number) => !!receivedAt && Date.now() - receivedAt < 20 * 60 * 1000;
+function fmtNum(n?: number) { return n == null ? '?' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(n); }
+function usageText(machineId: string) {
+  const u = snap.value.heartbeats[machineId];
+  if (!u || u.error) return '';
+  return t('collab.heartbeat.usage', { input: fmtNum(u.input), output: fmtNum(u.output), days: u.days ?? '?', messages: u.messages ?? '?' });
+}
+
+// —— master downloads（点击才拉取）——
+const downloads = ref<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] } }>({ manifest: { files: [] } });
+const dlMsg = ref('');
+async function loadDownloads() {
+  try { downloads.value = await props.collab.listDownloads() as typeof downloads.value; } catch { /* ignore */ }
+}
+async function syncMaster() {
+  dlMsg.value = '';
+  try { await props.collab.syncDownloads(); await loadDownloads(); }
+  catch (e) { dlMsg.value = String((e as Error).message || e); }
+}
 
 onMounted(async () => {
   await loadRemote();
   await props.collab.loadAllowlist().catch(() => {});
+  await loadDownloads();
 });
 </script>
 
@@ -114,6 +133,18 @@ onMounted(async () => {
       </div>
 
       <div class="sec">
+        <h4>{{ $t('collab.downloads.title') }}</h4>
+        <div class="addrow">
+          <button @click="syncMaster">{{ $t('collab.downloads.sync') }}</button>
+        </div>
+        <div v-if="dlMsg" class="err">{{ dlMsg }}</div>
+        <div v-if="downloads.manifest.files.length === 0" class="empty">{{ $t('collab.downloads.empty') }}</div>
+        <div v-for="f in downloads.manifest.files" :key="f.name" class="rowline">
+          <span class="txt">{{ f.name }}</span>
+        </div>
+      </div>
+
+      <div class="sec">
         <h4>{{ $t('collab.member.title', { count: group?.members.length || 0 }) }}</h4>
         <div v-if="!group" class="empty">{{ $t('collab.member.empty') }}</div>
         <div v-for="m in group?.members || []" :key="m.machineId" class="rowline">
@@ -121,6 +152,7 @@ onMounted(async () => {
           <span class="txt">
             {{ m.username }}<span v-if="m.machineId === me" class="sub">{{ $t('collab.group.me_suffix') }}</span>
             <span class="sub">{{ m.host }}:{{ m.port }}</span>
+            <span v-if="usageText(m.machineId)" class="sub">{{ usageText(m.machineId) }}</span>
           </span>
         </div>
       </div>

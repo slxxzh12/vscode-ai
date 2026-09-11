@@ -90,6 +90,12 @@ export function useCollab() {
       await refresh();
       return r;
     },
+    async syncDownloads() {
+      const r = await post<{ code: string; files?: string[] }>('/api/collab/downloads/sync');
+      await refresh();
+      return r;
+    },
+    listDownloads: () => http<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] }; usage: unknown; group: unknown }>('/api/collab/downloads'),
     listSkills: () => http<{ skills: { name: string }[] }>('/api/collab/skills'),
     async sendGroupFile(groupId: string, fileName: string, blob: Blob) {
       if (blob.size > 40 * 1024 * 1024) throw new Error(t('collab.file.too_large'));

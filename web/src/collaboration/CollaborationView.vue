@@ -26,6 +26,7 @@ onMounted(() => {
     props.terminal.on(CollabS2C.COLLAB_INBOX, () => collab.refresh().catch(() => {})),
     props.terminal.on(CollabS2C.COLLAB_CHAT, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CHAT, payload)),
     props.terminal.on(CollabS2C.COLLAB_CMD_PENDING, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CMD_PENDING, payload)),
+    props.terminal.on(CollabS2C.COLLAB_HEARTBEAT, () => collab.refresh().catch(() => {})),
   ];
 });
 onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
