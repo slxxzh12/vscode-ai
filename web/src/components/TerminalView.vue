@@ -605,20 +605,16 @@ onBeforeUnmount(() => {
             <div class="setsec">
               <div class="settitle">{{ $t('term.about.author') }}</div>
               <div class="aboutval">Samuel Tsang</div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.name_cn') }}</span><span class="aboutv">{{ $t('term.about.name_cn_value') }}</span></div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.name_en') }}</span><span class="aboutv">{{ $t('term.about.name_en_value') }}</span></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.software') }}</span><span class="aboutv">{{ $t('term.about.name_value') }}</span></div>
               <div class="cfghint">{{ $t('term.about.location') }}：{{ $t('term.about.location_value') }}</div>
             </div>
             <div class="setsec">
               <div class="settitle">{{ $t('term.about.contacts_cn') }}</div>
               <div class="aboutrow"><span class="aboutk">QQ</span><span class="aboutv">914300336</span></div>
-              <div class="aboutrow">
-                <span class="aboutk">{{ $t('term.about.wechat') }}</span>
-                <span class="aboutv">yes8sir</span>
-                <a class="wxqrlink" href="/wechat.png" target="_blank" rel="noopener" :title="$t('term.about.wechat_qr')">
-                  <img class="wxqr" src="/wechat.png" :alt="$t('term.about.wechat_qr')" />
-                </a>
-              </div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.wechat') }}</span><span class="aboutv">yes8sir</span></div>
+              <a class="wxqrlink" href="/wechat.png" target="_blank" rel="noopener" :title="$t('term.about.wechat_qr')">
+                <img class="wxqr" src="/wechat.png" :alt="$t('term.about.wechat_qr')" />
+              </a>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.email') }}</span><a class="aboutv link" href="mailto:914300336@qq.com">914300336@qq.com</a></div>
             </div>
             <div class="setsec">
@@ -782,7 +778,7 @@ onBeforeUnmount(() => {
 .aboutv { color: var(--tx1); font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
 .aboutv.link { color: var(--ac2); text-decoration: none; cursor: pointer; }
 .aboutv.link:hover { text-decoration: underline; }
-.wxqrlink { flex: none; margin-left: auto; line-height: 0; }
+.wxqrlink { display: inline-block; margin: 8px 0 2px; line-height: 0; }
 .wxqr { width: 104px; height: 104px; border: 1px solid var(--bd); border-radius: 6px; background: #fff; display: block; }
 .license { margin: 0; padding: 10px 12px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; color: var(--tx2); font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
 .licnote { color: var(--warn2); font-size: 12px; line-height: 1.6; }
