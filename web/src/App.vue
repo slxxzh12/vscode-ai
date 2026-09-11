@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useTerminal } from './useTerminal';
 import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
@@ -65,6 +65,27 @@ const inviteCollab = useCollab();
 const inviteToken = ref('');
 const historyTab = ref<'files' | 'messages'>('messages');
 const msgHistory = useMessageHistory();
+// 当天输入超过 3 条消息时，主动展示一次历史消息；当天已展示过则不再主动，仅用户点击才展示
+const AUTO_SHOWN_KEY = 'devflow-history-auto-shown';
+function ymd(ts: number) {
+  const d = new Date(ts); const p = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+const todayMsgCount = computed(() => {
+  const k = ymd(Date.now());
+  return msgHistory.messages.value.filter((m) => m.ts && ymd(m.ts) === k).length;
+});
+watch(todayMsgCount, (n) => {
+  try {
+    const k = ymd(Date.now());
+    if (localStorage.getItem(AUTO_SHOWN_KEY) === k) return;
+    if (n > 3) {
+      localStorage.setItem(AUTO_SHOWN_KEY, k);
+      rail.value = 'history';
+      historyTab.value = 'messages';
+    }
+  } catch { /* ignore */ }
+});
 function onOpenHistory(e: Event) {
   const d = (e as CustomEvent).detail || {};
   rail.value = 'history';
