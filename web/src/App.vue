@@ -262,8 +262,8 @@ function onInviteJoined(_g?: CollabGroup) {
     <header class="top">
       <span class="logo">◈ vscode-ai</span>
       <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
-      <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" @change="(e: any) => selectProject(e.target.value)">
-        <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id">
+      <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="currentProjectInfo?.root || ''" @change="(e: any) => selectProject(e.target.value)">
+        <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id" :title="it.project.root">
           {{ it.project.name }}{{ it.ts ? ' · ' + fmtRecent(it.ts) : '' }}
         </option>
       </select>
