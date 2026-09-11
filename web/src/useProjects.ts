@@ -34,6 +34,15 @@ export function useProjects() {
       const res = await fetch('/api/projects/pick', { method: 'POST' });
       return res.json();
     },
+    async pickTextFile(): Promise<FileText | { cancelled: true } | { error: string; message?: string | null }> {
+      const res = await fetch('/api/file/pick', { method: 'POST' });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep status */ }
+        throw new Error(msg);
+      }
+      return res.json();
+    },
     async tree(project: string, rel: string): Promise<TreeItem[]> {
       const r = await get<{ items: TreeItem[] }>(`/api/tree?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`);
       return r.items;

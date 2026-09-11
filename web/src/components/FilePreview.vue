@@ -27,13 +27,15 @@ import { swift } from '@codemirror/legacy-modes/mode/swift';
 import { ruby } from '@codemirror/legacy-modes/mode/ruby';
 import { perl } from '@codemirror/legacy-modes/mode/perl';
 import '../styles/markdown.css';
-import { useProjects, type FileMeta } from '../useProjects';
+import { useProjects, type FileMeta, type FileText } from '../useProjects';
 import { t, locale } from '../i18n';
-import { isMarkdownFile, renderMarkdown, renderMermaid } from '../markdown';
+import { isMarkdownFile, renderMarkdown, renderMermaid, printMarkdown } from '../markdown';
 import { parseCurl, type CurlRequest } from '../curl';
+import { diffText, type DiffRow } from '../diff';
+import type { TreeItem } from '@devflow/shared';
 
 const props = defineProps<{ projectId: string; path: string; name: string; detailToken?: number; detailPath?: string }>();
-const { text, write, rawUrl, format, runScript, fileMeta, fileHash, reveal } = useProjects();
+const { text, write, rawUrl, format, runScript, fileMeta, fileHash, reveal, tree, pickTextFile } = useProjects();
 const { isDark } = useTheme();
 
 const IMG = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico']);
@@ -247,6 +249,7 @@ async function load() {
   isBinary.value = false;
   resetB64Panel();
   closeDetail();
+  closeDiff();
   status.value = 'loading';
   errMsg.value = '';
   try {
@@ -372,6 +375,159 @@ function applySort(mode: SortMode) {
   setToolMsg(t('fp.sorted', { label: t(SORT_KEY[mode]) }));
 }
 
+// —— 文本去重（忽略首尾空白，去重后升序排列）——
+function dedupLines(): string {
+  if (!view) return '';
+  const text = view.state.doc.toString();
+  const endsNL = text.endsWith('\n');
+  let lines = text.split('\n');
+  if (endsNL) lines.pop();
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const key = line.trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  out.sort((a, b) => { const an = a.toLowerCase(), bn = b.toLowerCase(); return an < bn ? -1 : an > bn ? 1 : 0; });
+  let result = out.join('\n');
+  if (endsNL) result += '\n';
+  return result;
+}
+function applyDedup() {
+  if (!view) return;
+  const out = dedupLines();
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
+  toolsOpen.value = false;
+  requestMeasure();
+  flashFmt(t('fp.deduped'));
+  setToolMsg(t('fp.deduped'));
+}
+
+// —— 文本对比（左右两栏 + 行级/行内高亮）——
+const canDiff = computed(() => kind.value === 'text' && status.value === 'ok' && !isBinary.value);
+const diffOpen = ref(false);
+const diffLeft = ref('');
+const diffRight = ref('');
+const diffLeftName = ref('');
+const diffRightName = ref('');
+const diffRows = ref<DiffRow[]>([]);
+const diffStats = ref<{ added: number; removed: number; changed: number } | null>(null);
+interface DiffPickerState { side: 'left' | 'right'; dir: string; items: TreeItem[]; }
+const diffPicker = ref<DiffPickerState | null>(null);
+
+// —— 对比面板高度：拖动顶部边框上下调整，本地记忆 ——
+const DIFF_H_KEY = 'devflow-diff-h';
+const diffHeight = ref(380);
+function loadDiffH() {
+  try {
+    const h = Number(localStorage.getItem(DIFF_H_KEY));
+    if (h >= 200 && h <= 1200) diffHeight.value = h;
+  } catch { /* ignore */ }
+}
+function saveDiffH() { try { localStorage.setItem(DIFF_H_KEY, String(Math.round(diffHeight.value))); } catch { /* ignore */ } }
+function onDiffDragDown(e: MouseEvent) {
+  e.preventDefault();
+  const startY = e.clientY;
+  const startH = diffHeight.value;
+  const move = (ev: MouseEvent) => {
+    const max = Math.max(240, window.innerHeight - 160);
+    diffHeight.value = Math.min(max, Math.max(200, startH + (startY - ev.clientY)));
+  };
+  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); saveDiffH(); };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+
+function openDiff() {
+  diffLeft.value = raw.value;
+  diffLeftName.value = props.name;
+  diffRight.value = '';
+  diffRightName.value = '';
+  diffOpen.value = true;
+  runDiff();
+}
+function closeDiff() {
+  diffOpen.value = false;
+  diffPicker.value = null;
+}
+function runDiff() {
+  const r = diffText(diffLeft.value, diffRight.value);
+  diffRows.value = r.rows;
+  diffStats.value = { added: r.added, removed: r.removed, changed: r.changed };
+}
+function clearDiff() {
+  diffLeft.value = '';
+  diffRight.value = '';
+  diffLeftName.value = '';
+  diffRightName.value = '';
+  runDiff();
+}
+async function openDiffPicker(side: 'left' | 'right') {
+  try {
+    const items = await tree(props.projectId, '');
+    diffPicker.value = { side, dir: '', items };
+  } catch (e: any) {
+    setToolMsg(t('fp.diff.load_failed', { msg: e?.message || e }), false);
+  }
+}
+async function diffPickDir(dir: string) {
+  if (!diffPicker.value) return;
+  try {
+    const items = await tree(props.projectId, dir);
+    diffPicker.value = { ...diffPicker.value, dir, items };
+  } catch (e: any) {
+    setToolMsg(t('fp.diff.load_failed', { msg: e?.message || e }), false);
+  }
+}
+async function diffPickFile(item: TreeItem) {
+  if (!diffPicker.value) return;
+  const rel = diffPicker.value.dir ? `${diffPicker.value.dir}/${item.name}` : item.name;
+  const side = diffPicker.value.side;
+  diffPicker.value = null;
+  try {
+    const f = await text(props.projectId, rel);
+    if (f.binary) { setToolMsg(t('fp.binary_unsupported'), false); return; }
+    if (side === 'left') { diffLeft.value = f.content; diffLeftName.value = f.name; }
+    else { diffRight.value = f.content; diffRightName.value = f.name; }
+    setToolMsg(t('fp.diff.loaded', { name: f.name }));
+    runDiff();
+  } catch (e: any) {
+    setToolMsg(t('fp.diff.load_failed', { msg: e?.message || e }), false);
+  }
+}
+function diffPickUp() {
+  if (!diffPicker.value) return;
+  const dir = diffPicker.value.dir;
+  if (!dir) return;
+  const i = dir.lastIndexOf('/');
+  diffPickDir(i >= 0 ? dir.slice(0, i) : '');
+}
+// 从“其他目录”加载：弹出系统文件对话框，选择工程目录之外的文件
+async function loadDiffOther(side: 'left' | 'right') {
+  try {
+    const r = await pickTextFile();
+    if ('cancelled' in r) return;
+    if ('error' in r) { setToolMsg(t('fp.diff.load_failed', { msg: r.message || r.error }), false); return; }
+    const f = r as FileText;
+    if (f.binary) { setToolMsg(t('fp.binary_unsupported'), false); return; }
+    if (side === 'left') { diffLeft.value = f.content; diffLeftName.value = f.name; }
+    else { diffRight.value = f.content; diffRightName.value = f.name; }
+    setToolMsg(t('fp.diff.loaded', { name: f.name }));
+    runDiff();
+  } catch (e: any) {
+    setToolMsg(t('fp.diff.load_failed', { msg: e?.message || e }), false);
+  }
+}
+
+// —— 保存 PDF（markdown 预览 → 打印窗口仅含文档内容）——
+function printPdf() {
+  const html = mdBodyRef.value?.innerHTML || mdHtml.value;
+  if (!html) return;
+  printMarkdown(html, props.name);
+}
+
 // —— 🧰 小工具（顶栏右上收纳菜单）：排序/Base64/格式化/压缩/运行/curl ——
 const toolsOpen = ref(false);
 let toolsOpenedAt = 0;
@@ -379,7 +535,7 @@ let unbindTools: (() => void) | null = null;
 const anyTool = computed(() =>
   !!(canFormat.value && showEditor.value)
   || !!(canMinify.value && showEditor.value && status.value === 'ok')
-  || !!canSort.value || !!canB64.value || !!canRun.value || !!canCurl.value);
+  || !!canSort.value || !!canB64.value || !!canDiff.value || !!canRun.value || !!canCurl.value);
 watch(toolsOpen, (o) => {
   if (o) {
     toolsOpenedAt = Date.now();
@@ -392,11 +548,12 @@ watch(toolsOpen, (o) => {
     unbindTools = () => document.removeEventListener('pointerdown', h, true);
   } else if (unbindTools) { unbindTools(); unbindTools = null; }
 });
-function runTools(t: 'format' | 'minify' | 'b64' | 'run' | 'curl') {
+function runTools(t: 'format' | 'minify' | 'b64' | 'diff' | 'run' | 'curl') {
   toolsOpen.value = false;
   if (t === 'format') formatDoc();
   else if (t === 'minify') minifyOneLine();
   else if (t === 'b64') toggleB64();
+  else if (t === 'diff') openDiff();
   else if (t === 'run') runFile();
   else if (t === 'curl') openCurl();
 }
@@ -639,7 +796,7 @@ watch(viewMode, (m) => {
 });
 watch([status, viewMode], applyPreview);
 
-onMounted(() => { window.addEventListener('keydown', onGlobalKey); });
+onMounted(() => { window.addEventListener('keydown', onGlobalKey); loadDiffH(); });
 
 onBeforeUnmount(() => {
   disposed = true;
@@ -672,6 +829,7 @@ onBeforeUnmount(() => {
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">{{ $t('fp.preview') }}</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? $t('fp.source') : $t('fp.code') }}</button>
           </div>
+          <button v-if="isMd && status === 'ok' && viewMode === 'preview'" class="fmt-btn" :title="$t('fp.pdf.tip')" @click="printPdf">{{ $t('fp.pdf') }}</button>
           <span v-if="saveState === 'saving'" class="save saveing">{{ $t('fp.saving') }}</span>
           <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ $t('fp.saved', { msg: saveMsg }) }}</span>
           <span v-else-if="saveState === 'error'" class="save saveerr" :title="$t('fp.retry')" @click="onRetrySave">{{ $t('fp.save_failed', { msg: saveMsg }) }}</span>
@@ -686,6 +844,8 @@ onBeforeUnmount(() => {
                   <button v-for="s in SORT_ITEMS" :key="s.mode" @click="applySort(s.mode)">{{ s.label }}</button>
                 </div>
               </div>
+              <button v-if="canSort" class="mi" @click="applyDedup()">{{ $t('fp.dedup') }}</button>
+              <button v-if="canDiff" class="mi" @click="runTools('diff')">{{ $t('fp.diff') }}</button>
               <button v-if="canB64" class="mi" :class="{ on: b64Open }" @click="runTools('b64')">{{ $t('fp.b64') }}</button>
               <button v-if="canRun" class="mi run-t" @click="runTools('run')">{{ $t('fp.run') }}</button>
               <button v-if="canCurl" class="mi" @click="runTools('curl')">{{ $t('fp.curl') }}</button>
@@ -694,7 +854,7 @@ onBeforeUnmount(() => {
           </span>
           <span v-if="runMsg" class="save runmsg">{{ runMsg }}</span>
           <button v-if="status === 'ok'" class="fmt-btn" :class="{ on: detailOpen }" :title="$t('fp.detail.title')" @click="toggleDetail()">{{ $t('fp.detail') }}</button>
-          <button v-if="status === 'ok' && showEditor && !isBinary" class="fmt-btn savebtn" :disabled="!dirty" :title="$t('fp.save') + ' (Ctrl+S)'" @click="saveNow">{{ $t('fp.save') }}{{ dirty ? ' *' : '' }}</button>
+          <button class="fmt-btn savebtn" :disabled="!(status === 'ok' && showEditor && !isBinary && dirty)" :title="$t('fp.save') + ' (Ctrl+S)'" @click="saveNow">{{ $t('fp.save') }}{{ dirty ? ' *' : '' }}</button>
         </div>
       </div>
       <div v-if="status === 'loading'" class="note">{{ $t('fp.loading') }}</div>
@@ -754,6 +914,69 @@ onBeforeUnmount(() => {
           <div v-if="curlErr" class="cperr">{{ curlErr }}</div>
           <div v-if="respStatus !== null" class="cpstat">HTTP {{ respStatus }}</div>
           <pre v-if="respText" class="cpre">{{ respText }}</pre>
+        </div>
+
+        <div v-if="diffOpen && status === 'ok'" class="diffpanel" :style="{ height: diffHeight + 'px' }">
+          <div class="diffresize" @mousedown="onDiffDragDown" />
+          <div class="dph">
+            <span class="dpt">{{ $t('fp.diff.title') }}</span>
+            <button class="cpx" @click="closeDiff">×</button>
+          </div>
+          <div class="diffcols">
+            <div class="diffcol">
+              <div class="dch">
+                <span class="dct">{{ $t('fp.diff.left') }}<template v-if="diffLeftName"> · <code>{{ diffLeftName }}</code></template></span>
+                <span class="b64btns">
+                  <button class="b64b" @click="openDiffPicker('left')">{{ $t('fp.diff.load') }}</button>
+                  <button class="b64b" @click="loadDiffOther('left')">{{ $t('fp.diff.load_other') }}</button>
+                </span>
+              </div>
+              <textarea v-model="diffLeft" class="diffta" spellcheck="false" :placeholder="$t('fp.diff.left_placeholder')" @input="runDiff" />
+            </div>
+            <div class="diffcol">
+              <div class="dch">
+                <span class="dct">{{ $t('fp.diff.right') }}<template v-if="diffRightName"> · <code>{{ diffRightName }}</code></template></span>
+                <span class="b64btns">
+                  <button class="b64b" @click="openDiffPicker('right')">{{ $t('fp.diff.load') }}</button>
+                  <button class="b64b" @click="loadDiffOther('right')">{{ $t('fp.diff.load_other') }}</button>
+                </span>
+              </div>
+              <textarea v-model="diffRight" class="diffta" spellcheck="false" :placeholder="$t('fp.diff.right_placeholder')" @input="runDiff" />
+            </div>
+          </div>
+          <div class="diffbar">
+            <span v-if="diffStats" class="diffstat">
+              <template v-if="diffStats.added + diffStats.removed + diffStats.changed === 0">{{ $t('fp.diff.same') }}</template>
+              <template v-else>{{ $t('fp.diff.stats', { add: diffStats.added, del: diffStats.removed, chg: diffStats.changed }) }}</template>
+            </span>
+            <span class="diffsp" />
+            <button class="b64b" @click="clearDiff">{{ $t('fp.diff.clear') }}</button>
+          </div>
+          <div class="diffresult">
+            <div v-if="diffRows.length === 0" class="diffempty">{{ $t('fp.diff.empty') }}</div>
+            <template v-for="(row, idx) in diffRows" :key="idx">
+              <div class="diffrow" :class="row.kind">
+                <span class="ln">{{ row.leftLine ?? '' }}</span>
+                <div class="side left"><template v-if="row.left"><span v-for="(s, i) in row.left" :key="i" :class="{ chg: s.changed }">{{ s.text }}</span></template></div>
+                <span class="ln">{{ row.rightLine ?? '' }}</span>
+                <div class="side right"><template v-if="row.right"><span v-for="(s, i) in row.right" :key="i" :class="{ chg: s.changed }">{{ s.text }}</span></template></div>
+              </div>
+            </template>
+          </div>
+          <div v-if="diffPicker" class="diffpicker">
+            <div class="dpkhead">
+              <span class="dpt">{{ $t('fp.diff.pick') }} · <span class="dpkdir">{{ diffPicker.dir || '/' }}</span></span>
+              <button class="cpx" @click="diffPicker = null">×</button>
+            </div>
+            <div class="dpklist">
+              <button v-if="diffPicker.dir" class="dpkitem" @click="diffPickUp">../ {{ $t('fp.diff.pick_up') }}</button>
+              <button v-for="it in diffPicker.items" :key="it.name" class="dpkitem" :class="{ dir: it.type === 'dir' }"
+                @click="it.type === 'dir' ? diffPickDir(diffPicker.dir ? diffPicker.dir + '/' + it.name : it.name) : diffPickFile(it)">
+                {{ it.type === 'dir' ? '▸ ' : '' }}{{ it.name }}
+              </button>
+              <div v-if="diffPicker.items.length === 0" class="dpkempty">(—)</div>
+            </div>
+          </div>
         </div>
         </template>
       </template>
@@ -911,4 +1134,33 @@ onBeforeUnmount(() => {
 .binpath { color: var(--ac2); font-family: ui-monospace, Consolas, monospace; font-size: 12px; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-decoration: underline dotted; }
 .binpath:hover { color: var(--ac); }
 .binbtn { padding: 4px 14px; font-size: 12px; }
+.diffpanel { position: relative; flex: none; display: flex; flex-direction: column; height: 380px; border-top: 1px solid var(--bd); background: var(--bg2); box-sizing: border-box; }
+.diffresize { flex: none; height: 6px; margin-top: -3px; cursor: ns-resize; background: transparent; z-index: 2; }
+.diffresize:hover { background: color-mix(in srgb, var(--ac) 45%, transparent); }
+.diffcols { flex: none; display: flex; gap: 8px; padding: 8px 10px 0; }
+.diffcol { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.dch { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; min-width: 0; }
+.dct { font-size: 11px; color: var(--tx2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dct code { color: var(--ac2); font-family: ui-monospace, Consolas, monospace; }
+.diffta { width: 100%; box-sizing: border-box; flex: none; height: 96px; resize: vertical; background: var(--bg3); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.diffbar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 10px; }
+.diffstat { font-size: 11px; color: var(--tx2); }
+.diffsp { flex: 1; }
+.diffresult { flex: 1; min-height: 0; overflow: auto; margin: 0 10px 10px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.5; }
+.diffempty { color: var(--tx5); padding: 12px; }
+.diffrow { display: flex; align-items: stretch; }
+.diffrow .ln { flex: none; width: 46px; text-align: right; padding: 1px 6px; color: var(--tx5); background: var(--bg4); border-right: 1px solid var(--bd); user-select: none; }
+.diffrow .side { flex: 1; min-width: 0; padding: 1px 8px; white-space: pre-wrap; word-break: break-all; }
+.diffrow .side + .ln { border-left: 1px solid var(--bd); border-right: none; }
+.diffrow .side .chg { background: color-mix(in srgb, var(--err) 32%, transparent); border-radius: 2px; }
+.diffrow.del .side.left, .diffrow.ins .side.right, .diffrow.change .side { background: color-mix(in srgb, var(--err) 13%, transparent); }
+.diffrow.del .side.right, .diffrow.ins .side.left { background: var(--bg4); }
+.diffpicker { position: absolute; left: 10px; right: 10px; top: 34px; bottom: 10px; z-index: 81; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 12px 40px rgba(0,0,0,.4); display: flex; flex-direction: column; overflow: hidden; }
+.dpkhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; background: var(--bg4); flex: none; }
+.dpkdir { color: var(--ac2); font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
+.dpklist { flex: 1; overflow: auto; padding: 4px; display: flex; flex-direction: column; }
+.dpkitem { text-align: left; background: none; border: none; color: var(--tx); padding: 5px 10px; font-size: 12px; cursor: pointer; border-radius: 4px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dpkitem:hover { background: var(--ac); color: var(--onac); }
+.dpkitem.dir { color: var(--ac2); }
+.dpkempty { color: var(--tx5); padding: 8px 12px; }
 </style>

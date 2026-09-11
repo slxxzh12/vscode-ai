@@ -101,6 +101,81 @@ export function isMarkdownFile(name: string): boolean {
   return ext === 'md' || ext === 'markdown';
 }
 
+const PRINT_CSS = `
+@page { size: A4; margin: 18mm 16mm; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: #fff; color: #1f2937; font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; line-height: 1.7; }
+.md-body { word-wrap: break-word; }
+.md-body > :first-child { margin-top: 0; }
+.md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6 { margin: 1.2em 0 0.6em; line-height: 1.3; font-weight: 600; color: #111827; }
+.md-body h1 { font-size: 1.7em; padding-bottom: 0.3em; border-bottom: 1px solid #e5e7eb; }
+.md-body h2 { font-size: 1.4em; padding-bottom: 0.25em; border-bottom: 1px solid #e5e7eb; }
+.md-body h3 { font-size: 1.2em; }
+.md-body h4 { font-size: 1.05em; }
+.md-body p { margin: 0.7em 0; }
+.md-body a { color: #2563eb; text-decoration: none; }
+.md-body ul, .md-body ol { margin: 0.7em 0; padding-left: 1.8em; }
+.md-body li { margin: 0.25em 0; }
+.md-body blockquote { margin: 0.8em 0; padding: 0.1em 1em; color: #4b5563; border-left: 3px solid #2563eb; background: #f6f8fa; border-radius: 0 6px 6px 0; }
+.md-body hr { margin: 1.4em 0; border: none; border-top: 1px solid #e5e7eb; }
+.md-body table { border-collapse: collapse; margin: 0.9em 0; display: block; max-width: 100%; overflow: auto; }
+.md-body th, .md-body td { border: 1px solid #d7dce3; padding: 6px 12px; }
+.md-body th { background: #f0f2f5; font-weight: 600; }
+.md-body tr:nth-child(2n) td { background: #f6f8fa; }
+.md-body code { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; background: #f0f2f5; padding: 0.15em 0.4em; border-radius: 4px; color: #0550ae; }
+.md-body pre { background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; overflow: auto; margin: 0.9em 0; }
+.md-body pre code { background: transparent; padding: 0; color: #1f2937; font-size: 12.5px; line-height: 1.55; display: block; }
+.md-body pre.hljs { padding: 12px 14px; }
+.md-body code.hljs { padding: 0; }
+.md-body img { max-width: 100%; border-radius: 6px; }
+.md-body .mermaid { display: flex; justify-content: center; background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; margin: 0.9em 0; }
+.md-body .mermaid svg { max-width: 100%; }
+.md-body .mermaid-err { color: #b91c1c; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; padding: 8px 12px; }
+.hljs { background: transparent; color: inherit; }
+.md-body .hljs-keyword, .md-body .hljs-selector-tag, .md-body .hljs-name { color: #cf222e; }
+.md-body .hljs-string, .md-body .hljs-regexp, .md-body .hljs-addition { color: #0a3069; }
+.md-body .hljs-comment, .md-body .hljs-quote { color: #6e7781; font-style: italic; }
+.md-body .hljs-number, .md-body .hljs-literal { color: #0550ae; }
+.md-body .hljs-title, .md-body .hljs-function .hljs-title, .md-body .hljs-title.class_ { color: #8250df; }
+.md-body .hljs-attr, .md-body .hljs-attribute, .md-body .hljs-variable, .md-body .hljs-template-variable { color: #953800; }
+.md-body .hljs-built_in, .md-body .hljs-type, .md-body .hljs-symbol, .md-body .hljs-bullet { color: #0550ae; }
+pre, table, blockquote, img, .mermaid { break-inside: avoid; }
+h1, h2, h3, h4, h5, h6 { break-after: avoid; }
+`;
+
+function buildPrintDoc(html: string, title: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escHtml(title)}</title><style>${PRINT_CSS}</style></head><body><article class="md-body">${html}</article></body></html>`;
+}
+
+// 将已渲染的 markdown HTML 送入新窗口并调起打印（仅打印文档内容，无应用边框）
+export function printMarkdown(html: string, title: string): void {
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.open();
+  win.document.write(buildPrintDoc(html, title));
+  win.document.close();
+  win.focus();
+
+  let fired = false;
+  const fire = () => {
+    if (fired) return;
+    fired = true;
+    try { win.focus(); win.print(); } catch { /* ignore */ }
+  };
+  const imgs = Array.from(win.document.images);
+  if (imgs.length === 0) { fire(); return; }
+  let remaining = imgs.filter((img) => !img.complete).length;
+  if (remaining === 0) { fire(); return; }
+  for (const img of imgs) {
+    if (img.complete) continue;
+    const dec = () => { remaining--; if (remaining <= 0) fire(); };
+    img.addEventListener('load', dec, { once: true });
+    img.addEventListener('error', dec, { once: true });
+  }
+  setTimeout(fire, 8000);
+}
+
 export async function renderMermaid(container: HTMLElement): Promise<void> {
   const nodes = Array.from(container.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed="true"])'));
   if (nodes.length === 0) return;

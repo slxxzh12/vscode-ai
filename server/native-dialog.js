@@ -44,6 +44,13 @@ export function pickFile(opts) {
   ], '$d.FileName', opts);
 }
 
+export function pickAnyFile(opts) {
+  return runDialog([
+    '$d = New-Object System.Windows.Forms.OpenFileDialog',
+    "$d.Filter = 'All files|*.*'",
+  ], '$d.FileName', opts);
+}
+
 export function pickFolder(opts) {
   return runDialog([
     '$d = New-Object System.Windows.Forms.FolderBrowserDialog',

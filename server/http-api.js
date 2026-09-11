@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { transformSync } from 'esbuild';
 import { collectGitChanges } from './git-log.js';
-import { pickFolder } from './native-dialog.js';
+import { pickFolder, pickAnyFile } from './native-dialog.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
 
@@ -66,6 +66,26 @@ const RAW_MIME = {
   '.svg': 'image/svg+xml', '.webp': 'image/webp', '.bmp': 'image/bmp', '.ico': 'image/x-icon',
   '.pdf': 'application/pdf',
 };
+
+// 读取任意绝对路径的文本文件（供对比面板“其他目录文件”用；路径来自服务端原生文件对话框）
+function readAbsText(abs, maxBytes = 1024 * 1024) {
+  const st = fs.statSync(abs);
+  const size = st.size;
+  const base = { name: path.basename(abs), path: abs, size, mtime: st.mtimeMs, abs };
+  if (size > 0) {
+    const probeLen = Math.min(size, 64 * 1024);
+    const buf = Buffer.alloc(probeLen);
+    const fd = fs.openSync(abs, 'r');
+    try {
+      fs.readSync(fd, buf, 0, probeLen, 0);
+      if (buf.includes(0)) return { ...base, binary: true };
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+  if (size > maxBytes) { const e = new Error('file too large'); e.code = 'too-large'; throw e; }
+  return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
+}
 
 export function createHttpApi({ projects, saveProjects = null, logger = console }) {
   const sendJson = (res, status, obj) => {
@@ -176,6 +196,13 @@ export function createHttpApi({ projects, saveProjects = null, logger = console 
         if (typeof body.content !== 'string') return sendJson(res, 400, { error: 'content required' });
         const f = projects.writeText(project, rel, body.content);
         sendJson(res, 200, f);
+        return;
+      }
+      if (url.pathname === '/api/file/pick' && req.method === 'POST') {
+        const r = await pickAnyFile();
+        if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
+        if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
+        sendJson(res, 200, readAbsText(r.path));
         return;
       }
       if (url.pathname === '/api/file/meta' && req.method === 'GET') {
