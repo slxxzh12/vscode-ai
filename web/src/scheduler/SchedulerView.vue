@@ -140,14 +140,14 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <div class="name">
               <span class="badge" :class="t.type">{{ t.type === 'shell' ? $t('sched.type.shell') : t.type === 'ai' ? 'AI' : $t('sched.type.script') }}</span>
               {{ t.name }}
+              <span v-if="t.recentRuns && t.recentRuns.length" class="runhist" :title="$t('sched.recent_runs')">
+                <span v-for="r in histRuns(t)" :key="r.id" class="rh" :class="r.status" :title="`${runStatusLabel(r.status)} · ${formatTime(r.startedAt)}`">{{ runIcon(r.status) }}</span>
+              </span>
               <span class="dim">{{ scheduleSummary(t.schedule) }}</span>
             </div>
             <div class="meta">
               <span v-if="t.runningRunId" class="dot running" />{{ t.runningRunId ? $t('sched.running') : '' }}
               <span class="dim">{{ $t('sched.next', { time: formatTime(t.nextRunAt) }) }}</span>
-              <span v-if="t.recentRuns && t.recentRuns.length" class="runhist" :title="$t('sched.recent_runs')">
-                <span v-for="r in histRuns(t)" :key="r.id" class="rh" :class="r.status" :title="`${runStatusLabel(r.status)} · ${formatTime(r.startedAt)}`">{{ runIcon(r.status) }}</span>
-              </span>
             </div>
           </div>
           <div class="acts">
@@ -274,7 +274,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .meta { color: var(--tx4); font-size: 12px; margin-top: 2px; display: flex; gap: 12px; align-items: center; }
 .dim { color: var(--tx5); font-size: 12px; }
 .runhist { display: inline-flex; gap: 3px; align-items: center; }
-.rh { font-size: 11px; line-height: 1; }
+.rh { font-size: 14px; line-height: 1; font-weight: 900; }
 .rh.success { color: #3fb950; }
 .rh.failed { color: #e5534b; }
 .rh.timeout { color: #d29922; }
