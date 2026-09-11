@@ -79,11 +79,58 @@ function parseLog(out) {
   return commits;
 }
 
+// 解析 `git log --numstat` 输出：每个提交 → [{ added, deleted, path, oldPath }]
+// 重命名以 `{old => new}` 形式给出，拆成 path（新）与 oldPath（旧）；二进制为 `-` 记 0
+function parseNumstat(out) {
+  const map = new Map();
+  let cur = null;
+  for (const line of out.split('\n')) {
+    if (!line) continue;
+    if (line.startsWith('@@')) {
+      const hash = line.split('\x01')[1] || '';
+      cur = [];
+      map.set(hash, cur);
+      continue;
+    }
+    if (!cur) continue;
+    const m = line.match(/^(\d+|-)\t(\d+|-)\t(.*)$/);
+    if (!m) continue;
+    const added = m[1] === '-' ? 0 : parseInt(m[1], 10);
+    const deleted = m[2] === '-' ? 0 : parseInt(m[2], 10);
+    let path = m[3];
+    let oldPath = null;
+    const b = path.match(/^(.*)\{([^{}]*?) => ([^{}]*?)\}(.*)$/);
+    if (b) {
+      oldPath = b[1] + b[2] + b[4];
+      path = b[1] + b[3] + b[4];
+    }
+    cur.push({ added, deleted, path, oldPath });
+  }
+  return map;
+}
+
+// 将 numstat 的行数信息按（提交哈希 + 新路径）回填到各提交文件上
+function mergeNumstat(commits, numMap) {
+  for (const c of commits) {
+    const nums = numMap.get(c.hash);
+    if (!nums) continue;
+    const byPath = new Map(nums.map((n) => [n.path, n]));
+    for (const f of c.files) {
+      const n = byPath.get(f.path);
+      if (n) { f.added = n.added; f.deleted = n.deleted; }
+    }
+  }
+}
+
 function summarize(commits) {
   const map = new Map();
-  const applyEvent = (row, status, date) => {
+  const applyEvent = (row, status, date, author, email, added, deleted) => {
     row.touches += 1;
     row.lastDate = date;
+    row.lastAuthor = author;
+    row.lastEmail = email;
+    row.added += added;
+    row.deleted += deleted;
     if (!row.firstRaw) row.firstRaw = status;
     row.lastRaw = status;
     if (status === 'renamed') row.sawRename = true;
@@ -91,23 +138,25 @@ function summarize(commits) {
   // git 默认最新在前，反转成时间正序以正确判定首次/末次状态
   for (const c of [...commits].reverse()) {
     for (const f of c.files) {
+      const added = f.added || 0;
+      const deleted = f.deleted || 0;
       if (f.status === 'renamed' && f.oldPath && map.has(f.oldPath)) {
         const row = map.get(f.oldPath);
         map.delete(f.oldPath);
         row.path = f.path;
         if (!row.oldPath) row.oldPath = f.oldPath;
-        applyEvent(row, f.status, c.date);
+        applyEvent(row, f.status, c.date, c.author, c.email, added, deleted);
         map.set(f.path, row);
         continue;
       }
       let row = map.get(f.path);
       if (!row) {
-        row = { path: f.path, oldPath: f.oldPath, firstRaw: null, lastRaw: null, sawRename: false, touches: 0, lastDate: c.date };
+        row = { path: f.path, oldPath: f.oldPath, firstRaw: null, lastRaw: null, sawRename: false, touches: 0, lastDate: c.date, lastAuthor: c.author, lastEmail: c.email, added: 0, deleted: 0 };
         map.set(f.path, row);
       } else if (f.oldPath && !row.oldPath) {
         row.oldPath = f.oldPath;
       }
-      applyEvent(row, f.status, c.date);
+      applyEvent(row, f.status, c.date, c.author, c.email, added, deleted);
     }
   }
   const rows = [];
@@ -117,7 +166,7 @@ function summarize(commits) {
     else if (row.firstRaw === 'added') status = 'added';
     else if (row.sawRename) status = 'renamed';
     else status = 'modified';
-    rows.push({ path: row.path, status, ...(row.oldPath ? { oldPath: row.oldPath } : {}), touches: row.touches, lastDate: row.lastDate });
+    rows.push({ path: row.path, status, ...(row.oldPath ? { oldPath: row.oldPath } : {}), touches: row.touches, lastDate: row.lastDate, lastAuthor: row.lastAuthor, lastEmail: row.lastEmail, added: row.added, deleted: row.deleted });
   }
   return rows;
 }
@@ -171,14 +220,24 @@ export async function collectGitChanges({ repo, since, until } = {}) {
       if (branch === 'HEAD') branch = null;
     } catch { /* 空仓库无分支，忽略 */ }
 
-    const out = await runGit(target, [
+    const logArgs = [
       '-c', 'core.quotepath=false',
       'log',
       `--since=${since}T00:00:00`,
       `--until=${until}T23:59:59`,
       '--no-merges',
       '-M',
+    ];
+
+    const out = await runGit(target, [
+      ...logArgs,
       '--name-status',
+      '--pretty=format:@@%x01%H%x01%an%x01%ae%x01%aI%x01%s',
+    ]);
+
+    const numOut = await runGit(target, [
+      ...logArgs,
+      '--numstat',
       '--pretty=format:@@%x01%H%x01%an%x01%ae%x01%aI%x01%s',
     ]);
 
@@ -186,6 +245,7 @@ export async function collectGitChanges({ repo, since, until } = {}) {
     const commits = parsed.slice(0, MAX_COMMITS).map((c) => ({
       hash: c.hash, short: c.short, author: c.author, email: c.email, date: c.date, subject: c.subject, files: c.files,
     }));
+    mergeNumstat(commits, parseNumstat(numOut));
     const summaryAll = summarize(commits);
     const summary = summaryAll.slice(0, MAX_FILES);
     const truncated = parsed.length > MAX_COMMITS || summaryAll.length > MAX_FILES;

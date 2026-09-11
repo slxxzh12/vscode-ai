@@ -113,12 +113,15 @@ function fmtDate(iso: string): string {
           <button v-for="f in FILTERS" :key="f" :class="{ on: filter === f }" @click="filter = f">{{ filterLabel(f) }}</button>
         </div>
         <table class="tbl">
-          <thead><tr><th>{{ $t('gitstat.col.status') }}</th><th>{{ $t('gitstat.col.file') }}</th><th>{{ $t('gitstat.col.touches') }}</th><th>{{ $t('gitstat.col.last') }}</th></tr></thead>
+          <thead><tr><th>{{ $t('gitstat.col.status') }}</th><th>{{ $t('gitstat.col.file') }}</th><th>{{ $t('gitstat.col.author') }}</th><th>{{ $t('gitstat.col.touches') }}</th><th>{{ $t('gitstat.col.added_lines') }}</th><th>{{ $t('gitstat.col.deleted_lines') }}</th><th>{{ $t('gitstat.col.last') }}</th></tr></thead>
           <tbody>
             <tr v-for="row in filteredSummary" :key="row.path">
               <td><span class="badge" :class="statusClass(row.status)">{{ statusLabel(row.status) }}</span></td>
               <td class="pth"><template v-if="row.oldPath"><span class="old">{{ row.oldPath }}</span> → </template>{{ row.path }}</td>
+              <td class="auth">{{ row.lastAuthor }}</td>
               <td class="num">{{ row.touches }}</td>
+              <td class="num add">{{ row.added }}</td>
+              <td class="num del">{{ row.deleted }}</td>
               <td class="num">{{ fmtDate(row.lastDate) }}</td>
             </tr>
           </tbody>
@@ -176,6 +179,9 @@ function fmtDate(iso: string): string {
 .tbl th { text-align: left; color: var(--tx4); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--bd2); }
 .tbl td { padding: 4px 8px; border-bottom: 1px solid var(--bd2); vertical-align: top; }
 .tbl .num { text-align: right; color: var(--tx4); white-space: nowrap; }
+.tbl .num.add { color: var(--ok, #3fb950); font-variant-numeric: tabular-nums; }
+.tbl .num.del { color: var(--err); font-variant-numeric: tabular-nums; }
+.auth { color: var(--tx3); white-space: nowrap; }
 .pth { font-family: ui-monospace, Consolas, monospace; color: var(--tx); word-break: break-all; }
 .old { color: var(--tx5); text-decoration: line-through; }
 .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; white-space: nowrap; }

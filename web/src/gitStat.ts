@@ -2,11 +2,11 @@ import { t } from './i18n';
 
 export type GitStatus = 'added' | 'modified' | 'deleted' | 'renamed';
 
-export interface GitFileChange { status: GitStatus; path: string; oldPath?: string; }
+export interface GitFileChange { status: GitStatus; path: string; oldPath?: string; added?: number; deleted?: number; }
 export interface GitCommit {
   hash: string; short: string; author: string; email: string; date: string; subject: string; files: GitFileChange[];
 }
-export interface GitSummaryRow { path: string; status: GitStatus; oldPath?: string; touches: number; lastDate: string; }
+export interface GitSummaryRow { path: string; status: GitStatus; oldPath?: string; touches: number; lastDate: string; lastAuthor: string; lastEmail: string; added: number; deleted: number; }
 export interface GitStats { commits: number; files: number; added: number; modified: number; deleted: number; renamed: number; }
 export interface GitChangesResult {
   repo: { path: string; branch: string | null; cloned?: boolean };

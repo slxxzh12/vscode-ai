@@ -19,12 +19,22 @@ test('collectGitChanges 汇总新增/修改/删除/重命名', async () => {
   assert.equal(r.stats.renamed, 1);
   const by = Object.fromEntries(r.summary.map((s) => [s.path, s]));
   assert.equal(by['a.txt'].status, 'added');
+  assert.equal(by['a.txt'].added, 1);
+  assert.equal(by['a.txt'].deleted, 0);
   assert.equal(by['k.txt'].status, 'modified');
   assert.equal(by['k.txt'].touches, 1);
+  assert.equal(by['k.txt'].added, 1);
+  assert.equal(by['k.txt'].deleted, 1);
   assert.equal(by['b.txt'].status, 'deleted');
   assert.equal(by['b.txt'].touches, 2);
+  assert.equal(by['b.txt'].added, 1);
+  assert.equal(by['b.txt'].deleted, 1);
   assert.equal(by['m2.txt'].status, 'renamed');
   assert.equal(by['m2.txt'].oldPath, 'm.txt');
+  assert.equal(by['m2.txt'].added, 1);
+  assert.equal(by['m2.txt'].deleted, 1);
+  assert.equal(by['m2.txt'].lastAuthor, 'tester');
+  assert.equal(by['m2.txt'].lastEmail, 't@t');
   assert.equal(typeof r.repo.branch, 'string');
 });
 
@@ -36,6 +46,9 @@ test('collectGitChanges 只含区间内提交（c0/c5 不出现）', async () =>
   const c1 = r.commits.find((c) => c.subject === 'c1');
   assert.deepEqual(c1.files.map((f) => [f.status, f.path]), [
     ['added', 'a.txt'], ['modified', 'k.txt'], ['modified', 'm.txt'],
+  ]);
+  assert.deepEqual(c1.files.map((f) => [f.added, f.deleted]), [
+    [1, 0], [1, 1], [1, 1],
   ]);
 });
 
