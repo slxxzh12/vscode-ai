@@ -100,7 +100,7 @@ function copyServerTree(from, to) {
 }
 copyServerTree(path.join(ROOT, "server"), path.join(APP, "server"));
 cpDir(path.join(ROOT, "web", "dist"), path.join(APP, "web", "dist"));
-cpDir(path.join(ROOT, "config"), path.join(APP, "config"));
+cpDir(path.join(ROOT, "config"), path.join(APP, "config"), (e) => e.name !== "runtime-port.txt");
 
 // 运行时依赖（真实拷贝，含 node-pty 原生 .node）
 fs.mkdirSync(path.join(APP, "node_modules", "@devflow"), { recursive: true });
