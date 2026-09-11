@@ -313,6 +313,7 @@ function buildFallbackWf(): WfDef[] {
     {
       id: 'dev', label: t('termwf.dev.title'),
       stages: [
+        { id: 'env-check', label: t('termwf.envcheck.label'), group: t('termwf.group.requirement'), prompts: [t('termwf.envcheck.prompt')] },
         { id: 'design', label: t('termwf.design.label'), group: t('termwf.group.requirement'), prompts: [t('termwf.design.prompt1'), t('termwf.design.prompt2')] },
         { id: 'design-review', label: t('termwf.design_review.label'), group: t('termwf.group.requirement'), prompts: [t('termwf.design_review.prompt')] },
         { id: 'code', label: t('termwf.code.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.code.prompt')] },
