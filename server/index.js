@@ -24,6 +24,7 @@ import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
 import { defaultConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, DEFAULT_PORT } from './devflow-config.js';
 import { setLocale, t } from './i18n.js';
+import { isPeerRequest, matchAccessToken } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
@@ -184,6 +185,8 @@ let workspaceHttp = null;    // needs-selection 时可用
 function initWorkspace(paths, port) {
   ws = buildWorkspace({ paths, port });
   actualPort = port;
+  // 远程访问令牌校验注入：slave 入群时校对本机活跃邀请
+  ws.engine.verifyAccessToken = (tk) => { const inv = activeInvite(); return !!inv && safeEqual(tk, inv.token); };
   if (!gateway) {
     gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log });
   }
@@ -201,46 +204,60 @@ const server = http.createServer(async (req, res) => {
 
   // 远程访问门禁：非回环客户端必须持有效 Cookie；否则需输入一次性访问密码
   if (!isLocalReq(req)) {
-    const inv = activeInvite();
-    if (!inv) {
-      if (url.pathname.startsWith('/api/')) {
-        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'remote-disabled' }));
-        return;
-      }
-      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(remoteBlockPage());
+    // ?access=<token> 免密换 Cookie（首次带链接访问）
+    const access = url.searchParams.get('access');
+    const invAccess = activeInvite();
+    if (matchAccessToken(access, invAccess, safeEqual)) {
+      const maxAge = Math.max(0, Math.floor((invAccess.expiresAt - Date.now()) / 1000));
+      const clean = new URL(req.url, 'http://localhost');
+      clean.searchParams.delete('access');
+      res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${invAccess.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`, Location: clean.pathname + (clean.search ? clean.search : '') });
+      res.end();
       return;
     }
-    if (!remoteAllowed(req)) {
-      if (url.pathname === '/__access' && req.method === 'POST') {
-        let body = '';
-        req.on('data', (c) => { body += c; });
-        req.on('end', () => {
-          if (remoteLocked()) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(remoteLoginPage(true)); return; }
-          const pw = new URLSearchParams(body).get('password') || '';
-          if (safeEqual(pw, inv.password)) {
-            remoteFails = 0;
-            const maxAge = Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
-            res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${inv.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`, Location: '/' });
-            res.end();
-          } else {
-            remoteFails += 1;
-            if (remoteFails >= MAX_FAILS) { remoteLockedUntil = Date.now() + LOCK_MS; remoteFails = 0; }
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(remoteLoginPage(true));
-          }
-        });
+    // 机器↔机器 peer 端点豁免 Cookie 门禁（鉴权交给信封签名 + 令牌/成员校验）
+    if (!isPeerRequest(url.pathname, req.method)) {
+      const inv = activeInvite();
+      if (!inv) {
+        if (url.pathname.startsWith('/api/')) {
+          res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'remote-disabled' }));
+          return;
+        }
+        res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(remoteBlockPage());
         return;
       }
-      if (url.pathname.startsWith('/api/')) {
-        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'remote-auth-required' }));
+      if (!remoteAllowed(req)) {
+        if (url.pathname === '/__access' && req.method === 'POST') {
+          let body = '';
+          req.on('data', (c) => { body += c; });
+          req.on('end', () => {
+            if (remoteLocked()) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(remoteLoginPage(true)); return; }
+            const pw = new URLSearchParams(body).get('password') || '';
+            if (safeEqual(pw, inv.password)) {
+              remoteFails = 0;
+              const maxAge = Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
+              res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${inv.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`, Location: '/' });
+              res.end();
+            } else {
+              remoteFails += 1;
+              if (remoteFails >= MAX_FAILS) { remoteLockedUntil = Date.now() + LOCK_MS; remoteFails = 0; }
+              res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+              res.end(remoteLoginPage(true));
+            }
+          });
+          return;
+        }
+        if (url.pathname.startsWith('/api/')) {
+          res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'remote-auth-required' }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(remoteLoginPage(false));
         return;
       }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(remoteLoginPage(false));
-      return;
     }
   }
 
@@ -336,8 +353,9 @@ const server = http.createServer(async (req, res) => {
         updateServerAttrs(configFile, { host: '0.0.0.0' });
         needRestart = true;
       }
+      if (ws && ws.engine) ws.engine.ensureGroup();
       const addr = lanAddress() || HOST;
-      const link = `http://${addr}:${actualPort || PORT}/`;
+      const link = `http://${addr}:${actualPort || PORT}/?access=${token}`;
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ enabled: true, token, password, expiresAt: remoteInvite.expiresAt, link, address: addr, needRestart }));
     });

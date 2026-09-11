@@ -16,11 +16,11 @@ test('事件总线按原始 engine 事件转发（index 层再映射到 CollabS2
   const bus = createEventBus();
   const seen = [];
   // index.js 的接线：监听原始事件，转发为 CollabS2C 消息
-  bus.on('friend-request', (payload) => seen.push([CollabS2C.COLLAB_FRIEND_REQ, payload.from && payload.from.machineId]));
   bus.on('synced', () => seen.push([CollabS2C.COLLAB_SYNCED]));
-  bus.emit('friend-request', { from: { machineId: 'x' } });
+  bus.on('inbox', (payload) => seen.push([CollabS2C.COLLAB_INBOX, payload.inboxId]));
   bus.emit('synced', {});
-  assert.deepEqual(seen, [[CollabS2C.COLLAB_FRIEND_REQ, 'x'], [CollabS2C.COLLAB_SYNCED]]);
+  bus.emit('inbox', { inboxId: 'i1' });
+  assert.deepEqual(seen, [[CollabS2C.COLLAB_SYNCED], [CollabS2C.COLLAB_INBOX, 'i1']]);
 });
 
 test('事件总线按原始事件名转发，index 层映射到 chat / cmd-pending 推送', async () => {
@@ -49,6 +49,6 @@ test('mount GET /api/collab/snapshot 返回身份', async () => {
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.equal(body.identity.username, 'u');
-    assert.ok(Array.isArray(body.friends));
+    assert.equal(body.group, null);
   } finally { server.close(); }
 });
