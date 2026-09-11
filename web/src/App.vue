@@ -23,6 +23,36 @@ const projectsApi = useProjects();
 const { theme, toggle } = useTheme();
 const { locale, setLocale, t } = useI18n();
 function toggleLang() { setLocale(locale.value === 'en' ? 'zh-CN' : 'en'); }
+// 窗口颜色（顶栏背景，用于区分多个窗口）；localStorage 持久化
+const COLOR_STORE = 'devflow-window-color';
+const COLOR_VALUE: Record<string, string> = { none: '', red: '#7f1d1d', yellow: '#6b4e0f', blue: '#1e3a8a', green: '#14532d', purple: '#4c1d95' };
+const colorOptions = [
+  { id: 'none', key: 'top.color.none' },
+  { id: 'red', key: 'top.color.red' },
+  { id: 'yellow', key: 'top.color.yellow' },
+  { id: 'blue', key: 'top.color.blue' },
+  { id: 'green', key: 'top.color.green' },
+  { id: 'purple', key: 'top.color.purple' },
+  { id: 'random', key: 'top.color.random' },
+];
+function randomColorId(): string {
+  const ids = ['red', 'yellow', 'blue', 'green', 'purple'];
+  return ids[Math.floor(Math.random() * ids.length)];
+}
+function loadWindowColor(): string {
+  try {
+    const v = localStorage.getItem(COLOR_STORE);
+    if (v === 'random') return randomColorId();
+    if (v && v in COLOR_VALUE) return v;
+  } catch { /* ignore */ }
+  return 'none';
+}
+const windowColorId = ref(loadWindowColor());
+const windowColorValue = computed(() => COLOR_VALUE[windowColorId.value] || '');
+function onColorChange() {
+  if (windowColorId.value === 'random') windowColorId.value = randomColorId();
+  try { localStorage.setItem(COLOR_STORE, windowColorId.value); } catch { /* ignore */ }
+}
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler'>('explorer');
@@ -259,7 +289,7 @@ function onInviteJoined(_g?: CollabGroup) {
 
 <template>
   <div class="app">
-    <header class="top">
+    <header class="top" :class="{ colored: !!windowColorValue }" :style="windowColorValue ? { background: windowColorValue } : undefined">
       <span class="logo">◈ vscode-ai</span>
       <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
       <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="currentProjectInfo?.root || ''" @change="(e: any) => selectProject(e.target.value)">
@@ -270,6 +300,9 @@ function onInviteJoined(_g?: CollabGroup) {
       <span v-if="displayPath" class="projpath" :title="displayPath">{{ displayPath }}</span>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
+      <select v-model="windowColorId" class="color-sel" :title="$t('top.color.title')" @change="onColorChange">
+        <option v-for="c in colorOptions" :key="c.id" :value="c.id">{{ $t(c.key) }}</option>
+      </select>
       <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
       <button class="theme-btn" :title="theme === 'dark' ? $t('app.theme.to_light') : $t('app.theme.to_dark')" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
     </header>
@@ -344,6 +377,9 @@ function onInviteJoined(_g?: CollabGroup) {
 .theme-btn:hover { border-color: var(--ac2); }
 .lang-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
 .lang-btn:hover { border-color: var(--ac2); }
+.color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
+.top.colored .logo, .top.colored .projpath, .top.colored .net { color: #fff; }
+.top.colored .color-sel, .top.colored .lang-btn, .top.colored .theme-btn, .top.colored .addproj, .top.colored .proj-sel { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
 .net { color: var(--warn); font-size: 12px; }
 .main { flex: 1; display: flex; min-height: 0; }
 .activity { width: 40px; background: var(--bg6); border-right: 1px solid var(--bd); display: flex; flex-direction: column; align-items: center; padding-top: 6px; gap: 2px; flex: none; }
