@@ -19,8 +19,8 @@ const { spawnSync } = require("child_process");
 const ROOT = path.resolve(__dirname, "..");
 const ENV_NODE = path.join(ROOT, "env", "node.exe");
 const OUT_ROOT = path.join(ROOT, "dist-portable");
-const APP = path.join(OUT_ROOT, "DevflowTerminal");
-const ZIP = path.join(OUT_ROOT, "DevflowTerminal-portable.zip");
+const APP = path.join(OUT_ROOT, "vscode-ai");
+const ZIP = path.join(OUT_ROOT, "vscode-ai-portable.zip");
 const noZip = process.argv.includes("--no-zip");
 const CFG_PORT = (() => {
   try {
@@ -122,9 +122,9 @@ const bat = [
   "@echo off",
   "setlocal",
   'cd /d "%~dp0"',
-  "echo Devflow Terminal 启动中：http://127.0.0.1:" + CFG_PORT,
-  "echo 关闭弹出的 Devflow Terminal 窗口即停止服务。",
-  'start "Devflow Terminal" /min cmd /c "runtime\\node.exe server\\index.js"',
+  "echo vscode-ai 启动中：http://127.0.0.1:" + CFG_PORT,
+  "echo 关闭弹出的 vscode-ai 窗口即停止服务。",
+  'start "vscode-ai" /min cmd /c "runtime\\node.exe server\\index.js"',
   "timeout /t 2 /nobreak >nul",
   'start "" "http://127.0.0.1:' + CFG_PORT + '"',
   "",
@@ -132,10 +132,10 @@ const bat = [
 fs.writeFileSync(path.join(APP, "start.bat"), bat);
 
 const usage = [
-  "Devflow Terminal（绿色免安装版）",
+  "vscode-ai（绿色免安装版）",
   "",
   "启动：双击 start.bat（自动打开 http://127.0.0.1:" + CFG_PORT + "）",
-  '停止：关闭弹出的 "Devflow Terminal" 最小化窗口',
+  '停止：关闭弹出的 "vscode-ai" 最小化窗口',
   "",
   "端口/Agent/工作流配置：编辑 config/devflow.xml 后重启",
   "",

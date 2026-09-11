@@ -26,7 +26,7 @@
 
 ## 打包顺序（先构建前端，再打绿色包）
 - 打绿色包前必须先 `npm.cmd run build:web`（产物 `web/dist`）。
-- 一键打包：`node scripts/build.js`（等价 `npm.cmd run build:portable`），产物 `dist-portable/DevflowTerminal/`（目录）+ `DevflowTerminal-portable.zip`。
+- 一键打包：`node scripts/build.js`（等价 `npm.cmd run build:portable`），产物 `dist-portable/vscode-ai/`（目录）+ `vscode-ai-portable.zip`。
 - 绿色包原理：`env/node.exe` 自带运行时 + 拷贝已编译的 node-pty 原生 `.node` → 目标机免装 Node、免编译。**Node 与 node-pty ABI 必须同大版本**；`env/node.exe` 缺失时 build.js 会自动复制当前 node 过去。
 - `env/`、`dist-portable/`、`node_modules/`、`dist/` 均不入库（.gitignore）。
 
