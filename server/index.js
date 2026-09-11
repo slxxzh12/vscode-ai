@@ -256,13 +256,13 @@ function writeRuntimePort(port) {
 }
 function startListening() {
   if (listenAttempt >= CANDIDATE_PORTS.length) {
-    log.error(`所有候选端口均被占用：${CANDIDATE_PORTS.join(', ')}`);
+    log.error(`all candidate ports are in use: ${CANDIDATE_PORTS.join(', ')}`);
     process.exit(1);
   }
   const port = CANDIDATE_PORTS[listenAttempt++];
   const onError = (err) => {
     server.removeListener('listening', onListening);
-    if (err && err.code === 'EADDRINUSE') { log.warn?.(`端口 ${port} 被占用，尝试下一个`); startListening(); }
+    if (err && err.code === 'EADDRINUSE') { log.warn?.(`port ${port} in use, trying next`); startListening(); }
     else { log.error('listen error', err); process.exit(1); }
   };
   const onListening = () => {

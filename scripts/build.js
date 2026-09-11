@@ -32,7 +32,7 @@ const CFG_PORT = (() => {
 
 function check(cond, msg) {
   if (!cond) {
-    console.error("[build] 前置缺失: " + msg);
+    console.error("[build] missing prerequisite: " + msg);
     process.exit(1);
   }
 }
@@ -53,31 +53,31 @@ function cpDir(from, to, filter) {
   }
 }
 
-console.log("[build] 1/5 准备 Node 运行时 (env/)");
+console.log("[build] 1/5 prepare Node runtime (env/)");
 if (!fs.existsSync(ENV_NODE)) {
   fs.mkdirSync(path.dirname(ENV_NODE), { recursive: true });
   fs.copyFileSync(process.execPath, ENV_NODE);
-  console.log("[build]   已复制当前 node.exe 到 env/");
+  console.log("[build]   copied current node.exe to env/");
 }
 const nodeVer = spawnSync(ENV_NODE, ["--version"], {
   encoding: "utf8",
 }).stdout.trim();
 
-console.log("[build] 2/5 校验前置产物");
+console.log("[build] 2/5 verify prerequisites");
 check(
   fs.existsSync(path.join(ROOT, "node_modules", "node-pty")),
-  "请先 npm install（需含已编译的 node-pty）",
+  "run npm install first (with compiled node-pty)",
 );
 check(
   fs.existsSync(path.join(ROOT, "web", "dist", "index.html")),
-  "请先 npm run build:web",
+  "run npm run build:web first",
 );
 check(
   fs.existsSync(path.join(ROOT, "shared", "index.js")),
-  "缺少 shared/index.js",
+  "missing shared/index.js",
 );
 
-console.log("[build] 3/5 组装 " + APP);
+console.log("[build] 3/5 assembling " + APP);
 rm(APP);
 fs.mkdirSync(path.join(APP, "runtime"), { recursive: true });
 fs.mkdirSync(path.join(APP, "server"), { recursive: true });
@@ -122,8 +122,8 @@ const bat = [
   "@echo off",
   "setlocal",
   'cd /d "%~dp0"',
-  "echo vscode-ai 启动中...",
-  "echo 关闭弹出的 vscode-ai 窗口即停止服务。",
+  "echo Starting vscode-ai ...",
+  "echo Close the vscode-ai window to stop the service.",
   'start "vscode-ai" /min cmd /c "runtime\\node.exe server\\index.js"',
   "timeout /t 3 /nobreak >nul",
   "set CFGPORT=" + CFG_PORT,
@@ -152,7 +152,7 @@ const usage = [
 ].join("\r\n");
 fs.writeFileSync(path.join(APP, "使用说明.txt"), usage);
 
-console.log("[build] 4/5 校验产物");
+console.log("[build] 4/5 verify output");
 const entries = [
   ["node", "runtime/node.exe"],
   ["server", "server/index.js"],
@@ -164,12 +164,12 @@ const entries = [
 ];
 for (const [label, rel] of entries) {
   const p = path.join(APP, rel);
-  check(fs.existsSync(p), "缺少 " + rel);
+  check(fs.existsSync(p), "missing " + rel);
   console.log("[build]   ok " + label + "  (" + rel + ")");
 }
 
 if (!noZip) {
-  console.log("[build] 5/5 压缩 ZIP");
+  console.log("[build] 5/5 zip");
   rm(ZIP);
   const r = spawnSync(
     "powershell",
@@ -200,7 +200,7 @@ function dirMB(p) {
 
 console.log("");
 console.log(
-  "完成: " +
+  "Done: " +
     APP +
     "  (" +
     (dirMB(APP) / 1024 / 1024).toFixed(1) +
