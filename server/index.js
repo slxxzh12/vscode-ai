@@ -23,7 +23,7 @@ import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
-import { defaultConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, DEFAULT_PORT } from './devflow-config.js';
+import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, DEFAULT_PORT } from './devflow-config.js';
 import { setLocale, t } from './i18n.js';
 import { isPeerRequest, matchAccessToken } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
@@ -38,8 +38,7 @@ import { createWorkspaceHttp } from './workspace-http.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
-const configFile = defaultConfigFile(path.join(__dirname, '..'));
-ensureConfigFile(configFile);
+const configFile = resolveActiveConfigFile(path.join(__dirname, '..'));
 const BOOT_CFG = loadDevflowConfig(configFile);
 const HOST = process.env.DEVFLOW_HOST || BOOT_CFG.server.host || '127.0.0.1';
 const PORT = Number(process.env.DEVFLOW_PORT || BOOT_CFG.server.port || DEFAULT_PORT);
