@@ -2,6 +2,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { SessionManager } from './session-manager.js';
 import { WorkflowRunner } from './workflow-runner.js';
@@ -37,16 +38,58 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
 const configFile = defaultConfigFile(path.join(__dirname, '..'));
 ensureConfigFile(configFile);
-const HOST = process.env.DEVFLOW_HOST || '127.0.0.1';
-const PORT = Number(process.env.DEVFLOW_PORT || loadDevflowConfig(configFile).server.port || DEFAULT_PORT);
-setLocale(loadDevflowConfig(configFile).server.language);
+const BOOT_CFG = loadDevflowConfig(configFile);
+const HOST = process.env.DEVFLOW_HOST || BOOT_CFG.server.host || '127.0.0.1';
+const PORT = Number(process.env.DEVFLOW_PORT || BOOT_CFG.server.port || DEFAULT_PORT);
+setLocale(BOOT_CFG.server.language);
 const NODE = instanceName();
 
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
 process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
 
-// requireAuth 占位钩子（spec §11）：HTTP 用 requireAuthHttp，WS 走 upgrade 处的 requireAuthWs
-const requireAuthWs = () => true; // TODO(安全): 接入 Token 后校验 ws 握手
+// ---- 远程访问门禁：非回环客户端必须持邀请令牌（?access=token → HttpOnly Cookie）----
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+function isLocalReq(req) {
+  const ip = (req.socket && req.socket.remoteAddress) || '';
+  return LOOPBACK.has(ip) || ip.startsWith('127.');
+}
+function parseCookies(req) {
+  const out = {};
+  const raw = (req.headers && req.headers.cookie) || '';
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+const ACCESS_COOKIE = 'devflow-access';
+let remoteInvite = null;   // { token, expiresAt }（内存态，重启即失效）
+function activeInvite() { return remoteInvite && Date.now() < remoteInvite.expiresAt ? remoteInvite : null; }
+function remoteAllowed(req) {
+  const inv = activeInvite();
+  if (!inv) return false;
+  return parseCookies(req)[ACCESS_COOKIE] === inv.token;
+}
+function lanAddress() {
+  const ifs = os.networkInterfaces();
+  for (const name of Object.keys(ifs)) {
+    for (const ni of (ifs[name] || [])) {
+      if (ni.family === 'IPv4' && !ni.internal) return ni.address;
+    }
+  }
+  return null;
+}
+function remoteBlockPage() {
+  const title = t('remote.block_title');
+  const msg = t('remote.need_invite');
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:system-ui,Segoe UI,sans-serif;background:#1e1e1e;color:#ddd;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}.box{max-width:520px;padding:28px 32px;background:#252526;border:1px solid #3c3c3c;border-radius:10px;text-align:center}.box h1{font-size:18px;margin:0 0 12px}.box p{color:#aaa;line-height:1.7;font-size:13px}</style></head><body><div class="box"><h1>${title}</h1><p>${msg}</p></div></body></html>`;
+}
+
+// requireAuth 占位钩子（spec §11）：HTTP 用 requireAuthHttp；WS 走 upgrade 处，远程需邀请 Cookie
+const requireAuthWs = (req) => {
+  if (isLocalReq(req)) return true;
+  return remoteAllowed(req);
+};
 
 let gateway = null;                                  // createGateway 赋值（档案就绪后）
 const broadcastCollab = (type, payload) => {
@@ -134,6 +177,30 @@ const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
 
+  // 远程访问门禁：非回环客户端必须持有效邀请（Cookie）或携带 ?access=token
+  if (!isLocalReq(req)) {
+    const inv = activeInvite();
+    const access = url.searchParams.get('access');
+    if (inv && access && access === inv.token) {
+      const params = new URLSearchParams(url.searchParams); params.delete('access');
+      const loc = url.pathname + (params.toString() ? `?${params.toString()}` : '');
+      const maxAge = Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
+      res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${inv.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`, Location: loc });
+      res.end();
+      return;
+    }
+    if (!remoteAllowed(req)) {
+      if (url.pathname.startsWith('/api/')) {
+        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'remote-disabled' }));
+        return;
+      }
+      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(remoteBlockPage());
+      return;
+    }
+  }
+
   // 工作区选择（永远可用）
   if (url.pathname.startsWith('/api/workspace')) {
     if (!ws && workspaceHttp) { await workspaceHttp(req, res, url); return; }
@@ -158,7 +225,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/settings' && req.method === 'GET') {
     const s = loadDevflowConfig(configFile).server;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ settings: s, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT }));
+    res.end(JSON.stringify({ settings: s, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT, host: HOST }));
     return;
   }
   if (url.pathname === '/api/settings' && req.method === 'POST') {
@@ -191,6 +258,47 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ language: body.language }));
     });
+    return;
+  }
+  if (url.pathname === '/api/remote/state' && req.method === 'GET') {
+    const inv = activeInvite();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      enabled: !!inv,
+      host: HOST,
+      port: actualPort || PORT,
+      expiresAt: inv ? inv.expiresAt : null,
+      address: lanAddress(),
+      needRestart: HOST === '127.0.0.1' || HOST === 'localhost',
+    }));
+    return;
+  }
+  if (url.pathname === '/api/remote/invite' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const hours = Math.min(24, Math.max(1, Number(body.hours) || 24));
+      const token = crypto.randomBytes(24).toString('hex');
+      remoteInvite = { token, expiresAt: Date.now() + hours * 3600 * 1000 };
+      let needRestart = false;
+      // 仍是本机监听时，自动改为 0.0.0.0（需重启生效）
+      if (!process.env.DEVFLOW_HOST && (HOST === '127.0.0.1' || HOST === 'localhost')) {
+        updateServerAttrs(configFile, { host: '0.0.0.0' });
+        needRestart = true;
+      }
+      const addr = lanAddress() || HOST;
+      const link = `http://${addr}:${actualPort || PORT}/?access=${token}`;
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ enabled: true, token, expiresAt: remoteInvite.expiresAt, link, address: addr, needRestart }));
+    });
+    return;
+  }
+  if (url.pathname === '/api/remote/revoke' && req.method === 'POST') {
+    remoteInvite = null;
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ enabled: false }));
     return;
   }
   if (url.pathname === '/api/config/xml' && req.method === 'GET') {

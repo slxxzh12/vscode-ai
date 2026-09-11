@@ -35,7 +35,7 @@ function validPort(n) {
 
 export function buildDefaultConfig() {
   return {
-    server: { port: DEFAULT_PORT, language: DEFAULT_LOCALE },
+    server: { port: DEFAULT_PORT, language: DEFAULT_LOCALE, host: '127.0.0.1' },
     agents: { default: DEFAULT_AGENT, list: DEFAULT_AGENTS.map((a) => ({ ...a })) },
     workflows: fallbackWorkflows(),
   };
@@ -48,6 +48,7 @@ export function parseDevflowConfig(xml) {
   const serverTag = (text.match(/<server\b([^>]*?)\/?>/i) || [])[1] || '';
   const port = validPort(attr(serverTag, 'port')) || defaults.server.port;
   const language = normalizeLocale(decode(attr(serverTag, 'language')) || defaults.server.language);
+  const host = decode(attr(serverTag, 'host')) || defaults.server.host;
 
   let list = defaults.agents.list;
   let defAgent = defaults.agents.default;
@@ -68,7 +69,7 @@ export function parseDevflowConfig(xml) {
 
   const workflows = parseWorkflowXml(text);
   return {
-    server: { port, language },
+    server: { port, language, host },
     agents: { default: defAgent, list },
     workflows: workflows.length ? workflows : fallbackWorkflows(),
   };
@@ -91,7 +92,7 @@ export function serializeDevflowConfig(cfg) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!-- DevFlow 统一配置：server（端口/语言）+ agents（默认 Agent 列表）+ workflows（工作流/提示语） -->
 <devflow>
-  <server port="${cfg.server.port}" language="${escXml(cfg.server.language)}" />
+  <server port="${cfg.server.port}" language="${escXml(cfg.server.language)}" host="${escXml(cfg.server.host || '127.0.0.1')}" />
 
   <agents default="${escXml(cfg.agents.default)}">
 ${agents}
@@ -127,11 +128,14 @@ export function updateServerAttrs(file, patch = {}) {
   const language = patch.language != null
     ? normalizeLocale(patch.language)
     : normalizeLocale(decode(attr(cur, 'language')) || DEFAULT_LOCALE);
-  const tag = `<server port="${port}" language="${language}" />`;
+  const host = patch.host != null
+    ? (String(patch.host).trim() || '127.0.0.1')
+    : (decode(attr(cur, 'host')) || '127.0.0.1');
+  const tag = `<server port="${port}" language="${language}" host="${escXml(host)}" />`;
   if (m) xml = xml.slice(0, m.index) + tag + xml.slice(m.index + m[0].length);
   else xml = xml.replace(/<devflow(\s*)>/i, `<devflow$1>\n  ${tag}`);
   fs.writeFileSync(file, xml, 'utf8');
-  return { port, language };
+  return { port, language, host };
 }
 
 // 校验一份工作流定义（workflow → stages → prompts）

@@ -64,9 +64,9 @@ test('updateServerAttrs 就地改属性并保留注释', () => {
   const f = tmpFile();
   fs.writeFileSync(f, SAMPLE, 'utf8');
   const next = updateServerAttrs(f, { port: 5000, language: 'zh-CN' });
-  assert.deepEqual(next, { port: 5000, language: 'zh-CN' });
+  assert.deepEqual(next, { port: 5000, language: 'zh-CN', host: '127.0.0.1' });
   const xml = fs.readFileSync(f, 'utf8');
-  assert.match(xml, /<server port="5000" language="zh-CN" \/>/);
+  assert.match(xml, /<server port="5000" language="zh-CN" host="127.0.0.1" \/>/);
   assert.ok(xml.includes('<!-- keep me -->'), '注释保留');
   assert.ok(xml.includes('nga.cmd'), '其余内容保留');
 });
