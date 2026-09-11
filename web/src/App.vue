@@ -63,7 +63,7 @@ const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler'>('explorer');
 const inviteCollab = useCollab();
 const inviteToken = ref('');
-const historyTab = ref<'files' | 'messages'>('files');
+const historyTab = ref<'files' | 'messages'>('messages');
 const msgHistory = useMessageHistory();
 function onOpenHistory(e: Event) {
   const d = (e as CustomEvent).detail || {};
@@ -96,8 +96,15 @@ function loadHistoryArr(raw: string | null): FileRec[] {
 }
 let fileHistKey = 'devflow-file-history';
 const fileHistory = ref<FileRec[]>([]);
+let fhTimer: ReturnType<typeof setTimeout> | null = null;
 function persistFileHistory() {
+  if (fhTimer) { clearTimeout(fhTimer); fhTimer = null; }
   try { localStorage.setItem(fileHistKey, JSON.stringify(fileHistory.value.slice(0, 200))); } catch { /* ignore */ }
+}
+// 内存优先：改动先落内存，随后防抖写盘（新增/删除/清空都走这里）
+function schedulePersistFileHistory() {
+  if (fhTimer) clearTimeout(fhTimer);
+  fhTimer = setTimeout(() => { fhTimer = null; persistFileHistory(); }, 800);
 }
 async function initFileHistory() {
   try {
@@ -119,13 +126,13 @@ function pushFileHistory(projectId: string, path: string) {
   const arr = fileHistory.value.filter((r) => !(r.projectId === projectId && r.path === q));
   arr.unshift({ projectId, path: q, ts: Date.now() });
   fileHistory.value = arr.slice(0, 200);
-  persistFileHistory();
+  schedulePersistFileHistory();
 }
 function removeFileHistory(projectId: string, path: string) {
   fileHistory.value = fileHistory.value.filter((r) => !(r.projectId === projectId && r.path === path));
-  persistFileHistory();
+  schedulePersistFileHistory();
 }
-function clearFileHistory() { fileHistory.value = []; persistFileHistory(); }
+function clearFileHistory() { fileHistory.value = []; schedulePersistFileHistory(); }
 const historyItems = computed(() => fileHistory.value.map((r) => {
   const i = r.path.lastIndexOf('/');
   const name = i >= 0 ? r.path.slice(i + 1) : r.path;
@@ -277,10 +284,12 @@ onMounted(async () => {
   loadProjects();
   msgHistory.load();
   window.addEventListener('df-open-history', onOpenHistory);
+  window.addEventListener('beforeunload', persistFileHistory);
   terminal.connect();
 });
 onBeforeUnmount(() => {
   window.removeEventListener('df-open-history', onOpenHistory);
+  window.removeEventListener('beforeunload', persistFileHistory);
 });
 function clearInvite() {
   inviteToken.value = '';
@@ -344,7 +353,7 @@ function onInviteJoined(_g?: CollabGroup) {
         <aside class="side" :style="{ width: sideW + 'px' }">
           <HistoryList v-if="rail === 'history'" :items="historyItems" :tab="historyTab" :messages="msgHistory.messages.value"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
-            @clear="clearFileHistory" @open-message="onOpenMessage" @clear-messages="msgHistory.clear()" />
+            @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)" @clear-messages="msgHistory.clear()" />
           <FileTree v-else :key="currentProject || 'none'" :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />

@@ -10,6 +10,7 @@ const emit = defineEmits<{
   (e: 'remove', projectId: string, path: string): void;
   (e: 'clear'): void;
   (e: 'open-message', text: string): void;
+  (e: 'remove-message', msg: HistoryMessage): void;
   (e: 'clear-messages'): void;
 }>();
 
@@ -68,18 +69,29 @@ function onScroll(e: Event) {
   }
 }
 
-function fmtTime(ts: number) {
-  const d = new Date(ts);
-  const now = new Date();
-  const pad = (x: number) => String(x).padStart(2, '0');
-  if (d.toDateString() === now.toDateString()) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function fmtDay(ts: number) {
+  const d = new Date(ts); const p = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-function fmtMsgTime(ts: number) {
+function fmtTime(ts: number) {
+  const d = new Date(ts); const now = new Date();
+  const p = (x: number) => String(x).padStart(2, '0');
+  if (d.toDateString() === now.toDateString()) return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// 下面显示的访问时间（日期 + 时分）
+function fmtBelow(ts: number) {
   if (!ts) return '';
-  const d = new Date(ts);
-  const pad = (x: number) => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const d = new Date(ts); const p = (x: number) => String(x).padStart(2, '0');
+  return `${fmtDay(ts)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// 同一天同一背景色（按日期散列到 4 个淡色）
+function dayClass(ts: number) {
+  if (!ts) return '';
+  const key = fmtDay(ts);
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return `d-${h % 4}`;
 }
 </script>
 
@@ -87,8 +99,8 @@ function fmtMsgTime(ts: number) {
   <div class="hl">
     <header class="hh">
       <div class="tabs">
-        <button class="tabbtn" :class="{ on: tab === 'files' }" @click="emit('update:tab', 'files')">{{ $t('hist.tab.files') }}</button>
         <button class="tabbtn" :class="{ on: tab === 'messages' }" @click="emit('update:tab', 'messages')">{{ $t('hist.tab.messages') }}</button>
+        <button class="tabbtn" :class="{ on: tab === 'files' }" @click="emit('update:tab', 'files')">{{ $t('hist.tab.files') }}</button>
       </div>
       <button v-if="tab === 'files' && items.length" class="clear" :title="$t('hist.clear_files')" @click="emit('clear')">{{ $t('hist.clear') }}</button>
       <button v-else-if="tab === 'messages' && messages.length" class="clear" :title="$t('hist.clear_messages')" @click="emit('clear-messages')">{{ $t('hist.clear') }}</button>
@@ -103,13 +115,13 @@ function fmtMsgTime(ts: number) {
         <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
         <div v-for="g in grouped" :key="g.proj" class="grp">
           <div class="gname">{{ g.proj }}</div>
-          <button v-for="r in g.recs" :key="r.projectId + '|' + r.path" class="row" @click="emit('open', r)">
+          <button v-for="r in g.recs" :key="r.projectId + '|' + r.path" class="row" :class="dayClass(r.ts)" @click="emit('open', r)">
             <span class="ic">📄</span>
             <span class="tx">
               <span class="nm">{{ r.name }}</span>
               <span class="sub">{{ r.path }}</span>
+              <span v-if="r.ts" class="mdate">{{ fmtBelow(r.ts) }}</span>
             </span>
-            <span class="ts">{{ fmtTime(r.ts) }}</span>
             <span class="x" :title="$t('hist.remove')" @click.stop="emit('remove', r.projectId, r.path)">×</span>
           </button>
         </div>
@@ -118,12 +130,13 @@ function fmtMsgTime(ts: number) {
       <template v-else>
         <div v-if="messages.length === 0" class="empty">{{ $t('hist.empty_messages') }}</div>
         <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
-        <button v-for="(m, i) in shownMessages" :key="i" class="mrow" :title="m.text" @click="emit('open-message', m.text)">
+        <button v-for="(m, i) in shownMessages" :key="i" class="mrow" :class="dayClass(m.ts)" :title="m.text" @click="emit('open-message', m.text)">
           <span class="ic">💬</span>
           <span class="mbody">
             <span class="mtext">{{ m.text }}</span>
-            <span v-if="m.ts" class="mdate">{{ fmtMsgTime(m.ts) }}</span>
+            <span v-if="m.ts" class="mdate">{{ fmtBelow(m.ts) }}</span>
           </span>
+          <span class="x" :title="$t('hist.remove_message')" @click.stop="emit('remove-message', m)">×</span>
         </button>
       </template>
 
@@ -147,21 +160,23 @@ function fmtMsgTime(ts: number) {
 .list { flex: 1; min-height: 0; overflow-y: auto; }
 .grp { flex: none; }
 .gname { color: var(--ac2); font-size: 11px; text-transform: uppercase; padding: 10px 10px 2px; }
-.row { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: none; text-align: left; padding: 6px 8px; cursor: pointer; }
-.row:hover { background: var(--bg3); }
-.ic { flex: none; font-size: 15px; }
-.tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.row { display: flex; align-items: flex-start; gap: 8px; width: 100%; background: none; border: none; text-align: left; padding: 6px 8px; cursor: pointer; }
+.tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .nm { color: var(--tx1); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sub { color: var(--tx6); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; }
-.ts { color: var(--tx6); font-size: 10px; flex: none; }
-.x { color: var(--tx6); font-size: 14px; flex: none; padding: 0 2px; }
+.mdate { color: var(--tx6); font-size: 10px; font-family: Consolas, monospace; }
+.ic { flex: none; font-size: 15px; }
+.x { color: var(--tx6); font-size: 14px; flex: none; padding: 0 2px; line-height: 1; }
 .x:hover { color: var(--err); }
 .empty { color: var(--tx6); padding: 16px 12px; font-size: 12px; }
 .mrow { display: flex; align-items: flex-start; gap: 8px; width: 100%; background: none; border: none; border-bottom: 1px solid var(--bd2); text-align: left; padding: 8px 10px; cursor: pointer; }
-.mrow:hover { background: var(--bg3); }
 .mbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .mtext { color: var(--tx1); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-.mdate { color: var(--tx6); font-size: 10px; font-family: Consolas, monospace; }
 .more { color: var(--tx5); font-size: 11px; text-align: center; padding: 10px; }
 .foot { color: var(--tx6); font-size: 11px; text-align: center; padding: 10px; }
+.row:hover, .mrow:hover { background: var(--bg3); }
+.d-0 { background: transparent; }
+.d-1 { background: color-mix(in srgb, var(--ac) 6%, transparent); }
+.d-2 { background: color-mix(in srgb, var(--bg4) 70%, transparent); }
+.d-3 { background: color-mix(in srgb, var(--ac2) 6%, transparent); }
 </style>
