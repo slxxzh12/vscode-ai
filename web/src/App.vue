@@ -329,7 +329,7 @@ function onInviteJoined(_g?: CollabGroup) {
 <template>
   <div class="app">
     <header class="top" :class="{ colored: !!windowColorValue }" :style="windowColorValue ? { background: windowColorValue } : undefined">
-      <span class="logo">◈ {{ $t('brand.name') }}（{{ $t('brand.alias_cn') }} / {{ $t('brand.alias_en') }}）</span>
+      <span class="logo">◈ {{ $t('brand.title') }}</span>
       <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
       <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="currentProjectInfo?.root || ''" @change="(e: any) => selectProject(e.target.value)">
         <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id" :title="it.project.root">
