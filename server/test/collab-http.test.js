@@ -182,3 +182,16 @@ test('旧好友/建群路由已删除 404', async () => {
     assert.equal(g.status, 404);
   } finally { A.server.close(); }
 });
+
+test('downloads REST：列表 / 无 master 同步 / 文件路径穿越防护', async () => {
+  const A = await startNode('alice-dl');
+  try {
+    const list = await fetch(`http://127.0.0.1:${A.port}/api/collab/downloads`).then((r) => r.json());
+    assert.ok(list.manifest && Array.isArray(list.manifest.files));
+    assert.equal(list.group, null);
+    const sync = await post(`http://127.0.0.1:${A.port}/api/collab/downloads/sync`, {});
+    assert.equal(sync.body.code, 'no-master');
+    const bad = await fetch(`http://127.0.0.1:${A.port}/api/collab/downloads/file/..%5Cx`);
+    assert.equal(bad.status, 400);
+  } finally { A.server.close(); }
+});

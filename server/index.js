@@ -18,6 +18,7 @@ import { CollabEngine } from './collaboration/engine.js';
 import { createCollabMount } from './collaboration/http-mount.js';
 import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
+import { createHeartbeat } from './collaboration/heartbeat.js';
 import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
@@ -161,6 +162,7 @@ function buildWorkspace({ paths, port }) {
   eventBus.on('synced', () => broadcastCollab(CollabS2C.COLLAB_SYNCED, {}));
   eventBus.on('chat', (payload) => broadcastCollab(CollabS2C.COLLAB_CHAT, { groupId: payload.groupId, msg: payload.msg }));
   eventBus.on('cmd-pending', (payload) => broadcastCollab(CollabS2C.COLLAB_CMD_PENDING, payload));
+  eventBus.on('heartbeat', () => broadcastCollab(CollabS2C.COLLAB_HEARTBEAT, {}));
 
   const scheduler = createScheduler({
     dir: paths.schedulerDir,
@@ -175,7 +177,7 @@ function buildWorkspace({ paths, port }) {
   });
 
   const httpApi = createHttpApi({ projects, saveProjects, logger: log });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, historyFile: paths.historyFile, paths };
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, historyFile: paths.historyFile, paths, heartbeat: null };
 }
 
 // ---- 工作区（端口档案）----
@@ -192,6 +194,11 @@ function initWorkspace(paths, port) {
     gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log });
   }
   ws.engine.setAdvertised({ host: HOST, port });
+  // 心跳：周期采集本机 opencode 用量并上报（5–10 分钟随机）
+  const agentCmd = ((BOOT_CFG.agents.list || []).find((a) => a.id === BOOT_CFG.agents.default) || {}).cmd || 'opencode';
+  if (ws.heartbeat) ws.heartbeat.stop();
+  ws.heartbeat = createHeartbeat({ engine: ws.engine, cmd: agentCmd, logger: log });
+  ws.heartbeat.start();
   if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
     ws.scheduler.engine.start();
     log.info('scheduler started');

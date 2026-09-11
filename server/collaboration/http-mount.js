@@ -117,6 +117,22 @@ export function createCollabMount({ engine, logger = console }) {
         const r = await engine.joinByLink({ host: body.host, port: Number(body.port), token: body.token });
         return ok(res, r);
       }
+      // downloads（master 共享目录；slave 点击时才拉取）
+      if (seg[0] === 'downloads' && seg.length === 1 && m === 'GET') {
+        return ok(res, { manifest: engine.readManifest(), usage: { members: engine.store.listHeartbeats() }, group: engine.store.getGroup() });
+      }
+      if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'sync' && m === 'POST') {
+        return ok(res, await engine.pullDownloads());
+      }
+      if (seg[0] === 'downloads' && seg.length === 3 && seg[1] === 'file' && m === 'GET') {
+        const name = decodeURIComponent(seg[2]);
+        if (name.includes('..') || name.includes('\\')) return sendJson(res, 400, { error: 'bad-name' });
+        const abs = path.join(engine.downloadsDir, name);
+        if (!fs.existsSync(abs)) return sendJson(res, 404, { error: 'not found' });
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': fs.statSync(abs).size });
+        fs.createReadStream(abs).pipe(res);
+        return;
+      }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'distribute' && m === 'POST') { const r = await engine.distributeToGroup(seg[1], body.skillNames || []); return ok(res, r); }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'files' && m === 'POST') {
         const name = url.searchParams.get('name') || '';
