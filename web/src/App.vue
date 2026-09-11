@@ -350,7 +350,7 @@ function onInviteJoined(_g?: CollabGroup) {
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'history' }" :title="$t('nav.history')" @click="rail = 'history'">🕘</button>
-        <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">⏰</button>
+        <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
         <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings">⚙</button>
