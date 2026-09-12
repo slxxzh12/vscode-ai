@@ -326,4 +326,11 @@ export default {
 - 再次空保存 `changed=false` 且密钥不变。
 - 显式 `secret` 覆盖。
 - `secret/regenerate` 后密钥变化。
+- 重新生成会把全部已签发 token 标记为 `revoked=true`。
+
+### 18.4 重新生成的强确认与吊销
+
+- 前端点「重新生成」：`window.prompt('llm.secret.regenerate_prompt')`，必须输入固定词 `REGENERATE`（`trim().toUpperCase()` 比较，大小写不敏感）；取消或输入不符则不执行，输入不符时提示 `llm.secret.regenerate_mismatch`。
+- 服务端 `POST /api/llm-admin/secret/regenerate`：换新随机密钥的同时，把 `d.tokens` 全部置 `revoked = true`（列表保留、显示已失效）。
+- 词条：`llm.secret.regenerate_prompt`、`llm.secret.regenerate_mismatch`（中英对称）；移除原 `llm.secret.regenerate_confirm`。
 
