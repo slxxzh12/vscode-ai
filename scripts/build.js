@@ -126,18 +126,55 @@ cpDir(
   path.join(APP, "node_modules", "@devflow", "shared"),
 );
 
-// 启动脚本
+// 启动脚本：智能启动器（已在跑只开浏览器；否则启动服务） + 首次运行创建桌面快捷方式
+fs.copyFileSync(
+  path.join(APP, "web", "dist", "favicon.ico"),
+  path.join(APP, "icon.ico"),
+);
+
+const launchPs1 = [
+  "param([switch]$NoBrowser, [switch]$NoShortcut)",
+  "$ErrorActionPreference = 'SilentlyContinue'",
+  "$root = $PSScriptRoot",
+  "if (-not $root) { $root = Split-Path -Parent $MyInvocation.MyCommand.Path }",
+  "$port = " + CFG_PORT,
+  "$portFile = Join-Path $root 'config\\runtime-port.txt'",
+  "if (Test-Path $portFile) { $t = (Get-Content -Raw $portFile).Trim(); if ($t -match '^\\d+$') { $port = [int]$t } }",
+  "function Test-Port([int]$p) {",
+  "  try {",
+  "    $c = New-Object System.Net.Sockets.TcpClient",
+  "    $iar = $c.BeginConnect('127.0.0.1', $p, $null, $null)",
+  "    if (-not $iar.AsyncWaitHandle.WaitOne(300)) { $c.Close(); return $false }",
+  "    $c.EndConnect($iar); $c.Close(); return $true",
+  "  } catch { return $false }",
+  "}",
+  "if (-not (Test-Port $port)) {",
+  "  Start-Process -FilePath (Join-Path $root 'runtime\\node.exe') -ArgumentList 'server\\index.js' -WorkingDirectory $root -WindowStyle Minimized",
+  "  $deadline = (Get-Date).AddSeconds(15)",
+  "  while ((Get-Date) -lt $deadline -and -not (Test-Port $port)) { Start-Sleep -Milliseconds 400 }",
+  "}",
+  "if (-not $NoShortcut) {",
+  "  try {",
+  "    $desktop = [Environment]::GetFolderPath('Desktop')",
+  "    if ($desktop -and (Test-Path $desktop)) {",
+  "      $ws = New-Object -ComObject WScript.Shell",
+  "      $lnk = $ws.CreateShortcut((Join-Path $desktop ([char]0x9ED1 + [char]0x6D1E + '.lnk')))",
+  "      $lnk.TargetPath = Join-Path $root 'start.bat'",
+  "      $lnk.WorkingDirectory = $root",
+  "      $lnk.IconLocation = (Join-Path $root 'icon.ico')",
+  "      $lnk.Description = 'Void'",
+  "      $lnk.Save()",
+  "    }",
+  "  } catch { }",
+  "}",
+  "if (-not $NoBrowser) { Start-Process ('http://127.0.0.1:{0}' -f $port) }",
+  "",
+].join("\r\n");
+fs.writeFileSync(path.join(APP, "launch.ps1"), "\uFEFF" + launchPs1, "utf8");
+
 const bat = [
   "@echo off",
-  "setlocal",
-  'cd /d "%~dp0"',
-  "echo Starting vscode-ai ...",
-  "echo Close the vscode-ai window to stop the service.",
-  'start "vscode-ai" /min cmd /c "runtime\\node.exe server\\index.js"',
-  "timeout /t 3 /nobreak >nul",
-  "set CFGPORT=" + CFG_PORT,
-  'if exist "config\\runtime-port.txt" set /p CFGPORT=<"config\\runtime-port.txt"',
-  'start "" "http://127.0.0.1:%CFGPORT%"',
+  'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch.ps1"',
   "",
 ].join("\r\n");
 fs.writeFileSync(path.join(APP, "start.bat"), bat);
@@ -145,10 +182,11 @@ fs.writeFileSync(path.join(APP, "start.bat"), bat);
 const usage = [
   "vscode-ai（绿色免安装版）",
   "",
-  "启动：双击 start.bat（自动打开对应端口）",
-  '停止：关闭弹出的 "vscode-ai" 最小化窗口',
+  "启动：双击 start.bat（已在运行则只打开浏览器；否则自动启动服务）",
+  "桌面图标：首次运行会在桌面创建「黑洞」快捷方式，之后双击桌面图标即可拉起服务",
+  '停止：关闭弹出的最小化服务窗口',
   "",
-  "端口：默认 22222；被占用时弹窗询问：结束占用进程并重启 / 更换端口",
+  "端口：默认 " + CFG_PORT + "；被占用时弹窗询问：结束占用进程并重启 / 更换端口",
   "端口/Agent/工作流配置：编辑 config/devflow.xml 后重启",
   "",
   "Node 运行时版本：" + nodeVer,
@@ -170,6 +208,8 @@ const entries = [
   ["ws", "node_modules/ws/package.json"],
   ["shared", "node_modules/@devflow/shared/index.js"],
   ["config", "config/devflow.xml"],
+  ["icon", "icon.ico"],
+  ["launcher", "launch.ps1"],
 ];
 for (const [label, rel] of entries) {
   const p = path.join(APP, rel);
