@@ -60,7 +60,11 @@ async function resetVault() {
   if (!window.confirm(t('llm.vault.reset_confirm'))) return;
   await run(() => api.vaultReset());
 }
-const saveSecret = () => run(() => api.setSecret(secret.value));
+const saveSecret = () => run(async () => { await api.setSecret(secret.value); secret.value = ''; });
+async function regenerateSecret() {
+  if (!window.confirm(t('llm.secret.regenerate_confirm'))) return;
+  await run(() => api.regenerateSecret());
+}
 const toggleEnabled = () => run(() => api.setEnabled(!st.value?.enabled));
 const reloadPlugins = () => run(() => api.reloadPlugins());
 const openPluginsDir = () => run(() => api.revealPlugins());
@@ -139,11 +143,16 @@ async function copyConfig() {
     </section>
 
     <section v-if="st?.vault.unlocked" class="card">
-      <div class="ch">{{ $t('llm.secret.title') }}</div>
+      <div class="ch">{{ $t('llm.secret.title') }}
+        <span class="badge" :class="{ ok: st?.hasSecret }">{{ st?.hasSecret ? $t('llm.secret.configured') : $t('llm.secret.not_set') }}</span>
+      </div>
       <div class="muted">{{ $t('llm.secret.hint') }}</div>
-      <div class="row">
+      <div v-if="!st?.hasSecret" class="row">
         <input v-model="secret" :placeholder="$t('llm.secret.placeholder')" />
         <button @click="saveSecret">{{ $t('llm.secret.set') }}</button>
+      </div>
+      <div v-else class="row">
+        <button class="danger" @click="regenerateSecret">{{ $t('llm.secret.regenerate') }}</button>
       </div>
     </section>
 

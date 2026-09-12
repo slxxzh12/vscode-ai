@@ -4,6 +4,7 @@ export interface LlmPluginEntry { file: string; name: string; priority: number; 
 export interface LlmStatus {
   vault: { initialized: boolean; unlocked: boolean };
   enabled: boolean;
+  hasSecret: boolean;
   host: string;
   port: number;
   defaultProvider: string | null;
@@ -28,6 +29,7 @@ export function useLlm() {
     vaultPassphrase: (oldP: string, newP: string) => post('/api/llm-admin/vault/passphrase', { old: oldP, new: newP }),
     vaultReset: () => post<{ ok: boolean; vault: { initialized: boolean; unlocked: boolean } }>('/api/llm-admin/vault/reset', {}),
     setSecret: (secret: string) => post<{ secret: string }>('/api/llm-admin/secret', { secret }),
+    regenerateSecret: () => post('/api/llm-admin/secret/regenerate', {}),
     setEnabled: (enabled: boolean) => post<{ enabled: boolean }>('/api/llm-admin/enabled', { enabled }),
     tokens: () => json<{ tokens: LlmToken[] }>('/api/llm-admin/tokens'),
     issue: (employeeId: string, days: number) => post<{ token: LlmToken }>('/api/llm-admin/tokens', { employeeId, days }),
