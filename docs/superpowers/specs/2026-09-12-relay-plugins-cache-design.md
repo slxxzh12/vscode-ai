@@ -415,7 +415,7 @@ export default {
 ### 21.1 服务端 `server/llm-mount.js`
 
 - 目标地址：`http://<host>:<port>/api/llm/<pid><basePath>/chat/completions`（`basePath` 取自 provider `baseURL` 的路径，如 `/v1`；relay 的 `resolveTarget` 对已含 basePath 的路径原样透传）。
-- `curlCommand({ host, port, pid, baseURL, jwt, model, stream })` → **OpenAI 文档风格的多行 curl**（`\` 续行、`Content-Type`/`Authorization: Bearer <真实 token>` 头、`-d '{...}'` 多行 JSON）；流式额外加 `-N` 且 body 含 `"stream": true`。
+- `curlCommand({ host, port, pid, baseURL, jwt, model, stream })` → **单行、可直接粘贴执行**的 curl（`Content-Type`/`Authorization: Bearer <真实 token>` 头，JSON body 用 `\"` 转义，cmd 与 bash 均可运行）；流式额外加 `-N` 且 body 含 `"stream": true`。
 - `GET /api/llm-admin/test-example?token=&pid=&model=`（需解锁）→ `{ nonStream, stream }` 两条命令（展示用，带真实 token）；token/provider 校验同其它接口。
 - `POST /api/llm-admin/test-script`（需解锁，body `{ token, pid, model, stream }`）→ 生成 `.bat` 写到 `<dataHome>/downloads/relay-tests/test-<pid>-<plain|stream>.bat`，返回 `{ path }`。
   - bat 内容：设置 `URL`/`TOKEN`，把 JSON body 用 `echo` 重定向到 `%TEMP%\devflow-payload.json`，`curl` 用 `-d @payload`，末尾 `pause`；纯 ASCII、CRLF。

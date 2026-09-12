@@ -81,13 +81,8 @@ function curlCommand({ host, port, pid, baseURL, jwt, model, stream }) {
   const url = relayUrl(host, port, pid, baseURL);
   const body = JSON.stringify(stream
     ? { model, messages: [{ role: 'user', content: 'Hello!' }], stream: true }
-    : { model, messages: [{ role: 'user', content: 'Hello!' }] }, null, 2);
-  return [
-    `curl ${stream ? '-N ' : ''}${url} \\`,
-    '  -H "Content-Type: application/json" \\',
-    `  -H "Authorization: Bearer ${jwt}" \\`,
-    `  -d '${body}'`,
-  ].join('\n');
+    : { model, messages: [{ role: 'user', content: 'Hello!' }] }).replace(/"/g, '\\"');
+  return `curl ${stream ? '-N ' : ''}"${url}" -H "Content-Type: application/json" -H "Authorization: Bearer ${jwt}" -d "${body}"`;
 }
 
 function buildTestBat({ host, port, pid, baseURL, jwt, model, stream }) {

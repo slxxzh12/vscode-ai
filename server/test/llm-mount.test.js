@@ -299,7 +299,8 @@ test('test-example 返回流式/非流式 curl；test-script 写 bat', async (t)
   assert.match(ex.nonStream, /chat\/completions/);
   assert.ok(ex.nonStream.includes(tok.jwt), 'curl 带真实 token');
   assert.match(ex.nonStream, /Authorization: Bearer/);
-  assert.match(ex.stream, /"stream":\s*true/);
+  assert.ok(!ex.nonStream.includes('\n'), '单行可直接执行');
+  assert.ok(ex.stream.includes('\\"stream\\":true'));
   assert.match(ex.stream, /-N /);
 
   const r = await jpost(server, '/api/llm-admin/test-script', { token: tok.id, pid: 'corp', model: 'a', stream: true });
