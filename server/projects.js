@@ -9,7 +9,7 @@ export class Projects {
     this._byId = new Map(projects.map((p) => [p.id, p]));
   }
   listProjects() {
-    return this.projects.map((p) => ({ id: p.id, name: p.name, root: path.resolve(p.root) }));
+    return this.projects.map((p) => ({ id: p.id, name: p.name, root: path.resolve(p.root), ...(p.temp ? { temp: true } : {}) }));
   }
   rawProjects() {
     return this.projects.map((p) => ({ id: p.id, name: p.name, root: p.root }));
@@ -19,6 +19,33 @@ export class Projects {
     this.projects.push(proj);
     this._byId.set(id, proj);
     return proj;
+  }
+  addTempProject({ root, name }) {
+    const rootReal = this._realOrResolved(root);
+    const id = 'tmp:' + crypto.createHash('sha1').update(rootReal).digest('hex').slice(0, 8);
+    const exist = this._byId.get(id);
+    if (exist) return exist;
+    const proj = { id, name: name || path.basename(rootReal), root, temp: true };
+    this.projects.push(proj);
+    this._byId.set(id, proj);
+    return proj;
+  }
+  // 绝对路径 → 命中已有项目则返回其 projectId/rel；否则以所在目录建内存临时项目
+  resolveAbsolute(abs) {
+    const target = path.resolve(abs);
+    let st;
+    try { st = fs.statSync(target); } catch { const e = new Error('file not found'); e.code = 'not-found'; throw e; }
+    if (st.isDirectory()) { const e = new Error('is a directory'); e.code = 'not-file'; throw e; }
+    const targetReal = this._realOrResolved(target);
+    for (const p of this.projects) {
+      const rootReal = this._realOrResolved(p.root);
+      if (targetReal === rootReal || !targetReal.startsWith(rootReal + path.sep)) continue;
+      const rel = path.relative(rootReal, targetReal).split(path.sep).join('/');
+      return { projectId: p.id, rel, project: { id: p.id, name: p.name, root: path.resolve(p.root), temp: !!p.temp } };
+    }
+    const root = path.dirname(targetReal);
+    const proj = this.addTempProject({ root, name: path.basename(root) });
+    return { projectId: proj.id, rel: path.basename(targetReal), project: { id: proj.id, name: proj.name, root: path.resolve(root), temp: true } };
   }
   _project(id) {
     const p = this._byId.get(id);

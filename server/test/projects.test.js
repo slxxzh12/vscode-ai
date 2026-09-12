@@ -71,7 +71,7 @@ test('ç¬¦å·é“¾æŽ¥é€ƒé€¸ 403ï¼ˆjunctionï¼‰', (t) => {
   assert.throws(() => p.tree('p0', 'escape'), (e) => e.code === 'forbidden');
 });
 
-test('revealTarget ½âÎö´æÔÚµÄÎÄ¼þÓëÄ¿Â¼', () => {
+test('revealTarget ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ä¿Â¼', () => {
   const dir = tmpDir();
   fs.writeFileSync(path.join(dir, 'a.txt'), 'x');
   fs.mkdirSync(path.join(dir, 'sub'));
@@ -83,9 +83,47 @@ test('revealTarget ½âÎö´æÔÚµÄÎÄ¼þÓëÄ¿Â¼', () => {
   assert.equal(d.isDir, true);
 });
 
-test('revealTarget ²»´æÔÚ/Ô½½çÅ×´í', () => {
+test('revealTarget ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½/Ô½ï¿½ï¿½ï¿½×´ï¿½', () => {
   const dir = tmpDir();
   const p = makeProjects([dir]);
   assert.throws(() => p.revealTarget('p0', 'ghost'), (e) => e.code === 'not-found');
   assert.throws(() => p.revealTarget('p0', '..%2F..'), (e) => e.code === 'forbidden' || e.code === 'not-found');
+});
+
+test('resolveAbsolute å‘½ä¸­å·²æœ‰é¡¹ç›®', () => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.md'), '# hi');
+  const p = makeProjects([dir]);
+  const r = p.resolveAbsolute(path.join(dir, 'a.md'));
+  assert.equal(r.projectId, 'p0');
+  assert.equal(r.rel, 'a.md');
+  assert.equal(r.project.temp, false);
+});
+
+test('resolveAbsolute é¡¹ç›®å¤–å»ºä¸´æ—¶é¡¹ç›®å¹¶å¯å¤ç”¨', () => {
+  const dir = tmpDir();
+  const other = tmpDir();
+  fs.writeFileSync(path.join(other, 'b.yaml'), 'x: 1');
+  const p = makeProjects([dir]);
+  const r1 = p.resolveAbsolute(path.join(other, 'b.yaml'));
+  assert.equal(r1.rel, 'b.yaml');
+  assert.equal(r1.project.temp, true);
+  assert.ok(r1.projectId.startsWith('tmp:'));
+  const r2 = p.resolveAbsolute(path.join(other, 'b.yaml'));
+  assert.equal(r2.projectId, r1.projectId);
+});
+
+test('resolveAbsolute ä¸å­˜åœ¨/ç›®å½•æŠ›é”™', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.throws(() => p.resolveAbsolute(path.join(dir, 'ghost.md')), (e) => e.code === 'not-found');
+  assert.throws(() => p.resolveAbsolute(dir), (e) => e.code === 'not-file');
+});
+
+test('addTempProject ä¸å†™ XMLï¼ˆprojects æ•°ç»„å« temp æ ‡è®°ï¼‰', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  const proj = p.addTempProject({ root: dir, name: 'D' });
+  assert.equal(proj.temp, true);
+  assert.equal(p.rawProjects().some((x) => x.id === proj.id), true);
 });
