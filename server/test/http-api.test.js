@@ -333,3 +333,37 @@ test('/api/git/changes POST 非仓库 400、坏日期 400、路径不存在 404'
   const nf = await post(server, '/api/git/changes', { repo: path.join(empty, 'nope'), since: '2026-09-01', until: '2026-09-10' });
   assert.equal(nf.status, 404);
 });
+
+test('/api/open-file 项目内文件返回 projectId/rel', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.md'), '# hi');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/open-file', { path: path.join(dir, 'a.md') });
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.equal(j.ok, true);
+  assert.equal(j.project.id, 'a');
+  assert.equal(j.rel, 'a.md');
+});
+
+test('/api/open-file 项目外建临时项目', async (t) => {
+  const dir = tmpDir();
+  const other = tmpDir();
+  fs.writeFileSync(path.join(other, 'b.yaml'), 'x: 1');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/open-file', { path: path.join(other, 'b.yaml') });
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.equal(j.project.temp, true);
+  assert.equal(j.rel, 'b.yaml');
+});
+
+test('/api/open-file 不存在返回 404', async (t) => {
+  const dir = tmpDir();
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/open-file', { path: path.join(dir, 'ghost.md') });
+  assert.equal(r.status, 404);
+});

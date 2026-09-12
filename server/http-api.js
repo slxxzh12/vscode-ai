@@ -116,6 +116,12 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         sendJson(res, 200, { projects: projects.listProjects() });
         return;
       }
+      if (url.pathname === '/api/open-file' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const r = projects.resolveAbsolute(String(body.path || ''));
+        sendJson(res, 200, { ok: true, project: r.project, rel: r.rel });
+        return;
+      }
       if (url.pathname === '/api/projects/pick' && req.method === 'POST') {
         logger?.info?.('pick-folder: dialog opened');
         const r = await pickFolder();
