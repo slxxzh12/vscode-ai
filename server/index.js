@@ -13,7 +13,7 @@ import { createLogger } from './log.js';
 import { createStaticServer } from './static.js';
 import { ensureDefaults, loadProjects, loadWorkflows } from './config.js';
 import { CollabStore } from './collaboration/store.js';
-import { loadIdentity } from './collaboration/identity.js';
+import { loadIdentity, detectHost } from './collaboration/identity.js';
 import { CollabEngine } from './collaboration/engine.js';
 import { createCollabMount } from './collaboration/http-mount.js';
 import { makePeerClient } from './collaboration/peer-client.js';
@@ -28,8 +28,10 @@ import { setLocale, t } from './i18n.js';
 import { isPeerRequest, matchAccessToken, resolveInviteDays } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
-import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
+import { dataHome, instanceName, instanceSeedDir, instanceFpRoot, downloadsDir } from './data-home.js';
 import { publicFingerprint } from './collaboration/identity.js';
+import { createVault } from './llm-vault.js';
+import { createLlmMount } from './llm-mount.js';
 import {
   migrateLegacy, resolveProfile, createProfile, bindProfile, touchProfile,
   profilePaths, createWorkspaceService,
@@ -178,7 +180,9 @@ function buildWorkspace({ paths, port }) {
   });
 
   const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..') });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, historyFile: paths.historyFile, paths, heartbeat: null };
+  const llmVault = createVault({ file: path.join(downloadsDir(), 'llm.vault.json') });
+  const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log });
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, llmMount, llmVault, historyFile: paths.historyFile, paths, heartbeat: null };
 }
 
 // ---- 工作区（端口档案）----
@@ -446,6 +450,7 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (url.pathname.startsWith('/api/llm')) { await ws.llmMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/scheduler')) { await ws.scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/')) {
