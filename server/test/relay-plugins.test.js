@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadPlugins, runRequestPlugins, runResponsePlugins, pluginCacheKeyOverride, seedPlugins } from '../relay-plugins.js';
+import { loadPlugins, runRequestPlugins, runResponsePlugins, pluginCacheKeyOverride, seedPlugins, EXAMPLE_PLUGIN, writeExamplePlugin } from '../relay-plugins.js';
 
 const noLog = { warn() {} };
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'dfp-')); }
@@ -68,4 +68,13 @@ test('seedPlugins 只补缺失、不覆盖', () => {
   write(dst, 'README.md', 'custom');
   assert.deepEqual(seedPlugins(dst, src), []);
   assert.equal(fs.readFileSync(path.join(dst, 'README.md'), 'utf8'), 'custom');
+});
+
+test('writeExamplePlugin 写入默认名、重名顺延、不覆盖', () => {
+  const dir = path.join(tmpDir(), 'plugins');
+  assert.equal(writeExamplePlugin(dir), 'my-plugin.mjs');
+  assert.match(fs.readFileSync(path.join(dir, 'my-plugin.mjs'), 'utf8'), /name: 'my-plugin'/);
+  assert.equal(writeExamplePlugin(dir), 'my-plugin-2.mjs');
+  assert.equal(writeExamplePlugin(dir), 'my-plugin-3.mjs');
+  assert.match(EXAMPLE_PLUGIN, /onRequest/);
 });

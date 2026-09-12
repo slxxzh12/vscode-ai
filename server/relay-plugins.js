@@ -104,3 +104,31 @@ export function seedPlugins(destDir, templateDir) {
   }
   return copied;
 }
+
+export const EXAMPLE_PLUGIN = `// DevFlow relay plugin (starter).
+// Copy/edit this file, then click "Reload plugins" in the Relay panel.
+export default {
+  name: 'my-plugin',
+  priority: 100,
+  onRequest(ctx) {
+    // Example: add a header on the way upstream.
+    ctx.headers['x-relay-by'] = 'devflow';
+  },
+  // onCacheKey(ctx) {
+  //   // return null to bypass cache, or { ttlMs: 60000 } to override TTL.
+  //   return { ttlMs: 60000 };
+  // },
+  // onResponse(ctx) {
+  //   // Runs for non-streaming responses only.
+  // },
+};
+`;
+
+export function writeExamplePlugin(dir, content = EXAMPLE_PLUGIN) {
+  fs.mkdirSync(dir, { recursive: true });
+  let name = 'my-plugin.mjs';
+  let i = 2;
+  while (fs.existsSync(path.join(dir, name))) { name = `my-plugin-${i}.mjs`; i += 1; }
+  fs.writeFileSync(path.join(dir, name), content);
+  return name;
+}
