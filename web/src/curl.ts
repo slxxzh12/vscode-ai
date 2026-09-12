@@ -83,3 +83,39 @@ export function parseCurl(text: string): CurlRequest | null {
   }
   return { method: method.toUpperCase(), url, headers, body, raw: text.slice(idx, idx + 200).trim() };
 }
+
+export interface CurlEntry {
+  request: CurlRequest;
+  start: number;
+  end: number;
+}
+
+function commandEnd(text: string, start: number, hardEnd: number): number {
+  let quote: string | null = null;
+  for (let i = start; i < hardEnd; i++) {
+    const ch = text[i];
+    if (quote) { if (ch === quote) quote = null; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === '\\' && text[i + 1] === '\n') { i++; continue; }
+    if (ch === '\n') return i;
+  }
+  return hardEnd;
+}
+
+export function parseCurlCommands(text: string): CurlEntry[] {
+  const out: CurlEntry[] = [];
+  const re = /(^|[^A-Za-z0-9_])curl\b/g;
+  const starts: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    starts.push(m.index + (m[1] ? m[1].length : 0));
+  }
+  for (let i = 0; i < starts.length; i++) {
+    const start = starts[i];
+    const hardEnd = i + 1 < starts.length ? starts[i + 1] : text.length;
+    const end = commandEnd(text, start, hardEnd);
+    const req = parseCurl(text.slice(start, end));
+    if (req) out.push({ request: req, start, end });
+  }
+  return out;
+}

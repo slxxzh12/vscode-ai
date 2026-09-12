@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCurl } from './curl';
+import { parseCurl, parseCurlCommands } from './curl';
 
 describe('parseCurl', () => {
   it('简单 GET', () => {
@@ -39,5 +39,27 @@ describe('parseCurl', () => {
 
   it('没有 curl 返回 null', () => {
     expect(parseCurl('npm run build')).toBeNull();
+  });
+});
+
+describe('parseCurlCommands', () => {
+  it('解析多条命令并给出源码区间', () => {
+    const text = [
+      "curl -X GET 'https://a.test/x'",
+      "curl -X POST 'https://b.test/y' \\",
+      "  -H 'Content-Type: application/json' \\",
+      "  -d '{\"a\":1}'",
+    ].join('\n');
+    const entries = parseCurlCommands(text);
+    expect(entries).toHaveLength(2);
+    expect(entries[0].request.url).toBe('https://a.test/x');
+    expect(entries[1].request.method).toBe('POST');
+    expect(entries[1].request.headers[0]).toEqual({ name: 'Content-Type', value: 'application/json' });
+    expect(entries[1].request.body).toBe('{"a":1}');
+    expect(text.slice(entries[0].start, entries[0].end)).toBe("curl -X GET 'https://a.test/x'");
+  });
+
+  it('无 curl 返回空数组', () => {
+    expect(parseCurlCommands('echo hi')).toEqual([]);
   });
 });
