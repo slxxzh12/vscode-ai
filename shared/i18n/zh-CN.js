@@ -27,6 +27,7 @@ export const messages = {
   'top.pick_unsupported': '当前系统不支持文件夹选择对话框',
   'top.add_failed': '添加目录失败：{msg}',
   'top.snapshot': '截图当前页面',
+  'top.snapshot.saved': '已保存到 {file}',
   'top.snapshot.failed': '截图失败，请重试。',
   'common.accept': '接受',
   'common.reject': '拒绝',
