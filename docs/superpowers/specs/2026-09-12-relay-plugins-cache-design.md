@@ -267,3 +267,31 @@ export default {
 - `server/test/llm-mount.test.js`：`GET plugins` 含 `template`；`POST plugins/example` 生成文件后列表出现且二次调用名不同；`POST plugins/reveal` 用注入 spy 断言 `(dir, true)`；无 `pluginsDir` 时 example/reveal 400。
 - `server/test/llm-proxy.test.js`：`apiKeys=[k1,k2]` 连续三次请求上游 `authorization` 依次 `Bearer k1/k2/k1`；上游 429 后下一次跳过该 key；缓存命中不消耗 key。
 - 全量 `npm.cmd test`、`typecheck`、`check:i18n`、`build:web` 全绿。
+
+## 17. token 列表展开式模型筛选生成配置
+
+需求：token 列表做成「一列」，点某行展开后选 provider + 勾选模型，再生成 `opencode.json`；筛选**仅影响生成的配置**，服务端不强制校验（用户明确）。
+
+### 17.1 服务端 `server/llm-mount.js`
+
+`GET /api/llm-admin/opencode-config` 增加可选 `models` 参数：支持重复参数（`?models=a&models=b`）或逗号分隔单值。过滤规则：
+
+- 未提供 `models`：沿用现有行为（`p.models` 全量）。
+- 提供且非空：仅取「既在 `p.models` 中、又在请求列表中」的模型（避免注入不存在模型）；若过滤后为空，则按请求列表原样（允许 provider 未声明模型时手填）。
+- 其余不变（token 不存在 404、provider 不存在 404）。
+- `buildOpencodeConfig({ ..., models })` 已接受数组，直接传过滤结果。
+
+### 17.2 前端 `web/src/components/ProxyView.vue` / `useLlm.ts`
+
+- token 区：签发表单在上；下方 token **一列列表**，每行可点展开。
+- 展开行：provider 下拉（默认 `defaultProvider`）+ 该 provider 模型勾选框（默认**全选**）+「生成」→ 预览 + 复制。
+- provider 无模型时：提供手填输入（逗号分隔）用于生成。
+- 移除原底部独立「生成 opencode.json」区块（并入行内展开）。
+- `useLlm.config(provider, token, models?)`：`models` 以重复 query 参数发送。
+- 新词条：`llm.config.models`、`llm.config.all`、`llm.config.none`、`llm.config.manual`（中英对称）。
+
+### 17.3 测试
+
+- `server/test/llm-mount.test.js`：`opencode-config` 带 `models` 过滤出子集；无 `models` 时全量；provider 未声明模型时按请求列表原样。
+- `web/src`：类型检查通过；i18n 零命中。
+
