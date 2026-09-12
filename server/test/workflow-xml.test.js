@@ -1,61 +1,43 @@
-import test from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseWorkflowsXml, serializeWorkflowsFragment, serializeWorkflow, escXml, decode } from '@devflow/shared/workflow-xml';
+import { parseWorkflowXml, loadWorkflowXml, defaultWorkflowFile } from '../workflow-xml.js';
 
-const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const sample = [
-  { id: 'dev', label: '开发工作流', stages: [
-    { id: 'design', label: '需求设计', group: '需求', prompts: ['第一句', '第二句'] },
-    { id: 'code', label: '代码实现', group: '开发交付', prompts: ['写代码'] },
-    { id: 'plain', label: '无分组', group: '', prompts: [] },
-  ] },
-  { id: 'test', label: '测试工作流', stages: [
-    { id: 'run', label: '执行验证', group: '', prompts: ['跑测试'] },
-  ] },
-];
-
-test('serialize → parse 往返深度相等', () => {
-  const xml = serializeWorkflowsFragment(sample);
-  assert.deepEqual(parseWorkflowsXml(xml), sample);
-});
-
-test('特殊字符与换行转义往返', () => {
-  const tricky = [{ id: 'x&1', label: 'a<b>"c"', stages: [
-    { id: 's\'1', label: 'l&l', group: 'g<1>', prompts: ['line1\nline2 & <tag> "q" \'a\''] },
-  ] }];
-  const xml = serializeWorkflowsFragment(tricky);
-  assert.ok(xml.includes('&amp;') && xml.includes('&lt;') && xml.includes('&quot;'));
-  assert.deepEqual(parseWorkflowsXml(xml), tricky);
-});
-
-test('空提示语被过滤', () => {
-  const xml = '<workflows><workflow id="a" label="A"><stage id="s" label="S"><prompt>  </prompt><prompt>ok</prompt></stage></workflow></workflows>';
-  assert.deepEqual(parseWorkflowsXml(xml)[0].stages[0].prompts, ['ok']);
-});
-
-test('无 stage 的 workflow 被丢弃', () => {
-  const xml = '<workflows><workflow id="a" label="A"></workflow></workflows>';
-  assert.deepEqual(parseWorkflowsXml(xml), []);
-});
-
-test('对整份 devflow.xml 解析得到期望工作流', () => {
-  const full = fs.readFileSync(path.join(repoRoot, 'config', 'devflow.xml'), 'utf8');
-  const wfs = parseWorkflowsXml(full);
+test('parseWorkflowXml 解析多工作流/多阶段/多提示语', () => {
+  const xml = `<?xml version="1.0"?>
+  <workflows>
+    <workflow id="dev" label="开发工作流">
+      <stage id="design" label="需求设计"><prompt>A</prompt><prompt>B &amp; C</prompt></stage>
+      <stage id="code" label="代码实现"><prompt>实现</prompt></stage>
+    </workflow>
+    <workflow id="doc" label="文档工作流">
+      <stage id="scan" label="盘点"><prompt>盘点文档</prompt></stage>
+    </workflow>
+  </workflows>`;
+  const wfs = parseWorkflowXml(xml);
+  assert.equal(wfs.length, 2);
   assert.equal(wfs[0].id, 'dev');
-  assert.ok(wfs.some((w) => w.id === 'test'));
-  assert.ok(wfs[0].stages.every((s) => s.id && s.label));
+  assert.equal(wfs[0].stages.length, 2);
+  assert.deepEqual(wfs[0].stages[0].prompts, ['A', 'B & C']);
+  assert.equal(wfs[1].id, 'doc');
+  assert.equal(wfs[1].stages[0].label, '盘点');
 });
 
-test('escXml/decode 互逆', () => {
-  const s = 'a&b<c>d"e\'f';
-  assert.equal(decode(escXml(s)), s);
+test('仓库 config/devflow.xml 可解析出 开发/测试/文档 三个工作流且阶段均有提示语', () => {
+  const file = defaultWorkflowFile(path.join(__dirname, '..', '..'));
+  const wfs = loadWorkflowXml(file);
+  const ids = wfs.map((w) => w.id);
+  assert.ok(ids.includes('dev') && ids.includes('test') && ids.includes('doc'), `ids=${ids.join(',')}`);
+  for (const w of wfs) {
+    assert.ok(w.stages.length > 0, `${w.id} 无阶段`);
+    for (const s of w.stages) assert.ok(s.prompts.length > 0, `${w.id}/${s.id} 无提示语`);
+  }
 });
 
-test('serializeWorkflow 是 fragment 的子串', () => {
-  const one = serializeWorkflow(sample[0]);
-  assert.ok(serializeWorkflowsFragment([sample[0]]).includes(one));
+test('配置缺失时回退内置工作流', () => {
+  const wfs = loadWorkflowXml(path.join(__dirname, 'no-such-file.xml'));
+  assert.ok(wfs.length >= 1);
 });

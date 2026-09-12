@@ -23,7 +23,7 @@
 | `shared/package.json`（改） | 新增子路径导出 `./workflow-xml` |
 | `server/workflow-xml.js`（改） | 保留 `fallbackWorkflows`；`parseWorkflowXml` 从 shared re-export |
 | `server/devflow-config.js`（改） | 删本地 `serializeWorkflow`/`decode`/`attr`，改用 shared |
-| `server/test/workflow-xml.test.js`（新增） | shared 往返/转义/整份配置解析测试 |
+| `server/test/shared-workflow-xml.test.js`（新增） | shared 往返/转义/整份配置解析测试（勿动既有 `workflow-xml.test.js`） |
 | `web/src/workflowModel.ts`（新增） | 纯逻辑：类型、校验、分组带、排序、复制、新建、sanitize |
 | `web/src/workflowModel.test.ts`（新增） | 上述纯逻辑单测 |
 | `shared/i18n/zh-CN.js`、`en.js`（改） | 新增 `wfe.*` 词条 |
@@ -41,7 +41,7 @@
 - Create: `shared/workflow-xml.js`
 - Create: `shared/workflow-xml.d.ts`
 - Modify: `shared/package.json`
-- Test: `server/test/workflow-xml.test.js`
+- Test: `server/test/shared-workflow-xml.test.js`（新增；**不要覆盖**既有 `server/test/workflow-xml.test.js`）
 
 - [ ] **Step 1: 在 `shared/package.json` 的 `exports` 增加子路径**
 
@@ -235,10 +235,12 @@ git commit -m "feat(shared): 工作流 XML 解析/序列化纯模块"
 整体替换为：
 
 ```js
+import fs from 'node:fs';
 import path from 'node:path';
 import { t } from './i18n.js';
+import { parseWorkflowsXml } from '@devflow/shared/workflow-xml';
 
-export { parseWorkflowsXml as parseWorkflowXml } from '@devflow/shared/workflow-xml';
+export { parseWorkflowsXml as parseWorkflowXml };
 
 // 内置兜底（配置文件缺失/损坏时使用）
 export function fallbackWorkflows() {
@@ -255,16 +257,24 @@ export function fallbackWorkflows() {
   ];
 }
 
+export function loadWorkflowXml(file) {
+  try {
+    if (fs.existsSync(file)) {
+      const wfs = parseWorkflowsXml(fs.readFileSync(file, 'utf8'));
+      if (wfs.length) return wfs;
+    }
+  } catch { /* fallthrough */ }
+  return fallbackWorkflows();
+}
+
 // 默认配置文件位置：仓库根 config/devflow.xml（server/ 的上一级）
 export function defaultWorkflowFile(baseDir) {
   return path.join(baseDir, 'config', 'devflow.xml');
 }
 ```
 
-注意：`loadWorkflowXml` 若不再被引用可一并删除。先执行全局搜索确认引用：
-
-Run: `rg "loadWorkflowXml" server`
-Expected: 只应出现在 `server/workflow-xml.js`；若有其它引用，保留该函数但改为调用 shared 的 `parseWorkflowsXml`。
+**必须保留** `loadWorkflowXml` 与 `defaultWorkflowFile`：既有 `server/test/workflow-xml.test.js` 依赖它们。
+在 `/api/workflows-xml` 路由中优先由 `loadDevflowConfig(configFile).workflows` 提供数据，`loadWorkflowXml` 仅作兜底与兼容。
 
 - [ ] **Step 2: 改 `server/devflow-config.js`：用 shared 的 `serializeWorkflow`，删本地重复**
 
