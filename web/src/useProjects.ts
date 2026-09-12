@@ -30,6 +30,19 @@ export function useProjects() {
       const r = await res.json() as { project: ProjectInfo };
       return r.project;
     },
+    async openPath(path: string): Promise<{ project: ProjectInfo & { temp?: boolean }; rel: string }> {
+      const res = await fetch('/api/open-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.message || j.error || msg; } catch { /* keep */ }
+        throw new Error(msg);
+      }
+      return res.json();
+    },
     async pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
       const res = await fetch('/api/projects/pick', { method: 'POST' });
       return res.json();
