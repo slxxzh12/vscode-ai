@@ -1,3 +1,5 @@
+import { toPng } from 'html-to-image';
+
 export function snapshotFileName(date: Date = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
   const ymd = `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}`;
@@ -38,4 +40,26 @@ export function snapshotOptions(
     backgroundColor: snapshotBackground(el),
     filter: snapshotFilter,
   };
+}
+
+export interface SnapshotDeps {
+  toPng: (el: HTMLElement, options: SnapshotOptions) => Promise<string>;
+  download: (dataUrl: string, filename: string) => void;
+}
+
+export function downloadDataUrl(dataUrl: string, filename: string): void {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+export async function captureToPng(
+  el: HTMLElement,
+  deps: SnapshotDeps = { toPng, download: downloadDataUrl },
+): Promise<void> {
+  const dataUrl = await deps.toPng(el, snapshotOptions(el));
+  deps.download(dataUrl, snapshotFileName());
 }

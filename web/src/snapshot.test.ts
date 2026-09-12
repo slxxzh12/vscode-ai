@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { snapshotFileName, snapshotBackground, snapshotFilter, snapshotOptions } from './snapshot';
+import { snapshotFileName, snapshotBackground, snapshotFilter, snapshotOptions, captureToPng } from './snapshot';
 
 describe('snapshotFileName', () => {
   it('固定日期 → devflow-YYYYMMDD-HHmmss.png（各段补零）', () => {
@@ -61,6 +61,45 @@ describe('snapshotOptions', () => {
       const o = snapshotOptions({} as HTMLElement, 2);
       expect(o).toMatchObject({ cacheBust: true, pixelRatio: 2, backgroundColor: '#abcdef' });
       expect(typeof o.filter).toBe('function');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('captureToPng', () => {
+  it('调用 toPng 并把结果交给 download（文件名符合规范）', async () => {
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '#010203' }));
+    const calls: { dataUrl: string; filename: string }[] = [];
+    let passedEl: HTMLElement | null = null;
+    let passedRatio = -1;
+    try {
+      await captureToPng({} as HTMLElement, {
+        toPng: async (target, options) => {
+          passedEl = target;
+          passedRatio = options.pixelRatio;
+          expect(options.backgroundColor).toBe('#010203');
+          return 'data:image/png;base64,AAAA';
+        },
+        download: (dataUrl, filename) => { calls.push({ dataUrl, filename }); },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(passedEl).not.toBeNull();
+    expect(passedRatio).toBeGreaterThanOrEqual(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].dataUrl).toBe('data:image/png;base64,AAAA');
+    expect(calls[0].filename).toMatch(/^devflow-\d{8}-\d{6}\.png$/);
+  });
+
+  it('toPng 抛错时向上抛出', async () => {
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '#000' }));
+    try {
+      await expect(captureToPng({} as HTMLElement, {
+        toPng: async () => { throw new Error('boom'); },
+        download: () => { /* not reached */ },
+      })).rejects.toThrow('boom');
     } finally {
       vi.unstubAllGlobals();
     }
