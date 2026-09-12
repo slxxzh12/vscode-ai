@@ -434,12 +434,11 @@ function sendToActive(text: string) {
   }, 150);
 }
 function submitComposer() {
-  const t = composerText.value.trim();
-  if (!t) return;
+  const text = composerText.value.trim() || 'ok';
   composerText.value = '';
   const sid = props.terminal.state.activeSessionId;
-  void msgHistory.push(t, sid ? { sessionId: sid, tabName: tabLabel(sid) } : {});
-  sendToActive(t);
+  void msgHistory.push(text, sid ? { sessionId: sid, tabName: tabLabel(sid) } : {});
+  sendToActive(text);
 }
 function onComposerKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComposer(); }
