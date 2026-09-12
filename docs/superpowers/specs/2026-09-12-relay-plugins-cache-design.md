@@ -334,3 +334,44 @@ export default {
 - 服务端 `POST /api/llm-admin/secret/regenerate`：换新随机密钥的同时，把 `d.tokens` 全部置 `revoked = true`（列表保留、显示已失效）。
 - 词条：`llm.secret.regenerate_prompt`、`llm.secret.regenerate_mismatch`（中英对称）；移除原 `llm.secret.regenerate_confirm`。
 
+## 19. token 下载安装包（opencode.json + Install.bat 压缩包）
+
+需求：token 展开行内用当前 provider + 勾选的模型，下载一个 zip，解压后双击 `Install.bat` 即把 `opencode.json` 覆盖到本机 opencode 配置目录。
+
+### 19.1 服务端 `server/llm-mount.js`
+
+- 复用 `server/collaboration/zip.js` 的 `buildZip(entries)`。
+- 抽 `pickModels(available, asked)`：无 `asked` → 全量；有 → 取交集；交集为空 → 按 `asked` 原样（供 provider 未声明模型时手填）。`opencode-config` 与新接口共用。
+- 新增 `GET /api/llm-admin/opencode-bundle?provider=&token=&models=...`（需解锁，位于 `locked()` 之后）：
+  - token 不存在 → 404；provider 不存在/无 baseURL → 404。
+  - `config = JSON.stringify(buildOpencodeConfig({ host, port, providerId, baseURL, token: rec.jwt, models: pickModels(p.models, asked) }), null, 2)`。
+  - 打包 `[{ name:'opencode.json', data: config }, { name:'Install.bat', data: INSTALL_BAT }]`。
+  - 响应：`Content-Type: application/zip`、`Content-Disposition: attachment; filename="devflow-opencode-<pid>.zip"`、`Content-Length`，直接 `res.end(zip)`。
+- `INSTALL_BAT`（ASCII、CRLF）内容：
+  ```bat
+  @echo off
+  setlocal
+  set "DEST=%USERPROFILE%\.config\opencode"
+  if not exist "%DEST%" mkdir "%DEST%"
+  if exist "%DEST%\opencode.json" copy /Y "%DEST%\opencode.json" "%DEST%\opencode.json.bak" >nul
+  copy /Y "%~dp0opencode.json" "%DEST%\opencode.json" >nul
+  echo DevFlow opencode.json installed:
+  echo   %DEST%\opencode.json
+  pause
+  ```
+  说明：目标为 opencode 默认全局配置目录；已存在则先备份为 `opencode.json.bak`；批处理不含中文（避免代码页乱码，也避免 `check:i18n` 命中）。
+
+### 19.2 前端 `web/src/components/ProxyView.vue`
+
+- token 展开行内、与「生成/复制」并排新增 `<a class="dlbtn" :href="bundleUrl(tk)" download>{{ $t('llm.config.download') }}</a>`。
+- `bundleUrl(tk)`：用当前 `rowProvider` + 已选模型（`providerById(rowProvider).models` 有则用 `rowModels`，否则用 `rowManual` 逗号解析）拼 `/api/llm-admin/opencode-bundle?...`。
+- 展开行内加一行提示 `llm.config.download_hint`（说明解压后双击 Install.bat、会覆盖并备份）。
+- 新增样式 `.dlbtn`。
+- 词条：`llm.config.download`、`llm.config.download_hint`（中英对称）。
+
+### 19.3 测试（`server/test/llm-mount.test.js`）
+
+- 新增二进制 GET helper（收集 Buffer）。
+- `opencode-bundle` 返回 200、`Content-Type: application/zip`；`readZip(body)` 含 `Install.bat` 与 `opencode.json`；`opencode.json` 的 `models` 为所选子集；`Install.bat` 含 `.config\opencode` 与 `opencode.json.bak`。
+- token/provider 不存在各返回 404。
+
