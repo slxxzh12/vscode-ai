@@ -733,7 +733,7 @@ onBeforeUnmount(() => {
         <div v-if="activeIsAgent" class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
         </div>
-        <button v-if="wfDefs.length" class="wfbtn edit" :title="$t('wfe.title')" @mousedown.stop @click="editorOpen = true">{{ $t('wfe.open') }}</button>
+        <button v-if="wfDefs.length" class="wfbtn edit" :title="$t('wfe.title')" @mousedown.stop @click="editorOpen = true"><svg class="ico" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>{{ $t('wfe.open') }}</button>
         <button class="cmin" :title="composerCollapsed ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerCollapsed ? '❐' : '—' }}</button>
       </div>
       <template v-if="!composerCollapsed">
@@ -802,7 +802,9 @@ onBeforeUnmount(() => {
 .wfbtn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--tx3); padding: 2px 12px 3px; cursor: pointer; font-size: 11px; }
 .wfbtn:hover { color: var(--tx1); }
 .wfbtn.on { color: var(--ac2); border-bottom-color: var(--ac2); font-weight: 700; }
-.wfbtn.edit { padding: 2px 7px; color: var(--tx5); }
+.wfbtn.edit { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; }
+.wfbtn.edit:hover { color: var(--ac2); border-color: var(--ac2); }
+.wfbtn.edit .ico { flex: none; }
 .flowbar { display: flex; align-items: center; gap: 0; flex: none; flex-wrap: wrap; }
 .fgroup { display: flex; align-items: center; gap: 0; border: 1px dashed color-mix(in srgb, var(--tx1) 45%, transparent); border-radius: 12px; padding: 2px 8px 2px 6px; margin: 2px 0; background: color-mix(in srgb, var(--ac) 3%, transparent); }
 .fglabel { font-size: 10px; color: var(--tx4); margin-right: 6px; padding: 0 4px; border-right: 1px solid color-mix(in srgb, var(--tx1) 40%, transparent); white-space: nowrap; }
