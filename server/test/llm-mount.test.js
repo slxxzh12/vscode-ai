@@ -97,3 +97,47 @@ test('未解锁时重载插件 423、列表仍可读', async (t) => {
   assert.equal((await jget(server, '/api/llm-admin/plugins')).status, 200);
   assert.equal((await jpost(server, '/api/llm-admin/plugins/reload', {})).status, 423);
 });
+
+function startMount(mount) {
+  const server = http.createServer((req, res) => { const url = new URL(req.url, 'http://x'); mount(req, res, url); });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
+}
+
+test('插件示例模板与一键生成（重名顺延）', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dfpl-'));
+  const vault = tmpVault();
+  vault.init('pw');
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234, pluginsDir: dir });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+  const list = JSON.parse((await jget(server, '/api/llm-admin/plugins')).body);
+  assert.match(list.template, /my-plugin/);
+  const r1 = await jpost(server, '/api/llm-admin/plugins/example', {});
+  assert.equal(r1.status, 200);
+  assert.equal(JSON.parse(r1.body).file, 'my-plugin.mjs');
+  assert.deepEqual(JSON.parse(r1.body).entries.map((e) => e.name), ['my-plugin']);
+  const r2 = await jpost(server, '/api/llm-admin/plugins/example', {});
+  assert.equal(JSON.parse(r2.body).file, 'my-plugin-2.mjs');
+});
+
+test('打开插件目录调用 reveal；无目录 400', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dfpl-'));
+  const vault = tmpVault();
+  vault.init('pw');
+  const calls = [];
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234, pluginsDir: dir, reveal: (abs, isDir) => { calls.push([abs, isDir]); return true; } });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+  const r = await jpost(server, '/api/llm-admin/plugins/reveal', {});
+  assert.equal(r.status, 200);
+  assert.deepEqual(calls, [[dir, true]]);
+
+  const mount2 = createLlmMount({ vault, host: '127.0.0.1', port: 1234, pluginsDir: null });
+  await mount2.ready;
+  const server2 = await startMount(mount2);
+  t.after(() => server2.close());
+  assert.equal((await jpost(server2, '/api/llm-admin/plugins/example', {})).status, 400);
+  assert.equal((await jpost(server2, '/api/llm-admin/plugins/reveal', {})).status, 400);
+});
