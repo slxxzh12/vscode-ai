@@ -26,6 +26,7 @@ export const messages = {
   'top.color.random': '随机',
   'top.pick_unsupported': '当前系统不支持文件夹选择对话框',
   'top.add_failed': '添加目录失败：{msg}',
+  'open.failed': '打开文件失败：{msg}',
   'top.snapshot': '截图当前页面',
   'top.snapshot.saved': '已保存到 {path}，并已自动提交推送到 Git',
   'top.snapshot.savedLocal': '已保存到 {path}。在 Git 仓库目录运行可自动上传截图到 Git',

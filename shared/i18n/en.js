@@ -26,6 +26,7 @@ export const messages = {
   'top.color.random': 'Random',
   'top.pick_unsupported': 'Folder picker is not supported on this OS',
   'top.add_failed': 'Failed to add folder: {msg}',
+  'open.failed': 'Failed to open file: {msg}',
   'top.snapshot': 'Capture current page',
   'top.snapshot.saved': 'Saved to {path} and pushed to Git',
   'top.snapshot.savedLocal': 'Saved to {path}. Run inside a Git repository to auto-upload snapshots to Git',
