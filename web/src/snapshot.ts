@@ -49,6 +49,9 @@ export async function captureToPngDataUrl(
 export interface SnapshotResult {
   file: string;
   rel: string;
+  dir: string;
+  uploaded: boolean;
+  reason: string;
 }
 
 export interface UploadInit {
@@ -70,7 +73,13 @@ export async function uploadSnapshot(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dataUrl }),
   });
-  const data = await res.json().catch(() => ({} as { ok?: boolean; file?: string; rel?: string; error?: string; message?: string }));
+  const data = await res.json().catch(() => ({} as { ok?: boolean; file?: string; rel?: string; dir?: string; uploaded?: boolean; reason?: string; error?: string; message?: string }));
   if (!res.ok || !data?.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
-  return { file: data.file || '', rel: data.rel || '' };
+  return {
+    file: data.file || '',
+    rel: data.rel || '',
+    dir: data.dir || '',
+    uploaded: !!data.uploaded,
+    reason: data.reason || '',
+  };
 }

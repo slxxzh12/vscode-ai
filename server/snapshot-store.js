@@ -59,15 +59,29 @@ function defaultGit(repo, args) {
   });
 }
 
-export async function saveSnapshotToRepo({ repoRoot, dataUrl, date = new Date(), git = defaultGit }) {
+export function defaultIsGitRepo(repoRoot) {
+  return fs.existsSync(path.join(repoRoot, '.git'));
+}
+
+export async function saveSnapshotToRepo({ repoRoot, dataUrl, date = new Date(), git = defaultGit, isGitRepo = defaultIsGitRepo }) {
   const dir = path.join(repoRoot, SNAPSHOT_DIR);
   fs.mkdirSync(dir, { recursive: true });
   const buffer = decodePng(dataUrl);
   const file = uniqueName(dir, snapshotName(date));
   fs.writeFileSync(path.join(dir, file), buffer);
   const rel = `${SNAPSHOT_DIR}/${file}`;
-  await git(repoRoot, ['add', '--', rel]);
-  await git(repoRoot, ['commit', '-m', `snapshot: ${file}`, '--', rel]);
-  await git(repoRoot, ['push', 'origin', 'HEAD']);
-  return { file, rel };
+  const result = { file, rel, dir, uploaded: false, reason: '' };
+  if (!isGitRepo(repoRoot)) {
+    result.reason = 'not-a-repo';
+    return result;
+  }
+  try {
+    await git(repoRoot, ['add', '--', rel]);
+    await git(repoRoot, ['commit', '-m', `snapshot: ${file}`, '--', rel]);
+    await git(repoRoot, ['push', 'origin', 'HEAD']);
+    result.uploaded = true;
+  } catch {
+    result.reason = 'git-failed';
+  }
+  return result;
 }

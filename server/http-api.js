@@ -254,8 +254,8 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         let body;
         try { body = await readJsonBody(req, 32 * 1024 * 1024); } catch { sendJson(res, 400, { error: 'bad body' }); return; }
         const r = await saveSnapshotToRepo({ repoRoot, dataUrl: body.dataUrl });
-        logger?.info?.('snapshot:', r.rel);
-        sendJson(res, 200, { ok: true, file: r.file, rel: r.rel });
+        logger?.info?.('snapshot:', r.rel, r.uploaded ? '(pushed)' : `(${r.reason || 'local'})`);
+        sendJson(res, 200, { ok: true, file: r.file, rel: r.rel, dir: r.dir, uploaded: r.uploaded, reason: r.reason });
         return;
       }
       if (url.pathname === '/api/git/changes' && req.method === 'POST') {

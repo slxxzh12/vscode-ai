@@ -38,7 +38,10 @@ async function onSnapshot() {
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
     const dataUrl = await captureToPngDataUrl(el);
     const r = await uploadSnapshot(dataUrl);
-    showSnapshotMsg(t('top.snapshot.saved', { file: r.file }));
+    const key = r.uploaded
+      ? 'top.snapshot.saved'
+      : (r.reason === 'not-a-repo' ? 'top.snapshot.savedLocal' : 'top.snapshot.savedGitFailed');
+    showSnapshotMsg(t(key, { path: r.dir || r.rel }));
   } catch {
     alert(t('top.snapshot.failed'));
   } finally {

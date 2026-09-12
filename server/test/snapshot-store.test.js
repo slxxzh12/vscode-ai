@@ -26,14 +26,17 @@ test('decodePng 接受合法 dataURL，拒绝非 PNG 或空', () => {
   }
 });
 
-test('saveSnapshotToRepo 写盘并依次 git add/commit/push', async () => {
+test('saveSnapshotToRepo git 仓库下写盘并依次 git add/commit/push', async () => {
   const repo = tmp();
   const calls = [];
   const bytes = Buffer.from('PNGDATA');
   const dataUrl = `data:image/png;base64,${bytes.toString('base64')}`;
-  const r = await saveSnapshotToRepo({ repoRoot: repo, dataUrl, date: new Date(2026, 8, 12, 9, 30, 5), git: recordGit(calls) });
+  const r = await saveSnapshotToRepo({ repoRoot: repo, dataUrl, date: new Date(2026, 8, 12, 9, 30, 5), isGitRepo: () => true, git: recordGit(calls) });
   assert.equal(r.file, 'devflow-20260912-093005.png');
   assert.equal(r.rel, `${SNAPSHOT_DIR}/devflow-20260912-093005.png`);
+  assert.equal(r.dir, path.join(repo, SNAPSHOT_DIR));
+  assert.equal(r.uploaded, true);
+  assert.equal(r.reason, '');
   const written = fs.readFileSync(path.join(repo, SNAPSHOT_DIR, r.file));
   assert.deepEqual(written, bytes);
   assert.deepEqual(calls, [
@@ -41,6 +44,19 @@ test('saveSnapshotToRepo 写盘并依次 git add/commit/push', async () => {
     ['commit', '-m', `snapshot: ${r.file}`, '--', r.rel],
     ['push', 'origin', 'HEAD'],
   ]);
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test('saveSnapshotToRepo 非 git 目录时跳过 git 但仍返回成功', async () => {
+  const repo = tmp();
+  let called = false;
+  const dataUrl = `data:image/png;base64,${Buffer.from('x').toString('base64')}`;
+  const r = await saveSnapshotToRepo({ repoRoot: repo, dataUrl, date: new Date(2026, 8, 12, 9, 30, 5), git: async () => { called = true; return ''; } });
+  assert.equal(called, false);
+  assert.equal(r.uploaded, false);
+  assert.equal(r.reason, 'not-a-repo');
+  assert.equal(r.dir, path.join(repo, SNAPSHOT_DIR));
+  assert.ok(fs.existsSync(path.join(repo, SNAPSHOT_DIR, r.file)));
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
@@ -56,12 +72,12 @@ test('saveSnapshotToRepo 同秒重名追加 -1', async () => {
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-test('saveSnapshotToRepo git 失败时抛出', async () => {
+test('saveSnapshotToRepo git 失败时不抛错，标记 uploaded:false', async () => {
   const repo = tmp();
   const dataUrl = `data:image/png;base64,${Buffer.from('x').toString('base64')}`;
-  await assert.rejects(
-    saveSnapshotToRepo({ repoRoot: repo, dataUrl, date: new Date(2026, 8, 12, 9, 30, 5), git: async () => { const e = new Error('push rejected'); e.code = 'git-failed'; throw e; } }),
-    (e) => e.code === 'git-failed',
-  );
+  const r = await saveSnapshotToRepo({ repoRoot: repo, dataUrl, date: new Date(2026, 8, 12, 9, 30, 5), isGitRepo: () => true, git: async () => { const e = new Error('push rejected'); e.code = 'git-failed'; throw e; } });
+  assert.equal(r.uploaded, false);
+  assert.equal(r.reason, 'git-failed');
+  assert.ok(fs.existsSync(path.join(repo, SNAPSHOT_DIR, r.file)));
   fs.rmSync(repo, { recursive: true, force: true });
 });

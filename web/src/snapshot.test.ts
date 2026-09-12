@@ -81,19 +81,19 @@ describe('captureToPngDataUrl', () => {
 });
 
 describe('uploadSnapshot', () => {
-  it('POST /api/snapshot 并返回 file/rel', async () => {
+  it('POST /api/snapshot 并返回 file/rel/dir/uploaded', async () => {
     const seen: { url?: string; init?: { method: string; body: string } } = {};
     const r = await uploadSnapshot('data:image/png;base64,AAA', {
       fetch: async (url, init) => {
         seen.url = url;
         seen.init = init;
-        return { ok: true, status: 200, json: async () => ({ ok: true, file: 'a.png', rel: 'remote_coder/a.png' }) };
+        return { ok: true, status: 200, json: async () => ({ ok: true, file: 'a.png', rel: 'remote_coder/a.png', dir: 'D:/repo/remote_coder', uploaded: false }) };
       },
     });
     expect(seen.url).toBe('/api/snapshot');
     expect(seen.init?.method).toBe('POST');
     expect(JSON.parse(seen.init!.body).dataUrl).toBe('data:image/png;base64,AAA');
-    expect(r).toEqual({ file: 'a.png', rel: 'remote_coder/a.png' });
+    expect(r).toEqual({ file: 'a.png', rel: 'remote_coder/a.png', dir: 'D:/repo/remote_coder', uploaded: false, reason: '' });
   });
 
   it('失败时抛出服务端 message', async () => {
