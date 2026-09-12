@@ -174,3 +174,51 @@ test('onRequest 可改写 providerId 实现按内容路由', async (t) => {
   assert.equal((await r.json()).up, 'B');
   assert.deepEqual(hits, ['B']);
 });
+
+test('多 apiKey 轮询：连续三次请求依次用 k1/k2/k1', async (t) => {
+  const seen = [];
+  const upstream = http.createServer((req, res) => {
+    seen.push(req.headers.authorization);
+    req.on('data', () => {});
+    req.on('end', () => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}'); });
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+  t.after(() => upstream.close());
+  const baseURL = `http://127.0.0.1:${upstream.address().port}/v1`;
+  const vault = { getData: () => ({ jwtSecret: 'S', tokens: [{ jti: 'j1', revoked: false }] }) };
+  const front = await startProxy({ vault, getProvider: () => ({ baseURL, apiKey: 'k1', apiKeys: ['k1', 'k2'] }), isEnabled: () => true });
+  t.after(() => front.close());
+  const token = signJwt({ sub: 'e', jti: 'j1' }, 'S');
+  const url = `http://127.0.0.1:${front.address().port}/chat`;
+  const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  await (await fetch(url, { method: 'POST', headers, body: '{"i":1}' })).text();
+  await (await fetch(url, { method: 'POST', headers, body: '{"i":2}' })).text();
+  await (await fetch(url, { method: 'POST', headers, body: '{"i":3}' })).text();
+  assert.deepEqual(seen, ['Bearer k1', 'Bearer k2', 'Bearer k1']);
+});
+
+test('上游 429 后冷却该 key，下次跳过', async (t) => {
+  const seen = [];
+  const upstream = http.createServer((req, res) => {
+    const auth = req.headers.authorization;
+    seen.push(auth);
+    req.on('data', () => {});
+    req.on('end', () => {
+      if (auth === 'Bearer k1') { res.writeHead(429, { 'Content-Type': 'application/json' }); res.end('{"e":"rate"}'); }
+      else { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{}'); }
+    });
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+  t.after(() => upstream.close());
+  const baseURL = `http://127.0.0.1:${upstream.address().port}/v1`;
+  const vault = { getData: () => ({ jwtSecret: 'S', tokens: [{ jti: 'j1', revoked: false }] }) };
+  const front = await startProxy({ vault, getProvider: () => ({ baseURL, apiKey: 'k1', apiKeys: ['k1', 'k2'] }), isEnabled: () => true });
+  t.after(() => front.close());
+  const token = signJwt({ sub: 'e', jti: 'j1' }, 'S');
+  const url = `http://127.0.0.1:${front.address().port}/chat`;
+  const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  await (await fetch(url, { method: 'POST', headers, body: '{"i":1}' })).text();
+  await (await fetch(url, { method: 'POST', headers, body: '{"i":2}' })).text();
+  await (await fetch(url, { method: 'POST', headers, body: '{"i":3}' })).text();
+  assert.deepEqual(seen, ['Bearer k1', 'Bearer k2', 'Bearer k2']);
+});

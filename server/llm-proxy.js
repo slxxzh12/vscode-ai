@@ -2,6 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { verifyJwt } from './llm-jwt.js';
 import { runRequestPlugins, runResponsePlugins, pluginCacheKeyOverride } from './relay-plugins.js';
+import { createKeyPool } from './llm-keypool.js';
 
 const REQUEST_LIMIT = 32 * 1024 * 1024;
 const RESPONSE_LIMIT = 64 * 1024 * 1024;
@@ -83,19 +84,22 @@ function upstreamRequest(target, method, headers, onResponse) {
   }, onResponse);
 }
 
-function pipeUpstream(res, target, method, headers, body) {
+function pipeUpstream(res, target, method, headers, body, onStatus) {
   const preq = upstreamRequest(target, method, headers, (pres) => {
-    res.writeHead(pres.statusCode || 502, pres.headers);
+    const status = pres.statusCode || 502;
+    onStatus?.(status);
+    res.writeHead(status, pres.headers);
     pres.pipe(res);
   });
   preq.on('error', () => deny(res, 502, 'upstream error'));
   if (body && body.length) preq.end(body); else preq.end();
 }
 
-function bufferUpstream(res, target, method, headers, body, limit) {
+function bufferUpstream(res, target, method, headers, body, limit, onStatus) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const preq = upstreamRequest(target, method, headers, (pres) => {
+      const status = pres.statusCode || 502;
       const chunks = [];
       let size = 0;
       let overflow = false;
@@ -104,7 +108,8 @@ function bufferUpstream(res, target, method, headers, body, limit) {
         size += c.length;
         if (size > limit) {
           overflow = true;
-          res.writeHead(pres.statusCode || 502, pres.headers);
+          onStatus?.(status);
+          res.writeHead(status, pres.headers);
           for (const chunk of chunks) res.write(chunk);
           res.write(c);
           pres.pipe(res);
@@ -116,7 +121,7 @@ function bufferUpstream(res, target, method, headers, body, limit) {
         if (settled) return;
         settled = true;
         if (overflow) resolve({ streamed: true });
-        else resolve({ status: pres.statusCode || 502, headers: pres.headers, body: Buffer.concat(chunks) });
+        else { onStatus?.(status); resolve({ status, headers: pres.headers, body: Buffer.concat(chunks) }); }
       });
       pres.on('error', (e) => {
         if (settled) return;
@@ -135,7 +140,7 @@ function bufferUpstream(res, target, method, headers, body, limit) {
   });
 }
 
-export function createProxyHandler({ vault, getProvider, isEnabled, cache = null, plugins = [], logger = console }) {
+export function createProxyHandler({ vault, getProvider, isEnabled, cache = null, plugins = [], keyPool = createKeyPool(), logger = console }) {
   let activePlugins = plugins;
   let activeCache = cache;
 
@@ -184,11 +189,16 @@ export function createProxyHandler({ vault, getProvider, isEnabled, cache = null
     let target;
     try { target = resolveTarget(provider.baseURL, ctx.path, ctx.query); } catch { return deny(res, 502, 'bad upstream'); }
 
-    const headers = injectUpstreamAuth(ctx.headers, provider.apiKey);
+    const keyList = (provider.apiKeys && provider.apiKeys.length) ? provider.apiKeys : (provider.apiKey ? [provider.apiKey] : []);
+    const upstreamKey = keyPool.next(ctx.providerId, keyList);
+    const coolIfError = (status) => {
+      if (upstreamKey && (status === 401 || status === 403 || status === 429 || status >= 500)) keyPool.cool(ctx.providerId, upstreamKey);
+    };
+    const headers = injectUpstreamAuth(ctx.headers, upstreamKey);
     if (Buffer.isBuffer(ctx.body) && ctx.body.length) headers['content-length'] = String(ctx.body.length);
 
     if (isStreaming(ctx) || !activeCache) {
-      return pipeUpstream(res, target, ctx.method, headers, ctx.body);
+      return pipeUpstream(res, target, ctx.method, headers, ctx.body, coolIfError);
     }
 
     let key = activeCache.keyFor(ctx.providerId, ctx.method, ctx.body);
@@ -214,7 +224,7 @@ export function createProxyHandler({ vault, getProvider, isEnabled, cache = null
 
     let out;
     try {
-      out = await bufferUpstream(res, target, ctx.method, headers, ctx.body, RESPONSE_LIMIT);
+      out = await bufferUpstream(res, target, ctx.method, headers, ctx.body, RESPONSE_LIMIT, coolIfError);
     } catch {
       return;
     }
