@@ -421,15 +421,18 @@ export default {
   - bat 内容：设置 `URL`/`TOKEN`，把 JSON body 用 `echo` 重定向到 `%TEMP%\devflow-payload.json`，`curl` 用 `-d @payload`，末尾 `pause`；纯 ASCII、CRLF。
 - 导入 `path`、`downloadsDir`。
 
-### 21.2 前端 `web/src/components/ProxyView.vue` / `App.vue`
+### 21.2 前端 `web/src/components/ProxyView.vue`
 
 - 展开 token 行内（provider 勾选区下方）展示两段示例：
-  - 标题 `llm.test.title`；「非流式」「流式」各一块：`<pre>` 显示命令 + 「测试」按钮（`llm.test.run`）。
+  - 「非流式」「流式」各一块：`<pre>` 显示命令 + 「测试」按钮（`llm.test.run`）。
   - 无勾选时显示 `llm.test.need_selection`。
   - 展开时与勾选变化时，用第一个 provider/模型拉取 `test-example`（`loadExamples`）。
-- `runTest(tk, stream)`：POST `test-script` → 得 `path` → POST `/api/open-file {path}` → 得 `{project, rel}` → `emit('open-file', project.id, rel)` → POST `/api/run-script?project=&path=` 弹控制台执行。
-- `ProxyView` 新增 `defineEmits<{ 'open-file': [projectId, rel] }>()`；`App.vue` 的 `<ProxyView @open-file="onProxyOpenFile" />`：`onProxyOpenFile` 先 `rail='explorer'`（让文件预览可见）再 `openFile(projectId, rel)`。
-- 词条：`llm.test.title`、`llm.test.run`、`llm.test.non_stream`、`llm.test.stream`、`llm.test.need_selection`（中英对称）。
+- **网页内直接测试**：点「测试」由前端同源 `fetch` 打中转 `/api/llm/<pid><basePath>/chat/completions`（`Authorization: Bearer <token>`）：
+  - 非流式：`await r.text()` 一次性显示。
+  - 流式：读 `r.body` reader，逐块解码追加显示。
+  - 展示 `HTTP <status>` 与响应正文于页面结果区（`llm.test.response`）。
+  - 状态：`testing` / `testStatus` / `testOut`。
+- 词条：`llm.test.non_stream`、`llm.test.stream`、`llm.test.run`、`llm.test.need_selection`、`llm.test.response`（中英对称）。
 
 ### 21.3 测试
 

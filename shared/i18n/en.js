@@ -679,5 +679,6 @@ export const messages = {
   'llm.test.stream': 'Streaming example',
   'llm.test.run': 'Test',
   'llm.test.need_selection': 'Select at least one model first',
+  'llm.test.response': 'Response',
   'llm.failed': 'Failed: {msg}',
 };

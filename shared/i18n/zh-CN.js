@@ -679,5 +679,6 @@ export const messages = {
   'llm.test.stream': '流式示例',
   'llm.test.run': '测试',
   'llm.test.need_selection': '请先勾选至少一个模型',
+  'llm.test.response': '响应',
   'llm.failed': '操作失败：{msg}',
 };

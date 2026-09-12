@@ -3,7 +3,6 @@ import { ref, onMounted, watch } from 'vue';
 import { useLlm, type LlmStatus, type LlmToken, type LlmPluginEntry } from '../useLlm';
 import { t } from '../i18n';
 
-const emit = defineEmits<{ (e: 'open-file', projectId: string, rel: string): void }>();
 const api = useLlm();
 const st = ref<LlmStatus | null>(null);
 const tokens = ref<LlmToken[]>([]);
@@ -115,6 +114,9 @@ function bundleUrl(tk: LlmToken) {
   return `/api/llm-admin/opencode-bundle?${q.toString()}`;
 }
 const examples = ref<{ nonStream: string; stream: string } | null>(null);
+const testing = ref(false);
+const testStatus = ref<number | null>(null);
+const testOut = ref('');
 function primarySel() {
   const s = selectedProviders()[0];
   return s ? { id: s.id, model: s.models[0] } : null;
@@ -128,22 +130,32 @@ async function loadExamples(tk: LlmToken) {
 }
 async function runTest(tk: LlmToken, stream: boolean) {
   err.value = '';
-  const p = primarySel();
-  if (!p) { err.value = t('llm.test.need_selection'); return; }
+  const sel = selectedProviders()[0];
+  if (!sel) { err.value = t('llm.test.need_selection'); return; }
+  const p = st.value?.providers.find((x) => x.id === sel.id);
+  let basePath = '';
+  try { basePath = new URL(p?.baseURL || '').pathname.replace(/\/+$/, ''); } catch { basePath = ''; }
+  const url = `/api/llm/${encodeURIComponent(sel.id)}${basePath}/chat/completions`;
+  testing.value = true; testStatus.value = null; testOut.value = '';
   try {
-    const r = await fetch('/api/llm-admin/test-script', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: tk.id, pid: p.id, model: p.model, stream }),
-    }).then((x) => x.json());
-    if (!r.path) throw new Error(r.error || 'test-script failed');
-    const o = await fetch('/api/open-file', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: r.path }),
-    }).then((x) => x.json());
-    if (!o.project?.id) throw new Error(o.error || 'open-file failed');
-    emit('open-file', o.project.id, o.rel);
-    await fetch(`/api/run-script?project=${encodeURIComponent(o.project.id)}&path=${encodeURIComponent(o.rel)}`, { method: 'POST' });
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tk.jwt}` },
+      body: JSON.stringify({ model: sel.models[0], messages: [{ role: 'user', content: 'Hello!' }], ...(stream ? { stream: true } : {}) }),
+    });
+    testStatus.value = r.status;
+    if (!r.body) { testOut.value = await r.text(); return; }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      testOut.value += dec.decode(value, { stream: true });
+    }
   } catch (e: any) {
     err.value = t('llm.failed', { msg: e?.message || e });
+  } finally {
+    testing.value = false;
   }
 }
 watch(() => rowKeys.value.join('|'), () => {
@@ -284,10 +296,12 @@ async function copyConfig() {
           <div v-if="examples" class="tests">
             <div class="tlabel">{{ $t('llm.test.non_stream') }}</div>
             <pre class="cfg">{{ examples.nonStream }}</pre>
-            <button class="ghost" @click="runTest(tk, false)">{{ $t('llm.test.run') }}</button>
+            <button class="ghost" :disabled="testing" @click="runTest(tk, false)">{{ $t('llm.test.run') }}</button>
             <div class="tlabel">{{ $t('llm.test.stream') }}</div>
             <pre class="cfg">{{ examples.stream }}</pre>
-            <button class="ghost" @click="runTest(tk, true)">{{ $t('llm.test.run') }}</button>
+            <button class="ghost" :disabled="testing" @click="runTest(tk, true)">{{ $t('llm.test.run') }}</button>
+            <div v-if="testing || testStatus !== null" class="tlabel">{{ $t('llm.test.response') }} <span v-if="testStatus !== null">· HTTP {{ testStatus }}</span></div>
+            <pre v-if="testing || testOut" class="cfg">{{ testOut }}<span v-if="testing" class="cursor">▊</span></pre>
           </div>
           <div v-else-if="!selectedProviders().length" class="muted">{{ $t('llm.test.need_selection') }}</div>
           <div class="muted">{{ $t('llm.config.download_hint') }}</div>
@@ -326,6 +340,7 @@ button:disabled { opacity: .5; cursor: default; }
 .pvname { color: var(--tx2); font-size: 12px; font-weight: 700; }
 .tests { display: flex; flex-direction: column; gap: 4px; }
 .tlabel { color: var(--tx3); font-size: 12px; margin-top: 4px; }
+.cursor { color: var(--ac); }
 .dlbtn { display: inline-flex; align-items: center; background: var(--ac); color: var(--onac); border: 1px solid var(--ac); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-family: inherit; text-decoration: none; font-size: 13px; }
 .cfg { background: var(--bg1); border: 1px solid var(--bd); border-radius: 4px; padding: 8px; font-size: 12px; overflow: auto; max-height: 320px; white-space: pre-wrap; }
 .ex summary { cursor: pointer; color: var(--tx2); font-size: 12px; display: flex; gap: 8px; align-items: center; }
