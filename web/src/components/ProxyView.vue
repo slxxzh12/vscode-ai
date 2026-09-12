@@ -17,8 +17,11 @@ const secret = ref('');
 const employeeId = ref('');
 const days = ref(30);
 const err = ref('');
-const cfgProvider = ref('');
-const cfgToken = ref('');
+const expanded = ref<string | null>(null);
+const rowProvider = ref('');
+const rowModels = ref<string[]>([]);
+const rowManual = ref('');
+const providerById = (id: string) => st.value?.providers.find((p) => p.id === id) || null;
 const configText = ref('');
 const copied = ref(false);
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -26,7 +29,6 @@ let copyTimer: ReturnType<typeof setTimeout> | null = null;
 async function refresh() {
   try {
     st.value = await api.status();
-    if (st.value.providers.length && !cfgProvider.value) cfgProvider.value = st.value.defaultProvider || st.value.providers[0].id;
     tokens.value = st.value.vault.unlocked ? (await api.tokens()).tokens : [];
     if (st.value.vault.unlocked) {
       const pl = await api.plugins();
@@ -74,9 +76,22 @@ async function copyExample() {
 }
 const issue = () => run(() => api.issue(employeeId.value, Number(days.value)));
 const revoke = (id: string) => run(() => api.revoke(id));
-async function genConfig() {
+function toggleToken(tk: LlmToken) {
+  if (expanded.value === tk.id) { expanded.value = null; return; }
+  expanded.value = tk.id;
+  rowProvider.value = st.value?.defaultProvider || st.value?.providers[0]?.id || '';
+  rowModels.value = (providerById(rowProvider.value)?.models || []).slice();
+  rowManual.value = '';
+  configText.value = '';
+}
+function onProviderChange() {
+  rowModels.value = (providerById(rowProvider.value)?.models || []).slice();
+}
+async function genConfig(tk: LlmToken) {
   await run(async () => {
-    const r = await api.config(cfgProvider.value, cfgToken.value);
+    const p = providerById(rowProvider.value);
+    const models = p && p.models.length ? rowModels.value : rowManual.value.split(',').map((s) => s.trim()).filter(Boolean);
+    const r = await api.config(rowProvider.value, tk.id, models);
     configText.value = r.config;
   });
 }
@@ -181,26 +196,34 @@ async function copyConfig() {
         <button @click="issue">{{ $t('llm.token.issue') }}</button>
       </div>
       <div v-if="!tokens.length" class="muted">{{ $t('llm.token.none') }}</div>
-      <div v-for="tk in tokens" :key="tk.id" class="trow">
-        <b>{{ tk.employeeId }}</b>
-        <span class="muted">{{ new Date(tk.exp * 1000).toLocaleDateString() }}{{ tk.revoked ? ' · ' + $t('llm.token.revoked') : '' }}</span>
-        <button class="ghost" :disabled="tk.revoked" @click="revoke(tk.id)">×</button>
+      <div v-for="tk in tokens" :key="tk.id" class="tok">
+        <div class="trow trow-click" @click="toggleToken(tk)">
+          <b>{{ tk.employeeId }}</b>
+          <span class="muted">{{ new Date(tk.exp * 1000).toLocaleDateString() }}{{ tk.revoked ? ' · ' + $t('llm.token.revoked') : '' }}</span>
+          <button class="ghost" :disabled="tk.revoked" @click.stop="revoke(tk.id)">×</button>
+        </div>
+        <div v-if="expanded === tk.id" class="tok-body">
+          <div class="row">
+            <select v-model="rowProvider" @change="onProviderChange">
+              <option v-for="p in st?.providers || []" :key="p.id" :value="p.id">{{ p.id }}</option>
+            </select>
+            <button @click="genConfig(tk)">{{ $t('llm.config.generate') }}</button>
+            <button :disabled="!configText" @click="copyConfig">{{ copied ? $t('llm.config.copied') : $t('llm.config.copy') }}</button>
+          </div>
+          <div v-if="(providerById(rowProvider)?.models || []).length" class="models">
+            <span class="muted">{{ $t('llm.config.models') }}</span>
+            <label v-for="m in providerById(rowProvider)?.models || []" :key="m" class="mchk">
+              <input type="checkbox" :value="m" v-model="rowModels" /> {{ m }}
+            </label>
+            <button class="ghost" @click="rowModels = (providerById(rowProvider)?.models || []).slice()">{{ $t('llm.config.all') }}</button>
+            <button class="ghost" @click="rowModels = []">{{ $t('llm.config.none') }}</button>
+          </div>
+          <div v-else class="row">
+            <input v-model="rowManual" :placeholder="$t('llm.config.manual')" />
+          </div>
+          <pre v-if="configText" class="cfg">{{ configText }}</pre>
+        </div>
       </div>
-    </section>
-
-    <section v-if="st?.vault.unlocked" class="card">
-      <div class="ch">{{ $t('llm.config.title') }}</div>
-      <div class="row">
-        <select v-model="cfgProvider">
-          <option v-for="p in st?.providers || []" :key="p.id" :value="p.id">{{ p.id }}</option>
-        </select>
-        <select v-model="cfgToken">
-          <option v-for="tk in tokens.filter((x) => !x.revoked)" :key="tk.id" :value="tk.id">{{ tk.employeeId }}</option>
-        </select>
-        <button @click="genConfig">{{ $t('llm.config.generate') }}</button>
-        <button :disabled="!configText" @click="copyConfig">{{ copied ? $t('llm.config.copied') : $t('llm.config.copy') }}</button>
-      </div>
-      <pre v-if="configText" class="cfg">{{ configText }}</pre>
     </section>
   </div>
 </template>
@@ -224,6 +247,11 @@ button:disabled { opacity: .5; cursor: default; }
 .prow, .trow { display: flex; gap: 8px; align-items: center; font-size: 12px; }
 .prow .muted, .trow .muted { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sw { font-weight: 400; font-size: 12px; display: flex; gap: 4px; align-items: center; }
+.tok { border: 1px solid var(--bd); border-radius: 6px; overflow: hidden; }
+.trow-click { cursor: pointer; padding: 6px 8px; }
+.tok-body { padding: 8px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--bd); background: var(--bg1); }
+.models { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
+.mchk { display: flex; gap: 4px; align-items: center; color: var(--tx2); }
 .cfg { background: var(--bg1); border: 1px solid var(--bd); border-radius: 4px; padding: 8px; font-size: 12px; overflow: auto; max-height: 320px; white-space: pre-wrap; }
 .ex summary { cursor: pointer; color: var(--tx2); font-size: 12px; display: flex; gap: 8px; align-items: center; }
 .ex .cfg { margin-top: 8px; }

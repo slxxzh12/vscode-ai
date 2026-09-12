@@ -36,6 +36,10 @@ export function useLlm() {
     createPluginExample: () => post<{ entries: LlmPluginEntry[]; file: string }>('/api/llm-admin/plugins/example', {}),
     revealPlugins: () => post<{ ok: boolean }>('/api/llm-admin/plugins/reveal', {}),
     reloadPlugins: () => post<{ entries: LlmPluginEntry[] }>('/api/llm-admin/plugins/reload', {}),
-    config: (provider: string, token: string) => json<{ config: string }>(`/api/llm-admin/opencode-config?provider=${encodeURIComponent(provider)}&token=${encodeURIComponent(token)}`),
+    config: (provider: string, token: string, models?: string[]) => {
+      const q = new URLSearchParams({ provider, token });
+      for (const m of models || []) q.append('models', m);
+      return json<{ config: string }>(`/api/llm-admin/opencode-config?${q.toString()}`);
+    },
   };
 }

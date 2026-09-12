@@ -667,5 +667,9 @@ export const messages = {
   'llm.config.generate': '生成',
   'llm.config.copy': '复制',
   'llm.config.copied': '已复制',
+  'llm.config.models': '模型',
+  'llm.config.all': '全选',
+  'llm.config.none': '全不选',
+  'llm.config.manual': '手填模型（逗号分隔）',
   'llm.failed': '操作失败：{msg}',
 };

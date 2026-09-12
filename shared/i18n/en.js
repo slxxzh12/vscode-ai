@@ -667,5 +667,9 @@ export const messages = {
   'llm.config.generate': 'Generate',
   'llm.config.copy': 'Copy',
   'llm.config.copied': 'Copied',
+  'llm.config.models': 'Models',
+  'llm.config.all': 'All',
+  'llm.config.none': 'None',
+  'llm.config.manual': 'Model ids (comma-separated)',
   'llm.failed': 'Failed: {msg}',
 };
