@@ -141,3 +141,32 @@ test('打开插件目录调用 reveal；无目录 400', async (t) => {
   assert.equal((await jpost(server2, '/api/llm-admin/plugins/example', {})).status, 400);
   assert.equal((await jpost(server2, '/api/llm-admin/plugins/reveal', {})).status, 400);
 });
+
+test('opencode-config 支持 models 过滤（未提供则全量）', async (t) => {
+  const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
+  fs.writeFileSync(path.join(oc, 'opencode.json'), JSON.stringify({
+    provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { a: {}, b: {}, c: {} } } },
+  }));
+  const prev = process.env.DEVFLOW_OPENCODE_CONFIG;
+  process.env.DEVFLOW_OPENCODE_CONFIG = oc;
+  t.after(() => { if (prev === undefined) delete process.env.DEVFLOW_OPENCODE_CONFIG; else process.env.DEVFLOW_OPENCODE_CONFIG = prev; });
+
+  const vault = tmpVault();
+  vault.init('pw');
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234 });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+
+  assert.equal((await jpost(server, '/api/llm-admin/secret', {})).status, 200);
+  const tok = JSON.parse((await jpost(server, '/api/llm-admin/tokens', { employeeId: 'E1', days: 1 })).body).token;
+
+  const filtered = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?provider=corp&token=${tok.id}&models=a&models=c`)).body);
+  assert.deepEqual(Object.keys(JSON.parse(filtered.config).provider['devflow-corp'].models), ['a', 'c']);
+
+  const all = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?provider=corp&token=${tok.id}`)).body);
+  assert.deepEqual(Object.keys(JSON.parse(all.config).provider['devflow-corp'].models), ['a', 'b', 'c']);
+
+  const manual = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?provider=corp&token=${tok.id}&models=x,y`)).body);
+  assert.deepEqual(Object.keys(JSON.parse(manual.config).provider['devflow-corp'].models), ['x', 'y']);
+});

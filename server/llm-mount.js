@@ -106,12 +106,18 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
       if (seg[0] === 'opencode-config' && method === 'GET') {
         const providerId = url.searchParams.get('provider') || '';
         const tokenId = url.searchParams.get('token') || '';
+        const asked = url.searchParams.getAll('models').flatMap((v) => v.split(',')).map((s) => s.trim()).filter(Boolean);
         const d = vault.getData();
         const rec = d.tokens.find((t) => t.id === tokenId);
         if (!rec) return sendJson(res, 404, { error: 'token not found' });
         const p = getProvider(providerId);
         if (!p || !p.baseURL) return sendJson(res, 404, { error: 'provider not found' });
-        const config = JSON.stringify(buildOpencodeConfig({ host, port, providerId, baseURL: p.baseURL, token: rec.jwt, models: p.models }), null, 2);
+        let models = p.models;
+        if (asked.length) {
+          const filtered = p.models.filter((m) => asked.includes(m));
+          models = filtered.length ? filtered : asked;
+        }
+        const config = JSON.stringify(buildOpencodeConfig({ host, port, providerId, baseURL: p.baseURL, token: rec.jwt, models }), null, 2);
         return sendJson(res, 200, { config });
       }
       return sendJson(res, 404, { error: 'not found' });
