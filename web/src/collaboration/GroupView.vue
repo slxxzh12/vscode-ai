@@ -9,6 +9,7 @@ const props = defineProps<{ collab: CollabApi }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const groups = computed(() => snap.value.groups || []);
 const activeId = ref<string | null>(null);
+const rightTab = ref<'members' | 'chat'>('members');
 const mine = computed(() => groups.value.find((g) => g.hubId === snap.value.identity.machineId) || null);
 const group = computed(() => groups.value.find((g) => g.id === activeId.value) || mine.value || groups.value[0] || null);
 watch(groups, (gs) => {
@@ -132,7 +133,7 @@ onMounted(async () => {
         <h4>{{ $t('collab.groups.title') }}</h4>
         <div v-if="!groups.length" class="empty">{{ $t('collab.groups.empty') }}</div>
         <button v-for="g in groups" :key="g.id" class="gitem" :class="{ on: group?.id === g.id }" @click="activeId = g.id">
-          {{ g.name }}<span class="sub">{{ g.hubId === snap.identity.machineId ? $t('collab.groups.mine') : '' }} · {{ g.members.length }}</span>
+          {{ g.name }}
         </button>
       </div>
 
@@ -178,19 +179,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="sec">
-        <h4>{{ $t('collab.member.title', { count: group?.members.length || 0 }) }}</h4>
-        <div v-if="!group" class="empty">{{ $t('collab.member.empty') }}</div>
-        <div v-for="m in group?.members || []" :key="m.machineId" class="rowline">
-          <span class="dot" :class="{ on: online(snap.heartbeats[m.machineId]?.receivedAt) }" />
-          <span class="txt">
-            {{ m.username }}<span v-if="m.machineId === me" class="sub">{{ $t('collab.group.me_suffix') }}</span>
-            <span class="sub">{{ m.host }}:{{ m.port }}</span>
-            <span v-if="usageText(m.machineId)" class="sub">{{ usageText(m.machineId) }}</span>
-          </span>
-        </div>
-      </div>
-
       <details class="sec fold">
         <summary>{{ $t('collab.downloads.title') }}</summary>
         <div class="addrow">
@@ -213,9 +201,23 @@ onMounted(async () => {
       <template v-if="group">
         <div class="chat-col">
           <header class="gtop">
-            <span class="tname">💬 {{ group.name }} <span class="tcnt">({{ group.members.length }})</span></span>
+            <span class="tname">💬 {{ group.name }}</span>
+            <div class="rtabs">
+              <button :class="{ on: rightTab === 'members' }" @click="rightTab = 'members'">{{ $t('collab.tab.members') }}</button>
+              <button :class="{ on: rightTab === 'chat' }" @click="rightTab = 'chat'">{{ $t('collab.tab.chat') }}</button>
+            </div>
           </header>
-          <GroupChatView :collab="collab" :group-id="group.id" />
+          <div v-if="rightTab === 'members'" class="memlist">
+            <div v-for="m in group.members" :key="m.machineId" class="memrow">
+              <span class="dot" :class="{ on: online(snap.heartbeats[m.machineId]?.receivedAt) }" />
+              <span class="txt">
+                {{ m.username }}<span v-if="m.machineId === me" class="sub">{{ $t('collab.group.me_suffix') }}</span>
+                <span class="sub">{{ m.host }}:{{ m.port }}</span>
+              </span>
+              <span class="usage">{{ usageText(m.machineId) || $t('collab.member.no_usage') }}</span>
+            </div>
+          </div>
+          <GroupChatView v-else :collab="collab" :group-id="group.id" />
         </div>
       </template>
       <div v-else class="placeholder"><div class="ph">{{ $t('collab.placeholder') }}</div></div>
@@ -262,6 +264,14 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .gitem { text-align: left; background: none; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx2); padding: 5px 8px; font-size: 12px; cursor: pointer; font-family: inherit; margin-bottom: 4px; width: 100%; }
 .gitem.on { background: var(--ac); color: var(--onac); border-color: var(--ac); }
 .gitem .sub { color: var(--tx6); margin-left: 6px; }
+.rtabs { margin-left: auto; display: flex; gap: 6px; }
+.rtabs button { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.rtabs button.on { background: var(--ac); color: var(--onac); border-color: var(--ac); }
+.memlist { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; }
+.memrow { display: flex; align-items: center; gap: 8px; padding: 6px 2px; border-bottom: 1px solid var(--bd2); font-size: 13px; }
+.memrow .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tx); }
+.memrow .txt .sub { color: var(--tx6); font-size: 11px; margin-left: 6px; }
+.memrow .usage { color: var(--tx4); font-size: 12px; white-space: nowrap; }
 details.fold > summary { cursor: pointer; color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; list-style: none; }
 details.fold > summary::-webkit-details-marker { display: none; }
 details.fold > summary::before { content: '▸ '; }
