@@ -204,8 +204,11 @@ export class CollabEngine {
   // 按公钥反查已知身份（单例群成员），供接收方头部公钥鉴权
   profileByPublicKey(pem) {
     if (!pem) return null;
-    const g = this.store.getGroup();
-    return g ? (g.members.find((x) => x.publicKey === pem) || null) : null;
+    for (const g of this.store.listGroups()) {
+      const m = g.members.find((x) => x.publicKey === pem);
+      if (m) return m;
+    }
+    return null;
   }
   // 文件凭证请求头：对文件 sha256 用本机私钥签名，并附带公钥（base64）供接收方查询
   fileReceiptHeaders(data) {
@@ -249,8 +252,11 @@ export class CollabEngine {
   }
   _knownProfile(machineId) {
     if (!machineId) return null;
-    const g = this.store.getGroup();
-    return g ? (g.members.find((m) => m.machineId === machineId) || null) : null;
+    for (const g of this.store.listGroups()) {
+      const m = g.members.find((x) => x.machineId === machineId);
+      if (m) return m;
+    }
+    return null;
   }
 
   // ---- 单例群组（hub = 开启远程访问并分享链接者）----
@@ -265,7 +271,7 @@ export class CollabEngine {
       if (!res.ok) return { code: res.error === 'bad-token' ? 'bad-token' : 'unreachable', error: res.error };
       const group = res.data && res.data.group;
       if (!group) return { code: 'unreachable' };
-      this.store.setGroup(group);
+      this.store.upsertGroup(group);
       this._emit('synced', {});
       return { code: 'joined', group };
     });
@@ -274,10 +280,9 @@ export class CollabEngine {
     if (typeof this.verifyAccessToken !== 'function' || !this.verifyAccessToken(env.payload && env.payload.token)) {
       return { ok: false, error: 'bad-token' };
     }
-    const g = this.store.getGroup() || this.ensureGroup();
-    this.store.addGroupMember(env.from);
+    const g = this.store.ownedGroup(this.pub.machineId) || this.ensureGroup();
     g.hubId = this.pub.machineId;
-    this.store.saveGroup(g);
+    this.store.addGroupMember(g.id, env.from);
     await this._broadcastMemberSync(g);
     this._emit('synced', {});
     return { ok: true, data: { group: g } };
@@ -292,11 +297,11 @@ export class CollabEngine {
   _inMemberSync(env) {
     const g = env.payload.group;
     if (!g || !Array.isArray(g.members)) return { ok: false, error: 'bad-payload' };
-    const local = this.store.getGroup();
-    if (!local) { this.store.setGroup({ ...g }); }
+    const local = this.store.findGroup(g.id);
+    if (!local) this.store.upsertGroup({ ...g });
     else {
       for (const m of g.members) if (!local.members.find((x) => x.machineId === m.machineId)) local.members.push(m);
-      this.store.saveGroup(local);
+      this.store.upsertGroup(local);
     }
     this._emit('synced', {});
     return { ok: true };
@@ -328,20 +333,23 @@ export class CollabEngine {
     this.writeDownload('group.json', Buffer.from(JSON.stringify(this.store.getGroup() || {}, null, 2)), 'group');
   }
   reportHeartbeat(usage) {
-    const g = this.store.getGroup();
-    if (!g) return Promise.resolve({ code: 'no-group' });
-    if (g.hubId === this.pub.machineId) {
-      this.store.setHeartbeat(this.pub.machineId, { ...usage, receivedAt: Date.now() });
-      this.writeUsageSnapshot();
-      this._emit('heartbeat', {});
-      return Promise.resolve({ code: 'local' });
+    const groups = this.store.listGroups().filter((g) => g.members.find((m) => m.machineId === this.pub.machineId));
+    if (!groups.length) return Promise.resolve({ code: 'no-group' });
+    const tasks = [];
+    for (const g of groups) {
+      if (g.hubId === this.pub.machineId) {
+        this.store.setHeartbeat(this.pub.machineId, { ...usage, receivedAt: Date.now() });
+        this.writeUsageSnapshot();
+      } else {
+        const hub = g.members.find((m) => m.machineId === g.hubId);
+        if (hub) tasks.push(this._post(hub.host, hub.port, this._sign(CollabPeer.HEARTBEAT, { groupId: g.id, usage })));
+      }
     }
-    const hub = g.members.find((m) => m.machineId === g.hubId);
-    if (!hub) return Promise.resolve({ code: 'no-hub' });
-    return this._post(hub.host, hub.port, this._sign(CollabPeer.HEARTBEAT, { groupId: g.id, usage }));
+    this._emit('heartbeat', {});
+    return Promise.all(tasks).then(() => ({ code: 'ok' }));
   }
   _inHeartbeat(env) {
-    const g = this.store.getGroup();
+    const g = this.store.findGroup(env.payload && env.payload.groupId) || this.store.getGroup();
     if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
     if (g.hubId !== this.pub.machineId) return { ok: false, error: 'not-hub' };
     this.store.setHeartbeat(env.from.machineId, { ...(env.payload.usage || {}), receivedAt: Date.now() });
@@ -350,7 +358,7 @@ export class CollabEngine {
     return { ok: true };
   }
   pullDownloads() {
-    const g = this.store.getGroup();
+    const g = this.store.listGroups().find((x) => x.hubId !== this.pub.machineId && x.members.find((m) => m.machineId === this.pub.machineId)) || this.store.getGroup();
     const hub = g && g.members.find((m) => m.machineId === g.hubId);
     if (!hub || hub.machineId === this.pub.machineId) return Promise.resolve({ code: 'no-master' });
     return this._post(hub.host, hub.port, this._sign(CollabPeer.PULL_DOWNLOADS, {})).then((res) => {
@@ -362,7 +370,7 @@ export class CollabEngine {
         fs.writeFileSync(abs, Buffer.from(f.b64, 'base64'));
       }
       if (data.manifest) this._writeManifest(data.manifest);
-      if (data.group) this.store.setGroup(data.group);
+      if (data.group) this.store.upsertGroup(data.group);
       if (data.usage && data.usage.members) {
         for (const [mid, u] of Object.entries(data.usage.members)) this.store.setHeartbeat(mid, u);
       }
@@ -372,7 +380,7 @@ export class CollabEngine {
     });
   }
   _inPullDownloads(env) {
-    const g = this.store.getGroup();
+    const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();
     if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
     const manifest = this.readManifest();
     const files = [];
@@ -385,7 +393,7 @@ export class CollabEngine {
   }
   // master 发布捆绑包到 downloads/skills（不再 push 成员）
   publishPackage(packageId) {
-    const g = this.store.getGroup();
+    const g = this.store.ownedGroup(this.pub.machineId);
     if (!g || g.hubId !== this.pub.machineId) return { code: 'not-master' };
     const rec = this.store.listOutbox().find((r) => r.id === packageId);
     if (!rec || !rec.storedFile || !this.uploadDir) return { code: 'not-found' };

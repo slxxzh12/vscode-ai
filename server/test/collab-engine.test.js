@@ -16,33 +16,38 @@ async function groupUp(A, B) {
   return r.group;
 }
 
-test('single-group: ensureGroup 幂等且成员去重', () => {
+test('multi-group: ensureGroup 幂等且成员去重', () => {
   return createPairHarness({ skipSkills: true }).then(async (h) => {
     try {
       const A = h.nodes[0];
       const g1 = A.ensureGroup();
       const g2 = A.ensureGroup();
-      assert.equal(g1.id, 'shared');
-      assert.equal(g2.id, 'shared');
+      assert.equal(g1.id, A.pub.machineId);
+      assert.equal(g2.id, A.pub.machineId);
       assert.equal(A.store.getGroup().members.length, 1);
       assert.equal(A.store.getGroup().hubId, A.pub.machineId);
+      assert.equal(A.store.listGroups().length, 1);
     } finally { await h.stop(); }
   });
 });
 
-test('single-group: joinByLink 校验令牌后入群并记录 hub', async () => {
+test('multi-group: joinByLink 校验令牌后入群并记录 hub', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {
     const [A, B] = h.nodes;
     A.verifyAccessToken = (tk) => tk === 'good';
     A.ensureGroup();
+    B.ensureGroup();
     const bad = await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'bad' });
     assert.equal(bad.code, 'bad-token');
     const ok = await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'good' });
     assert.equal(ok.code, 'joined');
-    assert.equal(B.store.getGroup().members.length, 2);
-    assert.equal(B.store.getGroup().hubId, A.pub.machineId);
+    assert.equal(B.store.findGroup(ok.group.id).members.length, 2);
+    assert.equal(B.store.findGroup(ok.group.id).hubId, A.pub.machineId);
     assert.equal(A.store.getGroup().members.length, 2);
+    assert.equal(B.store.listGroups().length, 2, 'B 自有群 + 加入的群');
+    assert.ok(B.store.ownedGroup(B.pub.machineId), 'B 自有群保留');
+    assert.ok(B.store.findGroup(ok.group.id), 'B 含 A 的群');
   } finally { await h.stop(); }
 });
 
