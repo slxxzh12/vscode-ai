@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue';
 import { useTerminal } from './useTerminal';
 import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
@@ -15,9 +15,27 @@ import { useTheme } from './theme';
 import { useI18n } from './i18n';
 import { useWorkspace, type WorkspaceState } from './useWorkspace';
 import WorkspacePicker from './components/WorkspacePicker.vue';
+import { captureToPng } from './snapshot';
 
 const ws = useWorkspace();
 const wsState = ref<WorkspaceState | null>(null);
+const appRef = ref<HTMLDivElement | null>(null);
+const snapshotting = ref(false);
+async function onSnapshot() {
+  if (snapshotting.value) return;
+  const el = appRef.value;
+  if (!el) return;
+  snapshotting.value = true;
+  try {
+    await nextTick();
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    await captureToPng(el);
+  } catch {
+    alert(t('top.snapshot.failed'));
+  } finally {
+    snapshotting.value = false;
+  }
+}
 
 const terminal = useTerminal({});
 const center = useCenter();
@@ -376,7 +394,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app">
+  <div class="app" ref="appRef">
     <header class="top" :class="{ colored: !!windowColorValue }" :style="windowColorValue ? { background: windowColorValue } : undefined">
       <span class="logo">◈ {{ $t('brand.title') }}</span>
       <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
@@ -392,6 +410,7 @@ onBeforeUnmount(() => {
         <option v-for="c in colorOptions" :key="c.id" :value="c.id">{{ $t(c.key) }}</option>
       </select>
       <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
+      <button class="snap-btn" :disabled="snapshotting" :class="{ 'snap-hidden': snapshotting }" :title="$t('top.snapshot')" @click="onSnapshot">📷</button>
       <button class="theme-btn" :title="theme === 'dark' ? $t('app.theme.to_light') : $t('app.theme.to_dark')" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
     </header>
 
@@ -461,11 +480,15 @@ onBeforeUnmount(() => {
 .spacer { flex: 1; }
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .theme-btn:hover { border-color: var(--ac2); }
+.snap-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
+.snap-btn:hover { border-color: var(--ac2); }
+.snap-btn:disabled { opacity: .6; cursor: default; }
+.snap-hidden { visibility: hidden; }
 .lang-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
 .lang-btn:hover { border-color: var(--ac2); }
 .color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
 .top.colored .logo, .top.colored .projpath, .top.colored .net { color: #fff; }
-.top.colored .lang-btn, .top.colored .theme-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
+.top.colored .lang-btn, .top.colored .theme-btn, .top.colored .snap-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel, .top.colored .proj-sel { background: var(--bg1); color: var(--tx); border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel option, .top.colored .proj-sel option { color: #111; background: #fff; }
 .net { color: var(--warn); font-size: 12px; }
