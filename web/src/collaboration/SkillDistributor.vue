@@ -9,29 +9,32 @@ const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const group = computed(() => (snap.value.group && snap.value.group.id === props.groupId ? snap.value.group : null));
 const isMaster = computed(() => !!snap.value.group && snap.value.group.hubId === snap.value.identity.machineId);
 
-const assets = ref<{ skills: { name: string }[]; command: { name: string }[]; agent: { name: string }[] }>({ skills: [], command: [], agent: [] });
+const assets = ref<{ skills: { name: string }[]; command: { name: string }[]; agent: { name: string }[]; workflow: { id: string; name: string }[] }>({ skills: [], command: [], agent: [], workflow: [] });
 const checked = ref<Record<string, boolean>>({});
 const msg = ref('');
 const msgErr = ref('');
 const working = ref(false);
 const toolRoot = ref('');
-type Kind = 'skills' | 'command' | 'agent';
+const seedVersion = ref(0);
+type Kind = 'skills' | 'command' | 'agent' | 'workflow';
 const keyOf = (k: Kind, n: string) => `${k}:${n}`;
 
 const selected = computed(() => {
-  const s: { skills: string[]; command: string[]; agent: string[] } = { skills: [], command: [], agent: [] };
+  const s: { skills: string[]; command: string[]; agent: string[]; workflow: string[] } = { skills: [], command: [], agent: [], workflow: [] };
   for (const k of ['skills', 'command', 'agent'] as Kind[]) {
     for (const it of assets.value[k]) if (checked.value[keyOf(k, it.name)]) s[k].push(it.name);
   }
+  for (const w of assets.value.workflow) if (checked.value[keyOf('workflow', w.id)]) s.workflow.push(w.id);
   return s;
 });
-const selectedCount = computed(() => selected.value.skills.length + selected.value.command.length + selected.value.agent.length);
-const totalCount = computed(() => assets.value.skills.length + assets.value.command.length + assets.value.agent.length);
+const selectedCount = computed(() => selected.value.skills.length + selected.value.command.length + selected.value.agent.length + selected.value.workflow.length);
+const totalCount = computed(() => assets.value.skills.length + assets.value.command.length + assets.value.agent.length + assets.value.workflow.length);
 const pkg = ref<{ id: string; fileName: string; size: number } | null>(null);
 const sent = ref(false);
 
 onMounted(async () => {
   props.collab.getTool().then((info) => { toolRoot.value = info.root; }).catch(() => {});
+  props.collab.getWorkflowSeed().then((s) => { seedVersion.value = s.version || 0; }).catch(() => {});
   loadAssets();
 });
 async function loadAssets() {
@@ -40,7 +43,10 @@ async function loadAssets() {
 }
 function toggleAll(on: boolean) {
   const map: Record<string, boolean> = {};
-  if (on) for (const k of ['skills', 'command', 'agent'] as Kind[]) for (const it of assets.value[k]) map[keyOf(k, it.name)] = true;
+  if (on) {
+    for (const k of ['skills', 'command', 'agent'] as Kind[]) for (const it of assets.value[k]) map[keyOf(k, it.name)] = true;
+    for (const w of assets.value.workflow) map[keyOf('workflow', w.id)] = true;
+  }
   checked.value = map;
 }
 function reset() { pkg.value = null; sent.value = false; msg.value = ''; }
@@ -88,6 +94,7 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
       <button class="mini" @click="toggleAll(selectedCount !== totalCount)">{{ selectedCount === totalCount ? $t('collab.dist.none') : $t('collab.dist.all') }}</button>
     </div>
     <div v-if="toolRoot" class="root" :title="toolRoot">{{ $t('collab.dist.skill_root') }}<code>{{ toolRoot }}</code>{{ $t('collab.dist.skill_root_hint') }}</div>
+    <div class="root">{{ $t('collab.seed.version', { version: seedVersion }) }}</div>
 
     <div class="skilllist">
       <div v-if="totalCount === 0" class="empty">{{ $t('collab.dist.empty') }}</div>
@@ -110,6 +117,13 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
         <label v-for="a in assets.agent" :key="'agent:' + a.name" class="skill">
           <input type="checkbox" v-model="checked[keyOf('agent', a.name)]" />
           <span class="snm">🤖 {{ a.name }}</span>
+        </label>
+      </template>
+      <template v-if="assets.workflow.length">
+        <div class="sec">{{ $t('collab.dist.workflow', { count: assets.workflow.length }) }}</div>
+        <label v-for="w in assets.workflow" :key="'workflow:' + w.id" class="skill">
+          <input type="checkbox" v-model="checked[keyOf('workflow', w.id)]" />
+          <span class="snm">🧩 {{ w.name }}</span>
         </label>
       </template>
     </div>

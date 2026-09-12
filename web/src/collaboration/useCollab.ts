@@ -109,9 +109,10 @@ export function useCollab() {
     },
     getTool: () => http<{ tool: { kind: 'opencode' | 'claudecode' | 'custom'; customRoot: string | null }; root: string }>('/api/collab/tool'),
     setTool: (kind: string, customRoot?: string | null) => post<{ code: string; root: string }>('/api/collab/tool', { kind, customRoot: customRoot ?? null }),
-    getAssets: () => http<{ skills: { name: string }[]; command: { name: string }[]; agent: { name: string }[] }>('/api/collab/assets'),
-    buildPackage: (sel: { skills?: string[]; command?: string[]; agent?: string[] }) =>
-      post<{ package: { id: string; fileName: string; size: number } }>('/api/collab/packages', { skills: sel.skills || [], command: sel.command || [], agent: sel.agent || [] }),
+    getAssets: () => http<{ skills: { name: string }[]; command: { name: string }[]; agent: { name: string }[]; workflow: { id: string; name: string }[] }>('/api/collab/assets'),
+    buildPackage: (sel: { skills?: string[]; command?: string[]; agent?: string[]; workflow?: string[] }) =>
+      post<{ package: { id: string; fileName: string; size: number } }>('/api/collab/packages', { skills: sel.skills || [], command: sel.command || [], agent: sel.agent || [], workflow: sel.workflow || [] }),
+    getWorkflowSeed: () => http<{ version: number; workflows: { id: string; label: string; hash: string }[] }>('/api/workflows-seed'),
     sendPackage: (id: string, groupId: string) => post<{ code: string; pushed: number; failures: unknown[] }>(`/api/collab/packages/${id}/send`, { groupId }),
     publishPackage: (id: string) => post<{ code: string; name?: string }>(`/api/collab/packages/${id}/publish`),
     installDownload: (name: string) => post<{ code: string }>('/api/collab/downloads/install', { name }),
