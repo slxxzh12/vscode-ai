@@ -1,0 +1,58 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import { resolveTarget, extractToken, injectUpstreamAuth, createProxyHandler } from '../llm-proxy.js';
+import { signJwt } from '../llm-jwt.js';
+
+test('resolveTarget 拼接 basePath（缺失则补、已含则用）', () => {
+  assert.equal(resolveTarget('https://gw/v1', '/chat', '?a=1').toString(), 'https://gw/v1/chat?a=1');
+  assert.equal(resolveTarget('https://gw/v1', '/v1/chat', '').toString(), 'https://gw/v1/chat');
+  assert.equal(resolveTarget('https://gw', '/chat', '').toString(), 'https://gw/chat');
+});
+
+test('extractToken 支持 Bearer 与 x-api-key', () => {
+  assert.equal(extractToken({ authorization: 'Bearer abc' }), 'abc');
+  assert.equal(extractToken({ 'x-api-key': 'k' }), 'k');
+  assert.equal(extractToken({}), '');
+});
+
+test('injectUpstreamAuth 覆盖鉴权头', () => {
+  const h = injectUpstreamAuth({ authorization: 'Bearer client', 'x-api-key': 'client', 'content-type': 'application/json', host: 'x' }, 'UP');
+  assert.equal(h.authorization, 'Bearer UP');
+  assert.equal(h['x-api-key'], 'UP');
+  assert.equal(h['content-type'], 'application/json');
+  assert.equal(h.host, undefined);
+});
+
+test('createProxyHandler 校验 JWT 并透传上游', async (t) => {
+  const upstream = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ got: req.headers['x-api-key'], path: req.url }));
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+  t.after(() => upstream.close());
+  const baseURL = `http://127.0.0.1:${upstream.address().port}/v1`;
+
+  const vault = { getData: () => ({ jwtSecret: 'S', tokens: [{ jti: 'j1', revoked: false }] }) };
+  const handler = createProxyHandler({ vault, getProvider: () => ({ baseURL, apiKey: 'UPKEY' }), isEnabled: () => true });
+  const token = signJwt({ sub: 'e', jti: 'j1' }, 'S');
+
+  const front = http.createServer((req, res) => handler(req, res, { providerId: 'corp', rest: req.url, query: '' }));
+  await new Promise((r) => front.listen(0, '127.0.0.1', r));
+  t.after(() => front.close());
+
+  const r = await fetch(`http://127.0.0.1:${front.address().port}/chat/completions`, {
+    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.equal(j.got, 'UPKEY');
+  assert.equal(j.path, '/v1/chat/completions');
+});
+
+test('createProxyHandler 停用时 404', async () => {
+  const handler = createProxyHandler({ vault: { getData: () => ({ jwtSecret: 'S', tokens: [] }) }, getProvider: () => ({ baseURL: 'http://x/v1', apiKey: '' }), isEnabled: () => false });
+  const fakeRes = { code: 0, writeHead(c) { this.code = c; }, end() {} };
+  await handler({ method: 'GET', headers: {}, pipe() {} }, fakeRes, { providerId: 'corp', rest: '/x', query: '' });
+  assert.equal(fakeRes.code, 404);
+});
