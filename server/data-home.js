@@ -36,6 +36,10 @@ export function downloadDir() {
 export function downloadsDir() {
   return path.join(dataHome(), 'downloads');
 }
+// 中转站转换插件目录（<dataHome>/downloads/relay-plugins）；仅加载其下 *.mjs
+export function relayPluginsDir() {
+  return path.join(downloadsDir(), 'relay-plugins');
+}
 // 老版本把数据写在仓库 server/ 里；首次启动时若新位置没有、旧文件存在则迁移过去
 export function seedFromLegacy(target, legacySource) {
   if (!fs.existsSync(target) && fs.existsSync(legacySource)) {
