@@ -375,3 +375,36 @@ export default {
 - `opencode-bundle` 返回 200、`Content-Type: application/zip`；`readZip(body)` 含 `Install.bat` 与 `opencode.json`；`opencode.json` 的 `models` 为所选子集；`Install.bat` 含 `.config\opencode` 与 `opencode.json.bak`。
 - token/provider 不存在各返回 404。
 
+## 20. 平铺多 provider 勾选生成
+
+需求：模型不只有 deepseek，可能还有 glm 等；不要 provider 下拉，直接平铺全部 provider 的模型，勾选后生成。生成的 `opencode.json` 为**多 provider 条目**（同一 token 作 apiKey）；展开 token 默认**全选**所有 provider 的全部模型。
+
+### 20.1 生成逻辑 `server/llm-config.js`
+
+- 新增 `buildOpencodeConfigMulti({ host, port, token, providers })`：`providers = [{ id, baseURL, models }]`，对每个有效项调用现有 `buildOpencodeConfig` 并合并其 `provider`；返回 `{ $schema, provider: { 'devflow-<id>': …, … } }`。
+- `buildOpencodeConfig`（单 provider）保留，供多函数复用与既有测试。
+
+### 20.2 接口参数 `server/llm-mount.js`
+
+- `opencode-config` 与 `opencode-bundle` 的查询改为**成对重复参数**：`pid=<providerId>&model=<modelId>`（可多组）。解析 `parseSelections(url)` → `Map<pid, modelId[]>`（`pid` 与 `model` 按出现顺序配对；仅 `pid` 无 `model` 视为该 provider 全部模型）。
+- 对每个 `pid`：`getProvider(pid)` 不存在/无 baseURL → 跳过；`pickModels(p.models, asked)` 求该 provider 的模型子集。
+- 至少有一个有效 provider，否则 404 `provider not found`；token 不存在 404。
+- `opencode-config` 返回 `{ config }`（多 provider）；`opencode-bundle` 打包同一 config + `Install.bat`。
+- 去掉旧的单 `provider=` / `models=` 参数。
+
+### 20.3 前端 `web/src/components/ProxyView.vue` / `useLlm.ts`
+
+- 删除 provider 下拉；展开行内**平铺**：按 provider 分组，显示 provider id（muted）与每个模型的复选框；provider 无模型时该组给一个手填输入（逗号分隔）。
+- 选择状态 `rowKeys: string[]`，元素为 `${pid}::${model}`；`rowManual: Record<pid, string>` 存手填。
+- 展开 token 时默认**勾选全部 provider 的全部模型**。
+- 「全选 / 全不选」作用于所有 provider。
+- `selectedProviders()` → `[{ id, models }]`（仅包含有勾选/手填的 provider）。
+- `useLlm.config(token, selections)`：按 `selections` 追加重复 `pid`/`model` 参数；`bundleUrl` 同构。
+- 去掉多余的 `rowProvider`/`onProviderChange`。
+
+### 20.4 测试
+
+- `server/test/llm-config.test.js`：`buildOpencodeConfigMulti` 生成两个 provider 条目、各自 models。
+- `server/test/llm-mount.test.js`：`opencode-config` 用 `pid`/`model` 参数（单 provider 子集 + 多 provider）；`opencode-bundle` 同参数，zip 内 config 含多个 provider 条目。
+- `web`：typecheck / i18n。
+
