@@ -295,3 +295,35 @@ export default {
 - `server/test/llm-mount.test.js`：`opencode-config` 带 `models` 过滤出子集；无 `models` 时全量；provider 未声明模型时按请求列表原样。
 - `web/src`：类型检查通过；i18n 零命中。
 
+## 18. JWT 签名密钥一次配置、持久复用
+
+问题：`status` 不返回是否已配置密钥，面板每次解锁都显示空输入并显示「保存密钥」；`POST /secret` 空保存会随机**重新生成并覆盖**，导致已签发 token 立即失效。
+
+目标：密钥配置一次即持久保存；之后面板不再要求配置；后续签发与校验都用同一密钥。
+
+### 18.1 服务端 `server/llm-mount.js`
+
+- `GET /api/llm-admin/status` 增加 `hasSecret: boolean`（仅解锁态读取，`s.unlocked ? !!vault.getData().jwtSecret : false`；不泄露密钥内容）。
+- `POST /api/llm-admin/secret`（需解锁）语义改为：
+  - 传入非空 `secret` → 设为该值，返回 `{ ok:true, changed:true }`。
+  - 未传/空 且**已有**密钥 → **不覆盖**，返回 `{ ok:true, changed:false }`。
+  - 未传/空 且**无**密钥 → 随机生成一次并保存，返回 `{ ok:true, changed:true }`。
+- 新增 `POST /api/llm-admin/secret/regenerate`（需解锁）→ 始终随机生成新密钥并保存，返回 `{ ok:true }`（显式轮换，会使已签发 token 失效）。
+- 路由顺序：`secret/regenerate` 必须排在通用 `secret` 分支之前。
+
+### 18.2 前端 `web/src/components/ProxyView.vue` / `useLlm.ts`
+
+- `LlmStatus` 增加 `hasSecret: boolean`。
+- 密钥区：
+  - `!hasSecret`：显示输入框 + 「保存密钥」（空保存＝生成首个）；成功后清空输入。
+  - `hasSecret`：显示「已配置」徽标 + 「重新生成」按钮（`window.confirm('llm.secret.regenerate_confirm')` 后调用）。
+- `useLlm` 增加 `regenerateSecret: () => post('/api/llm-admin/secret/regenerate', {})`。
+- 词条：`llm.secret.configured`、`llm.secret.not_set`、`llm.secret.regenerate`、`llm.secret.regenerate_confirm`；更新 `llm.secret.hint` 说明「配置一次即保存，后续无需再配」。
+
+### 18.3 测试（`server/test/llm-mount.test.js`）
+
+- 初始 `hasSecret=false`；空保存后 `hasSecret=true` 且密钥存在。
+- 再次空保存 `changed=false` 且密钥不变。
+- 显式 `secret` 覆盖。
+- `secret/regenerate` 后密钥变化。
+
