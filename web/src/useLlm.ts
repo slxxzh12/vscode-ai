@@ -1,5 +1,6 @@
 export interface LlmToken { id: string; employeeId: string; jwt: string; iat: number; exp: number; jti: string; revoked: boolean; }
 export interface LlmProvider { id: string; name: string; baseURL: string; hasKey: boolean; models: string[]; }
+export interface LlmPluginEntry { file: string; name: string; priority: number; error: string | null; }
 export interface LlmStatus {
   vault: { initialized: boolean; unlocked: boolean };
   enabled: boolean;
@@ -31,6 +32,8 @@ export function useLlm() {
     tokens: () => json<{ tokens: LlmToken[] }>('/api/llm-admin/tokens'),
     issue: (employeeId: string, days: number) => post<{ token: LlmToken }>('/api/llm-admin/tokens', { employeeId, days }),
     revoke: (id: string) => json<{ ok: boolean }>(`/api/llm-admin/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    plugins: () => json<{ entries: LlmPluginEntry[]; dir: string | null }>('/api/llm-admin/plugins'),
+    reloadPlugins: () => post<{ entries: LlmPluginEntry[] }>('/api/llm-admin/plugins/reload', {}),
     config: (provider: string, token: string) => json<{ config: string }>(`/api/llm-admin/opencode-config?provider=${encodeURIComponent(provider)}&token=${encodeURIComponent(token)}`),
   };
 }

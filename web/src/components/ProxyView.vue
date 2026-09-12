@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { useLlm, type LlmStatus, type LlmToken } from '../useLlm';
+import { useLlm, type LlmStatus, type LlmToken, type LlmPluginEntry } from '../useLlm';
 import { t } from '../i18n';
 
 const api = useLlm();
 const st = ref<LlmStatus | null>(null);
 const tokens = ref<LlmToken[]>([]);
+const pluginList = ref<LlmPluginEntry[]>([]);
+const pluginDir = ref('');
 const pass = ref('');
 const newPass = ref('');
 const secret = ref('');
@@ -23,6 +25,13 @@ async function refresh() {
     st.value = await api.status();
     if (st.value.providers.length && !cfgProvider.value) cfgProvider.value = st.value.defaultProvider || st.value.providers[0].id;
     tokens.value = st.value.vault.unlocked ? (await api.tokens()).tokens : [];
+    if (st.value.vault.unlocked) {
+      const pl = await api.plugins();
+      pluginList.value = pl.entries;
+      pluginDir.value = pl.dir || '';
+    } else {
+      pluginList.value = [];
+    }
   } catch (e: any) {
     err.value = t('llm.failed', { msg: e?.message || e });
   }
@@ -47,6 +56,7 @@ async function resetVault() {
 }
 const saveSecret = () => run(() => api.setSecret(secret.value));
 const toggleEnabled = () => run(() => api.setEnabled(!st.value?.enabled));
+const reloadPlugins = () => run(() => api.reloadPlugins());
 const issue = () => run(() => api.issue(employeeId.value, Number(days.value)));
 const revoke = (id: string) => run(() => api.revoke(id));
 async function genConfig() {
@@ -122,6 +132,20 @@ async function copyConfig() {
       </div>
       <div class="muted">{{ $t('llm.proxy.listen', { host: st?.host, port: st?.port }) }}</div>
       <div class="warn">{{ $t('llm.proxy.warn') }}</div>
+    </section>
+
+    <section v-if="st?.vault.unlocked" class="card">
+      <div class="ch">{{ $t('llm.plugins.title') }}
+        <button class="ghost" @click="reloadPlugins">{{ $t('llm.plugins.reload') }}</button>
+      </div>
+      <div class="muted">{{ $t('llm.plugins.dir', { dir: pluginDir }) }}</div>
+      <div class="muted">{{ $t('llm.plugins.hint') }}</div>
+      <div v-if="!pluginList.length" class="muted">{{ $t('llm.plugins.empty') }}</div>
+      <div v-for="p in pluginList" :key="p.file + '::' + p.name" class="prow">
+        <b>{{ p.name || p.file }}</b>
+        <span class="muted">{{ p.file }} · p{{ p.priority }}</span>
+        <span v-if="p.error" class="warn">{{ $t('llm.plugins.error') }}</span>
+      </div>
     </section>
 
     <section v-if="st?.vault.unlocked" class="card">
