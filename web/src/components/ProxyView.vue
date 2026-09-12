@@ -101,6 +101,13 @@ async function genConfig(tk: LlmToken) {
     configText.value = r.config;
   });
 }
+function bundleUrl(tk: LlmToken) {
+  const p = providerById(rowProvider.value);
+  const models = p && p.models.length ? rowModels.value : rowManual.value.split(',').map((s) => s.trim()).filter(Boolean);
+  const q = new URLSearchParams({ provider: rowProvider.value, token: tk.id });
+  for (const m of models) q.append('models', m);
+  return `/api/llm-admin/opencode-bundle?${q.toString()}`;
+}
 async function copyConfig() {
   if (!configText.value) return;
   try {
@@ -220,6 +227,7 @@ async function copyConfig() {
             </select>
             <button @click="genConfig(tk)">{{ $t('llm.config.generate') }}</button>
             <button :disabled="!configText" @click="copyConfig">{{ copied ? $t('llm.config.copied') : $t('llm.config.copy') }}</button>
+            <a class="dlbtn" :href="bundleUrl(tk)" download>{{ $t('llm.config.download') }}</a>
           </div>
           <div v-if="(providerById(rowProvider)?.models || []).length" class="models">
             <span class="muted">{{ $t('llm.config.models') }}</span>
@@ -232,6 +240,7 @@ async function copyConfig() {
           <div v-else class="row">
             <input v-model="rowManual" :placeholder="$t('llm.config.manual')" />
           </div>
+          <div class="muted">{{ $t('llm.config.download_hint') }}</div>
           <pre v-if="configText" class="cfg">{{ configText }}</pre>
         </div>
       </div>
@@ -263,6 +272,7 @@ button:disabled { opacity: .5; cursor: default; }
 .tok-body { padding: 8px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--bd); background: var(--bg1); }
 .models { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
 .mchk { display: flex; gap: 4px; align-items: center; color: var(--tx2); }
+.dlbtn { display: inline-flex; align-items: center; background: var(--ac); color: var(--onac); border: 1px solid var(--ac); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-family: inherit; text-decoration: none; font-size: 13px; }
 .cfg { background: var(--bg1); border: 1px solid var(--bd); border-radius: 4px; padding: 8px; font-size: 12px; overflow: auto; max-height: 320px; white-space: pre-wrap; }
 .ex summary { cursor: pointer; color: var(--tx2); font-size: 12px; display: flex; gap: 8px; align-items: center; }
 .ex .cfg { margin-top: 8px; }

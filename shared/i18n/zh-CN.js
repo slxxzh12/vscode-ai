@@ -673,5 +673,7 @@ export const messages = {
   'llm.config.all': '全选',
   'llm.config.none': '全不选',
   'llm.config.manual': '手填模型（逗号分隔）',
+  'llm.config.download': '下载安装包',
+  'llm.config.download_hint': '压缩包含 opencode.json 与 Install.bat：解压后双击 Install.bat，会把 opencode.json 覆盖到 %USERPROFILE%\\.config\\opencode（旧文件备份为 opencode.json.bak）。',
   'llm.failed': '操作失败：{msg}',
 };

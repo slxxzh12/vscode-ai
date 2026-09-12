@@ -673,5 +673,7 @@ export const messages = {
   'llm.config.all': 'All',
   'llm.config.none': 'None',
   'llm.config.manual': 'Model ids (comma-separated)',
+  'llm.config.download': 'Download bundle',
+  'llm.config.download_hint': 'The zip contains opencode.json and Install.bat. Unzip and double-click Install.bat to copy opencode.json to %USERPROFILE%\\.config\\opencode (existing file backed up as opencode.json.bak).',
   'llm.failed': 'Failed: {msg}',
 };
