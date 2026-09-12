@@ -89,6 +89,22 @@ export default {
 - `plugins`：成功加载且可用的插件实例（按 `priority` 排序）。
 - 目录不存在时返回空集，不报错。
 
+### 示例与文档（首次种子）
+
+普通用户不知道插件怎么写，因此插件目录首次生成时**种入示例与说明**（后续启动只补缺失文件，**从不覆盖**用户已有文件）：
+
+- 仓库模板：`config/relay-plugins/`（随绿色包 `config/` 一起分发）。
+- 种子目录：`relayPluginsDir()` = `<dataHome>/downloads/relay-plugins/`。
+- 模板内容：
+  - `README.md`：契约、钩子生命周期、`ctx` 字段、`failOpen`、重载方式、安全提示与「改名为 `.mjs` 即启用」说明。
+  - `example-header.mjs.example`：改 header / 补 `anthropic-version`（协议兼容）。
+  - `example-defaults.mjs.example`：注入默认参数、给 `max_tokens` 封顶（请求增强）。
+  - `example-sanitize.mjs.example`：删除敏感/未知字段（安全脱敏）。
+  - `example-route.mjs.example`：按 `json.model` 改写 `providerId`（按内容路由）。
+  - `example-cache.mjs.example`：按 `temperature` 决定缓存 key/TTL 或 `null` 绕过。
+- 示例文件以 `.mjs.example` 结尾，**不会被加载**（loader 只认 `*.mjs`）；用户改名为 `*.mjs` 后「重载插件」即生效。
+- `seedPlugins(destDir, templateDir)`：目录不存在则创建；逐个复制缺失文件，已存在跳过；模板目录缺失则静默跳过。
+
 ## 5. 代理改造 `server/llm-proxy.js`
 
 `createProxyHandler({ vault, getProvider, isEnabled, plugins, cache, logger })`：
@@ -139,7 +155,7 @@ export default {
 
 - `web/src/useLlm.ts`：新增 `plugins()`、`reloadPlugins()`。
 - `web/src/components/ProxyView.vue`：新增「插件」区块：
-  - 展示插件目录路径与提示「把 *.mjs 放到该目录后点重载」；
+  - 展示插件目录路径与提示「把 *.mjs 放到该目录后点重载」（首次启动已种入 `README.md` 与 `example-*.mjs.example`，改名即启用）；
   - 列表：文件名 / name / priority / loadError；
   - 「重载插件」按钮（需解锁态可用）。
 - i18n 词条前缀 `llm.plugins.*`（如 `llm.plugins.title`、`llm.plugins.dir`、`llm.plugins.reload`、`llm.plugins.empty`、`llm.plugins.error`、`llm.plugins.hint`），中英同时补齐。
@@ -182,3 +198,4 @@ export default {
 - 插件隔离：**主进程直接加载**（用户明确）。
 - 缓存配置：**硬编码默认 + 插件覆盖**（用户明确）。
 - 缓存默认开启、插件抛错默认 fail-closed(502)、`ctx` 透传原始请求以支持跨 provider 路由：设计评审确认。
+- 插件示例与 README 首次种子到插件目录（只补缺失、不覆盖），示例用 `.mjs.example` 后缀避免误加载：评审补充确认。
