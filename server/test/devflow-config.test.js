@@ -8,6 +8,7 @@ import {
   loadDevflowConfig, ensureConfigFile, updateServerAttrs, buildDefaultConfig,
   validateWorkflows, updateWorkflows, resolveActiveConfigFile,
 } from '../devflow-config.js';
+import { readSeed } from '../workflow-seed.js';
 
 function tmpFile() { return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-')), 'devflow.xml'); }
 
@@ -154,4 +155,15 @@ test('resolveActiveConfigFile downloads 不可创建时抛错', () => {
     fs.writeFileSync(path.join(data, 'downloads'), 'not-a-dir', 'utf8');   // 占位成文件 → mkdir 失败
     assert.throws(() => resolveActiveConfigFile(root));
   });
+});
+
+test('updateWorkflows 刷新工作流种子并在内容变化时递增 version', () => {
+  const f = tmpFile();
+  ensureConfigFile(f);
+  updateWorkflows(f, [{ id: 'w1', label: 'W1', stages: [{ id: 's', label: 'S', prompts: ['p'] }] }]);
+  const s1 = readSeed(f);
+  assert.equal(s1.version, 1);
+  assert.ok(s1.workflows.some((w) => w.id === 'w1'));
+  updateWorkflows(f, [{ id: 'w1', label: 'W1x', stages: [{ id: 's', label: 'S', prompts: ['p'] }] }]);
+  assert.equal(readSeed(f).version, 2);
 });

@@ -24,6 +24,7 @@ import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, DEFAULT_PORT } from './devflow-config.js';
+import { readSeed, updateSeed } from './workflow-seed.js';
 import { setLocale, t } from './i18n.js';
 import { isPeerRequest, matchAccessToken, resolveInviteDays } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
@@ -400,11 +401,17 @@ const server = http.createServer(async (req, res) => {
       }
       const parsed = parseDevflowConfig(xml);
       fs.writeFileSync(configFile, xml, 'utf8');
+      try { updateSeed(configFile, loadDevflowConfig(configFile).workflows); } catch { /* ignore */ }
       setLocale(parsed.server.language);
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: true, workflows: parsed.workflows }));
     });
+    return;
+  }
+  if (url.pathname === '/api/workflows-seed' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(readSeed(configFile)));
     return;
   }
   if (url.pathname === '/api/workflows' && req.method === 'POST') {

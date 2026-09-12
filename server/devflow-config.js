@@ -3,6 +3,7 @@ import path from 'node:path';
 import { normalizeLocale, DEFAULT_LOCALE } from '@devflow/shared/i18n';
 import { parseWorkflowXml, fallbackWorkflows } from './workflow-xml.js';
 import { downloadsDir } from './data-home.js';
+import { updateSeed } from './workflow-seed.js';
 
 export const DEFAULT_PORT = 22222;
 export const DEFAULT_AGENT = 'opencode';
@@ -179,5 +180,6 @@ export function updateWorkflows(file, workflows) {
   const list = validateWorkflows(workflows);
   const cur = loadDevflowConfig(file);
   fs.writeFileSync(file, serializeDevflowConfig({ server: cur.server, agents: cur.agents, workflows: list }), 'utf8');
+  updateSeed(file, list);
   return list;
 }
