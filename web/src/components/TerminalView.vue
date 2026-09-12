@@ -732,7 +732,7 @@ onBeforeUnmount(() => {
       <div class="cbar" @mousedown="onComposerDragDown">
         <div v-if="activeIsAgent" class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
-          <button class="wfbtn edit" :title="$t('wfe.title')" @click="editorOpen = true">✎</button>
+          <button class="wfbtn edit" :title="$t('wfe.title')" @click="editorOpen = true">{{ $t('wfe.open') }}</button>
         </div>
         <button class="cmin" :title="composerCollapsed ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerCollapsed ? '❐' : '—' }}</button>
       </div>

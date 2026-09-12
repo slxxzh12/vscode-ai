@@ -1,49 +1,89 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { t } from '../i18n';
-
-interface StageDef { id: string; label: string; prompts: string[]; group?: string; }
-interface WfDef { id: string; label: string; stages: StageDef[]; }
+import { sanitizeModel, validateModel, type Workflow } from '../workflowModel';
+import WorkflowFormTab from './WorkflowFormTab.vue';
+import WorkflowXmlTab from './WorkflowXmlTab.vue';
+import WorkflowPreviewTab from './WorkflowPreviewTab.vue';
 
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>();
-const workflows = ref<WfDef[]>([]);
+const tabs = ['form', 'xml', 'preview'] as const;
+const model = ref<Workflow[]>([]);
+const tab = ref<'form' | 'xml' | 'preview'>('form');
 const busy = ref(false);
 const msg = ref('');
+const dirty = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
+const report = computed(() => validateModel(model.value));
+const canSave = computed(() => report.value.errors.length === 0 && !busy.value);
+
+const history = ref<string[]>([]);
+const hIndex = ref(-1);
+
+function pushHistory(snapshot: Workflow[]) {
+  history.value = history.value.slice(0, hIndex.value + 1);
+  history.value.push(JSON.stringify(snapshot));
+  if (history.value.length > 50) history.value.shift();
+  hIndex.value = history.value.length - 1;
+}
+function applyModel(next: Workflow[]) {
+  if (JSON.stringify(next) === JSON.stringify(model.value)) return;
+  pushHistory(next);
+  model.value = next;
+  dirty.value = true;
+}
+function undo() {
+  if (hIndex.value <= 0) return;
+  hIndex.value -= 1;
+  model.value = JSON.parse(history.value[hIndex.value]);
+  dirty.value = true;
+}
+function redo() {
+  if (hIndex.value >= history.value.length - 1) return;
+  hIndex.value += 1;
+  model.value = JSON.parse(history.value[hIndex.value]);
+  dirty.value = true;
+}
+function onKey(e: KeyboardEvent) {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+}
 
 async function load() {
   try {
     const r = await fetch('/api/workflows-xml').then((x) => x.json());
-    workflows.value = Array.isArray(r?.workflows) ? JSON.parse(JSON.stringify(r.workflows)) : [];
-  } catch { workflows.value = []; }
+    model.value = Array.isArray(r?.workflows) ? JSON.parse(JSON.stringify(r.workflows)) : [];
+  } catch { model.value = []; }
+  history.value = [JSON.stringify(model.value)];
+  hIndex.value = 0;
+  dirty.value = false;
 }
-onMounted(load);
-
-function uid(prefix: string) { return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; }
-function addWorkflow() { workflows.value.push({ id: uid('wf'), label: t('wfe.new_workflow'), stages: [] }); }
-function removeWorkflow(i: number) { workflows.value.splice(i, 1); }
-function addStage(w: WfDef) { w.stages.push({ id: uid('st'), label: t('wfe.new_stage'), group: '', prompts: [''] }); }
-function removeStage(w: WfDef, i: number) { w.stages.splice(i, 1); }
-function moveStage(w: WfDef, i: number, dir: number) {
-  const j = i + dir;
-  if (j < 0 || j >= w.stages.length) return;
-  const a = w.stages[i]; w.stages[i] = w.stages[j]; w.stages[j] = a;
-}
-function addPrompt(s: StageDef) { s.prompts.push(''); }
-function removePrompt(s: StageDef, i: number) { s.prompts.splice(i, 1); }
 
 async function save(): Promise<boolean> {
+  if (report.value.errors.length) { msg.value = report.value.errors.map((e) => t(e.key, e.params)).join('；'); return false; }
   busy.value = true; msg.value = '';
   try {
-    const res = await fetch('/api/workflows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflows: workflows.value }) });
+    const payload = sanitizeModel(model.value);
+    const res = await fetch('/api/workflows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflows: payload }) });
     const j: any = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
-    if (Array.isArray(j.workflows)) workflows.value = JSON.parse(JSON.stringify(j.workflows));
+    if (Array.isArray(j.workflows)) {
+      model.value = JSON.parse(JSON.stringify(j.workflows));
+      history.value = [JSON.stringify(model.value)];
+      hIndex.value = 0;
+    }
+    dirty.value = false;
     emit('saved');
     msg.value = t('wfe.saved');
     return true;
   } catch (e: any) { msg.value = t('wfe.failed', { msg: String(e?.message || e) }); return false; }
   finally { busy.value = false; }
+}
+
+function close() {
+  if (dirty.value && !window.confirm(t('wfe.unsaved'))) return;
+  emit('close');
 }
 
 async function exportXml() {
@@ -75,45 +115,32 @@ async function onFile(e: Event) {
   } catch (e2: any) { msg.value = t('wfe.failed', { msg: String(e2?.message || e2) }); }
   finally { busy.value = false; inp.value = ''; }
 }
+
+onMounted(() => { load(); window.addEventListener('keydown', onKey); });
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <div class="weoverlay" @click.self="emit('close')">
+  <div class="weoverlay" @click.self="close">
     <div class="webox">
       <header class="weh">
-        <span>{{ $t('wfe.title') }}</span>
-        <button class="wex" @click="emit('close')">×</button>
+        <span class="wtitle">{{ $t('wfe.title') }}</span>
+        <nav class="tabs">
+          <button v-for="k in tabs" :key="k" class="tab" :class="{ on: tab === k }" @click="tab = k">{{ $t('wfe.tab.' + k) }}</button>
+        </nav>
+        <button class="wex" @click="close">×</button>
       </header>
       <div class="web">
-        <div v-for="(w, wi) in workflows" :key="w.id" class="wcard">
-          <div class="wrow">
-            <input v-model="w.label" class="in wlabel" :placeholder="$t('wfe.workflow_label')" />
-            <button class="mini danger" :disabled="busy" @click="removeWorkflow(wi)">{{ $t('wfe.del') }}</button>
-          </div>
-          <div v-for="(s, si) in w.stages" :key="s.id" class="scard">
-            <div class="srow">
-              <input v-model="s.label" class="in" :placeholder="$t('wfe.stage_label')" />
-              <input v-model="s.group" class="in grp" :placeholder="$t('wfe.group_label')" />
-              <button class="mini" :disabled="busy || si === 0" @click="moveStage(w, si, -1)">↑</button>
-              <button class="mini" :disabled="busy || si === w.stages.length - 1" @click="moveStage(w, si, 1)">↓</button>
-              <button class="mini danger" :disabled="busy" @click="removeStage(w, si)">{{ $t('wfe.del') }}</button>
-            </div>
-            <div v-for="(p, pi) in s.prompts" :key="pi" class="prow">
-              <textarea v-model="s.prompts[pi]" class="ta" rows="2" :placeholder="$t('wfe.prompt')" />
-              <button class="mini danger" :disabled="busy" @click="removePrompt(s, pi)">×</button>
-            </div>
-            <button class="mini add" :disabled="busy" @click="addPrompt(s)">{{ $t('wfe.add_prompt') }}</button>
-          </div>
-          <button class="mini add" :disabled="busy" @click="addStage(w)">{{ $t('wfe.add_stage') }}</button>
-        </div>
-        <button class="mini add big" :disabled="busy" @click="addWorkflow">{{ $t('wfe.add_workflow') }}</button>
+        <WorkflowFormTab v-if="tab === 'form'" :model="model" @update:model="applyModel" />
+        <WorkflowXmlTab v-else-if="tab === 'xml'" :model="model" @update:model="applyModel" />
+        <WorkflowPreviewTab v-else :model="model" />
       </div>
       <footer class="wef">
         <span class="wemsg">{{ msg }}</span>
         <input ref="fileInput" type="file" accept=".xml,text/xml,application/xml" class="hidden" @change="onFile" />
         <button class="webtn" :disabled="busy" @click="pickFile">{{ $t('wfe.import') }}</button>
         <button class="webtn" :disabled="busy" @click="exportXml">{{ $t('wfe.export') }}</button>
-        <button class="webtn primary" :disabled="busy" @click="save">{{ $t('wfe.save') }}</button>
+        <button class="webtn primary" :disabled="!canSave" @click="save">{{ $t('wfe.save') }}</button>
       </footer>
     </div>
   </div>
@@ -121,30 +148,18 @@ async function onFile(e: Event) {
 
 <style scoped>
 .weoverlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 60; }
-.webox { width: 720px; max-width: 94vw; height: 82vh; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.45); display: flex; flex-direction: column; overflow: hidden; }
-.weh { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg4); font-weight: 700; }
+.webox { width: 94vw; height: 90vh; max-width: 1600px; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.45); display: flex; flex-direction: column; overflow: hidden; }
+.weh { display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: var(--bg4); }
+.wtitle { font-weight: 700; }
+.tabs { display: flex; gap: 4px; margin-left: auto; }
+.tab { background: none; border: 1px solid transparent; color: var(--tx3); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.tab.on { background: var(--bg1); border-color: var(--bd); color: var(--tx1); }
 .wex { background: none; border: none; color: var(--tx3); font-size: 18px; cursor: pointer; }
-.web { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
-.wcard { border: 1px solid var(--bd); border-radius: 8px; padding: 10px; background: var(--bg2); display: flex; flex-direction: column; gap: 8px; }
-.wrow { display: flex; gap: 8px; align-items: center; }
-.scard { border: 1px dashed var(--bd); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--bg3); }
-.srow { display: flex; gap: 6px; align-items: center; }
-.prow { display: flex; gap: 6px; align-items: flex-start; }
-.in { flex: 1; min-width: 0; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: inherit; box-sizing: border-box; }
-.in.wlabel { font-weight: 700; }
-.in.grp { flex: 0 0 140px; }
-.ta { flex: 1; min-width: 0; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; resize: vertical; box-sizing: border-box; }
-.in:focus, .ta:focus { outline: none; border-color: var(--ac2); }
-.mini { flex: none; background: var(--bg5); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit; }
-.mini:hover:not(:disabled) { border-color: var(--ac2); color: var(--tx1); }
-.mini:disabled { opacity: .45; cursor: default; }
-.mini.danger:hover:not(:disabled) { border-color: var(--err); color: var(--err); }
-.mini.add { align-self: flex-start; background: none; }
-.mini.add.big { margin: 4px 0 8px; }
-.hidden { display: none; }
+.web { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 14px; }
 .wef { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--bd2); }
 .wemsg { flex: 1; min-width: 0; color: var(--tx3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.webtn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+.hidden { display: none; }
+.webtn { background: var(--bg5); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
 .webtn:hover:not(:disabled) { border-color: var(--ac2); }
 .webtn:disabled { opacity: .5; cursor: default; }
 .webtn.primary { background: var(--ac); color: var(--onac); border-color: var(--ac); }
