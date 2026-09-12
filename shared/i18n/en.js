@@ -26,6 +26,8 @@ export const messages = {
   'top.color.random': 'Random',
   'top.pick_unsupported': 'Folder picker is not supported on this OS',
   'top.add_failed': 'Failed to add folder: {msg}',
+  'top.snapshot': 'Capture current page',
+  'top.snapshot.failed': 'Failed to capture the page, please try again.',
   'common.accept': 'Accept',
   'common.reject': 'Reject',
   'common.ok': 'OK',
