@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { signJwt } from './llm-jwt.js';
-import { listProviders, getProvider, buildOpencodeConfig } from './llm-config.js';
+import { listProviders, getProvider, buildOpencodeConfigMulti } from './llm-config.js';
 import { createProxyHandler } from './llm-proxy.js';
 import { createCache } from './llm-cache.js';
 import { loadPlugins, EXAMPLE_PLUGIN, writeExamplePlugin } from './relay-plugins.js';
@@ -38,6 +38,30 @@ function pickModels(available, asked) {
   if (!asked.length) return available;
   const filtered = available.filter((m) => asked.includes(m));
   return filtered.length ? filtered : asked;
+}
+
+function parseSelections(url) {
+  const pids = url.searchParams.getAll('pid');
+  const models = url.searchParams.getAll('model');
+  const byPid = new Map();
+  for (let i = 0; i < pids.length; i += 1) {
+    const pid = pids[i];
+    if (!pid) continue;
+    if (!byPid.has(pid)) byPid.set(pid, []);
+    const m = models[i];
+    if (m) byPid.get(pid).push(m);
+  }
+  return byPid;
+}
+
+function selectionsToProviders(url) {
+  const providers = [];
+  for (const [pid, asked] of parseSelections(url)) {
+    const p = getProvider(pid);
+    if (!p || !p.baseURL) continue;
+    providers.push({ id: pid, baseURL: p.baseURL, models: pickModels(p.models, asked) });
+  }
+  return providers;
 }
 
 export function createLlmMount({ vault, host, port, logger = console, pluginsDir = null, cache = createCache(), reveal = revealInOs } = {}) {
@@ -135,35 +159,28 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
         return sendJson(res, 200, { ok: true });
       }
       if (seg[0] === 'opencode-config' && method === 'GET') {
-        const providerId = url.searchParams.get('provider') || '';
         const tokenId = url.searchParams.get('token') || '';
-        const asked = url.searchParams.getAll('models').flatMap((v) => v.split(',')).map((s) => s.trim()).filter(Boolean);
-        const d = vault.getData();
-        const rec = d.tokens.find((t) => t.id === tokenId);
+        const rec = vault.getData().tokens.find((t) => t.id === tokenId);
         if (!rec) return sendJson(res, 404, { error: 'token not found' });
-        const p = getProvider(providerId);
-        if (!p || !p.baseURL) return sendJson(res, 404, { error: 'provider not found' });
-        const models = pickModels(p.models, asked);
-        const config = JSON.stringify(buildOpencodeConfig({ host, port, providerId, baseURL: p.baseURL, token: rec.jwt, models }), null, 2);
+        const providers = selectionsToProviders(url);
+        if (!providers.length) return sendJson(res, 404, { error: 'provider not found' });
+        const config = JSON.stringify(buildOpencodeConfigMulti({ host, port, token: rec.jwt, providers }), null, 2);
         return sendJson(res, 200, { config });
       }
       if (seg[0] === 'opencode-bundle' && method === 'GET') {
-        const providerId = url.searchParams.get('provider') || '';
         const tokenId = url.searchParams.get('token') || '';
-        const asked = url.searchParams.getAll('models').flatMap((v) => v.split(',')).map((s) => s.trim()).filter(Boolean);
-        const d = vault.getData();
-        const rec = d.tokens.find((t) => t.id === tokenId);
+        const rec = vault.getData().tokens.find((t) => t.id === tokenId);
         if (!rec) return sendJson(res, 404, { error: 'token not found' });
-        const p = getProvider(providerId);
-        if (!p || !p.baseURL) return sendJson(res, 404, { error: 'provider not found' });
-        const config = JSON.stringify(buildOpencodeConfig({ host, port, providerId, baseURL: p.baseURL, token: rec.jwt, models: pickModels(p.models, asked) }), null, 2);
+        const providers = selectionsToProviders(url);
+        if (!providers.length) return sendJson(res, 404, { error: 'provider not found' });
+        const config = JSON.stringify(buildOpencodeConfigMulti({ host, port, token: rec.jwt, providers }), null, 2);
         const zip = buildZip([
           { name: 'opencode.json', data: Buffer.from(config, 'utf8') },
           { name: 'Install.bat', data: Buffer.from(INSTALL_BAT, 'utf8') },
         ]);
         res.writeHead(200, {
           'Content-Type': 'application/zip',
-          'Content-Disposition': `attachment; filename="devflow-opencode-${encodeURIComponent(providerId)}.zip"`,
+          'Content-Disposition': 'attachment; filename="devflow-opencode.zip"',
           'Content-Length': zip.length,
         });
         return res.end(zip);

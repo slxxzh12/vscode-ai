@@ -143,10 +143,13 @@ test('打开插件目录调用 reveal；无目录 400', async (t) => {
   assert.equal((await jpost(server2, '/api/llm-admin/plugins/reveal', {})).status, 400);
 });
 
-test('opencode-config 支持 models 过滤（未提供则全量）', async (t) => {
+test('opencode-config 支持 pid/model 过滤（多 provider）', async (t) => {
   const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
   fs.writeFileSync(path.join(oc, 'opencode.json'), JSON.stringify({
-    provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { a: {}, b: {}, c: {} } } },
+    provider: {
+      corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { a: {}, b: {}, c: {} } },
+      glm: { options: { baseURL: 'https://glm/v1', apiKey: 'G' }, models: { g1: {}, g2: {} } },
+    },
   }));
   const prev = process.env.DEVFLOW_OPENCODE_CONFIG;
   process.env.DEVFLOW_OPENCODE_CONFIG = oc;
@@ -158,18 +161,20 @@ test('opencode-config 支持 models 过滤（未提供则全量）', async (t) =
   await mount.ready;
   const server = await startMount(mount);
   t.after(() => server.close());
-
   assert.equal((await jpost(server, '/api/llm-admin/secret', {})).status, 200);
   const tok = JSON.parse((await jpost(server, '/api/llm-admin/tokens', { employeeId: 'E1', days: 1 })).body).token;
 
-  const filtered = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?provider=corp&token=${tok.id}&models=a&models=c`)).body);
+  const filtered = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?token=${tok.id}&pid=corp&model=a&pid=corp&model=c`)).body);
   assert.deepEqual(Object.keys(JSON.parse(filtered.config).provider['devflow-corp'].models), ['a', 'c']);
 
-  const all = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?provider=corp&token=${tok.id}`)).body);
+  const all = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?token=${tok.id}&pid=corp`)).body);
   assert.deepEqual(Object.keys(JSON.parse(all.config).provider['devflow-corp'].models), ['a', 'b', 'c']);
 
-  const manual = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?provider=corp&token=${tok.id}&models=x,y`)).body);
+  const manual = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?token=${tok.id}&pid=corp&model=x&pid=corp&model=y`)).body);
   assert.deepEqual(Object.keys(JSON.parse(manual.config).provider['devflow-corp'].models), ['x', 'y']);
+
+  const multi = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?token=${tok.id}&pid=corp&model=a&pid=glm&model=g1`)).body);
+  assert.deepEqual(Object.keys(JSON.parse(multi.config).provider).sort(), ['devflow-corp', 'devflow-glm']);
 });
 
 test('签名密钥一次配置后持久、空保存不覆盖、可重新生成', async (t) => {
@@ -251,7 +256,7 @@ test('opencode-bundle 返回含 opencode.json 与 Install.bat 的 zip', async (t
   await jpost(server, '/api/llm-admin/secret', { secret: 'S' });
   const tok = JSON.parse((await jpost(server, '/api/llm-admin/tokens', { employeeId: 'E1', days: 1 })).body).token;
 
-  const r = await getBuffer(server, `/api/llm-admin/opencode-bundle?provider=corp&token=${tok.id}&models=a`);
+  const r = await getBuffer(server, `/api/llm-admin/opencode-bundle?token=${tok.id}&pid=corp&model=a`);
   assert.equal(r.status, 200);
   assert.equal(r.headers['content-type'], 'application/zip');
   const entries = readZip(r.body);
@@ -263,6 +268,6 @@ test('opencode-bundle 返回含 opencode.json 与 Install.bat 的 zip', async (t
   assert.match(bat, /\.config\\opencode/);
   assert.match(bat, /opencode\.json\.bak/);
 
-  assert.equal((await getBuffer(server, '/api/llm-admin/opencode-bundle?provider=corp&token=nope')).status, 404);
-  assert.equal((await getBuffer(server, `/api/llm-admin/opencode-bundle?provider=nope&token=${tok.id}`)).status, 404);
+  assert.equal((await getBuffer(server, '/api/llm-admin/opencode-bundle?token=nope&pid=corp')).status, 404);
+  assert.equal((await getBuffer(server, `/api/llm-admin/opencode-bundle?token=${tok.id}&pid=nope&model=x`)).status, 404);
 });
