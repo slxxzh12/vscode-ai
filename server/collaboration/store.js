@@ -4,7 +4,7 @@ import path from 'node:path';
 export function defaultData() {
   return {
     identity: null,      // { machineId, username, host, port, publicKey, privateKey }
-    group: null,         // 单例群组 { id:'shared', name, createdAt, hubId, members:[profile] }
+    groups: [],          // 多个群组 { id, name, createdAt, hubId, members:[profile] }
     heartbeats: {},      // { [machineId]: { agent, days, ...usage, receivedAt } }
     skillsInbox: [],     // { id, kind:'skill'|'file', fromId, groupId|null, skillName|null, fileName|null, hash, size, zipPath, status, receivedAt }
     groupSkills: [],     // { groupId, skillName, hash, distributedBy, installed }
@@ -24,7 +24,17 @@ export class CollabStore {
   }
   _load() {
     if (fs.existsSync(this.file)) {
-      try { return { ...defaultData(), ...JSON.parse(fs.readFileSync(this.file, 'utf8')) }; } catch (e) { this.log?.warn?.('store corrupt, reset', e.message); }
+      try {
+        const data = { ...defaultData(), ...JSON.parse(fs.readFileSync(this.file, 'utf8')) };
+        if (!Array.isArray(data.groups)) data.groups = [];
+        if (!data.groups.length && data.group) {
+          const g = data.group;
+          if (g.id === 'shared' && g.hubId) g.id = g.hubId;
+          data.groups = [g];
+        }
+        delete data.group;
+        return data;
+      } catch (e) { this.log?.warn?.('store corrupt, reset', e.message); }
     }
     return defaultData();
   }
@@ -35,21 +45,29 @@ export class CollabStore {
     fs.renameSync(tmp, this.file);
   }
 
-  // ---- 单例群组 ----
-  getGroup() { return this.data.group; }
-  findGroup(id) { return this.data.group && this.data.group.id === id ? this.data.group : null; }
-  listGroups() { return this.data.group ? [this.data.group] : []; }
+  // ---- 群组（多个并存）----
+  listGroups() { return this.data.groups; }
+  getGroup(id) { return id ? this.findGroup(id) : (this.data.groups[0] || null); }
+  findGroup(id) { return this.data.groups.find((g) => g.id === id) || null; }
+  ownedGroup(machineId) { return this.data.groups.find((g) => g.hubId === machineId) || null; }
   ensureGroup({ name, hubId, self }) {
-    if (this.data.group) return this.data.group;
-    this.data.group = { id: 'shared', name, createdAt: Date.now(), hubId, members: [{ ...self }] };
+    const existing = this.ownedGroup(hubId);
+    if (existing) return existing;
+    const g = { id: hubId, name, createdAt: Date.now(), hubId, members: [{ ...self }] };
+    this.data.groups.push(g);
     this.save();
-    return this.data.group;
+    return g;
   }
-  setGroup(group) { this.data.group = group; this.save(); return group; }
-  saveGroup(group) { this.data.group = group; this.save(); return group; }
-  upsertGroup(group) { this.data.group = group; this.save(); return group; }
-  addGroupMember(profile) {
-    const g = this.data.group;
+  upsertGroup(group) {
+    const i = this.data.groups.findIndex((g) => g.id === group.id);
+    if (i >= 0) this.data.groups[i] = group; else this.data.groups.push(group);
+    this.save();
+    return group;
+  }
+  setGroup(group) { return this.upsertGroup(group); }
+  saveGroup(group) { return this.upsertGroup(group); }
+  addGroupMember(groupId, profile) {
+    const g = this.findGroup(groupId);
     if (!g) return null;
     if (!g.members.find((m) => m.machineId === profile.machineId)) g.members.push({ ...profile });
     this.save();

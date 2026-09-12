@@ -13,28 +13,31 @@ function tmpFile() {
 test('空文件初始化默认结构', () => {
   const s = new CollabStore({ file: tmpFile() });
   assert.deepEqual(s.data.identity, null);
-  assert.equal(s.data.group, null);
+  assert.deepEqual(s.data.groups, []);
   assert.deepEqual(s.data.skillsInbox, []);
   assert.deepEqual(s.data.groupSkills, []);
 });
 
-test('单例群组 ensure/get/addMember/persist', () => {
+test('多群 ensure/get/addMember/persist', () => {
   const f = tmpFile();
   const s = new CollabStore({ file: f });
   const self = { machineId: 'me', username: 'u', host: 'h', port: 1, publicKey: 'k' };
   const g = s.ensureGroup({ name: 'shared', hubId: 'me', self });
-  assert.equal(g.id, 'shared');
+  assert.equal(g.id, 'me');
   assert.equal(g.members.length, 1);
-  assert.equal(s.getGroup().id, 'shared');
-  s.addGroupMember({ machineId: 'peer', username: 'p', host: 'h2', port: 2, publicKey: 'k2' });
+  assert.equal(s.getGroup().id, 'me');
+  assert.equal(s.ownedGroup('me').id, 'me');
+  s.addGroupMember('me', { machineId: 'peer', username: 'p', host: 'h2', port: 2, publicKey: 'k2' });
   assert.equal(s.getGroup().members.length, 2);
-  s.addGroupMember({ machineId: 'peer', username: 'p', host: 'h2', port: 2, publicKey: 'k2' });
+  s.addGroupMember('me', { machineId: 'peer', username: 'p', host: 'h2', port: 2, publicKey: 'k2' });
   assert.equal(s.getGroup().members.length, 2, '去重');
+  s.upsertGroup({ id: 'other', name: 'g2', hubId: 'hub2', createdAt: 1, members: [] });
+  assert.equal(s.listGroups().length, 2);
+  assert.equal(s.findGroup('other').name, 'g2');
   s.save();
   const s2 = new CollabStore({ file: f });
   assert.equal(s2.getGroup().members.length, 2);
-  assert.equal(s2.findGroup('shared').id, 'shared');
-  assert.equal(s2.listGroups().length, 1);
+  assert.equal(s2.listGroups().length, 2);
 });
 
 test('chat 增删查 + 全局单调 seq', () => {
