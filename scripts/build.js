@@ -135,8 +135,9 @@ fs.copyFileSync(
 const launchPs1 = [
   "param([switch]$NoBrowser, [switch]$NoShortcut)",
   "$ErrorActionPreference = 'SilentlyContinue'",
-  "$root = $PSScriptRoot",
-  "if (-not $root) { $root = Split-Path -Parent $MyInvocation.MyCommand.Path }",
+  "$scriptDir = $PSScriptRoot",
+  "if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }",
+  "$root = Split-Path -Parent $scriptDir",
   "$port = " + CFG_PORT,
   "$portFile = Join-Path $root 'config\\runtime-port.txt'",
   "if (Test-Path $portFile) { $t = (Get-Content -Raw $portFile).Trim(); if ($t -match '^\\d+$') { $port = [int]$t } }",
@@ -170,11 +171,17 @@ const launchPs1 = [
   "if (-not $NoBrowser) { Start-Process ('http://127.0.0.1:{0}' -f $port) }",
   "",
 ].join("\r\n");
-fs.writeFileSync(path.join(APP, "launch.ps1"), "\uFEFF" + launchPs1, "utf8");
+// 启动脚本：start.bat 留在根目录，其余脚本收纳到 script/ 子目录
+fs.mkdirSync(path.join(APP, "script"), { recursive: true });
+fs.writeFileSync(
+  path.join(APP, "script", "launch.ps1"),
+  "\uFEFF" + launchPs1,
+  "utf8",
+);
 
 const bat = [
   "@echo off",
-  'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0launch.ps1"',
+  'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0script\\launch.ps1"',
   "",
 ].join("\r\n");
 fs.writeFileSync(path.join(APP, "start.bat"), bat);
@@ -209,7 +216,7 @@ const entries = [
   ["shared", "node_modules/@devflow/shared/index.js"],
   ["config", "config/devflow.xml"],
   ["icon", "icon.ico"],
-  ["launcher", "launch.ps1"],
+  ["launcher", "script/launch.ps1"],
 ];
 for (const [label, rel] of entries) {
   const p = path.join(APP, rel);
