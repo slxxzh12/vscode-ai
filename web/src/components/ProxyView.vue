@@ -20,7 +20,6 @@ const err = ref('');
 const expanded = ref<string | null>(null);
 const rowKeys = ref<string[]>([]);
 const rowManual = ref<Record<string, string>>({});
-const providerById = (id: string) => st.value?.providers.find((p) => p.id === id) || null;
 const allModelKeys = () => (st.value?.providers || []).flatMap((p) => p.models.map((m) => `${p.id}::${m}`));
 const configText = ref('');
 const copied = ref(false);
