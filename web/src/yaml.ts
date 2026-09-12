@@ -57,3 +57,34 @@ export function yamlTree(doc: Document): YamlNode[] {
   if (isSeq(c)) return (c.items as any[]).map((it, i) => nodeFor(it, [i], String(i)));
   return [nodeFor(c, [], '')];
 }
+
+export function setScalar(doc: Document, path: Array<string | number>, raw: string, valueType: YamlValueType): void {
+  let v: unknown = raw;
+  if (valueType === 'number') v = Number(raw);
+  else if (valueType === 'boolean') v = raw === 'true';
+  else if (valueType === 'null') v = null;
+  doc.setIn(path, v);
+}
+
+export function addKey(doc: Document, mapPath: Array<string | number>, key: string, value: unknown = ''): void {
+  doc.setIn([...mapPath, key], value);
+}
+
+export function deleteAt(doc: Document, path: Array<string | number>): void {
+  doc.deleteIn(path);
+}
+
+export function addSeqItem(doc: Document, seqPath: Array<string | number>, value: unknown = ''): void {
+  doc.addIn(seqPath, value);
+}
+
+export function moveAt(doc: Document, parentPath: Array<string | number>, index: number, dir: number): void {
+  const node = parentPath.length ? doc.getIn(parentPath, true) : doc.contents;
+  if (!isSeq(node)) return;
+  const items = node.items as any[];
+  const j = index + dir;
+  if (j < 0 || j >= items.length) return;
+  const a = items[index];
+  items[index] = items[j];
+  items[j] = a;
+}
