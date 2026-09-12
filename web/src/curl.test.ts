@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCurl, parseCurlCommands } from './curl';
+import { parseCurl, parseCurlCommands, buildCurl, replaceCurlCommand } from './curl';
 
 describe('parseCurl', () => {
   it('简单 GET', () => {
@@ -61,5 +61,33 @@ describe('parseCurlCommands', () => {
 
   it('无 curl 返回空数组', () => {
     expect(parseCurlCommands('echo hi')).toEqual([]);
+  });
+});
+
+describe('buildCurl / replaceCurlCommand', () => {
+  it('序列化后再次解析得到等价请求', () => {
+    const req = {
+      method: 'POST',
+      url: 'https://a.test/x?q=1',
+      headers: [{ name: 'Content-Type', value: 'application/json' }],
+      body: '{"a":1}',
+      raw: '',
+    };
+    const cmd = buildCurl(req);
+    expect(cmd).toContain('curl -X POST');
+    expect(cmd).toContain('-H');
+    const back = parseCurlCommands(cmd)[0].request;
+    expect(back.method).toBe('POST');
+    expect(back.url).toBe('https://a.test/x?q=1');
+    expect(back.headers).toEqual(req.headers);
+    expect(back.body).toBe('{"a":1}');
+  });
+
+  it('替换区间只改目标命令', () => {
+    const text = "curl -X GET 'https://a.test/x'\ncurl -X GET 'https://b.test/y'";
+    const entries = parseCurlCommands(text);
+    const next = replaceCurlCommand(text, entries[0], { ...entries[0].request, method: 'DELETE' });
+    expect(next).toContain("-X DELETE 'https://a.test/x'");
+    expect(next).toContain("curl -X GET 'https://b.test/y'");
   });
 });

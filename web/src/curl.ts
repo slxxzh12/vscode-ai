@@ -119,3 +119,23 @@ export function parseCurlCommands(text: string): CurlEntry[] {
   }
   return out;
 }
+
+function sq(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
+export function buildCurl(request: CurlRequest): string {
+  const method = (request.method || 'GET').toUpperCase();
+  const lines = [`curl -X ${method} ${sq(request.url)}`];
+  for (const h of request.headers) {
+    if (h.name) lines.push(`  -H ${sq(`${h.name}: ${h.value}`)}`);
+  }
+  if (request.body && !['GET', 'HEAD'].includes(method)) {
+    lines.push(`  -d ${sq(request.body)}`);
+  }
+  return lines.join(' \\\n');
+}
+
+export function replaceCurlCommand(text: string, entry: CurlEntry, request: CurlRequest): string {
+  return text.slice(0, entry.start) + buildCurl(request) + text.slice(entry.end);
+}
