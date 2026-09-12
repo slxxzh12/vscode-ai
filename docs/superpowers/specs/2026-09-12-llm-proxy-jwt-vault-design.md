@@ -16,7 +16,7 @@
 ## 2. 现状与扩展点
 
 - HTTP 路由：`server/index.js:423-454`（`/api/*` 未就绪 409 → history → collab → scheduler → `ws.httpApi` → 静态）。
-- 工作区状态根：`stateRoot`（`server/workspace.js`，协作数据也在此），可用于放加密库文件（本机用户数据、不入库）。
+- 固定配置目录：`server/data-home.js` 的 `downloadsDir()` = `<dataHome>/downloads`（活动配置 `devflow.xml` 所在处）；加密库文件放这里，与端口档案无关。
 - opencode 路径约定：`DEVFLOW_OPENCODE_CONFIG`（默认 `~/.config/opencode`）；仓库已有 `server/scheduler/ai-commands.js` 扫描其 `command` 目录，但**无**解析 `opencode.json` 的代码。
 - 左侧 rail：`web/src/App.vue:449-483`（explorer/history/scheduler/contacts/stat + 设置）；新视图为 `rail==='proxy'` 的中心区组件。
 - 网络：服务已监听 `0.0.0.0`（`config/devflow.xml` 的 `host`），LAN 可达。
@@ -37,7 +37,7 @@
 
 ## 4. 密钥库 `server/llm-vault.js`（信封加密）
 
-文件：`<stateRoot>/llm.vault.json`，即当前档案目录 `<dataHome>/ports/<id>/llm.vault.json`（本机用户数据、明文密钥不落盘）。
+文件：固定位置 `<dataHome>/downloads/llm.vault.json`（Windows：`%USERPROFILE%\.local\share\devflow\downloads\llm.vault.json`），与活动配置 `devflow.xml` 同目录；**不随端口档案变化**。明文密钥不落盘。
 
 结构：
 
