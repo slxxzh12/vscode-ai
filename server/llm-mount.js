@@ -31,7 +31,7 @@ export function createLlmMount({ vault, host, port, logger = console }) {
     }
     const seg = pathname.replace(/^\/api\/llm-admin\/?/, '').split('/').filter(Boolean);
     const method = req.method;
-    const locked = () => { const s = vault.status(); return s.initialized && !s.unlocked; };
+    const locked = () => !vault.status().unlocked;
     try {
       if (seg[0] === 'status' && method === 'GET') {
         const s = vault.status();
@@ -42,6 +42,7 @@ export function createLlmMount({ vault, host, port, logger = console }) {
       if (seg[0] === 'vault' && seg[1] === 'unlock' && method === 'POST') { const b = await readJson(req); vault.unlock(String(b.passphrase || '')); return sendJson(res, 200, { ok: true, vault: vault.status() }); }
       if (seg[0] === 'vault' && seg[1] === 'lock' && method === 'POST') { vault.lock(); return sendJson(res, 200, { ok: true, vault: vault.status() }); }
       if (seg[0] === 'vault' && seg[1] === 'passphrase' && method === 'POST') { const b = await readJson(req); vault.changePassphrase(String(b.old || ''), String(b.new || '')); return sendJson(res, 200, { ok: true }); }
+      if (seg[0] === 'vault' && seg[1] === 'reset' && method === 'POST') { return sendJson(res, 200, { ok: true, vault: vault.reset() }); }
       if (locked()) return sendJson(res, 423, { error: 'locked' });
       if (seg[0] === 'enabled' && method === 'POST') { const b = await readJson(req); vault.update((d) => { d.enabled = !!b.enabled; }); return sendJson(res, 200, { ok: true, enabled: !!b.enabled }); }
       if (seg[0] === 'secret' && method === 'POST') {

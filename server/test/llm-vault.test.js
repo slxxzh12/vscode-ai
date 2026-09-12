@@ -54,3 +54,17 @@ test('改口令后旧口令失效、新口令可解锁', () => {
   v.unlock('new');
   assert.equal(v.getData().jwtSecret, 'K');
 });
+
+test('reset 删除密钥库文件并回到未初始化，可重新初始化', () => {
+  const file = tmpFile();
+  const v = createVault({ file });
+  v.init('pw');
+  v.update((d) => { d.jwtSecret = 'S'; d.tokens = [{ id: 'a' }]; });
+  assert.equal(fs.existsSync(file), true);
+  assert.deepEqual(v.reset(), { initialized: false, unlocked: false });
+  assert.equal(fs.existsSync(file), false);
+  assert.equal(v.status().initialized, false);
+  assert.throws(() => v.getData(), (e) => e.code === 'locked');
+  v.init('pw2');
+  assert.equal(v.status().unlocked, true);
+});

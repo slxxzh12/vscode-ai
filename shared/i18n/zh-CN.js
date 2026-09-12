@@ -627,6 +627,8 @@ export const messages = {
   'llm.vault.change': '改口令',
   'llm.vault.desc': '密钥库用本机口令加密保存中转所需的敏感数据（JWT 签名密钥、已签发 token、开关状态）；口令与密钥都只在本机以密文落盘，不会明文保存。',
   'llm.vault.warn_lost': '请务必牢记口令：一旦遗忘将无法找回或恢复密钥库，只能重置并重新签发所有 token。',
+  'llm.vault.reset': '重置密钥库',
+  'llm.vault.reset_confirm': '重置将删除密钥库中的签名密钥与全部 token，且无法恢复；上游 provider 密钥不受影响。确定继续？',
   'llm.secret.title': 'JWT 签名密钥',
   'llm.secret.placeholder': '留空则随机生成',
   'llm.secret.set': '保存密钥',

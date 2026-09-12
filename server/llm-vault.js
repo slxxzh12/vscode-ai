@@ -59,6 +59,12 @@ export function createVault({ file }) {
       return api.status();
     },
     lock() { dek = null; data = null; return api.status(); },
+    reset() {
+      try { fs.unlinkSync(file); } catch { /* already gone */ }
+      try { fs.unlinkSync(file + '.tmp'); } catch { /* ignore */ }
+      dek = null; data = null;
+      return api.status();
+    },
     getData() { if (!data) throw vaultErr('locked', 'vault locked'); return data; },
     update(fn) { if (!data) throw vaultErr('locked', 'vault locked'); fn(data); persist(); return data; },
     changePassphrase(oldP, newP) {

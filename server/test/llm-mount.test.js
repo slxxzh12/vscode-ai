@@ -51,3 +51,17 @@ test('未解锁时受保护接口 423，status 可读', async (t) => {
   assert.equal((await jget(server, '/api/llm-admin/status')).status, 200);
   assert.equal((await jget(server, '/api/llm-admin/tokens')).status, 423);
 });
+
+test('重置密钥库：锁定态也可重置并回到未初始化', async (t) => {
+  const vault = tmpVault();
+  vault.init('pw');
+  vault.update((d) => { d.jwtSecret = 'S'; });
+  vault.lock();
+  const server = await start(vault);
+  t.after(() => server.close());
+  const r = await jpost(server, '/api/llm-admin/vault/reset', {});
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body).vault, { initialized: false, unlocked: false });
+  assert.equal((await jget(server, '/api/llm-admin/tokens')).status, 423);
+  assert.equal((await jpost(server, '/api/llm-admin/vault/init', { passphrase: 'pw2' })).status, 200);
+});

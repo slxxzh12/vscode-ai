@@ -25,6 +25,7 @@ export function useLlm() {
     vaultUnlock: (passphrase: string) => post('/api/llm-admin/vault/unlock', { passphrase }),
     vaultLock: () => post('/api/llm-admin/vault/lock', {}),
     vaultPassphrase: (oldP: string, newP: string) => post('/api/llm-admin/vault/passphrase', { old: oldP, new: newP }),
+    vaultReset: () => post<{ ok: boolean; vault: { initialized: boolean; unlocked: boolean } }>('/api/llm-admin/vault/reset', {}),
     setSecret: (secret: string) => post<{ secret: string }>('/api/llm-admin/secret', { secret }),
     setEnabled: (enabled: boolean) => post<{ enabled: boolean }>('/api/llm-admin/enabled', { enabled }),
     tokens: () => json<{ tokens: LlmToken[] }>('/api/llm-admin/tokens'),

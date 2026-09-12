@@ -37,6 +37,10 @@ const initVault = () => run(() => api.vaultInit(pass.value));
 const unlockVault = () => run(() => api.vaultUnlock(pass.value));
 const lockVault = () => run(() => api.vaultLock());
 const changePass = () => run(() => api.vaultPassphrase(pass.value, newPass.value));
+async function resetVault() {
+  if (!window.confirm(t('llm.vault.reset_confirm'))) return;
+  await run(() => api.vaultReset());
+}
 const saveSecret = () => run(() => api.setSecret(secret.value));
 const toggleEnabled = () => run(() => api.setEnabled(!st.value?.enabled));
 const issue = () => run(() => api.issue(employeeId.value, Number(days.value)));
@@ -84,6 +88,9 @@ async function copyConfig() {
         <input v-model="newPass" type="password" :placeholder="$t('llm.vault.new')" />
         <button @click="changePass">{{ $t('llm.vault.change') }}</button>
         <button class="ghost" @click="lockVault">{{ $t('llm.vault.lock') }}</button>
+      </div>
+      <div v-if="st?.vault.initialized" class="row">
+        <button class="danger" @click="resetVault">{{ $t('llm.vault.reset') }}</button>
       </div>
     </section>
 
@@ -154,6 +161,7 @@ async function copyConfig() {
 .row .days { width: 80px; }
 button { background: var(--ac); color: var(--onac); border: 1px solid var(--ac); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-family: inherit; }
 button.ghost { background: var(--bg5); color: var(--tx2); border-color: var(--bd); }
+button.danger { background: none; border-color: var(--err); color: var(--err); }
 button:disabled { opacity: .5; cursor: default; }
 .badge { font-size: 11px; color: var(--tx3); border: 1px solid var(--bd); border-radius: 10px; padding: 1px 8px; }
 .badge.ok { color: var(--ac2); border-color: var(--ac2); }

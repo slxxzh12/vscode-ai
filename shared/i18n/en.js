@@ -627,6 +627,8 @@ export const messages = {
   'llm.vault.change': 'Change',
   'llm.vault.desc': 'The vault encrypts the relay secrets (JWT signing key, issued tokens, on/off state) with a local passphrase; both passphrase and secrets stay local and are never stored in plaintext.',
   'llm.vault.warn_lost': 'Remember the passphrase: if you lose it, the vault cannot be recovered — you can only reset it and re-issue all tokens.',
+  'llm.vault.reset': 'Reset vault',
+  'llm.vault.reset_confirm': 'Resetting deletes the signing key and all tokens from the vault and cannot be undone; upstream provider keys are unaffected. Continue?',
   'llm.secret.title': 'JWT signing secret',
   'llm.secret.placeholder': 'Leave empty to generate randomly',
   'llm.secret.set': 'Save secret',
