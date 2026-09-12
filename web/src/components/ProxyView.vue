@@ -8,6 +8,9 @@ const st = ref<LlmStatus | null>(null);
 const tokens = ref<LlmToken[]>([]);
 const pluginList = ref<LlmPluginEntry[]>([]);
 const pluginDir = ref('');
+const pluginTemplate = ref('');
+const exampleCopied = ref(false);
+let exampleTimer: ReturnType<typeof setTimeout> | null = null;
 const pass = ref('');
 const newPass = ref('');
 const secret = ref('');
@@ -29,6 +32,7 @@ async function refresh() {
       const pl = await api.plugins();
       pluginList.value = pl.entries;
       pluginDir.value = pl.dir || '';
+      pluginTemplate.value = pl.template || '';
     } else {
       pluginList.value = [];
     }
@@ -57,6 +61,17 @@ async function resetVault() {
 const saveSecret = () => run(() => api.setSecret(secret.value));
 const toggleEnabled = () => run(() => api.setEnabled(!st.value?.enabled));
 const reloadPlugins = () => run(() => api.reloadPlugins());
+const openPluginsDir = () => run(() => api.revealPlugins());
+const createExample = () => run(() => api.createPluginExample());
+async function copyExample() {
+  if (!pluginTemplate.value) return;
+  try {
+    await navigator.clipboard.writeText(pluginTemplate.value);
+    exampleCopied.value = true;
+    if (exampleTimer) clearTimeout(exampleTimer);
+    exampleTimer = setTimeout(() => { exampleCopied.value = false; }, 1500);
+  } catch { /* ignore */ }
+}
 const issue = () => run(() => api.issue(employeeId.value, Number(days.value)));
 const revoke = (id: string) => run(() => api.revoke(id));
 async function genConfig() {
@@ -136,7 +151,11 @@ async function copyConfig() {
 
     <section v-if="st?.vault.unlocked" class="card">
       <div class="ch">{{ $t('llm.plugins.title') }}
-        <button class="ghost" @click="reloadPlugins">{{ $t('llm.plugins.reload') }}</button>
+        <span class="row">
+          <button class="ghost" @click="reloadPlugins">{{ $t('llm.plugins.reload') }}</button>
+          <button class="ghost" @click="createExample">{{ $t('llm.plugins.new') }}</button>
+          <button class="ghost" @click="openPluginsDir">{{ $t('llm.plugins.open') }}</button>
+        </span>
       </div>
       <div class="muted">{{ $t('llm.plugins.dir', { dir: pluginDir }) }}</div>
       <div class="muted">{{ $t('llm.plugins.hint') }}</div>
@@ -146,6 +165,12 @@ async function copyConfig() {
         <span class="muted">{{ p.file }} · p{{ p.priority }}</span>
         <span v-if="p.error" class="warn">{{ $t('llm.plugins.error') }}</span>
       </div>
+      <details class="ex">
+        <summary>{{ $t('llm.plugins.example.title') }}
+          <button class="ghost" @click.prevent="copyExample">{{ exampleCopied ? $t('llm.plugins.example.copied') : $t('llm.plugins.example.copy') }}</button>
+        </summary>
+        <pre class="cfg">{{ pluginTemplate }}</pre>
+      </details>
     </section>
 
     <section v-if="st?.vault.unlocked" class="card">
@@ -200,4 +225,6 @@ button:disabled { opacity: .5; cursor: default; }
 .prow .muted, .trow .muted { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sw { font-weight: 400; font-size: 12px; display: flex; gap: 4px; align-items: center; }
 .cfg { background: var(--bg1); border: 1px solid var(--bd); border-radius: 4px; padding: 8px; font-size: 12px; overflow: auto; max-height: 320px; white-space: pre-wrap; }
+.ex summary { cursor: pointer; color: var(--tx2); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+.ex .cfg { margin-top: 8px; }
 </style>

@@ -32,7 +32,9 @@ export function useLlm() {
     tokens: () => json<{ tokens: LlmToken[] }>('/api/llm-admin/tokens'),
     issue: (employeeId: string, days: number) => post<{ token: LlmToken }>('/api/llm-admin/tokens', { employeeId, days }),
     revoke: (id: string) => json<{ ok: boolean }>(`/api/llm-admin/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    plugins: () => json<{ entries: LlmPluginEntry[]; dir: string | null }>('/api/llm-admin/plugins'),
+    plugins: () => json<{ entries: LlmPluginEntry[]; dir: string | null; template: string }>('/api/llm-admin/plugins'),
+    createPluginExample: () => post<{ entries: LlmPluginEntry[]; file: string }>('/api/llm-admin/plugins/example', {}),
+    revealPlugins: () => post<{ ok: boolean }>('/api/llm-admin/plugins/reveal', {}),
     reloadPlugins: () => post<{ entries: LlmPluginEntry[] }>('/api/llm-admin/plugins/reload', {}),
     config: (provider: string, token: string) => json<{ config: string }>(`/api/llm-admin/opencode-config?provider=${encodeURIComponent(provider)}&token=${encodeURIComponent(token)}`),
   };
