@@ -69,6 +69,8 @@ async function copyConfig() {
           {{ st?.vault.unlocked ? $t('llm.vault.unlocked') : (st?.vault.initialized ? $t('llm.vault.locked') : $t('llm.vault.not_init')) }}
         </span>
       </div>
+      <div class="muted">{{ $t('llm.vault.desc') }}</div>
+      <div class="warn">{{ $t('llm.vault.warn_lost') }}</div>
       <div v-if="!st?.vault.initialized" class="row">
         <input v-model="pass" type="password" :placeholder="$t('llm.vault.passphrase')" />
         <button @click="initVault">{{ $t('llm.vault.init') }}</button>
@@ -87,6 +89,7 @@ async function copyConfig() {
 
     <section v-if="st?.vault.unlocked" class="card">
       <div class="ch">{{ $t('llm.secret.title') }}</div>
+      <div class="muted">{{ $t('llm.secret.hint') }}</div>
       <div class="row">
         <input v-model="secret" :placeholder="$t('llm.secret.placeholder')" />
         <button @click="saveSecret">{{ $t('llm.secret.set') }}</button>
