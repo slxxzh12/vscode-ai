@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createPairHarness } from '../collaboration/engine.js';
+import { detectUsername } from '../collaboration/identity.js';
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'collab-eng-')); }
 
@@ -24,7 +25,7 @@ test('multi-group: ensureGroup 幂等且成员去重', () => {
       const g2 = A.ensureGroup();
       assert.equal(g1.id, A.pub.machineId);
       assert.equal(g2.id, A.pub.machineId);
-      assert.equal(g1.name, `${A.pub.username}@${A.pub.host}:${A.pub.port}`);
+      assert.equal(g1.name, `${detectUsername()}@${A.pub.host}:${A.pub.port}`);
       assert.equal(A.store.getGroup().members.length, 1);
       assert.equal(A.store.getGroup().hubId, A.pub.machineId);
       assert.equal(A.store.listGroups().length, 1);

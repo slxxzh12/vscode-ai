@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { CollabPeer } from '@devflow/shared/collab';
 import { CollabStore } from './store.js';
-import { loadIdentity, toPublicProfile } from './identity.js';
+import { loadIdentity, toPublicProfile, detectUsername } from './identity.js';
 import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
@@ -261,7 +261,7 @@ export class CollabEngine {
 
   // ---- 群组（hub = 开启远程访问并分享链接者）----
   ensureGroup() {
-    const name = `${this.pub.username || 'user'}@${this.pub.host || '127.0.0.1'}:${this.pub.port || 0}`;
+    const name = `${detectUsername()}@${this.pub.host || '127.0.0.1'}:${this.pub.port || 0}`;
     let g = this.store.ownedGroup(this.pub.machineId);
     if (!g) g = this.store.ensureGroup({ name, hubId: this.pub.machineId, self: this.pub });
     else if (g.name !== name) { g.name = name; this.store.upsertGroup(g); }
