@@ -35,6 +35,7 @@ import { publicFingerprint } from './collaboration/identity.js';
 import { createVault } from './llm-vault.js';
 import { createUsageStore, normalizeUsage } from './usage-store.js';
 import { createLlmMount } from './llm-mount.js';
+import { detectEmployeeId } from './llm-config.js';
 import {
   migrateLegacy, resolveProfile, createProfile, bindProfile, touchProfile,
   profilePaths, createWorkspaceService,
@@ -150,7 +151,7 @@ function buildWorkspace({ paths, port }) {
   });
   const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: log });
 
-  const identity = loadIdentity({ file: paths.identityFile, host: HOST, port });
+  const identity = loadIdentity({ file: paths.identityFile, employeeId: detectEmployeeId(), host: HOST, port });
   const eventBus = createEventBus();
   const engine = new CollabEngine({
     store: new CollabStore({ file: paths.storeFile, logger: log }),

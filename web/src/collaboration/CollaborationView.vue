@@ -42,7 +42,7 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
         </button>
       </nav>
       <div class="idbar" v-if="snap.identity.machineId">
-        {{ snap.identity.username }} · {{ snap.identity.host }}:{{ snap.identity.port }}
+        {{ snap.identity.employeeId || snap.identity.username }} · {{ snap.identity.host }}:{{ snap.identity.port }}
         <span class="fp">{{ snap.identity.publicKey.slice(-8) }}</span>
       </div>
       <span v-if="collab.lastError" class="err">{{ collab.lastError }}</span>

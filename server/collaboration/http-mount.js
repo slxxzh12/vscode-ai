@@ -91,7 +91,7 @@ export function createCollabMount({ engine, logger = console }) {
     try {
       // identity
       if (seg[0] === 'identity' && m === 'GET') return ok(res, { identity: engine.pub });
-      if (seg[0] === 'identity' && m === 'PUT') { engine.setAdvertised({ host: body.host, port: body.port }); return ok(res, { identity: engine.pub }); }
+      if (seg[0] === 'identity' && m === 'PUT') { engine.setAdvertised({ host: body.host, port: body.port, employeeId: body.employeeId }); return ok(res, { identity: engine.pub }); }
       // snapshot / friends / groups / invites / skills / distribute / inbox / pull
       if (seg.length === 1 && seg[0] === 'snapshot' && m === 'GET') {
         const inbox = engine.store.listInbox().map(({ zipPath, ...rest }) => rest);

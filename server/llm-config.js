@@ -34,6 +34,35 @@ export function loadOpencodeProviders({ dir = opencodeConfigDir() } = {}) {
   return { providers, defaultProvider };
 }
 
+function jwtSubject(token) {
+  if (typeof token !== 'string') return '';
+  const parts = token.split('.');
+  if (parts.length !== 3) return '';
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    return typeof payload.sub === 'string' ? payload.sub.trim() : '';
+  } catch { return ''; }
+}
+
+// 本机当前工号：优先环境变量，其次 opencode 配置里 DevFlow 代理 JWT 的 sub 声明。
+export function detectEmployeeId({ dir = opencodeConfigDir(), env = process.env } = {}) {
+  const override = env.DEVFLOW_EMPLOYEE_ID;
+  if (typeof override === 'string' && override.trim()) return override.trim();
+  const raw = readConfigFile(dir);
+  if (raw == null) return '';
+  let json;
+  try { json = JSON.parse(raw); } catch { try { json = JSON.parse(stripJsonc(raw)); } catch { return ''; } }
+  for (const p of Object.values(json.provider || {})) {
+    const o = (p && p.options) || {};
+    const keys = Array.isArray(o.apiKeys) ? o.apiKeys : (o.apiKey ? [o.apiKey] : []);
+    for (const k of keys) {
+      const sub = jwtSubject(resolveApiKey(k, env));
+      if (sub) return sub;
+    }
+  }
+  return '';
+}
+
 export function resolveApiKey(raw, env = process.env) {
   if (typeof raw !== 'string') return '';
   const m = raw.match(/^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$/);

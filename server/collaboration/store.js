@@ -33,6 +33,13 @@ export class CollabStore {
           data.groups = [g];
         }
         delete data.group;
+        // 旧结构群组（ownerId/role，无 hubId）迁移：补 hubId，去掉废弃字段
+        for (const g of data.groups) {
+          if (!g || typeof g !== 'object') continue;
+          if (!g.hubId && g.ownerId) g.hubId = g.ownerId;
+          delete g.ownerId;
+          for (const m of g.members || []) if (m && typeof m === 'object') delete m.role;
+        }
         return data;
       } catch (e) { this.log?.warn?.('store corrupt, reset', e.message); }
     }

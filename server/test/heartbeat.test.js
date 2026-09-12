@@ -26,6 +26,36 @@ test('slave 上报 → hub 汇总写 downloads/usage.json', async () => {
   } finally { await h.stop(); }
 });
 
+test('心跳带上 工号/IP/端口 并刷新群成员档案', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    await joinGroup(A, B);
+    B.identity.employeeId = 'E42';
+    B.identity.host = '10.0.0.9';
+    B.identity.port = 4567;
+    await B.reportHeartbeat({ agent: 'opencode', days: 7, messages: 5 });
+    const hb = A.store.getHeartbeat(B.pub.machineId);
+    assert.equal(hb.employeeId, 'E42');
+    assert.equal(hb.host, '10.0.0.9');
+    assert.equal(hb.port, 4567);
+    const mem = A.store.getGroup().members.find((m) => m.machineId === B.pub.machineId);
+    assert.equal(mem.employeeId, 'E42');
+    assert.equal(mem.host, '10.0.0.9');
+    assert.equal(mem.port, 4567);
+  } finally { await h.stop(); }
+});
+
+test('ensureGroup 群名用工号（无则系统用户名）', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A] = h.nodes;
+    A.identity.employeeId = 'E7';
+    const g = A.ensureGroup();
+    assert.equal(g.name, `E7@${A.pub.host}:${A.pub.port}`);
+  } finally { await h.stop(); }
+});
+
 test('slave 点击拉取 → 本地 downloads 出现 usage.json', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {

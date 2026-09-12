@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { CollabPeer } from '@devflow/shared/collab';
 import { CollabStore } from './store.js';
-import { loadIdentity, toPublicProfile, detectUsername } from './identity.js';
+import { loadIdentity, toPublicProfile, detectHost } from './identity.js';
 import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
@@ -26,6 +26,15 @@ function collectTree(dir, rel, out) {
 function assertSafeRel(name) {
   if (!name || typeof name !== 'string') throw new Error('bad item name');
   if (name.includes('..') || name.startsWith('/') || name.includes('\\')) throw new Error('unsafe item name');
+}
+// 监听地址是通配时（0.0.0.0/::），对外展示/上报用本机真实网卡 IP
+function isWildcardHost(h) { return !h || h === '0.0.0.0' || h === '::' || h === '::0'; }
+// 成员展示名：工号（无则系统用户名）@IP:端口
+export function profileLabel(p) {
+  if (!p) return '';
+  const id = String(p.employeeId || p.username || '').trim();
+  const host = p.host || '127.0.0.1';
+  return id ? `${id}@${host}:${p.port || 0}` : `${host}:${p.port || 0}`;
 }
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
@@ -261,7 +270,7 @@ export class CollabEngine {
 
   // ---- 群组（hub = 开启远程访问并分享链接者）----
   ensureGroup() {
-    const name = `${detectUsername()}@${this.pub.host || '127.0.0.1'}:${this.pub.port || 0}`;
+    const name = profileLabel(this.pub);
     let g = this.store.ownedGroup(this.pub.machineId);
     if (!g) g = this.store.ensureGroup({ name, hubId: this.pub.machineId, self: this.pub });
     else if (g.name !== name) { g.name = name; this.store.upsertGroup(g); }
@@ -335,13 +344,25 @@ export class CollabEngine {
     this.writeDownload('usage.json', Buffer.from(JSON.stringify({ updatedAt: Date.now(), members: this.store.listHeartbeats() }, null, 2)), 'usage');
     this.writeDownload('group.json', Buffer.from(JSON.stringify(this.store.getGroup() || {}, null, 2)), 'group');
   }
+  // 心跳记录：带上上报方身份（工号/IP/端口）+ 用量，供前端据此生成成员名
+  _heartbeatRecord(from, usage) {
+    return {
+      ...(usage || {}),
+      machineId: from.machineId,
+      employeeId: from.employeeId || '',
+      username: from.username || '',
+      host: from.host || '',
+      port: from.port || 0,
+      receivedAt: Date.now(),
+    };
+  }
   reportHeartbeat(usage) {
     const groups = this.store.listGroups().filter((g) => g.members.find((m) => m.machineId === this.pub.machineId));
     if (!groups.length) return Promise.resolve({ code: 'no-group' });
     const tasks = [];
     for (const g of groups) {
       if (g.hubId === this.pub.machineId) {
-        this.store.setHeartbeat(this.pub.machineId, { ...usage, receivedAt: Date.now() });
+        this.store.setHeartbeat(this.pub.machineId, this._heartbeatRecord(this.pub, usage));
         this.writeUsageSnapshot();
       } else {
         const hub = g.members.find((m) => m.machineId === g.hubId);
@@ -355,7 +376,15 @@ export class CollabEngine {
     const g = this.store.findGroup(env.payload && env.payload.groupId) || this.store.getGroup();
     if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
     if (g.hubId !== this.pub.machineId) return { ok: false, error: 'not-hub' };
-    this.store.setHeartbeat(env.from.machineId, { ...(env.payload.usage || {}), receivedAt: Date.now() });
+    const m = g.members.find((x) => x.machineId === env.from.machineId);
+    if (m) {
+      Object.assign(m, {
+        employeeId: env.from.employeeId || m.employeeId || '', username: env.from.username || m.username,
+        host: env.from.host || m.host, port: env.from.port || m.port,
+      });
+      this.store.upsertGroup(g);
+    }
+    this.store.setHeartbeat(env.from.machineId, this._heartbeatRecord(env.from, env.payload && env.payload.usage));
     this.writeUsageSnapshot();
     this._emit('heartbeat', {});
     return { ok: true };
@@ -627,11 +656,22 @@ export class CollabEngine {
     this._emit('synced', {});
   }
   // 更新本机已注册的 host/port（供 http-mount 启动后刷新公开地址）
-  setAdvertised({ host, port }) {
-    if (host) this.identity.host = host;
+  setAdvertised({ host, port, employeeId } = {}) {
+    if (host) this.identity.host = isWildcardHost(host) ? (detectHost() || host) : host;
     if (port) this.identity.port = port;
+    if (employeeId !== undefined) this.identity.employeeId = String(employeeId || '').trim();
     this.store.data.identity = { ...this.identity };
     this.store.save();
+    const g = this.store.ownedGroup(this.pub.machineId);
+    if (g) {
+      g.name = profileLabel(this.pub);
+      const me = g.members.find((m) => m.machineId === this.pub.machineId);
+      if (me) {
+        me.employeeId = this.pub.employeeId; me.username = this.pub.username;
+        me.host = this.pub.host; me.port = this.pub.port;
+      }
+      this.store.upsertGroup(g);
+    }
   }
 }
 

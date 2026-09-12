@@ -29,8 +29,8 @@ export function publicFingerprint(publicKeyPem) {
   return crypto.createHash('sha256').update(publicKeyPem).digest('hex').slice(0, 16);
 }
 
-// 读/建 identity 并持久化到 file。返回对象: { machineId, username, host, port, publicKey, privateKey }
-export function loadIdentity({ file, username = detectUsername(), host = detectHost(), port = 22222 }) {
+// 读/建 identity 并持久化到 file。返回对象: { machineId, username, employeeId, host, port, publicKey, privateKey }
+export function loadIdentity({ file, username = detectUsername(), employeeId = '', host = detectHost(), port = 22222 }) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   let cur = {};
   if (fs.existsSync(file)) {
@@ -43,6 +43,7 @@ export function loadIdentity({ file, username = detectUsername(), host = detectH
     cur.privateKey = kp.privateKey;
   }
   cur.username = username;
+  cur.employeeId = employeeId || cur.employeeId || '';
   cur.host = host;
   cur.port = port;
   const tmp = file + '.tmp';
@@ -53,7 +54,7 @@ export function loadIdentity({ file, username = detectUsername(), host = detectH
 
 export function toPublicProfile(id) {
   return {
-    machineId: id.machineId, username: id.username,
+    machineId: id.machineId, username: id.username, employeeId: id.employeeId || '',
     host: id.host, port: id.port, publicKey: id.publicKey,
   };
 }

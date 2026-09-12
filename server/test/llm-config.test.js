@@ -3,13 +3,28 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadOpencodeProviders, resolveApiKey, resolveApiKeys, listProviders, getProvider, buildOpencodeConfig, buildOpencodeConfigMulti } from '../llm-config.js';
+import { loadOpencodeProviders, resolveApiKey, resolveApiKeys, listProviders, getProvider, buildOpencodeConfig, buildOpencodeConfigMulti, detectEmployeeId } from '../llm-config.js';
 
 function dirWith(obj, name = 'opencode.json') {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
   fs.writeFileSync(path.join(d, name), typeof obj === 'string' ? obj : JSON.stringify(obj));
   return d;
 }
+
+function b64url(obj) { return Buffer.from(JSON.stringify(obj)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function fakeJwt(sub) { return `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url({ sub })}.sig`; }
+
+test('detectEmployeeId 从 opencode 配置的 DevFlow JWT sub 取工号', () => {
+  const dir = dirWith({ provider: { 'devflow-corp': { options: { baseURL: 'http://x/api/llm/corp/v1', apiKey: fakeJwt('E10086') } } } });
+  assert.equal(detectEmployeeId({ dir, env: {} }), 'E10086');
+});
+
+test('detectEmployeeId 环境变量优先，缺配置返回空', () => {
+  const dir = dirWith({ provider: { 'devflow-corp': { options: { apiKey: fakeJwt('E1') } } } });
+  assert.equal(detectEmployeeId({ dir, env: { DEVFLOW_EMPLOYEE_ID: 'E9' } }), 'E9');
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
+  assert.equal(detectEmployeeId({ dir: empty, env: {} }), '');
+});
 
 test('解析 provider 列表与默认 provider', () => {
   const dir = dirWith({

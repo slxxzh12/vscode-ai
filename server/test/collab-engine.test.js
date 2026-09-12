@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createPairHarness } from '../collaboration/engine.js';
-import { detectUsername } from '../collaboration/identity.js';
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'collab-eng-')); }
 
@@ -25,12 +24,33 @@ test('multi-group: ensureGroup 幂等且成员去重', () => {
       const g2 = A.ensureGroup();
       assert.equal(g1.id, A.pub.machineId);
       assert.equal(g2.id, A.pub.machineId);
-      assert.equal(g1.name, `${detectUsername()}@${A.pub.host}:${A.pub.port}`);
+      assert.equal(g1.name, `${A.pub.username}@${A.pub.host}:${A.pub.port}`);
       assert.equal(A.store.getGroup().members.length, 1);
       assert.equal(A.store.getGroup().hubId, A.pub.machineId);
       assert.equal(A.store.listGroups().length, 1);
     } finally { await h.stop(); }
   });
+});
+
+test('setAdvertised 刷新自有群名为 工号@IP:端口', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A] = h.nodes;
+    A.store.upsertGroup({ id: 'legacy', name: 'test', hubId: A.pub.machineId, createdAt: 1, members: [{ ...A.pub }] });
+    A.identity.employeeId = 'E5';
+    A.setAdvertised({ host: '10.1.2.3', port: 8888 });
+    assert.equal(A.store.findGroup('legacy').name, 'E5@10.1.2.3:8888');
+  } finally { await h.stop(); }
+});
+
+test('setAdvertised 收到通配 host 时改用真实网卡 IP', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A] = h.nodes;
+    A.setAdvertised({ host: '0.0.0.0', port: 22222 });
+    assert.notEqual(A.pub.host, '0.0.0.0');
+    assert.ok(A.pub.host.length > 0);
+  } finally { await h.stop(); }
 });
 
 test('multi-group: joinByLink 校验令牌后入群并记录 hub', async () => {

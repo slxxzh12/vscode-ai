@@ -18,6 +18,19 @@ test('空文件初始化默认结构', () => {
   assert.deepEqual(s.data.groupSkills, []);
 });
 
+test('旧结构群组迁移：ownerId→hubId 并去掉 role', () => {
+  const f = tmpFile();
+  fs.writeFileSync(f, JSON.stringify({
+    groups: [{ id: 'legacy', name: 'test', ownerId: 'me', createdAt: 1, members: [{ machineId: 'me', username: 'u', host: 'h', port: 1, publicKey: 'k', role: 'owner' }] }],
+  }));
+  const s = new CollabStore({ file: f });
+  const g = s.findGroup('legacy');
+  assert.equal(g.hubId, 'me');
+  assert.equal(g.ownerId, undefined);
+  assert.equal(g.members[0].role, undefined);
+  assert.equal(s.ownedGroup('me').id, 'legacy');
+});
+
 test('多群 ensure/get/addMember/persist', () => {
   const f = tmpFile();
   const s = new CollabStore({ file: f });

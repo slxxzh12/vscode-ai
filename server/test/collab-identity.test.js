@@ -32,6 +32,15 @@ test('用户名/host/port 更新会被刷新', () => {
   assert.equal(c.port, 3999);
 });
 
+test('工号 employeeId 持久化；未探测到时不覆盖已存值', () => {
+  const f = tmpFile();
+  loadIdentity({ file: f, username: 'alice', employeeId: 'E123', host: '192.168.1.5', port: 3001 });
+  const again = loadIdentity({ file: f, username: 'alice', host: '192.168.1.5', port: 3001 });
+  assert.equal(again.employeeId, 'E123');
+  const explicit = loadIdentity({ file: f, username: 'alice', employeeId: 'E999', host: '192.168.1.5', port: 3001 });
+  assert.equal(explicit.employeeId, 'E999');
+});
+
 test('缺 username 时回退系统用户名', () => {
   const f = tmpFile();
   const id = loadIdentity({ file: f, host: '127.0.0.1', port: 3001 });

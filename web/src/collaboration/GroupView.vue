@@ -17,6 +17,19 @@ watch(groups, (gs) => {
 }, { immediate: true });
 const me = computed(() => snap.value.identity?.machineId);
 
+// —— 我的工号（身份展示 = 工号@IP:端口）——
+const myEmployeeId = ref(snap.value.identity.employeeId || '');
+watch(() => snap.value.identity.employeeId, (v) => { myEmployeeId.value = v || ''; });
+const idMsg = ref('');
+async function saveEmployeeId() {
+  idMsg.value = '';
+  try {
+    await props.collab.updateIdentity(snap.value.identity.host, snap.value.identity.port, myEmployeeId.value.trim());
+    idMsg.value = t('common.save');
+    setTimeout(() => { idMsg.value = ''; }, 1500);
+  } catch (e) { idMsg.value = String((e as Error).message || e); }
+}
+
 // —— 远程访问（自设置迁入）——
 const remoteTtlDays = ref(1);
 const remoteLink = ref('');
@@ -81,6 +94,13 @@ async function join() {
 
 const online = (receivedAt?: number) => !!receivedAt && Date.now() - receivedAt < 20 * 60 * 1000;
 function fmtNum(n?: number) { return n == null ? '?' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(n); }
+function memberLabel(m: { machineId: string; username: string; employeeId?: string; host: string; port: number }) {
+  const hb = snap.value.heartbeats[m.machineId];
+  const id = (hb?.employeeId || m.employeeId || hb?.username || m.username || '').trim();
+  const host = hb?.host || m.host || '127.0.0.1';
+  const port = hb?.port ?? m.port ?? 0;
+  return id ? `${id}@${host}:${port}` : `${host}:${port}`;
+}
 function usageText(machineId: string) {
   const u = snap.value.heartbeats[machineId];
   if (!u || u.error) return '';
@@ -129,6 +149,19 @@ onMounted(async () => {
 <template>
   <div class="cw">
     <aside class="cw-left">
+      <div class="sec">
+        <h4>{{ $t('collab.identity.title') }}</h4>
+        <div class="cfgrow">
+          <span>{{ $t('collab.identity.employee') }}</span>
+          <input v-model="myEmployeeId" class="idinput" :placeholder="$t('collab.identity.employee')" @keyup.enter="saveEmployeeId" />
+        </div>
+        <div class="addrow">
+          <button @click="saveEmployeeId">{{ $t('common.save') }}</button>
+        </div>
+        <div class="cfghint">{{ $t('collab.identity.hint') }}</div>
+        <div v-if="idMsg" class="cfghint">{{ idMsg }}</div>
+      </div>
+
       <div class="sec">
         <h4>{{ $t('collab.groups.title') }}</h4>
         <div v-if="!groups.length" class="empty">{{ $t('collab.groups.empty') }}</div>
@@ -211,8 +244,7 @@ onMounted(async () => {
             <div v-for="m in group.members" :key="m.machineId" class="memrow">
               <span class="dot" :class="{ on: online(snap.heartbeats[m.machineId]?.receivedAt) }" />
               <span class="txt">
-                {{ m.username }}<span v-if="m.machineId === me" class="sub">{{ $t('collab.group.me_suffix') }}</span>
-                <span class="sub">{{ m.host }}:{{ m.port }}</span>
+                {{ memberLabel(m) }}<span v-if="m.machineId === me" class="sub">{{ $t('collab.group.me_suffix') }}</span>
               </span>
               <span class="usage">{{ usageText(m.machineId) || $t('collab.member.no_usage') }}</span>
             </div>
@@ -253,6 +285,7 @@ button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2);
 button.gen { flex: 1; background: var(--err); color: #fff; font-weight: 700; padding: 8px 10px; }
 button.gen:hover { filter: brightness(1.08); }
 .ttlinput { width: 72px; box-sizing: border-box; }
+.idinput { width: 130px; box-sizing: border-box; }
 .tag { font-size: 10px; font-weight: 400; text-transform: none; color: var(--ok, #22c55e); margin-left: 4px; }
 button.del { color: var(--err); border-color: var(--bd); }
 input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 5px 8px; }

@@ -1,4 +1,4 @@
-export interface CollabProfile { machineId: string; username: string; host: string; port: number; publicKey: string; }
+export interface CollabProfile { machineId: string; username: string; employeeId?: string; host: string; port: number; publicKey: string; }
 export interface CollabMember extends CollabProfile {}
 export interface CollabGroup { id: string; name: string; hubId: string; createdAt: number; members: CollabMember[]; }
 export interface CollabInboxItem { id: string; fromId: string; groupId: string | null; kind?: 'skill' | 'file'; skillName: string | null; fileName?: string | null; hash: string; size: number; status: 'received' | 'installed' | 'ignored' | 'invalid'; receivedAt: number; }
@@ -9,6 +9,7 @@ export interface CollabUsage {
   sessions?: number; messages?: number; totalCost?: number;
   input?: number; output?: number; cacheRead?: number; cacheWrite?: number;
   collectedAt?: number; receivedAt?: number; error?: string;
+  machineId?: string; employeeId?: string; username?: string; host?: string; port?: number;
 }
 export interface CollabSnapshot {
   identity: CollabProfile;
@@ -21,7 +22,7 @@ export interface CollabSnapshot {
 }
 
 export const EMPTY_SNAPSHOT: CollabSnapshot = {
-  identity: { machineId: '', username: '', host: '', port: 0, publicKey: '' },
+  identity: { machineId: '', username: '', employeeId: '', host: '', port: 0, publicKey: '' },
   group: null, groups: [], heartbeats: {}, skillsInbox: [], outbox: [], groupSkills: [],
 };
 
