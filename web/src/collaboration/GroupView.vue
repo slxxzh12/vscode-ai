@@ -72,12 +72,6 @@ async function join() {
   } catch (e) { joinErr.value = (e as Error).message || String(e); }
 }
 
-// —— 命令白名单 ——
-const newPrefix = ref('');
-const myAllow = computed(() => props.collab.allowlistState.value);
-async function addAllowPrefix() { if (newPrefix.value.trim()) { await props.collab.addAllow(newPrefix.value.trim()); newPrefix.value = ''; } }
-async function delAllowPrefix(p: string) { await props.collab.removeAllow(p); }
-
 const online = (receivedAt?: number) => !!receivedAt && Date.now() - receivedAt < 20 * 60 * 1000;
 function fmtNum(n?: number) { return n == null ? '?' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(n); }
 function usageText(machineId: string) {
@@ -120,7 +114,6 @@ async function install(name: string) {
 
 onMounted(async () => {
   await loadRemote();
-  await props.collab.loadAllowlist().catch(() => {});
   await loadDownloads();
   await loadDir();
 });
@@ -162,23 +155,6 @@ onMounted(async () => {
       </div>
 
       <div class="sec">
-        <h4>{{ $t('collab.downloads.title') }}</h4>
-        <div class="addrow">
-          <button @click="syncMaster">{{ $t('collab.downloads.sync') }}</button>
-        </div>
-        <div v-if="dlMsg" class="err">{{ dlMsg }}</div>
-        <div v-if="installMsg" class="cfghint">{{ installMsg }}</div>
-        <div v-if="downloads.manifest.files.length === 0" class="empty">{{ $t('collab.downloads.empty') }}</div>
-        <div v-for="f in downloads.manifest.files" :key="f.name" class="rowline">
-          <span class="txt">{{ f.name }}</span>
-          <template v-if="f.kind === 'skill'">
-            <a class="dl" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ $t('collab.downloads.download') }}</a>
-            <button class="ghost" @click="install(f.name)">{{ $t('collab.downloads.install') }}</button>
-          </template>
-        </div>
-      </div>
-
-      <div class="sec">
         <h4>{{ $t('collab.downloads.dir_title') }} <span class="tag">{{ $t('collab.downloads.dir_open') }}</span></h4>
         <div class="cfghint">{{ $t('collab.downloads.dir_hint') }}</div>
         <div v-if="dirFiles.length === 0" class="empty">{{ $t('collab.downloads.dir_empty') }}</div>
@@ -201,18 +177,22 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="sec allow">
-        <h4>{{ $t('collab.allow.title') }}</h4>
+      <details class="sec fold">
+        <summary>{{ $t('collab.downloads.title') }}</summary>
         <div class="addrow">
-          <input v-model="newPrefix" :placeholder="$t('collab.allow.placeholder')" @keyup.enter="addAllowPrefix" />
-          <button @click="addAllowPrefix">＋</button>
+          <button @click="syncMaster">{{ $t('collab.downloads.sync') }}</button>
         </div>
-        <div v-if="myAllow.length === 0" class="empty">{{ $t('collab.allow.empty') }}</div>
-        <div v-for="p in myAllow" :key="p" class="rowline">
-          <span class="txt"><code>{{ p }}</code></span>
-          <button class="ghost del" @click="delAllowPrefix(p)">{{ $t('common.delete') }}</button>
+        <div v-if="dlMsg" class="err">{{ dlMsg }}</div>
+        <div v-if="installMsg" class="cfghint">{{ installMsg }}</div>
+        <div v-if="downloads.manifest.files.length === 0" class="empty">{{ $t('collab.downloads.empty') }}</div>
+        <div v-for="f in downloads.manifest.files" :key="f.name" class="rowline">
+          <span class="txt">{{ f.name }}</span>
+          <template v-if="f.kind === 'skill'">
+            <a class="dl" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ $t('collab.downloads.download') }}</a>
+            <button class="ghost" @click="install(f.name)">{{ $t('collab.downloads.install') }}</button>
+          </template>
         </div>
-      </div>
+      </details>
     </aside>
 
     <section class="cw-right">
@@ -265,4 +245,8 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .linkrow button { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
 .dl { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; text-decoration: none; }
 .placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--tx6); }
+details.fold > summary { cursor: pointer; color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; list-style: none; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: '▸ '; }
+details.fold[open] > summary::before { content: '▾ '; }
 </style>

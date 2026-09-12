@@ -17,7 +17,6 @@ export function useCollab() {
   const lastError = ref('');
   const chatState = ref<Record<string, { messages: CollabChatMessage[] }>>({});
   const pendingCmdState = ref<CollabPendingCmd[]>([]);
-  const allowlistState = ref<string[]>([]);
 
   async function refresh(): Promise<CollabSnapshot> {
     try {
@@ -62,13 +61,6 @@ export function useCollab() {
     return r.pending;
   }
   async function approveCmd(reqId: string, approve: boolean) { return post(`/api/collab/cmds/${reqId}/approve`, { approve }); }
-  async function loadAllowlist() {
-    const r = await http<{ allowlist: string[] }>('/api/collab/allowlist');
-    allowlistState.value = r.allowlist;
-    return r.allowlist;
-  }
-  async function addAllow(prefix: string) { await post('/api/collab/allowlist', { prefix }); return loadAllowlist(); }
-  async function removeAllow(prefix: string) { await http(`/api/collab/allowlist/${encodeURIComponent(prefix)}`, { method: 'DELETE' }); return loadAllowlist(); }
 
   async function handleS2C(type: string, payload: Record<string, unknown>) {
     if (type === 'collab-chat') {
@@ -81,9 +73,9 @@ export function useCollab() {
 
   return {
     state, lastError, refresh,
-    chatState, pendingCmdState, allowlistState,
+    chatState, pendingCmdState,
     chat, sendChat, sendCmd, pullChat, loadPendingCmds, approveCmd,
-    loadAllowlist, addAllow, removeAllow, handleS2C,
+    handleS2C,
     async updateIdentity(host: string, port: number) { await post('/api/collab/identity', { host, port }); return refresh(); },
     async join(host: string, port: number, token: string) {
       const r = await post<{ code: string; group?: CollabGroup }>('/api/collab/join', { host, port, token });
