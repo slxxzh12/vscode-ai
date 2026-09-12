@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { snapshotFileName, snapshotBackground } from './snapshot';
+import { snapshotFileName, snapshotBackground, snapshotFilter, snapshotOptions } from './snapshot';
 
 describe('snapshotFileName', () => {
   it('固定日期 → devflow-YYYYMMDD-HHmmss.png（各段补零）', () => {
@@ -35,5 +35,34 @@ describe('snapshotBackground', () => {
     const el = {} as HTMLElement;
     const get = styleReader({});
     expect(snapshotBackground(el, get)).toBe('#1e1e1e');
+  });
+});
+
+describe('snapshotFilter', () => {
+  it('带 data-snapshot-skip 的节点被跳过', () => {
+    const node = { hasAttribute: (n: string) => n === 'data-snapshot-skip' } as unknown as HTMLElement;
+    expect(snapshotFilter(node)).toBe(false);
+  });
+
+  it('普通节点保留', () => {
+    const node = { hasAttribute: () => false } as unknown as HTMLElement;
+    expect(snapshotFilter(node)).toBe(true);
+  });
+
+  it('无 hasAttribute 的对象也保留（不抛错）', () => {
+    expect(snapshotFilter({} as unknown as HTMLElement)).toBe(true);
+  });
+});
+
+describe('snapshotOptions', () => {
+  it('组合 cacheBust / pixelRatio / backgroundColor / filter', () => {
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: (n: string) => (n === '--bg1' ? '#abcdef' : '') }));
+    try {
+      const o = snapshotOptions({} as HTMLElement, 2);
+      expect(o).toMatchObject({ cacheBust: true, pixelRatio: 2, backgroundColor: '#abcdef' });
+      expect(typeof o.filter).toBe('function');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -16,3 +16,26 @@ export function snapshotBackground(
     || (s.getPropertyValue('--bg0') || '').trim()
     || '#1e1e1e';
 }
+
+export interface SnapshotOptions {
+  cacheBust: boolean;
+  pixelRatio: number;
+  backgroundColor: string;
+  filter: (node: HTMLElement) => boolean;
+}
+
+export function snapshotFilter(node: HTMLElement): boolean {
+  return !(node && typeof node.hasAttribute === 'function' && node.hasAttribute('data-snapshot-skip'));
+}
+
+export function snapshotOptions(
+  el: HTMLElement,
+  pixelRatio: number = (typeof window !== 'undefined' ? window.devicePixelRatio : 1) || 1,
+): SnapshotOptions {
+  return {
+    cacheBust: true,
+    pixelRatio,
+    backgroundColor: snapshotBackground(el),
+    filter: snapshotFilter,
+  };
+}
