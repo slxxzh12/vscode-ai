@@ -49,3 +49,26 @@ export function createUsageStore({ file }) {
     close() { db.close(); },
   };
 }
+
+// 归一化上报 body → 记录（或错误码）；date 缺省用 now 当天本地日期
+export function normalizeUsage(body = {}, now = Date.now()) {
+  const memberId = String(body.memberId || '').trim();
+  if (!memberId) return { error: 'bad-input' };
+  let date = typeof body.date === 'string' ? body.date.trim() : '';
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'bad-date' };
+  if (!date) {
+    const d = new Date(now);
+    const p = (n) => String(n).padStart(2, '0');
+    date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  const num = (v, round) => { const n = Number(v); return Number.isFinite(n) ? (round ? Math.round(n) : n) : null; };
+  return {
+    record: {
+      date, memberId, agent: String(body.agent || ''),
+      sessions: num(body.sessions, true), messages: num(body.messages, true),
+      input: num(body.input, true), output: num(body.output, true), days: num(body.days, true),
+      cost: num(body.cost, false), cacheRead: num(body.cacheRead, true), cacheWrite: num(body.cacheWrite, true),
+      receivedAt: now,
+    },
+  };
+}

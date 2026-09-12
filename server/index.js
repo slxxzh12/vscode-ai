@@ -32,6 +32,7 @@ import { readHistory, writeHistory, appendHistory } from './message-history.js';
 import { dataHome, instanceName, instanceSeedDir, instanceFpRoot, downloadsDir } from './data-home.js';
 import { publicFingerprint } from './collaboration/identity.js';
 import { createVault } from './llm-vault.js';
+import { createUsageStore, normalizeUsage } from './usage-store.js';
 import { createLlmMount } from './llm-mount.js';
 import {
   migrateLegacy, resolveProfile, createProfile, bindProfile, touchProfile,
@@ -49,6 +50,8 @@ const HOST = process.env.DEVFLOW_HOST || BOOT_CFG.server.host || '127.0.0.1';
 const PORT = Number(process.env.DEVFLOW_PORT || BOOT_CFG.server.port || DEFAULT_PORT);
 setLocale(BOOT_CFG.server.language);
 const NODE = instanceName();
+// 用量上报：按天落 SQLite（固定 <dataHome>/usage.db，与端口档案无关）
+const usageStore = createUsageStore({ file: path.join(dataHome(), 'usage.db') });
 
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
 process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
@@ -434,6 +437,33 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ workflows: saved }));
     });
+    return;
+  }
+
+  // 用量上报：按天写入 SQLite（放在未就绪 409 之前，不依赖工作区）
+  if (url.pathname === '/api/usage' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; if (raw.length > 1024 * 1024) req.destroy(); });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const { record, error } = normalizeUsage(body);
+      if (error) { res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error })); return; }
+      usageStore.upsert(record);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, date: record.date }));
+    });
+    return;
+  }
+  if (url.pathname === '/api/usage' && req.method === 'GET') {
+    const rows = usageStore.query({
+      from: url.searchParams.get('from') || undefined,
+      to: url.searchParams.get('to') || undefined,
+      memberId: url.searchParams.get('memberId') || undefined,
+      agent: url.searchParams.get('agent') || undefined,
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ usage: rows }));
     return;
   }
 
