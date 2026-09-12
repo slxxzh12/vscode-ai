@@ -17,6 +17,7 @@ import { useWorkspace, type WorkspaceState } from './useWorkspace';
 import { parseOpenParam } from './deeplink';
 import WorkspacePicker from './components/WorkspacePicker.vue';
 import ProxyView from './components/ProxyView.vue';
+import MobileView from './components/MobileView.vue';
 import { captureToPngDataUrl, uploadSnapshot } from './snapshot';
 
 const ws = useWorkspace();
@@ -144,7 +145,7 @@ watch(windowColorValue, (v) => {
 let colorHeartbeat: ReturnType<typeof setInterval> | null = null;
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
-const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler' | 'proxy'>('explorer');
+const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
 const historyTab = ref<'files' | 'messages'>('messages');
 const msgHistory = useMessageHistory();
 // 当天输入超过 3 条消息时，主动展示一次历史消息；当天已展示过则不再主动，仅用户点击才展示
@@ -453,7 +454,8 @@ onBeforeUnmount(() => {
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
-        <button class="a-btn" :class="{ on: rail === 'proxy' }" :title="$t('nav.proxy')" @click="rail = 'proxy'">🔌</button>
+        <button class="a-btn" :class="{ on: rail === 'proxy' }" :title="$t('nav.proxy')" @click="rail = 'proxy'">🔀</button>
+        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">📱</button>
         <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings">⚙</button>
       </aside>
       <template v-if="rail === 'contacts'">
@@ -474,6 +476,11 @@ onBeforeUnmount(() => {
       <template v-else-if="rail === 'proxy'">
         <section class="center">
           <ProxyView />
+        </section>
+      </template>
+      <template v-else-if="rail === 'mobile'">
+        <section class="center">
+          <MobileView />
         </section>
       </template>
       <template v-else>
