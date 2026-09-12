@@ -33,7 +33,11 @@ async function run(fn: () => Promise<unknown>) {
   err.value = '';
   try { await fn(); await refresh(); } catch (e: any) { err.value = t('llm.failed', { msg: e?.message || e }); }
 }
-const initVault = () => run(() => api.vaultInit(pass.value));
+const initVault = () => {
+  if (!pass.value) { err.value = t('llm.vault.pass_required'); return; }
+  if (!window.confirm(t('llm.vault.init_confirm'))) return;
+  return run(() => api.vaultInit(pass.value));
+};
 const unlockVault = () => run(() => api.vaultUnlock(pass.value));
 const lockVault = () => run(() => api.vaultLock());
 const changePass = () => run(() => api.vaultPassphrase(pass.value, newPass.value));
