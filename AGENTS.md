@@ -11,7 +11,7 @@
 
 - **所有常驻进程必须异步（非阻塞）启动**，严禁前台阻塞式命令。
 - 统一做法：PowerShell `Start-Process` 后台运行 + `-RedirectStandardOutput`/`-RedirectStandardError` 指向日志文件；启动命令立即返回。
-- 开发：两个终端分别 `npm.cmd run dev:server`（= `node --watch server/index.js`，改后端自动重启）与 `npm.cmd run dev:web`（Vite :5173，代理 `/api`、`/ws` 到 22222）。访问 http://localhost:5173。
+- 开发：两个终端分别 `npm.cmd run dev:server`（= `set DEVFLOW_PORT=33333&& node --watch server/index.js`，dev 固定端口 **33333**，与 release 的 22222 区分；改后端自动重启）与 `npm.cmd run dev:web`（Vite :5173，代理 `/api`、`/ws` 到 33333）。访问 http://localhost:5173。
 - 生产/绿色包：`node server/index.js`（静态托管 `web/dist`，访问 http://127.0.0.1:22222）。
 - 改 `projects.json` / `workflows.json` 后需重启后端才生效（dev:server 的 `--watch` 不监听 json）。
 

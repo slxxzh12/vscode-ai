@@ -8,8 +8,8 @@
     "web"
   ],
   "scripts": {
-    "dev:server": "node --watch server/index.js",
-    "dev:web": "npm --prefix web run dev",
+    "dev:server": "set DEVFLOW_PORT=33333&& node --watch server/index.js",
+    "dev:web": "set DEVFLOW_PORT=33333&& npm --prefix web run dev",
     "build:web": "npm --prefix web run build",
     "build:portable": "node scripts/build.js",
     "test:server": "node --test \"server/test/*.test.js\"",

@@ -127,9 +127,10 @@ cpDir(
 );
 
 // 启动脚本：智能启动器（已在跑只开浏览器；否则启动服务） + 首次运行创建桌面快捷方式
+fs.mkdirSync(path.join(APP, "script"), { recursive: true });
 fs.copyFileSync(
   path.join(APP, "web", "dist", "favicon.ico"),
-  path.join(APP, "icon.ico"),
+  path.join(APP, "script", "icon.ico"),
 );
 
 const launchPs1 = [
@@ -159,10 +160,10 @@ const launchPs1 = [
   "    $desktop = [Environment]::GetFolderPath('Desktop')",
   "    if ($desktop -and (Test-Path $desktop)) {",
   "      $ws = New-Object -ComObject WScript.Shell",
-  "      $lnk = $ws.CreateShortcut((Join-Path $desktop ([char]0x9ED1 + [char]0x6D1E + '.lnk')))",
+  "      $lnk = $ws.CreateShortcut((Join-Path $desktop 'Void.lnk'))",
   "      $lnk.TargetPath = Join-Path $root 'start.bat'",
   "      $lnk.WorkingDirectory = $root",
-  "      $lnk.IconLocation = (Join-Path $root 'icon.ico')",
+  "      $lnk.IconLocation = (Join-Path $scriptDir 'icon.ico')",
   "      $lnk.Description = 'Void'",
   "      $lnk.Save()",
   "    }",
@@ -172,15 +173,10 @@ const launchPs1 = [
   "  if ($Open) { Start-Process ('http://127.0.0.1:{0}/?open={1}' -f $port, [uri]::EscapeDataString($Open)) }",
   "  else { Start-Process ('http://127.0.0.1:{0}' -f $port) }",
   "}",
-  "# 首次运行：询问是否登记到「打开方式」（只问一次，不修改默认程序）",
+  "# First run: ask whether to register in the Open with menu (ask once; does not change defaults)",
   "$marker = Join-Path $env:APPDATA 'devflow\\assoc-prompted.txt'",
   "if (-not (Test-Path $marker)) {",
-  "  $lang = 'zh-CN'",
-  "  $cfg = Join-Path $env:USERPROFILE '.local\\share\\devflow\\downloads\\devflow.xml'",
-  "  if (-not (Test-Path $cfg)) { $cfg = Join-Path $root 'config\\devflow.xml' }",
-  "  if (Test-Path $cfg) { if ((Get-Content -Raw $cfg) -match 'language\\s*=\\s*\"en\"') { $lang = 'en' } }",
-  "  if ($lang -eq 'en') { $msg = 'Register Void in the \"Open with\" menu for Markdown, YAML, JavaScript, JSON and cURL files? (The default app is not changed.)' }",
-  "  else { $msg = '是否把 Void 登记到 .md/.markdown/.yaml/.js/.mjs/.json/.http 等文件的「打开方式」列表？（不会修改默认程序）' }",
+  "  $msg = 'Register Void in the \"Open with\" menu for Markdown, YAML, JavaScript, JSON and cURL files? (The default app is not changed.)'",
   "  $yes = $false",
   "  try {",
   "    $wsh = New-Object -ComObject WScript.Shell",
@@ -196,7 +192,7 @@ const launchPs1 = [
   "      $cmd.SetValue('', ('\"' + (Join-Path $root 'start.bat') + '\" \"%1\"'))",
   "      $cmd.Close()",
   "      $icon = $prog.CreateSubKey('DefaultIcon')",
-  "      $icon.SetValue('', (Join-Path $root 'icon.ico'))",
+  "      $icon.SetValue('', (Join-Path $scriptDir 'icon.ico'))",
   "      $icon.Close()",
   "      $prog.Close()",
   "      $exts = @('.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl')",
@@ -233,7 +229,7 @@ const usage = [
   "vscode-ai（绿色免安装版）",
   "",
   "启动：双击 start.bat（已在运行则只打开浏览器；否则自动启动服务）",
-  "桌面图标：首次运行会在桌面创建「黑洞」快捷方式，之后双击桌面图标即可拉起服务",
+  "桌面图标：首次运行会在桌面创建「Void」快捷方式，之后双击桌面图标即可拉起服务",
   '停止：关闭弹出的最小化服务窗口',
   "",
   "端口：默认 " + CFG_PORT + "；被占用时弹窗询问：结束占用进程并重启 / 更换端口",
@@ -258,7 +254,7 @@ const entries = [
   ["ws", "node_modules/ws/package.json"],
   ["shared", "node_modules/@devflow/shared/index.js"],
   ["config", "config/devflow.xml"],
-  ["icon", "icon.ico"],
+  ["icon", "script/icon.ico"],
   ["launcher", "script/launch.ps1"],
 ];
 for (const [label, rel] of entries) {
