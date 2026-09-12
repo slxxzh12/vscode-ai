@@ -675,5 +675,9 @@ export const messages = {
   'llm.config.manual': '手填模型（逗号分隔）',
   'llm.config.download': '下载安装包',
   'llm.config.download_hint': '压缩包含 opencode.json 与 Install.bat：解压后双击 Install.bat，会把 opencode.json 覆盖到 %USERPROFILE%\\.config\\opencode（旧文件备份为 opencode.json.bak）。',
+  'llm.test.non_stream': '非流式示例',
+  'llm.test.stream': '流式示例',
+  'llm.test.run': '测试',
+  'llm.test.need_selection': '请先勾选至少一个模型',
   'llm.failed': '操作失败：{msg}',
 };

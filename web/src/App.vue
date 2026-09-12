@@ -373,6 +373,10 @@ function openFile(projectId: string, path: string) {
   pushFileHistory(projectId, q);
   center.openFile(projectId, path, name);
 }
+function onProxyOpenFile(projectId: string, rel: string) {
+  rail.value = 'explorer';
+  openFile(projectId, rel);
+}
 async function processOpenParam() {
   const p = parseOpenParam(window.location.search);
   if (!p) return;
@@ -475,7 +479,7 @@ onBeforeUnmount(() => {
       </template>
       <template v-else-if="rail === 'proxy'">
         <section class="center">
-          <ProxyView />
+          <ProxyView @open-file="onProxyOpenFile" />
         </section>
       </template>
       <template v-else-if="rail === 'mobile'">

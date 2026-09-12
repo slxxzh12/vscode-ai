@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { useLlm, type LlmStatus, type LlmToken, type LlmPluginEntry } from '../useLlm';
 import { t } from '../i18n';
 
+const emit = defineEmits<{ (e: 'open-file', projectId: string, rel: string): void }>();
 const api = useLlm();
 const st = ref<LlmStatus | null>(null);
 const tokens = ref<LlmToken[]>([]);
@@ -100,6 +101,7 @@ function toggleToken(tk: LlmToken) {
   rowKeys.value = allModelKeys();
   rowManual.value = {};
   configText.value = '';
+  loadExamples(tk);
 }
 async function genConfig(tk: LlmToken) {
   await run(async () => {
@@ -112,6 +114,42 @@ function bundleUrl(tk: LlmToken) {
   for (const sel of selectedProviders()) for (const m of sel.models) { q.append('pid', sel.id); q.append('model', m); }
   return `/api/llm-admin/opencode-bundle?${q.toString()}`;
 }
+const examples = ref<{ nonStream: string; stream: string } | null>(null);
+function primarySel() {
+  const s = selectedProviders()[0];
+  return s ? { id: s.id, model: s.models[0] } : null;
+}
+async function loadExamples(tk: LlmToken) {
+  examples.value = null;
+  const p = primarySel();
+  if (!p) return;
+  const q = new URLSearchParams({ token: tk.id, pid: p.id, model: p.model });
+  try { examples.value = await fetch(`/api/llm-admin/test-example?${q}`).then((x) => x.json()); } catch { /* ignore */ }
+}
+async function runTest(tk: LlmToken, stream: boolean) {
+  err.value = '';
+  const p = primarySel();
+  if (!p) { err.value = t('llm.test.need_selection'); return; }
+  try {
+    const r = await fetch('/api/llm-admin/test-script', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: tk.id, pid: p.id, model: p.model, stream }),
+    }).then((x) => x.json());
+    if (!r.path) throw new Error(r.error || 'test-script failed');
+    const o = await fetch('/api/open-file', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: r.path }),
+    }).then((x) => x.json());
+    if (!o.project?.id) throw new Error(o.error || 'open-file failed');
+    emit('open-file', o.project.id, o.rel);
+    await fetch(`/api/run-script?project=${encodeURIComponent(o.project.id)}&path=${encodeURIComponent(o.rel)}`, { method: 'POST' });
+  } catch (e: any) {
+    err.value = t('llm.failed', { msg: e?.message || e });
+  }
+}
+watch(() => rowKeys.value.join('|'), () => {
+  const tk = tokens.value.find((x) => x.id === expanded.value);
+  if (expanded.value && tk) loadExamples(tk);
+});
 async function copyConfig() {
   if (!configText.value) return;
   try {
@@ -243,6 +281,15 @@ async function copyConfig() {
               <input v-model="rowManual[p.id]" :placeholder="$t('llm.config.manual')" />
             </div>
           </div>
+          <div v-if="examples" class="tests">
+            <div class="tlabel">{{ $t('llm.test.non_stream') }}</div>
+            <pre class="cfg">{{ examples.nonStream }}</pre>
+            <button class="ghost" @click="runTest(tk, false)">{{ $t('llm.test.run') }}</button>
+            <div class="tlabel">{{ $t('llm.test.stream') }}</div>
+            <pre class="cfg">{{ examples.stream }}</pre>
+            <button class="ghost" @click="runTest(tk, true)">{{ $t('llm.test.run') }}</button>
+          </div>
+          <div v-else-if="!selectedProviders().length" class="muted">{{ $t('llm.test.need_selection') }}</div>
           <div class="muted">{{ $t('llm.config.download_hint') }}</div>
           <pre v-if="configText" class="cfg">{{ configText }}</pre>
         </div>
@@ -277,6 +324,8 @@ button:disabled { opacity: .5; cursor: default; }
 .mchk { display: flex; gap: 4px; align-items: center; color: var(--tx2); }
 .pvgroup { display: flex; flex-direction: column; gap: 4px; }
 .pvname { color: var(--tx2); font-size: 12px; font-weight: 700; }
+.tests { display: flex; flex-direction: column; gap: 4px; }
+.tlabel { color: var(--tx3); font-size: 12px; margin-top: 4px; }
 .dlbtn { display: inline-flex; align-items: center; background: var(--ac); color: var(--onac); border: 1px solid var(--ac); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-family: inherit; text-decoration: none; font-size: 13px; }
 .cfg { background: var(--bg1); border: 1px solid var(--bd); border-radius: 4px; padding: 8px; font-size: 12px; overflow: auto; max-height: 320px; white-space: pre-wrap; }
 .ex summary { cursor: pointer; color: var(--tx2); font-size: 12px; display: flex; gap: 8px; align-items: center; }

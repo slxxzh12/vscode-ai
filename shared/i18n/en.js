@@ -675,5 +675,9 @@ export const messages = {
   'llm.config.manual': 'Model ids (comma-separated)',
   'llm.config.download': 'Download bundle',
   'llm.config.download_hint': 'The zip contains opencode.json and Install.bat. Unzip and double-click Install.bat to copy opencode.json to %USERPROFILE%\\.config\\opencode (existing file backed up as opencode.json.bak).',
+  'llm.test.non_stream': 'Non-streaming example',
+  'llm.test.stream': 'Streaming example',
+  'llm.test.run': 'Test',
+  'llm.test.need_selection': 'Select at least one model first',
   'llm.failed': 'Failed: {msg}',
 };
