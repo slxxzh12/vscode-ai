@@ -62,7 +62,9 @@ async function resetVault() {
 }
 const saveSecret = () => run(async () => { await api.setSecret(secret.value); secret.value = ''; });
 async function regenerateSecret() {
-  if (!window.confirm(t('llm.secret.regenerate_confirm'))) return;
+  const word = window.prompt(t('llm.secret.regenerate_prompt'));
+  if (word === null) return;
+  if (word.trim().toUpperCase() !== 'REGENERATE') { err.value = t('llm.secret.regenerate_mismatch'); return; }
   await run(() => api.regenerateSecret());
 }
 const toggleEnabled = () => run(() => api.setEnabled(!st.value?.enabled));
