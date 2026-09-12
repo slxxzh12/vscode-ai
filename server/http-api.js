@@ -5,38 +5,9 @@ import { transformSync } from 'esbuild';
 import { collectGitChanges } from './git-log.js';
 import { saveSnapshotToRepo } from './snapshot-store.js';
 import { pickFolder, pickAnyFile } from './native-dialog.js';
+import { revealInOs } from './reveal.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
-
-// 在宿主机上用系统文件管理器展示目标（文件 → 定位选中；目录 → 打开）。
-// Windows：直接 spawn explorer（/select 必须作为同一参数），不要用 cmd start（会回退到“文档”）。
-function revealInOs(abs, isDir) {
-  if (process.platform === 'win32') {
-    const arg = isDir ? abs : `/select,${abs}`;
-    const p = spawn('explorer', [arg], { detached: true, stdio: 'ignore' });
-    p.unref();
-    // 尝试把资源管理器窗口置顶（best-effort，晚 400ms 激活最新 explorer 窗口）
-    setTimeout(() => {
-      const focus = spawn('powershell.exe', [
-        '-NoProfile', '-WindowStyle', 'Hidden', '-Command',
-        `$sh=New-Object -ComObject WScript.Shell; $w=Get-Process explorer | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -Last 1; if ($w) { [void]$sh.AppActivate($w.Id) }`,
-      ], { detached: true, stdio: 'ignore', windowsHide: true });
-      focus.unref();
-    }, 400);
-    return true;
-  }
-  if (process.platform === 'darwin') {
-    const p = spawn('open', isDir ? [abs] : ['-R', abs], { detached: true, stdio: 'ignore' });
-    p.unref();
-    return true;
-  }
-  if (process.platform === 'linux') {
-    const p = spawn('xdg-open', [isDir ? abs : path.dirname(abs)], { detached: true, stdio: 'ignore' });
-    p.unref();
-    return true;
-  }
-  return false;
-}
 
 const RUNNABLE_EXT = new Set(['bat', 'cmd', 'ps1', 'sh']);
 // 执行脚本（双击效果：独立进程/独立控制台窗口，不阻塞请求）。
