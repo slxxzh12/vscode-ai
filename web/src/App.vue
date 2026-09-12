@@ -14,6 +14,7 @@ import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
 import { useI18n } from './i18n';
 import { useWorkspace, type WorkspaceState } from './useWorkspace';
+import { parseOpenParam } from './deeplink';
 import WorkspacePicker from './components/WorkspacePicker.vue';
 import { captureToPngDataUrl, uploadSnapshot } from './snapshot';
 
@@ -370,6 +371,21 @@ function openFile(projectId: string, path: string) {
   pushFileHistory(projectId, q);
   center.openFile(projectId, path, name);
 }
+async function processOpenParam() {
+  const p = parseOpenParam(window.location.search);
+  if (!p) return;
+  try {
+    const r = await projectsApi.openPath(p);
+    await loadProjects();
+    if (r.project?.id) selectProject(r.project.id);
+    openFile(r.project.id, r.rel);
+    const u = new URL(window.location.href);
+    u.searchParams.delete('open');
+    window.history.replaceState({}, '', u.pathname + u.search + u.hash);
+  } catch (e) {
+    alert(t('open.failed', { msg: (e as Error)?.message || String(e) }));
+  }
+}
 function openAgentSettings() {
   // 设置弹窗在 TerminalView 内，仅在「目录/历史」视图挂载；其他页（通讯录/统计/定时任务）需先切回目录
   if (rail.value !== 'explorer' && rail.value !== 'history') { rail.value = 'explorer'; }
@@ -390,6 +406,7 @@ onMounted(async () => {
   } catch { /* 落回原有流程 */ }
   initFileHistory();
   loadProjects();
+  processOpenParam();
   msgHistory.load();
   window.addEventListener('df-open-history', onOpenHistory);
   window.addEventListener('beforeunload', persistFileHistory);
