@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 import { signJwt } from './llm-jwt.js';
 import { listProviders, getProvider, buildOpencodeConfig } from './llm-config.js';
 import { createProxyHandler } from './llm-proxy.js';
+import { createCache } from './llm-cache.js';
+import { loadPlugins } from './relay-plugins.js';
 
 function readJson(req) {
   return new Promise((resolve) => {
@@ -16,13 +18,28 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-export function createLlmMount({ vault, host, port, logger = console }) {
+export function createLlmMount({ vault, host, port, logger = console, pluginsDir = null, cache = createCache() } = {}) {
+  let plugins = [];
+  let entries = [];
   const proxy = createProxyHandler({
     vault,
     getProvider: (id) => getProvider(id),
     isEnabled: () => { try { return !!vault.getData().enabled; } catch { return false; } },
+    cache,
+    plugins,
+    logger,
   });
-  return async function mount(req, res, url) {
+
+  async function reloadPlugins() {
+    if (!pluginsDir) { plugins = []; entries = []; proxy.setPlugins(plugins); return entries; }
+    const loaded = await loadPlugins(pluginsDir);
+    plugins = loaded.plugins;
+    entries = loaded.entries;
+    proxy.setPlugins(plugins);
+    return entries;
+  }
+
+  async function mount(req, res, url) {
     const pathname = url.pathname;
     if (!pathname.startsWith('/api/llm-admin')) {
       const m = pathname.match(/^\/api\/llm\/([^/]+)(\/.*)?$/);
@@ -38,12 +55,14 @@ export function createLlmMount({ vault, host, port, logger = console }) {
         const lp = listProviders();
         return sendJson(res, 200, { vault: s, enabled: s.unlocked ? !!vault.getData().enabled : false, host, port, defaultProvider: lp.defaultProvider, providers: lp.providers });
       }
+      if (seg[0] === 'plugins' && !seg[1] && method === 'GET') return sendJson(res, 200, { entries, dir: pluginsDir });
       if (seg[0] === 'vault' && seg[1] === 'init' && method === 'POST') { const b = await readJson(req); vault.init(String(b.passphrase || '')); return sendJson(res, 200, { ok: true, vault: vault.status() }); }
       if (seg[0] === 'vault' && seg[1] === 'unlock' && method === 'POST') { const b = await readJson(req); vault.unlock(String(b.passphrase || '')); return sendJson(res, 200, { ok: true, vault: vault.status() }); }
       if (seg[0] === 'vault' && seg[1] === 'lock' && method === 'POST') { vault.lock(); return sendJson(res, 200, { ok: true, vault: vault.status() }); }
       if (seg[0] === 'vault' && seg[1] === 'passphrase' && method === 'POST') { const b = await readJson(req); vault.changePassphrase(String(b.old || ''), String(b.new || '')); return sendJson(res, 200, { ok: true }); }
       if (seg[0] === 'vault' && seg[1] === 'reset' && method === 'POST') { return sendJson(res, 200, { ok: true, vault: vault.reset() }); }
       if (locked()) return sendJson(res, 423, { error: 'locked' });
+      if (seg[0] === 'plugins' && seg[1] === 'reload' && method === 'POST') return sendJson(res, 200, { entries: await reloadPlugins() });
       if (seg[0] === 'enabled' && method === 'POST') { const b = await readJson(req); vault.update((d) => { d.enabled = !!b.enabled; }); return sendJson(res, 200, { ok: true, enabled: !!b.enabled }); }
       if (seg[0] === 'secret' && method === 'POST') {
         const b = await readJson(req);
@@ -91,5 +110,9 @@ export function createLlmMount({ vault, host, port, logger = console }) {
       logger?.warn?.('llm mount error', e && e.message);
       return sendJson(res, 500, { error: 'internal', message: String((e && e.message) || e) });
     }
-  };
+  }
+
+  mount.reloadPlugins = reloadPlugins;
+  mount.ready = reloadPlugins().catch((e) => { logger?.warn?.('relay plugins load failed', e && e.message); return []; });
+  return mount;
 }

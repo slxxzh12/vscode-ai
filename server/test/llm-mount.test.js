@@ -65,3 +65,35 @@ test('重置密钥库：锁定态也可重置并回到未初始化', async (t) =
   assert.equal((await jget(server, '/api/llm-admin/tokens')).status, 423);
   assert.equal((await jpost(server, '/api/llm-admin/vault/init', { passphrase: 'pw2' })).status, 200);
 });
+
+test('插件目录列表与重载接口', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dfpl-'));
+  fs.writeFileSync(path.join(dir, 'p.mjs'), 'export default { name: "p", priority: 5 };');
+  const vault = tmpVault();
+  vault.init('pw');
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234, pluginsDir: dir });
+  await mount.ready;
+  const server = http.createServer((req, res) => { const url = new URL(req.url, 'http://x'); mount(req, res, url); });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => server.close());
+  const list = JSON.parse((await jget(server, '/api/llm-admin/plugins')).body);
+  assert.equal(list.dir, dir);
+  assert.deepEqual(list.entries.map((e) => e.name), ['p']);
+  const r = await jpost(server, '/api/llm-admin/plugins/reload', {});
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body).entries.map((e) => e.name), ['p']);
+});
+
+test('未解锁时重载插件 423、列表仍可读', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dfpl-'));
+  const vault = tmpVault();
+  vault.init('pw');
+  vault.lock();
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234, pluginsDir: dir });
+  await mount.ready;
+  const server = http.createServer((req, res) => { const url = new URL(req.url, 'http://x'); mount(req, res, url); });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => server.close());
+  assert.equal((await jget(server, '/api/llm-admin/plugins')).status, 200);
+  assert.equal((await jpost(server, '/api/llm-admin/plugins/reload', {})).status, 423);
+});
