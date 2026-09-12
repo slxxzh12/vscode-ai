@@ -314,6 +314,39 @@ git commit -m "feat(web): 协作页移除白名单并把 master 文件列表折�
 
 ---
 
+### Task 4: 终端输入框空白发送 `ok`
+
+**Files:**
+- Modify: `web/src/components/TerminalView.vue`
+
+- [ ] **Step 1: 改 `submitComposer()`**（`TerminalView.vue:436-443`）替换为：
+
+```js
+function submitComposer() {
+  const text = composerText.value.trim() || 'ok';
+  composerText.value = '';
+  const sid = props.terminal.state.activeSessionId;
+  void msgHistory.push(text, sid ? { sessionId: sid, tabName: tabLabel(sid) } : {});
+  sendToActive(text);
+}
+```
+
+> 变量由 `t` 改为 `text`，避免遮蔽 i18n 的 `t` 导入。空白时自动改为 `ok`。
+
+- [ ] **Step 2: 类型检查**
+
+Run: `npm.cmd run typecheck`
+Expected: 通过。
+
+- [ ] **Step 3: 提交**
+
+```
+git add web/src/components/TerminalView.vue
+git commit -m "feat(web): 终端输入框空白时自动以 ok 发送"
+```
+
+---
+
 ## 自查记录
 
 - **Spec 覆盖**：§2.1 → Task 1；§2.2/§2.3 → Task 2；§3 → Task 1/3。

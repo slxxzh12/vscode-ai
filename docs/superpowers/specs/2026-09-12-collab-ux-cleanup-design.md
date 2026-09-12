@@ -57,3 +57,9 @@
 
 - 白名单删除范围：**整条功能删除**（含服务端自动执行、接口、前端区块、i18n、测试）（用户明确）。
 - master 文件列表：**移到底部 + 默认折叠**（用户明确）。
+
+## 6. 终端输入框空白发送
+
+- `web/src/components/TerminalView.vue` 的 `submitComposer()`：输入框空白时不再 `return`，改为用 `ok` 作为内容发送（`const text = composerText.value.trim() || 'ok'`），并照常清空输入框、落历史、发送。发送按钮本就未禁用。
+- 协作群聊 `GroupChatView.vue` 的 `submit()` 已实现「空白 → `ok`」，无需改动。
+
