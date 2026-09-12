@@ -202,3 +202,21 @@ test('签名密钥一次配置后持久、空保存不覆盖、可重新生成',
   assert.equal(r3.status, 200);
   assert.notEqual(vault.getData().jwtSecret, 'MYKEY');
 });
+
+test('重新生成会吊销全部已签发 token', async (t) => {
+  const vault = tmpVault();
+  vault.init('pw');
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234 });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+
+  await jpost(server, '/api/llm-admin/secret', { secret: 'S' });
+  const tok = JSON.parse((await jpost(server, '/api/llm-admin/tokens', { employeeId: 'E1', days: 1 })).body).token;
+  assert.equal(vault.getData().tokens.find((x) => x.id === tok.id).revoked, false);
+
+  const r = await jpost(server, '/api/llm-admin/secret/regenerate', {});
+  assert.equal(r.status, 200);
+  assert.notEqual(vault.getData().jwtSecret, 'S');
+  assert.equal(vault.getData().tokens.every((x) => x.revoked), true);
+});

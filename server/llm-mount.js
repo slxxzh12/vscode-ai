@@ -79,7 +79,7 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
       if (seg[0] === 'enabled' && method === 'POST') { const b = await readJson(req); vault.update((d) => { d.enabled = !!b.enabled; }); return sendJson(res, 200, { ok: true, enabled: !!b.enabled }); }
       if (seg[0] === 'secret' && seg[1] === 'regenerate' && method === 'POST') {
         const secret = crypto.randomBytes(32).toString('base64url');
-        vault.update((d) => { d.jwtSecret = secret; });
+        vault.update((d) => { d.jwtSecret = secret; for (const t of d.tokens) t.revoked = true; });
         return sendJson(res, 200, { ok: true });
       }
       if (seg[0] === 'secret' && !seg[1] && method === 'POST') {
