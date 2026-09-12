@@ -13,6 +13,7 @@ export interface CollabUsage {
 export interface CollabSnapshot {
   identity: CollabProfile;
   group: CollabGroup | null;
+  groups: CollabGroup[];
   heartbeats: Record<string, CollabUsage>;
   skillsInbox: CollabInboxItem[];
   outbox: CollabOutItem[];
@@ -21,7 +22,7 @@ export interface CollabSnapshot {
 
 export const EMPTY_SNAPSHOT: CollabSnapshot = {
   identity: { machineId: '', username: '', host: '', port: 0, publicKey: '' },
-  group: null, heartbeats: {}, skillsInbox: [], outbox: [], groupSkills: [],
+  group: null, groups: [], heartbeats: {}, skillsInbox: [], outbox: [], groupSkills: [],
 };
 
 export interface CollabChatMeta { reqId: string | null; exitCode: number | null; stderr: string | null; durationMs: number | null; }

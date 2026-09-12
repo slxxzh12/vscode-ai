@@ -6,8 +6,8 @@ import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi; groupId: string }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
-const group = computed(() => (snap.value.group && snap.value.group.id === props.groupId ? snap.value.group : null));
-const isMaster = computed(() => !!snap.value.group && snap.value.group.hubId === snap.value.identity.machineId);
+const group = computed(() => (snap.value.groups || []).find((g) => g.id === props.groupId) || null);
+const isMaster = computed(() => !!snap.value.groups?.find((g) => g.id === props.groupId && g.hubId === snap.value.identity.machineId));
 
 const assets = ref<{ skills: { name: string }[]; command: { name: string }[]; agent: { name: string }[]; workflow: { id: string; name: string }[] }>({ skills: [], command: [], agent: [], workflow: [] });
 const checked = ref<Record<string, boolean>>({});

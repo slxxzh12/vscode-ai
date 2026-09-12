@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import GroupChatView from './GroupChatView.vue';
@@ -7,7 +7,13 @@ import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
-const group = computed(() => snap.value.group);
+const groups = computed(() => snap.value.groups || []);
+const activeId = ref<string | null>(null);
+const mine = computed(() => groups.value.find((g) => g.hubId === snap.value.identity.machineId) || null);
+const group = computed(() => groups.value.find((g) => g.id === activeId.value) || mine.value || groups.value[0] || null);
+watch(groups, (gs) => {
+  if (!gs.find((g) => g.id === activeId.value)) activeId.value = (mine.value || gs[0] || null)?.id ?? null;
+}, { immediate: true });
 const me = computed(() => snap.value.identity?.machineId);
 
 // —— 远程访问（自设置迁入）——
@@ -122,6 +128,14 @@ onMounted(async () => {
 <template>
   <div class="cw">
     <aside class="cw-left">
+      <div class="sec">
+        <h4>{{ $t('collab.groups.title') }}</h4>
+        <div v-if="!groups.length" class="empty">{{ $t('collab.groups.empty') }}</div>
+        <button v-for="g in groups" :key="g.id" class="gitem" :class="{ on: group?.id === g.id }" @click="activeId = g.id">
+          {{ g.name }}<span class="sub">{{ g.hubId === snap.identity.machineId ? $t('collab.groups.mine') : '' }} · {{ g.members.length }}</span>
+        </button>
+      </div>
+
       <div class="sec">
         <h4>{{ $t('collab.remote.title') }}</h4>
         <div class="cfgrow">
@@ -245,6 +259,9 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .linkrow button { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
 .dl { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; text-decoration: none; }
 .placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--tx6); }
+.gitem { text-align: left; background: none; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx2); padding: 5px 8px; font-size: 12px; cursor: pointer; font-family: inherit; margin-bottom: 4px; width: 100%; }
+.gitem.on { background: var(--ac); color: var(--onac); border-color: var(--ac); }
+.gitem .sub { color: var(--tx6); margin-left: 6px; }
 details.fold > summary { cursor: pointer; color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; list-style: none; }
 details.fold > summary::-webkit-details-marker { display: none; }
 details.fold > summary::before { content: '▸ '; }
