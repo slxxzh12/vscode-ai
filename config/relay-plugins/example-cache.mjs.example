@@ -1,0 +1,10 @@
+// 缓存策略：temperature>0 结果不确定，返回 null 绕过缓存；否则自定义 TTL。
+export default {
+  name: 'cache-policy',
+  priority: 60,
+  onCacheKey(ctx) {
+    const temp = ctx.json && ctx.json.temperature;
+    if (typeof temp === 'number' && temp > 0) return null;
+    return { ttlMs: 60 * 1000 };
+  },
+};

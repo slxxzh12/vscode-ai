@@ -1,0 +1,11 @@
+// 安全脱敏：删除不希望外发的字段。priority 小，先于其它插件执行。
+export default {
+  name: 'sanitize',
+  priority: 10,
+  onRequest(ctx) {
+    if (!ctx.json || typeof ctx.json !== 'object') return;
+    delete ctx.json.metadata;
+    delete ctx.json.extra_headers;
+    ctx.body = Buffer.from(JSON.stringify(ctx.json), 'utf8');
+  },
+};

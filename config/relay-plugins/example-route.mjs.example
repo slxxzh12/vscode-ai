@@ -1,0 +1,9 @@
+// 按内容路由：body.model 以 "cheap-" 开头时改走另一个上游 provider（id 需在你的 opencode.json 中存在）。
+export default {
+  name: 'route-by-model',
+  priority: 50,
+  onRequest(ctx) {
+    const model = ctx.json && ctx.json.model;
+    if (typeof model === 'string' && model.startsWith('cheap-')) ctx.providerId = 'local';
+  },
+};

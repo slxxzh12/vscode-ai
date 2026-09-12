@@ -1,0 +1,11 @@
+// 请求增强：注入默认 temperature，并给 max_tokens 封顶。
+export default {
+  name: 'request-defaults',
+  priority: 100,
+  onRequest(ctx) {
+    if (!ctx.json || typeof ctx.json !== 'object') return;
+    if (ctx.json.temperature === undefined) ctx.json.temperature = 0.2;
+    if (typeof ctx.json.max_tokens === 'number' && ctx.json.max_tokens > 4096) ctx.json.max_tokens = 4096;
+    ctx.body = Buffer.from(JSON.stringify(ctx.json), 'utf8');
+  },
+};
