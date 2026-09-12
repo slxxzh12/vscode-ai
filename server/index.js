@@ -157,6 +157,13 @@ function buildWorkspace({ paths, port }) {
     downloadsDir: paths.downloadsDir,
     events: eventBus,
     logger: log,
+    getWorkflows: () => loadDevflowConfig(configFile).workflows,
+    mergeWorkflows: (incoming) => {
+      const cur = loadDevflowConfig(configFile).workflows;
+      const byId = new Map(cur.map((w) => [w.id, w]));
+      for (const w of incoming) if (w && w.id) byId.set(w.id, w);
+      return updateWorkflows(configFile, [...byId.values()]);
+    },
   });
   engine.peer = makePeerClient();
   const collabMount = createCollabMount({ engine, logger: log });

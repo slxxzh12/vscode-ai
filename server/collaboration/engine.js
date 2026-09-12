@@ -30,7 +30,7 @@ function assertSafeRel(name) {
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, runner = null, logger = console }) {
+  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.events = events;
@@ -40,6 +40,8 @@ export class CollabEngine {
     this.downloadDir = downloadDir || inboxDir;   // 收到的 zip 落盘目录（下载页目录）
     this.downloadsDir = downloadsDir || path.join(os.tmpdir(), `devflow-downloads-${identity?.machineId || 'x'}`);
     this.runner = runner || createOpenCodeRunner();
+    this.getWorkflows = typeof getWorkflows === 'function' ? getWorkflows : null;
+    this.mergeWorkflows = typeof mergeWorkflows === 'function' ? mergeWorkflows : null;
     this.log = logger;
     _extendChat(this);
   }
@@ -89,13 +91,15 @@ export class CollabEngine {
       collectTree(root, '', files);
       for (const f of files) out[kind].push({ name: f.rel });
     }
+    out.workflow = (this.getWorkflows ? this.getWorkflows() : []).map((w) => ({ id: w.id, name: w.label }));
     return out;
   }
   // 第一步：打包（只生成本地 zip + outbox 未发送记录，不推送）
-  async buildPackage({ skills = [], command = [], agent = [] }) {
+  async buildPackage({ skills = [], command = [], agent = [], workflow = [] }) {
     const sSel = [...new Set(skills || [])];
     const cSel = [...new Set(command || [])];
     const aSel = [...new Set(agent || [])];
+    const wSel = [...new Set(workflow || [])];
     const files = [];
     for (const n of sSel) {
       assertSafeRel(n);
@@ -118,10 +122,16 @@ export class CollabEngine {
         }
       }
     }
+    for (const id of wSel) {
+      assertSafeRel(id);
+      const w = (this.getWorkflows ? this.getWorkflows() : []).find((x) => x.id === id);
+      if (!w) continue;
+      files.push({ rel: `workflow/${id}.json`, data: Buffer.from(JSON.stringify(w), 'utf8') });
+    }
     if (!files.length) throw new Error(t('collab.err.no_content'));
     const zip = buildZip(files.map((f) => ({ name: f.rel, data: f.data })));
     const hash = crypto.createHash('sha256').update(zip).digest('hex');
-    const total = sSel.length + cSel.length + aSel.length;
+    const total = sSel.length + cSel.length + aSel.length + wSel.length;
     const label = `assets-${total}-${hash.slice(0, 6)}.zip`;
     if (!this.uploadDir) throw new Error(t('collab.err.no_upload_dir'));
     fs.mkdirSync(this.uploadDir, { recursive: true });
@@ -129,7 +139,7 @@ export class CollabEngine {
     const rec = this.store.addOutbox({
       id: crypto.randomUUID(), kind: 'file', groupId: null, skillName: null, fileName: label,
       storedFile: label, size: zip.length, hash, createdAt: Date.now(),
-      package: { sent: false, skills: sSel, command: cSel, agent: aSel },
+      package: { sent: false, skills: sSel, command: cSel, agent: aSel, workflow: wSel },
     });
     this._emit('synced', {});
     return rec;
@@ -148,7 +158,7 @@ export class CollabEngine {
     const pkg = rec.package || {};
     const env = this._sign(CollabPeer.FILE_PUSH, {
       groupId, fileName: rec.fileName, hash: rec.hash, size: data.length,
-      skills: pkg.skills || [], command: pkg.command || [], agent: pkg.agent || [],
+      skills: pkg.skills || [], command: pkg.command || [], agent: pkg.agent || [], workflow: pkg.workflow || [],
       b64: data.toString('base64'),
     });
     const receipt = this.fileReceiptHeaders(data);
@@ -172,6 +182,11 @@ export class CollabEngine {
     if ((pkg.skills || []).length) parts.push(t('collab.sys.part.skills', { names: pkg.skills.join('、') }));
     if ((pkg.command || []).length) parts.push(t('collab.sys.part.command', { names: pkg.command.join('、') }));
     if ((pkg.agent || []).length) parts.push(t('collab.sys.part.agent', { names: pkg.agent.join('、') }));
+    if ((pkg.workflow || []).length) {
+      const wf = this.getWorkflows ? this.getWorkflows() : [];
+      const labels = (pkg.workflow || []).map((id) => (wf.find((w) => w.id === id) || {}).label || id);
+      parts.push(t('collab.sys.part.workflow', { names: labels.join('、') }));
+    }
     this._addSystemMessage(groupId, t('collab.sys.pkg_distributed', { parts: parts.join(t('collab.sys.part_sep')) }));
     this._emit('synced', {});
     return { code: 'ok', pushed, failures };
@@ -392,7 +407,7 @@ export class CollabEngine {
     const abs = path.join(this.downloadsDir, name);
     if (!fs.existsSync(abs)) return { code: 'not-found' };
     try {
-      const r = installBundleZip({ zip: fs.readFileSync(abs), skillRoot: this.skillRoot(), configRoot: this.configRoot() });
+      const r = installBundleZip({ zip: fs.readFileSync(abs), skillRoot: this.skillRoot(), configRoot: this.configRoot(), installWorkflows: (list) => (this.mergeWorkflows ? this.mergeWorkflows(list) : null) });
       this._emit('synced', {});
       return { code: 'ok', ...r };
     } catch (e) { return { code: 'invalid', error: String((e && e.message) || e) }; }

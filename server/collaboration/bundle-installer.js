@@ -9,10 +9,12 @@ function writeAtomic(dest, data) {
   fs.renameSync(tmp, dest);
 }
 
-// 解包 assets 捆绑 zip：skills/<name>/... → skillRoot/<name>/...；command|agent/... → configRoot/<kind>/...
-export function installBundleZip({ zip, skillRoot, configRoot }) {
-  const entries = readZip(zip);   // 非法 zip 直接抛错
-  const counts = { skills: 0, command: 0, agent: 0 };
+// 解包 assets 捆绑 zip：skills/<name>/... → skillRoot；command|agent/... → configRoot；
+// workflow/<id>.json → installWorkflows([...]) 合并
+export function installBundleZip({ zip, skillRoot, configRoot, installWorkflows = null }) {
+  const entries = readZip(zip);
+  const counts = { skills: 0, command: 0, agent: 0, workflow: 0 };
+  const workflows = [];
   for (const e of entries) {
     const seg = e.name.split('/');
     const top = seg[0];
@@ -24,7 +26,11 @@ export function installBundleZip({ zip, skillRoot, configRoot }) {
       if (!configRoot || seg.length < 2) continue;
       writeAtomic(path.join(configRoot, top, ...seg.slice(1)), e.data);
       counts[top]++;
+    } else if (top === 'workflow') {
+      if (seg.length < 2 || !seg[1].endsWith('.json')) continue;
+      try { workflows.push(JSON.parse(e.data.toString('utf8'))); counts.workflow++; } catch { /* skip bad json */ }
     }
   }
-  return { counts, files: counts.skills + counts.command + counts.agent };
+  if (workflows.length && typeof installWorkflows === 'function') installWorkflows(workflows);
+  return { counts, files: counts.skills + counts.command + counts.agent + counts.workflow };
 }

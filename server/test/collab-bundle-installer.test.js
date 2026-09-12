@@ -29,3 +29,15 @@ test('installBundleZip 解包 skills/command/agent 到各自根', () => {
 test('installBundleZip 拒绝无效 zip', () => {
   assert.throws(() => installBundleZip({ zip: Buffer.from('nope'), skillRoot: 'x', configRoot: 'y' }));
 });
+
+test('installBundleZip 合并 workflow/*.json（按 id 覆盖/追加）', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-'));
+  const zip = buildZip([
+    { name: 'workflow/w1.json', data: JSON.stringify({ id: 'w1', label: 'W1', stages: [] }) },
+    { name: 'workflow/w2.json', data: JSON.stringify({ id: 'w2', label: 'W2', stages: [] }) },
+  ]);
+  let merged = null;
+  const r = installBundleZip({ zip, skillRoot: path.join(dir, 's'), configRoot: path.join(dir, 'c'), installWorkflows: (list) => { merged = list; } });
+  assert.equal(r.counts.workflow, 2);
+  assert.deepEqual(merged.map((w) => w.id).sort(), ['w1', 'w2']);
+});
