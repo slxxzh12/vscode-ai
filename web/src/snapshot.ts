@@ -1,12 +1,5 @@
 import { toPng } from 'html-to-image';
 
-export function snapshotFileName(date: Date = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  const ymd = `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}`;
-  const hms = `${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`;
-  return `devflow-${ymd}-${hms}.png`;
-}
-
 export type StyleReader = (el: HTMLElement) => { getPropertyValue(name: string): string };
 
 export function snapshotBackground(
@@ -42,24 +35,42 @@ export function snapshotOptions(
   };
 }
 
-export interface SnapshotDeps {
+export interface CaptureDeps {
   toPng: (el: HTMLElement, options: SnapshotOptions) => Promise<string>;
-  download: (dataUrl: string, filename: string) => void;
 }
 
-export function downloadDataUrl(dataUrl: string, filename: string): void {
-  const a = document.createElement('a');
-  a.href = dataUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
-export async function captureToPng(
+export async function captureToPngDataUrl(
   el: HTMLElement,
-  deps: SnapshotDeps = { toPng, download: downloadDataUrl },
-): Promise<void> {
-  const dataUrl = await deps.toPng(el, snapshotOptions(el));
-  deps.download(dataUrl, snapshotFileName());
+  deps: CaptureDeps = { toPng },
+): Promise<string> {
+  return deps.toPng(el, snapshotOptions(el));
+}
+
+export interface SnapshotResult {
+  file: string;
+  rel: string;
+}
+
+export interface UploadInit {
+  method: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
+export interface UploadDeps {
+  fetch: (url: string, init: UploadInit) => Promise<Pick<Response, 'ok' | 'status' | 'json'>>;
+}
+
+export async function uploadSnapshot(
+  dataUrl: string,
+  deps: UploadDeps = { fetch: (url, init) => fetch(url, init) },
+): Promise<SnapshotResult> {
+  const res = await deps.fetch('/api/snapshot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dataUrl }),
+  });
+  const data = await res.json().catch(() => ({} as { ok?: boolean; file?: string; rel?: string; error?: string; message?: string }));
+  if (!res.ok || !data?.ok) throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+  return { file: data.file || '', rel: data.rel || '' };
 }

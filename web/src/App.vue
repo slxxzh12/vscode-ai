@@ -15,12 +15,19 @@ import { useTheme } from './theme';
 import { useI18n } from './i18n';
 import { useWorkspace, type WorkspaceState } from './useWorkspace';
 import WorkspacePicker from './components/WorkspacePicker.vue';
-import { captureToPng } from './snapshot';
+import { captureToPngDataUrl, uploadSnapshot } from './snapshot';
 
 const ws = useWorkspace();
 const wsState = ref<WorkspaceState | null>(null);
 const appRef = ref<HTMLDivElement | null>(null);
 const snapshotting = ref(false);
+const snapshotMsg = ref('');
+let snapshotMsgTimer: ReturnType<typeof setTimeout> | null = null;
+function showSnapshotMsg(text: string) {
+  snapshotMsg.value = text;
+  if (snapshotMsgTimer) clearTimeout(snapshotMsgTimer);
+  snapshotMsgTimer = setTimeout(() => { snapshotMsg.value = ''; snapshotMsgTimer = null; }, 4000);
+}
 async function onSnapshot() {
   if (snapshotting.value) return;
   const el = appRef.value;
@@ -29,7 +36,9 @@ async function onSnapshot() {
   try {
     await nextTick();
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
-    await captureToPng(el);
+    const dataUrl = await captureToPngDataUrl(el);
+    const r = await uploadSnapshot(dataUrl);
+    showSnapshotMsg(t('top.snapshot.saved', { file: r.file }));
   } catch {
     alert(t('top.snapshot.failed'));
   } finally {
@@ -386,6 +395,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   if (colorHeartbeat) { clearInterval(colorHeartbeat); colorHeartbeat = null; }
+  if (snapshotMsgTimer) { clearTimeout(snapshotMsgTimer); snapshotMsgTimer = null; }
   releaseWindowColor();
   window.removeEventListener('df-open-history', onOpenHistory);
   window.removeEventListener('beforeunload', persistFileHistory);
@@ -406,6 +416,7 @@ onBeforeUnmount(() => {
       <span v-if="displayPath" class="projpath" :title="displayPath">{{ displayPath }}</span>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
+      <span v-if="snapshotMsg" class="snap-msg" :title="snapshotMsg">{{ snapshotMsg }}</span>
       <select v-model="windowColorId" class="color-sel" :title="$t('top.color.title')" @change="onColorChange">
         <option v-for="c in colorOptions" :key="c.id" :value="c.id">{{ $t(c.key) }}</option>
       </select>
@@ -484,10 +495,11 @@ onBeforeUnmount(() => {
 .snap-btn:hover { border-color: var(--ac2); }
 .snap-btn:disabled { opacity: .6; cursor: default; }
 .snap-hidden { visibility: hidden; }
+.snap-msg { color: var(--ac2); font-size: 12px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lang-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
 .lang-btn:hover { border-color: var(--ac2); }
 .color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
-.top.colored .logo, .top.colored .projpath, .top.colored .net { color: #fff; }
+.top.colored .logo, .top.colored .projpath, .top.colored .net, .top.colored .snap-msg { color: #fff; }
 .top.colored .lang-btn, .top.colored .theme-btn, .top.colored .snap-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel, .top.colored .proj-sel { background: var(--bg1); color: var(--tx); border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel option, .top.colored .proj-sel option { color: #111; background: #fff; }

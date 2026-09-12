@@ -1,17 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { snapshotFileName, snapshotBackground, snapshotFilter, snapshotOptions, captureToPng } from './snapshot';
-
-describe('snapshotFileName', () => {
-  it('固定日期 → devflow-YYYYMMDD-HHmmss.png（各段补零）', () => {
-    const d = new Date(2026, 8, 12, 9, 30, 5);
-    expect(snapshotFileName(d)).toBe('devflow-20260912-093005.png');
-  });
-
-  it('月在个位时补零', () => {
-    const d = new Date(2026, 0, 3, 0, 0, 0);
-    expect(snapshotFileName(d)).toBe('devflow-20260103-000000.png');
-  });
-});
+import {
+  snapshotBackground,
+  snapshotFilter,
+  snapshotOptions,
+  captureToPngDataUrl,
+  uploadSnapshot,
+} from './snapshot';
 
 type FakeStyle = { getPropertyValue(name: string): string };
 function styleReader(vars: Record<string, string>) {
@@ -67,41 +61,50 @@ describe('snapshotOptions', () => {
   });
 });
 
-describe('captureToPng', () => {
-  it('调用 toPng 并把结果交给 download（文件名符合规范）', async () => {
+describe('captureToPngDataUrl', () => {
+  it('返回 toPng 结果，并带上背景色等选项', async () => {
     vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '#010203' }));
-    const calls: { dataUrl: string; filename: string }[] = [];
-    let passedEl: HTMLElement | null = null;
-    let passedRatio = -1;
     try {
-      await captureToPng({} as HTMLElement, {
+      const el = {} as HTMLElement;
+      const url = await captureToPngDataUrl(el, {
         toPng: async (target, options) => {
-          passedEl = target;
-          passedRatio = options.pixelRatio;
+          expect(target).toBe(el);
           expect(options.backgroundColor).toBe('#010203');
-          return 'data:image/png;base64,AAAA';
+          return 'data:image/png;base64,ZZ';
         },
-        download: (dataUrl, filename) => { calls.push({ dataUrl, filename }); },
       });
+      expect(url).toBe('data:image/png;base64,ZZ');
     } finally {
       vi.unstubAllGlobals();
     }
-    expect(passedEl).not.toBeNull();
-    expect(passedRatio).toBeGreaterThanOrEqual(1);
-    expect(calls).toHaveLength(1);
-    expect(calls[0].dataUrl).toBe('data:image/png;base64,AAAA');
-    expect(calls[0].filename).toMatch(/^devflow-\d{8}-\d{6}\.png$/);
+  });
+});
+
+describe('uploadSnapshot', () => {
+  it('POST /api/snapshot 并返回 file/rel', async () => {
+    const seen: { url?: string; init?: { method: string; body: string } } = {};
+    const r = await uploadSnapshot('data:image/png;base64,AAA', {
+      fetch: async (url, init) => {
+        seen.url = url;
+        seen.init = init;
+        return { ok: true, status: 200, json: async () => ({ ok: true, file: 'a.png', rel: 'remote_coder/a.png' }) };
+      },
+    });
+    expect(seen.url).toBe('/api/snapshot');
+    expect(seen.init?.method).toBe('POST');
+    expect(JSON.parse(seen.init!.body).dataUrl).toBe('data:image/png;base64,AAA');
+    expect(r).toEqual({ file: 'a.png', rel: 'remote_coder/a.png' });
   });
 
-  it('toPng 抛错时向上抛出', async () => {
-    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '#000' }));
-    try {
-      await expect(captureToPng({} as HTMLElement, {
-        toPng: async () => { throw new Error('boom'); },
-        download: () => { /* not reached */ },
-      })).rejects.toThrow('boom');
-    } finally {
-      vi.unstubAllGlobals();
-    }
+  it('失败时抛出服务端 message', async () => {
+    await expect(uploadSnapshot('x', {
+      fetch: async () => ({ ok: false, status: 500, json: async () => ({ error: 'git-failed', message: 'push rejected' }) }),
+    })).rejects.toThrow('push rejected');
+  });
+
+  it('非 2xx 且无 message 时回退 HTTP 状态', async () => {
+    await expect(uploadSnapshot('x', {
+      fetch: async () => ({ ok: false, status: 502, json: async () => ({}) }),
+    })).rejects.toThrow('HTTP 502');
   });
 });
