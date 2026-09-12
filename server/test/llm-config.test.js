@@ -1,0 +1,57 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { loadOpencodeProviders, resolveApiKey, listProviders, getProvider, buildOpencodeConfig } from '../llm-config.js';
+
+function dirWith(obj, name = 'opencode.json') {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
+  fs.writeFileSync(path.join(d, name), typeof obj === 'string' ? obj : JSON.stringify(obj));
+  return d;
+}
+
+test('解析 provider 列表与默认 provider', () => {
+  const dir = dirWith({
+    model: 'corp/gpt-4o',
+    provider: { corp: { name: 'Corp', options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { 'gpt-4o': {}, 'gpt-4o-mini': {} } }, openai: { options: { baseURL: 'https://api.openai.com/v1', apiKey: '{env:OPENAI_API_KEY}' } } },
+  });
+  const { providers, defaultProvider } = loadOpencodeProviders({ dir });
+  assert.equal(defaultProvider, 'corp');
+  assert.equal(providers.length, 2);
+  assert.deepEqual(providers[0].models, ['gpt-4o', 'gpt-4o-mini']);
+});
+
+test('resolveApiKey 支持 {env:}', () => {
+  assert.equal(resolveApiKey('{env:FOO}', { FOO: 'bar' }), 'bar');
+  assert.equal(resolveApiKey('plain', {}), 'plain');
+});
+
+test('listProviders 不泄露 key，只给 hasKey', () => {
+  const dir = dirWith({ provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'SECRET' } } } });
+  const { providers } = listProviders({ dir });
+  assert.equal(providers[0].hasKey, true);
+  assert.equal(providers[0].apiKey, undefined);
+});
+
+test('getProvider 解析出 key', () => {
+  const dir = dirWith({ provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'S' } } } });
+  const p = getProvider('corp', { dir });
+  assert.equal(p.apiKey, 'S');
+});
+
+test('jsonc 去注释 + 缺文件降级', () => {
+  const dir = dirWith('{ // c\n "provider": { "a": { "options": { "baseURL": "https://x/v1" } } } }', 'opencode.jsonc');
+  const { providers } = loadOpencodeProviders({ dir });
+  assert.equal(providers[0].id, 'a');
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
+  assert.deepEqual(loadOpencodeProviders({ dir: empty }), { providers: [], defaultProvider: null });
+});
+
+test('buildOpencodeConfig 生成 opencode.json 结构', () => {
+  const c = buildOpencodeConfig({ host: '192.168.1.5', port: 22222, providerId: 'corp', baseURL: 'https://gw/v1', token: 'JWT', models: ['gpt-4o'] });
+  const p = c.provider['devflow-corp'];
+  assert.equal(p.options.baseURL, 'http://192.168.1.5:22222/api/llm/corp/v1');
+  assert.equal(p.options.apiKey, 'JWT');
+  assert.deepEqual(p.models, { 'gpt-4o': {} });
+});
