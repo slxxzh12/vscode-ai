@@ -98,6 +98,7 @@ export function createCollabMount({ engine, logger = console }) {
         return ok(res, {
           identity: engine.pub,
           group: engine.store.getGroup(),
+          groups: engine.store.listGroups(),
           heartbeats: engine.store.listHeartbeats ? engine.store.listHeartbeats() : {},
           skillsInbox: inbox,
           outbox: engine.store.listOutbox().map(({ storedFile, ...rest }) => rest),
@@ -149,7 +150,7 @@ export function createCollabMount({ engine, logger = console }) {
       }
       // downloads（master 共享目录；slave 点击时才拉取）
       if (seg[0] === 'downloads' && seg.length === 1 && m === 'GET') {
-        return ok(res, { manifest: engine.readManifest(), usage: { members: engine.store.listHeartbeats() }, group: engine.store.getGroup() });
+        return ok(res, { manifest: engine.readManifest(), usage: { members: engine.store.listHeartbeats() }, group: engine.store.getGroup(), groups: engine.store.listGroups() });
       }
       if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'sync' && m === 'POST') {
         return ok(res, await engine.pullDownloads());

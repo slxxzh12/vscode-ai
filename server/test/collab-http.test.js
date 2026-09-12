@@ -74,6 +74,7 @@ test('snapshot 与 skills 端点返回', async () => {
     const snap = await fetch(`http://127.0.0.1:${A.port}/api/collab/snapshot`).then((r) => r.json());
     assert.equal(snap.identity.username, 'alice2');
     assert.equal(snap.group, null);
+    assert.deepEqual(snap.groups, []);
     const sk = await fetch(`http://127.0.0.1:${A.port}/api/collab/skills`).then((r) => r.json());
     assert.ok(sk.skills.some((s) => s.name === 'demo2'));
   } finally { A.server.close(); }
@@ -158,7 +159,7 @@ test('join REST：正确令牌入群 / 错误令牌 bad-token', async () => {
   const B = await startNode('bob-inv');
   try {
     const ok = await joinGroup(A, B, 'good');
-    assert.equal(ok.id, 'shared');
+    assert.equal(ok.id, A.engine.pub.machineId);
     assert.ok(A.engine.store.getGroup().members.find((m) => m.machineId === B.engine.pub.machineId), 'A 群含 B');
     const C = await startNode('carol-inv');
     const bad = await post(`http://127.0.0.1:${C.port}/api/collab/join`, { host: '127.0.0.1', port: A.port, token: 'wrong' });
@@ -183,6 +184,7 @@ test('downloads REST：列表 / 无 master 同步 / 文件路径穿越防护', a
     const list = await fetch(`http://127.0.0.1:${A.port}/api/collab/downloads`).then((r) => r.json());
     assert.ok(list.manifest && Array.isArray(list.manifest.files));
     assert.equal(list.group, null);
+    assert.deepEqual(list.groups, []);
     const sync = await post(`http://127.0.0.1:${A.port}/api/collab/downloads/sync`, {});
     assert.equal(sync.body.code, 'no-master');
     const bad = await fetch(`http://127.0.0.1:${A.port}/api/collab/downloads/file/..%5Cx`);

@@ -50,5 +50,6 @@ test('mount GET /api/collab/snapshot 返回身份', async () => {
     assert.equal(res.status, 200);
     assert.equal(body.identity.username, 'u');
     assert.equal(body.group, null);
+    assert.deepEqual(body.groups, []);
   } finally { server.close(); }
 });
