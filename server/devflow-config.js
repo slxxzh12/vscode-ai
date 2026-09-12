@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeLocale, DEFAULT_LOCALE } from '@devflow/shared/i18n';
 import { parseWorkflowXml, fallbackWorkflows } from './workflow-xml.js';
+import { serializeWorkflow, decode } from '@devflow/shared/workflow-xml';
 import { downloadsDir } from './data-home.js';
 import { updateSeed } from './workflow-seed.js';
 
@@ -20,11 +21,6 @@ export function defaultConfigFile(baseDir) {
 function attr(tag, name) {
   const m = tag.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`));
   return m ? m[1].trim() : '';
-}
-function decode(s) {
-  return String(s)
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 }
 function escXml(s) {
   return String(s)
@@ -75,15 +71,6 @@ export function parseDevflowConfig(xml) {
     agents: { default: defAgent, list },
     workflows: workflows.length ? workflows : fallbackWorkflows(),
   };
-}
-
-function serializeWorkflow(w) {
-  const stages = (w.stages || []).map((s) => {
-    const group = s.group ? ` group="${escXml(s.group)}"` : '';
-    const prompts = (s.prompts || []).map((p) => `      <prompt>${escXml(p)}</prompt>`).join('\n');
-    return `    <stage id="${escXml(s.id)}" label="${escXml(s.label)}"${group}>\n${prompts}\n    </stage>`;
-  }).join('\n');
-  return `  <workflow id="${escXml(w.id)}" label="${escXml(w.label)}">\n${stages}\n  </workflow>`;
 }
 
 export function serializeDevflowConfig(cfg) {
