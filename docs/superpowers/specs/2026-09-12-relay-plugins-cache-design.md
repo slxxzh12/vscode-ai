@@ -199,3 +199,71 @@ export default {
 - 缓存配置：**硬编码默认 + 插件覆盖**（用户明确）。
 - 缓存默认开启、插件抛错默认 fail-closed(502)、`ctx` 透传原始请求以支持跨 provider 路由：设计评审确认。
 - 插件示例与 README 首次种子到插件目录（只补缺失、不覆盖），示例用 `.mjs.example` 后缀避免误加载：评审补充确认。
+- 多 key 来源 `provider.options.apiKeys`、默认 Round-robin、失败冷却（不重试）：用户明确。
+- 插件编写引导：面板内置示例 + 一键生成示例插件 + 打开插件目录：用户明确。
+
+## 14. 多 key 轮询与冷却
+
+同一个上游（provider）配置多个 apiKey，请求按 **Round-robin** 轮流使用；遇上游限流/错误时**冷却该 key**（不重试当前请求）。
+
+### 14.1 配置 `server/llm-config.js`
+
+- `provider.options.apiKeys`：字符串数组；元素支持 `{env:NAME}`（复用 `resolveApiKey`）。缺省回退单个 `options.apiKey`。
+- `loadOpencodeProviders` 每个 provider 增加 `apiKeysRaw: string[]`（`Array.isArray(o.apiKeys) ? o.apiKeys : (o.apiKey ? [o.apiKey] : [])`）。
+- 新增 `resolveApiKeys(rawList, env)`：逐个 `resolveApiKey`，过滤空串，按出现顺序去重。
+- `listProviders`：`hasKey = resolveApiKeys(p.apiKeysRaw).length > 0`。
+- `getProvider(id)`：新增 `apiKeys`（解析后数组）；`apiKey = apiKeys[0] || ''`（兼容旧字段与生成配置）。
+
+### 14.2 轮询 `server/llm-keypool.js`（新增）
+
+`createKeyPool({ cooldownMs = 30000, now = Date.now } = {})`：
+
+- `next(providerId, keys)`：按 providerId 维护索引循环；跳过处于冷却的 key；全部冷却时返回最早到期者；空池返回 `''`。
+- `cool(providerId, key, ms = cooldownMs)`：标记该 key 冷却至 `now()+ms`。
+- `isCooling(providerId, key)`、`clear()`（测试/管理用）。
+- 纯内存、按 providerId 隔离、重启即清。
+
+### 14.3 代理接入 `server/llm-proxy.js`
+
+- `createProxyHandler` 增加 `keyPool = createKeyPool()`。
+- 解析出 provider 后：`keyList = provider.apiKeys?.length ? provider.apiKeys : (provider.apiKey ? [provider.apiKey] : [])`；`upstreamKey = keyPool.next(ctx.providerId, keyList)`；经 `injectUpstreamAuth(headers, upstreamKey)` 覆盖。
+- 上游响应状态命中 `401 / 403 / 429 / >=500` → `keyPool.cool(ctx.providerId, upstreamKey)`（流式在 `response` 事件、非流式在拿到缓冲结果时判定）。
+- **缓存命中不取 key、不冷却**；缓存 key 仍只用 `providerId + body`（不含具体 key，多 key 视为同一逻辑上游，缓存共享）。
+
+## 15. 插件编写引导（面板示例 / 一键生成 / 打开目录）
+
+普通用户不看文件不知道怎么写插件，故在面板内提供引导。
+
+### 15.1 复用 OS reveal `server/reveal.js`（新增）
+
+把 `server/http-api.js:13-39` 的 `revealInOs(abs, isDir)` 原样抽到 `server/reveal.js` 导出；`http-api.js` 改为 `import { revealInOs } from './reveal.js'`（行为不变）。
+
+### 15.2 起手模板 `server/relay-plugins.js`（新增导出）
+
+- `EXAMPLE_PLUGIN`：一份可运行的最小插件源码（英文注释；`onRequest` 加一个 header，注释里给出 `onCacheKey`/`onResponse` 用法）。
+- `writeExamplePlugin(dir, content = EXAMPLE_PLUGIN)`：`mkdir -p` 后写 `my-plugin.mjs`，已存在则顺延 `my-plugin-2.mjs`…，**绝不覆盖**；返回写入的文件名。
+
+### 15.3 接口 `server/llm-mount.js`
+
+- `GET /api/llm-admin/plugins` 返回体增加 `template: EXAMPLE_PLUGIN`（示例源码单一事实源）。
+- `POST /api/llm-admin/plugins/example`（需解锁）：无 `pluginsDir` → 400；否则写入示例 + 重载，返回 `{ entries, file }`。
+- `POST /api/llm-admin/plugins/reveal`（免解锁，与 GET plugins 同层）：无 `pluginsDir` → 400；`mkdir -p` 后调 `reveal(pluginsDir, true)`，返回 `{ ok: true }`；平台不支持 → 501。`reveal` 可注入（默认 `revealInOs`），便于单测不真的弹窗。
+
+### 15.4 前端 `web/src/components/ProxyView.vue` / `useLlm.ts`
+
+- 插件区标题栏按钮：`重载插件` / `生成示例插件` / `打开目录`。
+- 可折叠「插件示例」区：展示 `template` 原文 + 复制按钮。
+- 词条 `llm.plugins.new`、`llm.plugins.open`、`llm.plugins.new_done`、`llm.plugins.example.title`、`llm.plugins.example.copy`、`llm.plugins.example.copied`（中英对称）。
+
+### 15.5 默认行为不变
+
+无插件 / 插件未命中 → 仍按 `opencode.json` 的 provider/baseURL/model 透传；模型仍按 `opencode.json` 的 `provider.models`。
+
+## 16. 测试（本次增补）
+
+- `server/test/llm-config.test.js`：`apiKeys` 数组、混合 `{env:}`、去空去重、无数组回退 `apiKey`、全空 `hasKey=false`、`getProvider.apiKey = apiKeys[0]`。
+- 新 `server/test/llm-keypool.test.js`：按 providerId 独立轮询、循环取、跳过冷却、全冷却取最早到期、过期恢复、空池。
+- `server/test/relay-plugins.test.js`：`writeExamplePlugin` 写入默认名、重名顺延、不覆盖已有内容。
+- `server/test/llm-mount.test.js`：`GET plugins` 含 `template`；`POST plugins/example` 生成文件后列表出现且二次调用名不同；`POST plugins/reveal` 用注入 spy 断言 `(dir, true)`；无 `pluginsDir` 时 example/reveal 400。
+- `server/test/llm-proxy.test.js`：`apiKeys=[k1,k2]` 连续三次请求上游 `authorization` 依次 `Bearer k1/k2/k1`；上游 429 后下一次跳过该 key；缓存命中不消耗 key。
+- 全量 `npm.cmd test`、`typecheck`、`check:i18n`、`build:web` 全绿。
