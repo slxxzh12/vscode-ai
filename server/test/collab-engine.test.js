@@ -24,6 +24,7 @@ test('multi-group: ensureGroup 幂等且成员去重', () => {
       const g2 = A.ensureGroup();
       assert.equal(g1.id, A.pub.machineId);
       assert.equal(g2.id, A.pub.machineId);
+      assert.equal(g1.name, `${A.pub.username}@${A.pub.host}:${A.pub.port}`);
       assert.equal(A.store.getGroup().members.length, 1);
       assert.equal(A.store.getGroup().hubId, A.pub.machineId);
       assert.equal(A.store.listGroups().length, 1);

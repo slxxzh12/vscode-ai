@@ -451,7 +451,7 @@ export default {
 
 ### 22.2 引擎 `server/collaboration/engine.js`
 
-- `ensureGroup()`：`store.ensureGroup({ name, hubId: self, self })`（id=自身 machineId）。
+- `ensureGroup()`：`store.ensureGroup({ name, hubId: self, self })`（id=自身 machineId）；**群名固定为 `用户名@IP:端口`**（取自身 profile，每次调用刷新，不手填）。
 - `joinByLink()`：`store.upsertGroup(group)`（不再替换单群）。
 - `_inJoin()`：用 `store.ownedGroup(self) || ensureGroup()`，`addGroupMember(g.id, env.from)`；返回该群。
 - `_inMemberSync()`：按 `payload.group.id` `findGroup`，无则 `upsertGroup`，有则合并成员。

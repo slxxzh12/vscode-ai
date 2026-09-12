@@ -259,9 +259,12 @@ export class CollabEngine {
     return null;
   }
 
-  // ---- 单例群组（hub = 开启远程访问并分享链接者）----
+  // ---- 群组（hub = 开启远程访问并分享链接者）----
   ensureGroup() {
-    const g = this.store.ensureGroup({ name: t('collab.group.default_name'), hubId: this.pub.machineId, self: this.pub });
+    const name = `${this.pub.username || 'user'}@${this.pub.host || '127.0.0.1'}:${this.pub.port || 0}`;
+    let g = this.store.ownedGroup(this.pub.machineId);
+    if (!g) g = this.store.ensureGroup({ name, hubId: this.pub.machineId, self: this.pub });
+    else if (g.name !== name) { g.name = name; this.store.upsertGroup(g); }
     this._emit('synced', {});
     return g;
   }
