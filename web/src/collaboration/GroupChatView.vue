@@ -61,8 +61,8 @@ function pickMention(m: { machineId: string; username: string }) {
   showMentions.value = false;
 }
 async function submit() {
+  if (!composer.value.trim()) composer.value = 'ok';
   const raw = composer.value.trim();
-  if (!raw) return;
   const atMatch = raw.match(/^\s*@([^\s]+)\s/);
   const atMember = group.value?.members.find((m) => m.username === (atMatch?.[1] ?? '')) ?? null;
   const parsed = parseComposer(raw, atMember);
