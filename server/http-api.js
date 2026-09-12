@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { transformSync } from 'esbuild';
 import { collectGitChanges } from './git-log.js';
+import { saveSnapshotToRepo } from './snapshot-store.js';
 import { pickFolder, pickAnyFile } from './native-dialog.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
@@ -87,7 +88,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd() }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -249,14 +250,22 @@ export function createHttpApi({ projects, saveProjects = null, logger = console 
         fs.createReadStream(file).pipe(res);
         return;
       }
+      if (url.pathname === '/api/snapshot' && req.method === 'POST') {
+        let body;
+        try { body = await readJsonBody(req, 32 * 1024 * 1024); } catch { sendJson(res, 400, { error: 'bad body' }); return; }
+        const r = await saveSnapshotToRepo({ repoRoot, dataUrl: body.dataUrl });
+        logger?.info?.('snapshot:', r.rel);
+        sendJson(res, 200, { ok: true, file: r.file, rel: r.rel });
+        return;
+      }
       if (url.pathname === '/api/git/changes' && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, await collectGitChanges({ repo: body.repo, since: body.since, until: body.until }));
         return;
       }
     } catch (err) {
-      if (err.code === 'not-a-repo') return sendJson(res, 400, { error: 'not a git repo' });
-      if (err.code === 'bad-repo') return sendJson(res, 400, { error: 'bad repo', message: String(err.message) });
+      if (err.code === 'bad-image') return sendJson(res, 400, { error: 'bad image' });
+      if (err.code === 'not-a-repo') return sendJson(res, 400, { error: 'not a git repo' });      if (err.code === 'bad-repo') return sendJson(res, 400, { error: 'bad repo', message: String(err.message) });
       if (err.code === 'bad-date') return sendJson(res, 400, { error: 'bad date' });
       if (err.code === 'bad-range') return sendJson(res, 400, { error: 'bad range' });
       if (err.code === 'clone-failed') return sendJson(res, 400, { error: 'clone failed', message: String(err.message) });

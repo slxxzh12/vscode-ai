@@ -177,7 +177,7 @@ function buildWorkspace({ paths, port }) {
     broadcastSched(type, payload);
   });
 
-  const httpApi = createHttpApi({ projects, saveProjects, logger: log });
+  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..') });
   return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, historyFile: paths.historyFile, paths, heartbeat: null };
 }
 
