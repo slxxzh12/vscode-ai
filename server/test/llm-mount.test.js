@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createVault } from '../llm-vault.js';
 import { createLlmMount } from '../llm-mount.js';
+import { readZip } from '../collaboration/zip.js';
 
 function tmpVault() { return createVault({ file: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dfm-')), 'llm.vault.json') }); }
 
@@ -219,4 +220,49 @@ test('重新生成会吊销全部已签发 token', async (t) => {
   assert.equal(r.status, 200);
   assert.notEqual(vault.getData().jwtSecret, 'S');
   assert.equal(vault.getData().tokens.every((x) => x.revoked), true);
+});
+
+function getBuffer(server, url) {
+  return new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port: server.address().port, path: url }, (res) => {
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+    }).on('error', reject);
+  });
+}
+
+test('opencode-bundle 返回含 opencode.json 与 Install.bat 的 zip', async (t) => {
+  const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
+  fs.writeFileSync(path.join(oc, 'opencode.json'), JSON.stringify({
+    provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { a: {}, b: {}, c: {} } } },
+  }));
+  const prev = process.env.DEVFLOW_OPENCODE_CONFIG;
+  process.env.DEVFLOW_OPENCODE_CONFIG = oc;
+  t.after(() => { if (prev === undefined) delete process.env.DEVFLOW_OPENCODE_CONFIG; else process.env.DEVFLOW_OPENCODE_CONFIG = prev; });
+
+  const vault = tmpVault();
+  vault.init('pw');
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234 });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+
+  await jpost(server, '/api/llm-admin/secret', { secret: 'S' });
+  const tok = JSON.parse((await jpost(server, '/api/llm-admin/tokens', { employeeId: 'E1', days: 1 })).body).token;
+
+  const r = await getBuffer(server, `/api/llm-admin/opencode-bundle?provider=corp&token=${tok.id}&models=a`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers['content-type'], 'application/zip');
+  const entries = readZip(r.body);
+  const names = entries.map((e) => e.name).sort();
+  assert.deepEqual(names, ['Install.bat', 'opencode.json']);
+  const cfg = JSON.parse(entries.find((e) => e.name === 'opencode.json').data.toString('utf8'));
+  assert.deepEqual(Object.keys(cfg.provider['devflow-corp'].models), ['a']);
+  const bat = entries.find((e) => e.name === 'Install.bat').data.toString('utf8');
+  assert.match(bat, /\.config\\opencode/);
+  assert.match(bat, /opencode\.json\.bak/);
+
+  assert.equal((await getBuffer(server, '/api/llm-admin/opencode-bundle?provider=corp&token=nope')).status, 404);
+  assert.equal((await getBuffer(server, `/api/llm-admin/opencode-bundle?provider=nope&token=${tok.id}`)).status, 404);
 });

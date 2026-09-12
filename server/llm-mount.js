@@ -6,6 +6,7 @@ import { createProxyHandler } from './llm-proxy.js';
 import { createCache } from './llm-cache.js';
 import { loadPlugins, EXAMPLE_PLUGIN, writeExamplePlugin } from './relay-plugins.js';
 import { revealInOs } from './reveal.js';
+import { buildZip } from './collaboration/zip.js';
 
 function readJson(req) {
   return new Promise((resolve) => {
@@ -18,6 +19,25 @@ function readJson(req) {
 function sendJson(res, status, obj) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(obj));
+}
+
+const INSTALL_BAT = [
+  '@echo off',
+  'setlocal',
+  'set "DEST=%USERPROFILE%\\.config\\opencode"',
+  'if not exist "%DEST%" mkdir "%DEST%"',
+  'if exist "%DEST%\\opencode.json" copy /Y "%DEST%\\opencode.json" "%DEST%\\opencode.json.bak" >nul',
+  'copy /Y "%~dp0opencode.json" "%DEST%\\opencode.json" >nul',
+  'echo DevFlow opencode.json installed:',
+  'echo   %DEST%\\opencode.json',
+  'pause',
+  '',
+].join('\r\n');
+
+function pickModels(available, asked) {
+  if (!asked.length) return available;
+  const filtered = available.filter((m) => asked.includes(m));
+  return filtered.length ? filtered : asked;
 }
 
 export function createLlmMount({ vault, host, port, logger = console, pluginsDir = null, cache = createCache(), reveal = revealInOs } = {}) {
@@ -123,13 +143,30 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
         if (!rec) return sendJson(res, 404, { error: 'token not found' });
         const p = getProvider(providerId);
         if (!p || !p.baseURL) return sendJson(res, 404, { error: 'provider not found' });
-        let models = p.models;
-        if (asked.length) {
-          const filtered = p.models.filter((m) => asked.includes(m));
-          models = filtered.length ? filtered : asked;
-        }
+        const models = pickModels(p.models, asked);
         const config = JSON.stringify(buildOpencodeConfig({ host, port, providerId, baseURL: p.baseURL, token: rec.jwt, models }), null, 2);
         return sendJson(res, 200, { config });
+      }
+      if (seg[0] === 'opencode-bundle' && method === 'GET') {
+        const providerId = url.searchParams.get('provider') || '';
+        const tokenId = url.searchParams.get('token') || '';
+        const asked = url.searchParams.getAll('models').flatMap((v) => v.split(',')).map((s) => s.trim()).filter(Boolean);
+        const d = vault.getData();
+        const rec = d.tokens.find((t) => t.id === tokenId);
+        if (!rec) return sendJson(res, 404, { error: 'token not found' });
+        const p = getProvider(providerId);
+        if (!p || !p.baseURL) return sendJson(res, 404, { error: 'provider not found' });
+        const config = JSON.stringify(buildOpencodeConfig({ host, port, providerId, baseURL: p.baseURL, token: rec.jwt, models: pickModels(p.models, asked) }), null, 2);
+        const zip = buildZip([
+          { name: 'opencode.json', data: Buffer.from(config, 'utf8') },
+          { name: 'Install.bat', data: Buffer.from(INSTALL_BAT, 'utf8') },
+        ]);
+        res.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="devflow-opencode-${encodeURIComponent(providerId)}.zip"`,
+          'Content-Length': zip.length,
+        });
+        return res.end(zip);
       }
       return sendJson(res, 404, { error: 'not found' });
     } catch (e) {
