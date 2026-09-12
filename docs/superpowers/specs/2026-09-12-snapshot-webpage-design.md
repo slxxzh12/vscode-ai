@@ -1,129 +1,119 @@
-# 设计文档：网页截图（Snapshot）功能
+# 设计文档：网页截图（Snapshot）上传至 remote_coder 并入库
 
 日期：2026-09-12
 分支：master
-状态：待评审
+状态：待评审（v2，替代 v1 的「本地下载 PNG」方案）
 
 ## 1. 概述
 
-在 devflow 网页顶栏新增一个「相机」按钮，点击后把**当前 devflow 页面**（顶栏 + 侧栏 + 主内容区，即用户此刻看到的一屏）截取并**下载为 PNG 文件**。
+在 devflow 网页顶栏新增一个「相机」按钮，点击后：
+
+1. 截取**当前 devflow 页面**（`.app` 根容器，一屏视口）；
+2. 把 PNG **上传给本机服务端**；
+3. 服务端写入**仓库内固定目录 `remote_coder/`**（时间戳命名，累加不覆盖）；
+4. 服务端**自动** `git add` + `git commit` + `git push origin HEAD`。
 
 已与用户确认的约束：
 
-- **截取范围**：整个 devflow 页面（`.app` 根容器，`height:100%` 视口一屏；不做滚动拼接）。
-- **输出**：直接下载 PNG 文件，不弹预览、不复制剪贴板、不存服务端。
-- **触发**：顶栏按钮（放在语言/主题按钮旁）。
+- 目标目录：仓库根下 `remote_coder/`。
+- 命名：`devflow-YYYYMMDD-HHmmss.png`，同秒冲突追加 `-1`/`-2`。
+- git：服务端自动 commit + push（不再本地下载）。
+- 触发：顶栏相机按钮。
 
-## 2. 现状与影响面
+## 2. 架构与数据流
 
-- `web/src/App.vue`：根 `<div class="app">` 即整个应用容器；顶栏 `.top` 已有语言、主题按钮（`App.vue:391-395`）。
-- `web/package.json`：web 依赖清单，当前无任何截图/序列化库；项目零 CDN、字体本地。
-- `web/src/`：纯逻辑集中在独立 `.ts` 模块并配 `*.test.ts`（vitest），如 `diff.ts`、`markdown.ts`、`scheduler/format.ts`。
-- i18n：`shared/i18n/zh-CN.js` + `en.js` 为唯一词条源；`web/src/i18n.ts` 提供 `t()` / `$t()`。
-- 终端使用 `@xterm/xterm` 的默认 DOM 渲染器（未加载 canvas addon），主内容区为常规 DOM，适合 `foreignObject` 序列化。
+```
+点击 📷
+  └─ 前端 captureToPngDataUrl(.app)            （html-to-image 序列化为 dataURL）
+       └─ POST /api/snapshot { dataUrl }
+            └─ 服务端 saveSnapshotToRepo()
+                 ├─ mkdir remote_coder/
+                 ├─ 解码 dataURL → 写 devflow-<ts>.png
+                 ├─ git add remote_coder/<file>
+                 ├─ git commit -m "snapshot: <file>" -- remote_coder/<file>
+                 └─ git push origin HEAD
+            ← { ok, file, rel }
+  └─ 顶栏短暂提示「已保存到 <file>」；失败 alert
+```
 
-## 3. 技术选型
+## 3. 服务端新增模块 `server/snapshot-store.js`
 
-新增依赖 **`html-to-image`**：把 DOM 节点序列化进 SVG `foreignObject`，交由浏览器自身渲染后导出 PNG。
+纯逻辑 + 可注入 `git`，便于单测：
 
-对比过的方案：
+- `SNAPSHOT_DIR = 'remote_coder'`
+- `snapshotName(date)`：`devflow-YYYYMMDD-HHmmss.png`（本地时间，补零）。
+- `decodePng(dataUrl)`：仅接受 `data:image/png;base64,` 前缀且非空；否则抛 `bad-image`。
+- `saveSnapshotToRepo({ repoRoot, dataUrl, date, git })`：
+  1. `fs.mkdirSync(<repoRoot>/remote_coder, { recursive: true })`
+  2. 计算唯一文件名（存在则 `-1`、`-2`…）
+  3. `fs.writeFileSync` 写入解码后的 buffer
+  4. 依次 `git add -- <rel>`、`git commit -m "snapshot: <file>" -- <rel>`、`git push origin HEAD`
+  5. 返回 `{ file, rel }`
+- 默认 `git(repo, args)` 用 `execFile('git', ['-C', repo, ...args], { env: { GIT_TERMINAL_PROMPT: '0' } })`；失败抛 `git-failed` / `git-unavailable`。
 
-| 方案 | 结论 |
-| --- | --- |
-| `html-to-image`（选定） | 无需权限弹窗；文字/布局还原度高；自动内联 `<canvas>`、图片为 dataURL；体积小 |
-| `html2canvas` | 自实现 CSS 渲染，对 CSS 变量/阴影/渐变还原不稳定，xterm 文字易错位；体积大 |
-| 原生 `getDisplayMedia` | 像素级准确，但每次都弹授权框、需用户选标签页、可能截到应用外内容；体验割裂 |
+## 4. 服务端路由
 
-## 4. 新增模块 `web/src/snapshot.ts`
+`server/http-api.js`：
 
-纯逻辑与副作用分离，便于单测：
+- `createHttpApi({ ..., repoRoot })` 新增依赖。
+- `POST /api/snapshot`，body `{ dataUrl }`，body 上限 32MB；成功 `{ ok: true, file, rel }`。
+- 错误映射：`bad-image` → 400；其余 → 500（带 message）。
 
-- `snapshotFileName(date = new Date()): string`
-  生成文件名 `devflow-YYYYMMDD-HHmmss.png`（本地时间，各段补零）。
-- `snapshotBackground(el: HTMLElement): string`
-  读取计算样式里的主题背景色（优先 `--bg1`，回退 `--bg0`，再回退 `#1e1e1e`），避免导出透明 PNG。
-- `snapshotFilter(node: Node): boolean`
-  `html-to-image` 的 `filter`，跳过带 `data-snapshot-skip` 属性的元素。
-- `captureToPng(el: HTMLElement): Promise<void>`
-  调用 `toPng(el, options)`，得到 dataURL 后创建 `<a href download=snapshotFileName()>` 并 `click()` 触发下载。异常向上抛出由调用方提示。
-- 选项：`{ cacheBust: true, pixelRatio: window.devicePixelRatio || 1, backgroundColor: snapshotBackground(el), filter: snapshotFilter }`。
+`server/index.js`：`createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..') })`。
 
-## 5. `App.vue` 改动
+## 5. 前端改动
 
-- 根 `<div class="app">` 绑定 `ref="appRef"`。
-- 顶栏语言/主题按钮旁新增相机按钮：
+`web/src/snapshot.ts`：
 
-  ```html
-  <button class="snap-btn" :disabled="snapshotting"
-          :class="{ 'snap-hidden': snapshotting }"
-          :title="$t('top.snapshot')" @click="onSnapshot">📷</button>
-  ```
+- `captureToPngDataUrl(el, deps?)`：调用 `toPng`，返回 dataURL（`deps.toPng` 可注入）。
+- `uploadSnapshot(dataUrl, deps?)`：`POST /api/snapshot`，成功返回 `{ file, rel }`，失败抛错（`deps.fetch` 可注入）。
+- 保留 `snapshotBackground` / `snapshotFilter` / `snapshotOptions`。
+- 移除 v1 的 `snapshotFileName` / `downloadDataUrl` / `captureToPng`。
 
-- `onSnapshot()` 流程：
-  1. `snapshotting = true`（按钮 `visibility:hidden`，避免相机按钮自身入镜；同时禁用防连点）
-  2. `await nextTick()` + `requestAnimationFrame` 等待重绘
-  3. `await captureToPng(appRef)`
-  4. 无论成功失败 `snapshotting = false`
-  5. 失败：`alert(t('top.snapshot.failed'))`
-- 样式：`.snap-btn` 与既有 `.lang-btn` / `.theme-btn` 一致（含 `.top.colored` 下的白字/半透明白底分支）；`.snap-hidden { visibility: hidden; }`。
+`web/src/App.vue`：
+
+- 根节点 `ref="appRef"`（不变）。
+- 相机按钮 `📷`（不变），截图期间 `visibility:hidden` + disabled。
+- `onSnapshot()`：`nextTick` + `requestAnimationFrame` → `captureToPngDataUrl` → `uploadSnapshot` → 顶栏短暂显示 `top.snapshot.saved`；异常 `alert(top.snapshot.failed)`。
+- 新增 `.snap-msg` 样式；`onBeforeUnmount` 清理提示定时器。
 
 ## 6. i18n 词条
-
-`shared/i18n/zh-CN.js` 与 `en.js` 对称新增：
 
 | key | zh-CN | en |
 | --- | --- | --- |
 | `top.snapshot` | 截图当前页面 | Capture current page |
+| `top.snapshot.saved` | 已保存到 {file} | Saved to {file} |
 | `top.snapshot.failed` | 截图失败，请重试。 | Failed to capture the page, please try again. |
 
-## 7. 数据流
+## 7. 测试与验收
 
-```
-点击 📷
-  -> snapshotting = true（相机按钮 visibility:hidden）
-  -> nextTick + requestAnimationFrame
-  -> captureToPng(appRef)
-       -> snapshotBackground(appRef) 读主题背景色
-       -> toPng(appRef, { cacheBust, pixelRatio, backgroundColor, filter })
-       -> dataURL -> <a download=devflow-<ts>.png>.click()
-  -> snapshotting = false
-  （异常 -> alert(top.snapshot.failed)）
-```
+- `server/test/snapshot-store.test.js`：
+  - `snapshotName` 固定日期格式；`decodePng` 接受合法、拒绝非 PNG/空（`bad-image`）。
+  - `saveSnapshotToRepo`（临时目录 + 注入 git）：写盘字节正确、文件名时间戳、git 依次 `add`/`commit`/`push`、同秒第二次 `-1`。
+- `web/src/snapshot.test.ts`：背景/filter/options 保留；`captureToPngDataUrl` 返回 dataURL 并传对 options；`uploadSnapshot` 正确 POST 与错误抛出。
+- `npm.cmd test`、`npm.cmd run typecheck`、`npm.cmd run check:i18n`、`npm.cmd run build:web` 全通过。
+- 人工验收：重启后端（新路由生效）→ 点相机 → `remote_coder/` 出现 PNG → `git log` 出现 `snapshot:` 提交 → 远端已推送。
 
 ## 8. 边界与取舍
 
-- **按钮入镜**：截图前隐藏相机按钮；其余顶栏内容照常入镜。
-- **透明背景**：强制取主题背景色（暗色主题导出暗底），避免 PNG 透明发黑。
-- **高分屏**：`pixelRatio = devicePixelRatio`，避免模糊。
-- **字体**：`html-to-image` 自动内联 `@font-face`；项目零 CDN、字体本地，无跨域问题。
-- **范围**：`.app` 为 `height:100%` 视口容器，故「整个页面」＝当前视口一屏，**不做**滚动拼接（用户已确认）。
-- **性能/重复点击**：截图期间按钮禁用，防连点。
-- **失败**：仅捕获并提示，不改变页面状态。
+- **推送被拒**（远端有新提交）：回报失败，本地 commit 仍在，不做自动 rebase。
+- **仓库体积**：每张截图都会入库并 push，仓库会增长（用户明确选择）。
+- **提交范围**：`git commit -- <rel>` 仅提交该截图，不影响其它暂存改动。
+- **失败可见**：写盘成功后若 commit/push 失败，前端提示失败；文件保留在本地。
+- **远程访问**：`/api/snapshot` 受现有本机/远程门禁约束（远程需有效访问 Cookie）。
+- **截图按钮不入镜**：截图前隐藏相机按钮（沿用 v1）。
 
-## 9. 测试与验收
+## 9. 明确不做
 
-- 单测 `web/src/snapshot.test.ts`：
-  - `snapshotFileName`：固定日期 → `devflow-20260912-093005.png`（含补零）。
-  - `snapshotBackground`：注入 mock 计算样式，验证 `--bg1` / `--bg0` / 兜底色三级回退。
-  - `snapshotFilter`：带/不带 `data-snapshot-skip` 的节点返回 false/true。
-- 类型检查：`npm.cmd run typecheck` 通过。
-- i18n：`shared/i18n` 词条中英对称；`npm.cmd run check:i18n` 通过。
-- 全量测试：`npm.cmd test` 通过。
-- 人工验收（浏览器）：
-  1. `npm.cmd run dev:web` 打开 http://localhost:5173，亮/暗主题各点一次相机按钮；
-  2. 下载得到 PNG，内容与界面一致（顶栏、侧栏、终端/预览），相机按钮自身不出现在图中；
-  3. 高分屏下图片清晰不模糊。
+- 不做本地下载 / 剪贴板 / 预览弹窗。
+- 不做滚动拼接整页长图。
+- 不做自动 `git pull --rebase` 重试推送。
+- 不清理/轮转 `remote_coder/` 历史截图。
 
-## 10. 明确不做
+## 10. 决策记录
 
-- 不做滚动拼接的「整页长图」。
-- 不做复制到剪贴板 / 弹预览 / 保存到服务端历史。
-- 不做框选区域 / 仅截主内容区。
-- 不引入后端接口与配置项。
-
-## 11. 决策记录
-
-- 选 `html-to-image` 而非 `html2canvas` / 原生截屏：无权限弹窗、还原度好、体积小，适配本项目文字为主的界面。
-- 仅下载 PNG：用户明确选择。
-- 顶栏按钮触发：用户明确选择。
-- 截取整个 devflow 页面、单屏：用户明确选择。
+- 目标为仓库内 `remote_coder/`：用户明确。
+- 时间戳累加命名：用户明确。
+- 服务端自动 commit + push origin master（实现用 `push origin HEAD`）：用户明确。
+- 上传-落盘-git 由服务端完成（而非浏览器直接操作）：浏览器无本地写盘/git 能力。
+- 由 v1 的本地下载改为 v2：用户澄清真实意图。
