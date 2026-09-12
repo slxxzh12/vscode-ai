@@ -438,3 +438,41 @@ export default {
 
 - `server/test/llm-mount.test.js`：`test-example` 返回两段含 `chat/completions`、`Authorization: Bearer`、流式含 `stream`；`test-script` 返回 `path` 且文件存在、含 `curl` 与 `pause`；无 token/provider → 404。
 
+## 22. 协作多群并存
+
+需求：协作页可**同时加入多个 master 群**；群列表展示，每群展示成员与 token 消耗；可做简单聊天；**自己作为 master 的群也入列**。范围限定：群列表 + 每群成员/用量 + 简单聊天；下载/技能分发**不按群隔离**（沿用现状）。
+
+### 22.1 数据 `server/collaboration/store.js`
+
+- `defaultData()`：`group: null` → `groups: []`。
+- `_load()` 迁移：若非数组则 `groups=[]`；`groups` 为空且旧 `group` 存在 → `group.id = group.id === 'shared' && group.hubId ? group.hubId : group.id`，`groups=[group]`，删除 `group`。
+- 方法：`listGroups()`；`getGroup(id?)`（无 id 返回第一个，兼容旧调用）；`findGroup(id)`；`ownedGroup(machineId)`（`hubId===machineId`）；`ensureGroup({name,hubId,self})`（按 `id=hubId` 幂等创建）；`upsertGroup(group)`（按 id 覆盖或追加）；`addGroupMember(groupId, profile)`。
+- `setGroup`/`saveGroup` 保留为 `upsertGroup` 别名（降低测试改动）。
+
+### 22.2 引擎 `server/collaboration/engine.js`
+
+- `ensureGroup()`：`store.ensureGroup({ name, hubId: self, self })`（id=自身 machineId）。
+- `joinByLink()`：`store.upsertGroup(group)`（不再替换单群）。
+- `_inJoin()`：用 `store.ownedGroup(self) || ensureGroup()`，`addGroupMember(g.id, env.from)`；返回该群。
+- `_inMemberSync()`：按 `payload.group.id` `findGroup`，无则 `upsertGroup`，有则合并成员。
+- `profileByPublicKey()` / `_knownProfile()`：遍历 `listGroups()` 查成员。
+- `reportHeartbeat()`：对「自己是成员的每个群」上报（本地为 hub 的写本地心跳并落快照；否则 POST 到该群 hub）。
+- `_inHeartbeat()`：按 `payload.groupId` 定位群，再校验成员/hub。
+- `pullDownloads()`：选一个「hub≠自己且自己在其中」的群；`publishPackage()` 用 `ownedGroup(self)`。
+- `snapshot`（http-mount）：`{ group: getGroup(), groups: listGroups() }`（`group` 保留为第一个，兼容旧 UI）。
+
+### 22.3 前端 `web/src/collaboration/*`
+
+- `types.ts`：`CollabSnapshot` 增加 `groups: CollabGroup[]`。
+- `GroupView.vue`：左栏新增「我的群组」列表（自己的群置顶 + 加入的群），点击切换；「加入」输入框保留（粘贴邀请 → 新增群）；选中群驱动右侧聊天、成员/用量展示；`开启 master 模式` 与 master 专属操作只在「自己的群」显示/生效。
+- `GroupChatView.vue` / `SkillDistributor.vue` / `TasksView.vue`：按 `snap.groups` 查找对应群（替换 `snap.group`）。
+- 聊天串用现有 `groupId`（后端已按群存储）。
+
+### 22.4 测试
+
+- `collab-store.test.js`：`groups` 初值、`ensureGroup` 幂等且 id=hubId、`upsertGroup` 追加多群、`findGroup`/`ownedGroup`、`addGroupMember(groupId)`。
+- `collab-engine.test.js`：两机互加入后各自持有对方群；本机同时保留自有群 + 加入群（列表长度 2）。
+- `collab-http.test.js`：`snapshot.groups` 数组、`snapshot.group` 兼容；join 后多群。
+- 其余引用 `snap.group`/`list.group` 的断言改为兼容 `groups`。
+- 全量 `npm.cmd test`、`typecheck`、`check:i18n`、`build:web` 全绿。
+
