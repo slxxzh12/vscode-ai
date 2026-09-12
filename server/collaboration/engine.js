@@ -686,10 +686,6 @@ export function _extendChat(engine) {
     if (toId !== this.pub.machineId) return { ok: true };
     const r = this._requireMember(groupId, p.machineId);
     if (r.code !== 'ok') return { ok: false, error: 'not-member' };
-    if (this.store.isAllowed(text)) {
-      this._runCmd({ reqId, groupId, fromId: p.machineId, text, auto: true });
-      return { ok: true };
-    }
     this.store.addPendingCmd({ id: reqId, groupId, fromId: p.machineId, text, receivedAt: Date.now() });
     this._emit('cmd-pending', { reqId, groupId, fromId: p.machineId, text });
     return { ok: true };
@@ -763,9 +759,6 @@ export function _extendChat(engine) {
     return { ok: true, data: { messages } };
   };
   engine.listPendingCmds = function listPendingCmds() { return this.store.listPendingCmds(); };
-  engine.listAllowlist = function listAllowlist() { return this.store.listAllowlist(); };
-  engine.allowCmd = function allowCmd(prefix) { if (typeof prefix === 'string' && prefix) { this.store.addAllowEntry(prefix.trim()); return { code: 'ok' }; } return { code: 'bad' }; };
-  engine.disallowCmd = function disallowCmd(prefix) { this.store.removeAllowEntry(prefix); return { code: 'ok' }; };
   return engine;
 }
 

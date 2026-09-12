@@ -13,7 +13,6 @@ export function defaultData() {
     chatSeq: 0,          // 本机全局单调消息序号
     chatMessages: [],    // { id, groupId, kind, fromId, text, toId, meta, ts, seq }
     pendingCmds: [],     // { id(reqId), groupId, fromId, text, receivedAt }
-    commandAllowlist: [], // string[] 前缀
   };
 }
 
@@ -141,16 +140,4 @@ export class CollabStore {
   findPendingCmd(id) { return this.data.pendingCmds.find((c) => c.id === id) || null; }
   addPendingCmd(cmd) { if (!this.findPendingCmd(cmd.id)) this.data.pendingCmds.push(cmd); this.save(); return cmd; }
   removePendingCmd(id) { this.data.pendingCmds = this.data.pendingCmds.filter((c) => c.id !== id); this.save(); }
-
-  // ---- allowlist ----
-  listAllowlist() { return this.data.commandAllowlist; }
-  addAllowEntry(prefix) {
-    if (!this.data.commandAllowlist.includes(prefix)) this.data.commandAllowlist.push(prefix);
-    this.save();
-  }
-  removeAllowEntry(prefix) {
-    this.data.commandAllowlist = this.data.commandAllowlist.filter((p) => p !== prefix);
-    this.save();
-  }
-  isAllowed(text) { return this.data.commandAllowlist.some((p) => typeof text === 'string' && text.startsWith(p)); }
 }

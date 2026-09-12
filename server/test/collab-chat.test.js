@@ -28,25 +28,7 @@ test('sendChat 双方落历史（seq 单调）', async () => {
   } finally { await h.stop(); }
 });
 
-test('白名单命中自动执行并回结果', async () => {
-  const h = await createPairHarness({ skipSkills: true });
-  try {
-    const [A, B] = h.nodes;
-    const g = await groupUp([A, B]);
-    const executed = [];
-    B.runner = { execute: async ({ text }) => { executed.push(text); return { stdout: 'OUT', stderr: '', exitCode: 0, timedOut: false, durationMs: 5 }; } };
-    B.store.addAllowEntry('安全命令');
-    const res = await A.requestRemoteExec({ groupId: g.id, text: '安全命令 跑测试', toId: B.pub.machineId });
-    assert.equal(res.code, 'sent');
-    await new Promise((r) => setTimeout(r, 30));
-    assert.equal(executed.length, 1, '白名单自动执行');
-    const results = A.store.listChatMessages(g.id).filter((m) => m.kind === 'cmd-result');
-    assert.ok(results.length >= 1, 'A 收到 cmd-result');
-    assert.equal(results[0].text, 'OUT');
-  } finally { await h.stop(); }
-});
-
-test('未命中白名单 → B 产生 pending，approve 后执行', async () => {
+test('远程命令 → B 产生 pending，approve 后执行', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {
     const [A, B] = h.nodes;

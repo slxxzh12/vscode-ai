@@ -131,29 +131,23 @@ test('群聊与远程执行 REST 冒烟', async () => {
   B.engine.runner = { execute: async () => ({ stdout: 'OK', stderr: '', exitCode: 0, timedOut: false, durationMs: 1 }) };
   try {
     const g = await joinGroup(A, B);
-    // B 白名单加入，A 发普通聊天
-    await post(`http://127.0.0.1:${B.port}/api/collab/allowlist`, { prefix: '安全命令' });
-    const allow = await fetch(`http://127.0.0.1:${B.port}/api/collab/allowlist`).then((r) => r.json());
-    assert.deepEqual(allow.allowlist, ['安全命令']);
+    // A 发普通聊天
     await post(`http://127.0.0.1:${A.port}/api/collab/groups/${g.id}/chat`, { text: 'hello', toId: null });
     await new Promise((r) => setTimeout(r, 80));
     const chat = await fetch(`http://127.0.0.1:${A.port}/api/collab/groups/${g.id}/chat`).then((r) => r.json());
     assert.ok(chat.messages.some((m) => m.text === 'hello'));
-    // A @B 远程执行（命中白名单自动跑）
+    // A @B 远程执行 → B 产生 pending → approve 后回结果
     const cmd = await post(`http://127.0.0.1:${A.port}/api/collab/groups/${g.id}/cmd`, { text: '安全命令 go', toId: B.engine.pub.machineId });
     assert.equal(cmd.body.code, 'sent');
+    await new Promise((r) => setTimeout(r, 120));
+    const pending = await fetch(`http://127.0.0.1:${B.port}/api/collab/cmds`).then((r) => r.json());
+    assert.equal(pending.pending.length, 1, 'B 有待确认命令');
+    await post(`http://127.0.0.1:${B.port}/api/collab/cmds/${pending.pending[0].id}/approve`, { approve: true });
     await new Promise((r) => setTimeout(r, 120));
     const chat2 = await fetch(`http://127.0.0.1:${A.port}/api/collab/groups/${g.id}/chat`).then((r) => r.json());
     const results = chat2.messages.filter((m) => m.kind === 'cmd-result');
     assert.ok(results.length >= 1, 'A 群内有 cmd-result');
     assert.equal(results[0].text, 'OK');
-    // 非白名单命令 → B 有 pending
-    await post(`http://127.0.0.1:${A.port}/api/collab/groups/${g.id}/cmd`, { text: '危险命令 干', toId: B.engine.pub.machineId });
-    await new Promise((r) => setTimeout(r, 80));
-    const pending = await fetch(`http://127.0.0.1:${B.port}/api/collab/cmds`).then((r) => r.json());
-    assert.equal(pending.pending.length, 1, 'B 有待确认命令');
-    await post(`http://127.0.0.1:${B.port}/api/collab/cmds/${pending.pending[0].id}/approve`, { approve: true });
-    await new Promise((r) => setTimeout(r, 80));
     const pending2 = await fetch(`http://127.0.0.1:${B.port}/api/collab/cmds`).then((r) => r.json());
     assert.equal(pending2.pending.length, 0, '确认后 pending 清空');
   } finally { A.server.close(); B.server.close(); }

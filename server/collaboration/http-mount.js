@@ -233,10 +233,6 @@ export function createCollabMount({ engine, logger = console }) {
         const r = await engine.approveCmd({ reqId: seg[1], approve: body.approve !== false });
         return ok(res, r);
       }
-      // ---- allowlist ----
-      if (seg[0] === 'allowlist' && m === 'GET') return ok(res, { allowlist: engine.listAllowlist() });
-      if (seg[0] === 'allowlist' && seg.length === 1 && m === 'POST') { const r = engine.allowCmd(body.prefix); return ok(res, r); }
-      if (seg[0] === 'allowlist' && seg.length === 2 && m === 'DELETE') { const r = engine.disallowCmd(decodeURIComponent(seg[1])); return ok(res, r); }
       return sendJson(res, 404, { error: 'not found' });
     } catch (e) {
       logger?.error?.('collab http error', e);

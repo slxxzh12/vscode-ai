@@ -57,18 +57,13 @@ test('chat 增删查 + 全局单调 seq', () => {
   assert.equal(s.listChatMessages('g2')[0].seq, 5);
 });
 
-test('pendingCmds 与 allowlist', () => {
+test('pendingCmds', () => {
   const s = new CollabStore({ file: tmpFile() });
   s.addPendingCmd({ id: 'r1', groupId: 'g', fromId: 'a', text: 'ls', receivedAt: 1 });
   assert.equal(s.listPendingCmds().length, 1);
   assert.ok(s.findPendingCmd('r1'));
   s.removePendingCmd('r1');
   assert.equal(s.listPendingCmds().length, 0);
-  s.addAllowEntry('deploy');
-  s.addAllowEntry('git status');
-  assert.deepEqual(s.listAllowlist(), ['deploy', 'git status']);
-  s.removeAllowEntry('deploy');
-  assert.deepEqual(s.listAllowlist(), ['git status']);
 });
 
 test('本地历史 cap 每群 500', () => {
