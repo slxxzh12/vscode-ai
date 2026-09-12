@@ -19,10 +19,14 @@ const OFF = new Set(['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'pdf']);
 const CODE: Record<string, string> = {
   html: '🌐', css: '🎨', vue: '🍃', js: '🧩', ts: '🧩', mjs: '🧩', cjs: '🧩', jsx: '🧩', py: '🐍', java: '☕', json: '🧾',
 };
+const YAML = new Set(['yml', 'yaml']);
+const CURL = new Set(['http', 'rest', 'curl']);
 function fileIcon() {
   const i = n.name.lastIndexOf('.');
   const e = i >= 0 ? n.name.slice(i + 1).toLowerCase() : '';
   if (CODE[e]) return CODE[e];
+  if (YAML.has(e)) return '📐';
+  if (CURL.has(e)) return '⇀';
   if (EXE.has(e)) return '⬛';
   if (IMG.has(e)) return '🖼️';
   if (ZIP.has(e)) return '🗜️';

@@ -30,7 +30,9 @@ import '../styles/markdown.css';
 import { useProjects, type FileMeta, type FileText } from '../useProjects';
 import { t, locale } from '../i18n';
 import { isMarkdownFile, renderMarkdown, renderMermaid, printMarkdown } from '../markdown';
-import { parseCurl, type CurlRequest } from '../curl';
+import { parseCurlCommands } from '../curl';
+import CurlView from './CurlView.vue';
+import YamlView from './YamlView.vue';
 import { diffText, type DiffRow } from '../diff';
 import type { TreeItem } from '@devflow/shared';
 
@@ -57,8 +59,16 @@ const canB64 = computed(() => kind.value === 'text' && status.value === 'ok' && 
 const RUN_EXT = new Set(['bat', 'cmd', 'ps1', 'sh']);
 const canRun = computed(() => RUN_EXT.has(ext.value) && kind.value === 'text' && status.value === 'ok');
 const canCurl = computed(() => kind.value === 'text' && status.value === 'ok' && /\bcurl\b/.test(raw.value || ''));
-const viewMode = ref<'preview' | 'code'>(isMarkdownFile(props.name) || isHtmlFile.value ? 'preview' : 'code');
-const showEditor = computed(() => kind.value === 'text' && (!hasPreviewToggle.value || viewMode.value === 'code'));
+const isYaml = computed(() => ['yml', 'yaml'].includes(ext.value));
+const isCurlFile = computed(() => ['http', 'rest', 'curl'].includes(ext.value));
+type ViewMode = 'preview' | 'code' | 'visual' | 'curl';
+function defaultMode(): ViewMode {
+  if (isMarkdownFile(props.name) || isHtmlFile.value) return 'preview';
+  if (isCurlFile.value) return 'curl';
+  return 'code';
+}
+const viewMode = ref<ViewMode>(defaultMode());
+const showEditor = computed(() => kind.value === 'text' && viewMode.value === 'code');
 
 function cmLangFor(extension: string) {
   const L = (m: any) => StreamLanguage.define(m);
@@ -191,12 +201,12 @@ function scheduleSave() {
 }
 function flush() {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
-  if (!view || !dirty.value) return;
-  const snapshot = view.state.doc.toString();
+  if (!dirty.value) return;
+  const snapshot = raw.value;
   saveChain = saveChain.then(() => doWrite(snapshot)).catch(() => { /* doWrite 已处理 */ });
 }
 function saveNow() {
-  if (!view || !dirty.value) return;
+  if (!dirty.value) return;
   saveState.value = 'idle';
   flush();
 }
@@ -258,6 +268,7 @@ async function load() {
     fileAbs.value = f.abs || '';
     fileMtime.value = f.mtime || 0;
     status.value = 'ok';
+    viewMode.value = defaultMode();
     if (f.binary === true) {
       isBinary.value = true;
       return;
@@ -300,6 +311,11 @@ async function applyPreview() {
   }
 }
 
+function applyExternalText(next: string) {
+  raw.value = next;
+  if (view) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } });
+  scheduleSave();
+}
 function onRetrySave() { dirty.value = true; flush(); }
 
 // —— 压缩成一行（js/json）——
@@ -555,7 +571,11 @@ function runTools(t: 'format' | 'minify' | 'b64' | 'diff' | 'run' | 'curl') {
   else if (t === 'b64') toggleB64();
   else if (t === 'diff') openDiff();
   else if (t === 'run') runFile();
-  else if (t === 'curl') openCurl();
+  else if (t === 'curl') openCurlView();
+}
+function openCurlView() {
+  if (!parseCurlCommands(raw.value).length) { setToolMsg(t('fp.curl_no_command'), false); return; }
+  viewMode.value = 'curl';
 }
 
 // —— Base64 编解码结果面板 ——
@@ -695,58 +715,6 @@ async function runFile() {
   }
 }
 
-// —— curl → 构建请求 ——
-const curlOpen = ref(false);
-const curlErr = ref('');
-const req = ref<CurlRequest>({ method: 'GET', url: '', headers: [], body: '', raw: '' });
-const headerLines = ref('');
-const sending = ref(false);
-const respStatus = ref<number | null>(null);
-const respText = ref('');
-const curlUrl = ref('');
-function reqBody(): string | undefined {
-  if (['GET', 'HEAD'].includes(req.value.method.toUpperCase())) return undefined;
-  return req.value.body || undefined;
-}
-function openCurl() {
-  const src = view ? view.state.doc.toString() : raw.value;
-  const parsed = parseCurl(src);
-  if (!parsed) { curlErr.value = t('fp.curl_no_command'); curlOpen.value = false; return; }
-  req.value = parsed;
-  curlUrl.value = parsed.url;
-  headerLines.value = parsed.headers.map((h) => `${h.name}: ${h.value}`).join('\n');
-  respStatus.value = null; respText.value = ''; curlErr.value = '';
-  curlOpen.value = true;
-}
-function applyHeaderEdits() {
-  const out: Array<{ name: string; value: string }> = [];
-  for (const line of headerLines.value.split('\n')) {
-    const c = line.indexOf(':');
-    if (c > 0) out.push({ name: line.slice(0, c).trim(), value: line.slice(c + 1).trim() });
-  }
-  req.value.headers = out;
-}
-async function sendRequest() {
-  if (!curlUrl.value) { curlErr.value = t('fp.curl_url_required'); return; }
-  applyHeaderEdits();
-  sending.value = true;
-  curlErr.value = '';
-  respStatus.value = null;
-  respText.value = '';
-  try {
-    const headers: Record<string, string> = {};
-    for (const h of req.value.headers) if (h.name) headers[h.name] = h.value;
-    const r = await fetch(curlUrl.value, { method: req.value.method.toUpperCase(), headers, body: reqBody() });
-    respStatus.value = r.status;
-    const text = await r.text();
-    respText.value = text.length > 300000 ? text.slice(0, 300000) + t('fp.truncated') : text;
-  } catch (e: any) {
-    curlErr.value = t('fp.request_failed', { msg: e?.message || e });
-  } finally {
-    sending.value = false;
-  }
-}
-
 // —— 一键格式化（Prettier 按需加载）——
 const PARSER_BY_EXT: Record<string, string> = {
   js: 'babel', mjs: 'babel', cjs: 'babel', jsx: 'babel',
@@ -829,6 +797,14 @@ onBeforeUnmount(() => {
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">{{ $t('fp.preview') }}</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? $t('fp.source') : $t('fp.code') }}</button>
           </div>
+          <div v-else-if="isYaml" class="seg">
+            <button type="button" :class="{ on: viewMode === 'visual' }" @click="viewMode = 'visual'">{{ $t('fp.view.visual') }}</button>
+            <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ $t('fp.code') }}</button>
+          </div>
+          <div v-else-if="isCurlFile" class="seg">
+            <button type="button" :class="{ on: viewMode === 'curl' }" @click="viewMode = 'curl'">{{ $t('fp.view.curl') }}</button>
+            <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ $t('fp.code') }}</button>
+          </div>
           <button v-if="isMd && status === 'ok' && viewMode === 'preview'" class="fmt-btn" :title="$t('fp.pdf.tip')" @click="printPdf">{{ $t('fp.pdf') }}</button>
           <span v-if="saveState === 'saving'" class="save saveing">{{ $t('fp.saving') }}</span>
           <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ $t('fp.saved', { msg: saveMsg }) }}</span>
@@ -875,6 +851,8 @@ onBeforeUnmount(() => {
           <iframe v-else-if="isHtmlFile" class="html-frame" :srcdoc="raw" sandbox="allow-scripts allow-modals" />
         </div>
         <div v-show="showEditor" ref="editorHost" class="editor" />
+        <CurlView v-if="viewMode === 'curl' && status === 'ok' && !isBinary" :project-id="projectId" :path="path" :text="raw" @update:text="applyExternalText" />
+        <YamlView v-else-if="viewMode === 'visual' && status === 'ok' && !isBinary" :text="raw" @update:text="applyExternalText" />
 
         <div v-if="b64Open && status === 'ok'" class="b64panel">
           <div class="b64col">
@@ -899,21 +877,6 @@ onBeforeUnmount(() => {
             <div v-if="b64DecodeErr" class="b64err">{{ b64DecodeErr }}</div>
             <pre v-else class="b64pre">{{ b64DecodeOut }}</pre>
           </div>
-        </div>
-
-        <div v-if="curlOpen" class="curlpanel">
-          <div class="cph">{{ $t('fp.curl.title') }} <button class="cpx" @click="curlOpen = false">×</button></div>
-          <div class="cpf"><label>{{ $t('fp.curl.method') }}</label><input v-model="req.method" class="cpm" /></div>
-          <div class="cpf"><label>URL</label><input v-model="curlUrl" class="cpi" placeholder="https://…" /></div>
-          <div class="cpf"><label>{{ $t('fp.curl.headers') }}</label><textarea v-model="headerLines" rows="3" class="cpt" :placeholder="$t('fp.curl.headers_placeholder')" /></div>
-          <div class="cpf"><label>{{ $t('fp.curl.body') }}</label><textarea v-model="req.body" rows="4" class="cpt" :placeholder="$t('fp.curl.body_placeholder')" /></div>
-          <div class="cpacts">
-            <button class="cpsend" :disabled="sending" @click="sendRequest">{{ sending ? $t('fp.curl.sending') : $t('fp.curl.send') }}</button>
-            <span class="cprun" @click="curlOpen = false">{{ $t('fp.curl.close') }}</span>
-          </div>
-          <div v-if="curlErr" class="cperr">{{ curlErr }}</div>
-          <div v-if="respStatus !== null" class="cpstat">HTTP {{ respStatus }}</div>
-          <pre v-if="respText" class="cpre">{{ respText }}</pre>
         </div>
 
         <div v-if="diffOpen && status === 'ok'" class="diffpanel" :style="{ height: diffHeight + 'px' }">
