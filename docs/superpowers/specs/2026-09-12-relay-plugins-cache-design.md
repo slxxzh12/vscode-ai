@@ -408,3 +408,30 @@ export default {
 - `server/test/llm-mount.test.js`：`opencode-config` 用 `pid`/`model` 参数（单 provider 子集 + 多 provider）；`opencode-bundle` 同参数，zip 内 config 含多个 provider 条目。
 - `web`：typecheck / i18n。
 
+## 21. token 测试示例（流式/非流式 curl + 一键 bat 执行）
+
+需求：token 展开行内给出**流式**与**非流式**两个 curl 示例；点「测试」生成一个 `.bat`，用文件预览打开，并直接执行看结果。目标 provider/模型取**当前勾选的第一个**。
+
+### 21.1 服务端 `server/llm-mount.js`
+
+- 目标地址：`http://<host>:<port>/api/llm/<pid>/chat/completions`（不写 basePath，relay 会自动补上游 basePath）。
+- `curlCommand({ host, port, pid, jwt, model, stream })` → 单行 curl（非流式 `-s`，流式 `-N -s`，body 含 `"stream":true`）。
+- `GET /api/llm-admin/test-example?token=&pid=&model=`（需解锁）→ `{ nonStream, stream }` 两条命令；token/provider 校验同其它接口。
+- `POST /api/llm-admin/test-script`（需解锁，body `{ token, pid, model, stream }`）→ 生成 `.bat` 写到 `<dataHome>/downloads/relay-tests/test-<pid>-<plain|stream>.bat`，返回 `{ path }`。
+  - bat 内容：设置 `URL`/`TOKEN`，把 JSON body 用 `echo` 重定向到 `%TEMP%\devflow-payload.json`，`curl` 用 `-d @payload`，末尾 `pause`；纯 ASCII、CRLF。
+- 导入 `path`、`downloadsDir`。
+
+### 21.2 前端 `web/src/components/ProxyView.vue` / `App.vue`
+
+- 展开 token 行内（provider 勾选区下方）展示两段示例：
+  - 标题 `llm.test.title`；「非流式」「流式」各一块：`<pre>` 显示命令 + 「测试」按钮（`llm.test.run`）。
+  - 无勾选时显示 `llm.test.need_selection`。
+  - 展开时与勾选变化时，用第一个 provider/模型拉取 `test-example`（`loadExamples`）。
+- `runTest(tk, stream)`：POST `test-script` → 得 `path` → POST `/api/open-file {path}` → 得 `{project, rel}` → `emit('open-file', project.id, rel)` → POST `/api/run-script?project=&path=` 弹控制台执行。
+- `ProxyView` 新增 `defineEmits<{ 'open-file': [projectId, rel] }>()`；`App.vue` 的 `<ProxyView @open-file="onProxyOpenFile" />`：`onProxyOpenFile` 先 `rail='explorer'`（让文件预览可见）再 `openFile(projectId, rel)`。
+- 词条：`llm.test.title`、`llm.test.run`、`llm.test.non_stream`、`llm.test.stream`、`llm.test.need_selection`（中英对称）。
+
+### 21.3 测试
+
+- `server/test/llm-mount.test.js`：`test-example` 返回两段含 `chat/completions`、`Authorization: Bearer`、流式含 `stream`；`test-script` 返回 `path` 且文件存在、含 `curl` 与 `pause`；无 token/provider → 404。
+
