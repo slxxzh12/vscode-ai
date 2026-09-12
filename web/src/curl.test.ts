@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCurl, parseCurlCommands, buildCurl, replaceCurlCommand } from './curl';
+import { parseCurl, parseCurlCommands, buildCurl, replaceCurlCommand, splitUrl, joinUrl } from './curl';
 
 describe('parseCurl', () => {
   it('简单 GET', () => {
@@ -89,5 +89,20 @@ describe('buildCurl / replaceCurlCommand', () => {
     const next = replaceCurlCommand(text, entries[0], { ...entries[0].request, method: 'DELETE' });
     expect(next).toContain("-X DELETE 'https://a.test/x'");
     expect(next).toContain("curl -X GET 'https://b.test/y'");
+  });
+});
+
+describe('splitUrl / joinUrl', () => {
+  it('拆分查询参数', () => {
+    expect(splitUrl('https://a.test/x?q=1&lang=zh')).toEqual({
+      base: 'https://a.test/x',
+      params: [{ name: 'q', value: '1' }, { name: 'lang', value: 'zh' }],
+    });
+  });
+  it('无参数时 base 原样', () => {
+    expect(splitUrl('https://a.test/x')).toEqual({ base: 'https://a.test/x', params: [] });
+  });
+  it('合并时忽略空名', () => {
+    expect(joinUrl('https://a.test/x', [{ name: 'q', value: '1' }, { name: '', value: 'z' }])).toBe('https://a.test/x?q=1');
   });
 });

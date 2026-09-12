@@ -139,3 +139,30 @@ export function buildCurl(request: CurlRequest): string {
 export function replaceCurlCommand(text: string, entry: CurlEntry, request: CurlRequest): string {
   return text.slice(0, entry.start) + buildCurl(request) + text.slice(entry.end);
 }
+
+export interface QueryParam {
+  name: string;
+  value: string;
+}
+
+export function splitUrl(url: string): { base: string; params: QueryParam[] } {
+  const i = url.indexOf('?');
+  if (i < 0) return { base: url, params: [] };
+  const base = url.slice(0, i);
+  const params: QueryParam[] = [];
+  for (const pair of url.slice(i + 1).split('&')) {
+    if (!pair) continue;
+    const eq = pair.indexOf('=');
+    if (eq < 0) params.push({ name: decodeURIComponent(pair), value: '' });
+    else params.push({ name: decodeURIComponent(pair.slice(0, eq)), value: decodeURIComponent(pair.slice(eq + 1)) });
+  }
+  return { base, params };
+}
+
+export function joinUrl(base: string, params: QueryParam[]): string {
+  const q = params
+    .filter((p) => p.name)
+    .map((p) => `${encodeURIComponent(p.name)}=${encodeURIComponent(p.value)}`)
+    .join('&');
+  return q ? `${base}?${q}` : base;
+}
