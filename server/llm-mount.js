@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import { signJwt } from './llm-jwt.js';
 import { listProviders, getProvider, buildOpencodeConfigMulti } from './llm-config.js';
 import { createProxyHandler } from './llm-proxy.js';
@@ -7,6 +8,7 @@ import { createCache } from './llm-cache.js';
 import { loadPlugins, EXAMPLE_PLUGIN, writeExamplePlugin } from './relay-plugins.js';
 import { revealInOs } from './reveal.js';
 import { buildZip } from './collaboration/zip.js';
+import { downloadsDir } from './data-home.js';
 
 function readJson(req) {
   return new Promise((resolve) => {
@@ -62,6 +64,35 @@ function selectionsToProviders(url) {
     providers.push({ id: pid, baseURL: p.baseURL, models: pickModels(p.models, asked) });
   }
   return providers;
+}
+
+function relayUrl(host, port, pid, suffix = '/chat/completions') {
+  return `http://${host}:${port}/api/llm/${encodeURIComponent(pid)}${suffix}`;
+}
+
+function testPayload(model, stream) {
+  const base = { model, messages: [{ role: 'user', content: 'hi' }] };
+  return JSON.stringify(stream ? { ...base, stream: true } : base);
+}
+
+function curlCommand({ host, port, pid, jwt, model, stream }) {
+  const url = relayUrl(host, port, pid);
+  return `curl ${stream ? '-N -s' : '-s'} "${url}" -H "Authorization: Bearer ${jwt}" -H "Content-Type: application/json" -d '${testPayload(model, stream)}'`;
+}
+
+function buildTestBat({ host, port, pid, jwt, model, stream }) {
+  const url = relayUrl(host, port, pid);
+  return [
+    '@echo off',
+    'setlocal',
+    `set "URL=${url}"`,
+    `set "TOKEN=${jwt}"`,
+    `>"%TEMP%\\devflow-payload.json" echo ${testPayload(model, stream)}`,
+    `curl ${stream ? '-N ' : ''}-s "%URL%" -H "Authorization: Bearer %TOKEN%" -H "Content-Type: application/json" -d @"%TEMP%\\devflow-payload.json"`,
+    'echo.',
+    'pause',
+    '',
+  ].join('\r\n');
 }
 
 export function createLlmMount({ vault, host, port, logger = console, pluginsDir = null, cache = createCache(), reveal = revealInOs } = {}) {
@@ -184,6 +215,36 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
           'Content-Length': zip.length,
         });
         return res.end(zip);
+      }
+      if (seg[0] === 'test-example' && method === 'GET') {
+        const tokenId = url.searchParams.get('token') || '';
+        const pid = url.searchParams.get('pid') || '';
+        const model = url.searchParams.get('model') || '';
+        const rec = vault.getData().tokens.find((t) => t.id === tokenId);
+        if (!rec) return sendJson(res, 404, { error: 'token not found' });
+        const p = getProvider(pid);
+        if (!p || !p.baseURL) return sendJson(res, 404, { error: 'provider not found' });
+        const m = model || p.models[0] || '';
+        return sendJson(res, 200, {
+          nonStream: curlCommand({ host, port, pid, jwt: rec.jwt, model: m, stream: false }),
+          stream: curlCommand({ host, port, pid, jwt: rec.jwt, model: m, stream: true }),
+        });
+      }
+      if (seg[0] === 'test-script' && method === 'POST') {
+        const b = await readJson(req);
+        const rec = vault.getData().tokens.find((t) => t.id === String(b.token || ''));
+        if (!rec) return sendJson(res, 404, { error: 'token not found' });
+        const pid = String(b.pid || '');
+        const p = getProvider(pid);
+        if (!p || !p.baseURL) return sendJson(res, 404, { error: 'provider not found' });
+        const stream = !!b.stream;
+        const model = String(b.model || '') || p.models[0] || '';
+        const bat = buildTestBat({ host, port, pid, jwt: rec.jwt, model, stream });
+        const dir = path.join(downloadsDir(), 'relay-tests');
+        fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, `test-${pid}-${stream ? 'stream' : 'plain'}.bat`);
+        fs.writeFileSync(file, bat, 'utf8');
+        return sendJson(res, 200, { path: file });
       }
       return sendJson(res, 404, { error: 'not found' });
     } catch (e) {

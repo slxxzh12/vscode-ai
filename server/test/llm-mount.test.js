@@ -271,3 +271,43 @@ test('opencode-bundle 返回含 opencode.json 与 Install.bat 的 zip', async (t
   assert.equal((await getBuffer(server, '/api/llm-admin/opencode-bundle?token=nope&pid=corp')).status, 404);
   assert.equal((await getBuffer(server, `/api/llm-admin/opencode-bundle?token=${tok.id}&pid=nope&model=x`)).status, 404);
 });
+
+test('test-example 返回流式/非流式 curl；test-script 写 bat', async (t) => {
+  const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
+  fs.writeFileSync(path.join(oc, 'opencode.json'), JSON.stringify({
+    provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { a: {}, b: {} } } },
+  }));
+  const prev = process.env.DEVFLOW_OPENCODE_CONFIG;
+  process.env.DEVFLOW_OPENCODE_CONFIG = oc;
+  const prevHome = process.env.DEVFLOW_DATA_HOME;
+  process.env.DEVFLOW_DATA_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'dfhome-'));
+  t.after(() => {
+    if (prev === undefined) delete process.env.DEVFLOW_OPENCODE_CONFIG; else process.env.DEVFLOW_OPENCODE_CONFIG = prev;
+    if (prevHome === undefined) delete process.env.DEVFLOW_DATA_HOME; else process.env.DEVFLOW_DATA_HOME = prevHome;
+  });
+
+  const vault = tmpVault();
+  vault.init('pw');
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234 });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+  await jpost(server, '/api/llm-admin/secret', { secret: 'S' });
+  const tok = JSON.parse((await jpost(server, '/api/llm-admin/tokens', { employeeId: 'E1', days: 1 })).body).token;
+
+  const ex = JSON.parse((await jget(server, `/api/llm-admin/test-example?token=${tok.id}&pid=corp&model=a`)).body);
+  assert.match(ex.nonStream, /chat\/completions/);
+  assert.match(ex.nonStream, /Authorization: Bearer/);
+  assert.match(ex.stream, /"stream":true/);
+
+  const r = await jpost(server, '/api/llm-admin/test-script', { token: tok.id, pid: 'corp', model: 'a', stream: true });
+  assert.equal(r.status, 200);
+  const p = JSON.parse(r.body).path;
+  assert.ok(fs.existsSync(p));
+  const bat = fs.readFileSync(p, 'utf8');
+  assert.match(bat, /curl/);
+  assert.match(bat, /pause/);
+
+  assert.equal((await jget(server, '/api/llm-admin/test-example?token=nope&pid=corp&model=a')).status, 404);
+  assert.equal((await jget(server, `/api/llm-admin/test-example?token=${tok.id}&pid=nope&model=a`)).status, 404);
+});
