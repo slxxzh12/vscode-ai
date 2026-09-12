@@ -66,22 +66,32 @@ function selectionsToProviders(url) {
   return providers;
 }
 
-function relayUrl(host, port, pid, suffix = '/chat/completions') {
-  return `http://${host}:${port}/api/llm/${encodeURIComponent(pid)}${suffix}`;
+function relayUrl(host, port, pid, baseURL, suffix = '/chat/completions') {
+  let basePath = '';
+  try { basePath = new URL(baseURL).pathname.replace(/\/+$/, ''); } catch { basePath = ''; }
+  return `http://${host}:${port}/api/llm/${encodeURIComponent(pid)}${basePath}${suffix}`;
 }
 
 function testPayload(model, stream) {
-  const base = { model, messages: [{ role: 'user', content: 'hi' }] };
+  const base = { model, messages: [{ role: 'user', content: 'Hello!' }] };
   return JSON.stringify(stream ? { ...base, stream: true } : base);
 }
 
-function curlCommand({ host, port, pid, jwt, model, stream }) {
-  const url = relayUrl(host, port, pid);
-  return `curl ${stream ? '-N -s' : '-s'} "${url}" -H "Authorization: Bearer ${jwt}" -H "Content-Type: application/json" -d '${testPayload(model, stream)}'`;
+function curlCommand({ host, port, pid, baseURL, jwt, model, stream }) {
+  const url = relayUrl(host, port, pid, baseURL);
+  const body = JSON.stringify(stream
+    ? { model, messages: [{ role: 'user', content: 'Hello!' }], stream: true }
+    : { model, messages: [{ role: 'user', content: 'Hello!' }] }, null, 2);
+  return [
+    `curl ${stream ? '-N ' : ''}${url} \\`,
+    '  -H "Content-Type: application/json" \\',
+    `  -H "Authorization: Bearer ${jwt}" \\`,
+    `  -d '${body}'`,
+  ].join('\n');
 }
 
-function buildTestBat({ host, port, pid, jwt, model, stream }) {
-  const url = relayUrl(host, port, pid);
+function buildTestBat({ host, port, pid, baseURL, jwt, model, stream }) {
+  const url = relayUrl(host, port, pid, baseURL);
   return [
     '@echo off',
     'setlocal',
@@ -226,8 +236,8 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
         if (!p || !p.baseURL) return sendJson(res, 404, { error: 'provider not found' });
         const m = model || p.models[0] || '';
         return sendJson(res, 200, {
-          nonStream: curlCommand({ host, port, pid, jwt: rec.jwt, model: m, stream: false }),
-          stream: curlCommand({ host, port, pid, jwt: rec.jwt, model: m, stream: true }),
+          nonStream: curlCommand({ host, port, pid, baseURL: p.baseURL, jwt: rec.jwt, model: m, stream: false }),
+          stream: curlCommand({ host, port, pid, baseURL: p.baseURL, jwt: rec.jwt, model: m, stream: true }),
         });
       }
       if (seg[0] === 'test-script' && method === 'POST') {
@@ -239,7 +249,7 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
         if (!p || !p.baseURL) return sendJson(res, 404, { error: 'provider not found' });
         const stream = !!b.stream;
         const model = String(b.model || '') || p.models[0] || '';
-        const bat = buildTestBat({ host, port, pid, jwt: rec.jwt, model, stream });
+        const bat = buildTestBat({ host, port, pid, baseURL: p.baseURL, jwt: rec.jwt, model, stream });
         const dir = path.join(downloadsDir(), 'relay-tests');
         fs.mkdirSync(dir, { recursive: true });
         const file = path.join(dir, `test-${pid}-${stream ? 'stream' : 'plain'}.bat`);

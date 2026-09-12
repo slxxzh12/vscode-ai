@@ -297,8 +297,10 @@ test('test-example 返回流式/非流式 curl；test-script 写 bat', async (t)
 
   const ex = JSON.parse((await jget(server, `/api/llm-admin/test-example?token=${tok.id}&pid=corp&model=a`)).body);
   assert.match(ex.nonStream, /chat\/completions/);
+  assert.ok(ex.nonStream.includes(tok.jwt), 'curl 带真实 token');
   assert.match(ex.nonStream, /Authorization: Bearer/);
-  assert.match(ex.stream, /"stream":true/);
+  assert.match(ex.stream, /"stream":\s*true/);
+  assert.match(ex.stream, /-N /);
 
   const r = await jpost(server, '/api/llm-admin/test-script', { token: tok.id, pid: 'corp', model: 'a', stream: true });
   assert.equal(r.status, 200);
