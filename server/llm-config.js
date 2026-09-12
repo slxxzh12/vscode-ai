@@ -84,3 +84,13 @@ export function buildOpencodeConfig({ host, port, providerId, baseURL, token, mo
     },
   };
 }
+
+export function buildOpencodeConfigMulti({ host, port, token, providers = [] }) {
+  const provider = {};
+  for (const p of providers) {
+    if (!p || !p.id || !p.baseURL) continue;
+    const one = buildOpencodeConfig({ host, port, providerId: p.id, baseURL: p.baseURL, token, models: p.models || [] });
+    Object.assign(provider, one.provider);
+  }
+  return { $schema: 'https://opencode.ai/config.json', provider };
+}

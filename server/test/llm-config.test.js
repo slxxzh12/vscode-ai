@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadOpencodeProviders, resolveApiKey, resolveApiKeys, listProviders, getProvider, buildOpencodeConfig } from '../llm-config.js';
+import { loadOpencodeProviders, resolveApiKey, resolveApiKeys, listProviders, getProvider, buildOpencodeConfig, buildOpencodeConfigMulti } from '../llm-config.js';
 
 function dirWith(obj, name = 'opencode.json') {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
@@ -79,4 +79,18 @@ test('apiKeys 全空时 hasKey=false、apiKeys 为空', () => {
   const dir = dirWith({ provider: { corp: { options: { baseURL: 'https://gw/v1', apiKeys: ['', '{env:MISSING}'] } } } });
   assert.equal(listProviders({ dir }).providers[0].hasKey, false);
   assert.deepEqual(getProvider('corp', { dir }).apiKeys, []);
+});
+
+test('buildOpencodeConfigMulti 生成多个 provider 条目', () => {
+  const c = buildOpencodeConfigMulti({
+    host: '192.168.1.5', port: 22222, token: 'JWT',
+    providers: [
+      { id: 'deepseek', baseURL: 'https://api.deepseek.com/v1', models: ['deepseek-chat'] },
+      { id: 'glm', baseURL: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4', 'glm-4-flash'] },
+    ],
+  });
+  assert.equal(c.provider['devflow-deepseek'].options.apiKey, 'JWT');
+  assert.equal(c.provider['devflow-deepseek'].options.baseURL, 'http://192.168.1.5:22222/api/llm/deepseek/v1');
+  assert.deepEqual(Object.keys(c.provider['devflow-glm'].models), ['glm-4', 'glm-4-flash']);
+  assert.deepEqual(Object.keys(c.provider).sort(), ['devflow-deepseek', 'devflow-glm']);
 });
