@@ -67,6 +67,11 @@
   - superpowers 本地状态：`.superpowers/`。
 - 若不慎已入库：`git rm -r --cached <路径>` 移出版本库（保留本地文件），补进 `.gitignore` 后再提交。
 
+## 计划执行方式（强制）
+
+- 执行实现计划（writing-plans / executing-plans）时**默认使用 inline（本会话内执行）**，**不要用 subagent 驱动**。
+- 后续演进**不必再就「用哪种执行方式」提问**，直接按 inline 执行。
+
 ## 提交/推送
 
 - 一律在 `master` 操作（无远程 PR 需求时）。`git push origin master`。
