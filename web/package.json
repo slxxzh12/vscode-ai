@@ -37,7 +37,8 @@
     "markdown-it": "^14.1.0",
     "mermaid": "^11.17.2",
     "prettier": "^3.9.6",
-    "vue": "^3.5.0"
+    "vue": "^3.5.0",
+    "yaml": "^2.4.2"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.2.0",
