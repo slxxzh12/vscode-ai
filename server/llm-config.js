@@ -26,7 +26,8 @@ export function loadOpencodeProviders({ dir = opencodeConfigDir() } = {}) {
   const providers = [];
   for (const [id, p] of Object.entries(json.provider || {})) {
     const o = (p && p.options) || {};
-    providers.push({ id, name: (p && p.name) || id, baseURL: o.baseURL || '', apiKeyRaw: o.apiKey || '', models: Object.keys((p && p.models) || {}) });
+    const apiKeysRaw = Array.isArray(o.apiKeys) ? o.apiKeys : (o.apiKey ? [o.apiKey] : []);
+    providers.push({ id, name: (p && p.name) || id, baseURL: o.baseURL || '', apiKeysRaw, models: Object.keys((p && p.models) || {}) });
   }
   const model = typeof json.model === 'string' ? json.model : '';
   const defaultProvider = model.includes('/') ? model.split('/')[0] : (providers[0] ? providers[0].id : null);
@@ -39,11 +40,21 @@ export function resolveApiKey(raw, env = process.env) {
   return m ? (env[m[1]] || '') : raw;
 }
 
+export function resolveApiKeys(rawList, env = process.env) {
+  if (!Array.isArray(rawList)) return [];
+  const out = [];
+  for (const raw of rawList) {
+    const key = resolveApiKey(raw, env);
+    if (key && !out.includes(key)) out.push(key);
+  }
+  return out;
+}
+
 export function listProviders(opts) {
   const { providers, defaultProvider } = loadOpencodeProviders(opts);
   return {
     defaultProvider,
-    providers: providers.map((p) => ({ id: p.id, name: p.name, baseURL: p.baseURL, hasKey: !!resolveApiKey(p.apiKeyRaw), models: p.models })),
+    providers: providers.map((p) => ({ id: p.id, name: p.name, baseURL: p.baseURL, hasKey: resolveApiKeys(p.apiKeysRaw).length > 0, models: p.models })),
   };
 }
 
@@ -51,7 +62,8 @@ export function getProvider(id, opts) {
   const { providers } = loadOpencodeProviders(opts);
   const p = providers.find((x) => x.id === id);
   if (!p) return null;
-  return { id: p.id, baseURL: p.baseURL, apiKey: resolveApiKey(p.apiKeyRaw), models: p.models };
+  const apiKeys = resolveApiKeys(p.apiKeysRaw);
+  return { id: p.id, baseURL: p.baseURL, apiKey: apiKeys[0] || '', apiKeys, models: p.models };
 }
 
 export function buildOpencodeConfig({ host, port, providerId, baseURL, token, models = [] }) {

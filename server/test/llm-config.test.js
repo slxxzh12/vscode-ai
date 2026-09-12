@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadOpencodeProviders, resolveApiKey, listProviders, getProvider, buildOpencodeConfig } from '../llm-config.js';
+import { loadOpencodeProviders, resolveApiKey, resolveApiKeys, listProviders, getProvider, buildOpencodeConfig } from '../llm-config.js';
 
 function dirWith(obj, name = 'opencode.json') {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
@@ -54,4 +54,29 @@ test('buildOpencodeConfig 生成 opencode.json 结构', () => {
   assert.equal(p.options.baseURL, 'http://192.168.1.5:22222/api/llm/corp/v1');
   assert.equal(p.options.apiKey, 'JWT');
   assert.deepEqual(p.models, { 'gpt-4o': {} });
+});
+
+test('resolveApiKeys 解析 {env:} 并去空去重', () => {
+  assert.deepEqual(resolveApiKeys(['{env:K1}', 'k2', '', 'k2', 42], { K1: 'x' }), ['x', 'k2']);
+  assert.deepEqual(resolveApiKeys([], {}), []);
+});
+
+test('getProvider 解析 apiKeys 数组，apiKey 为首个', () => {
+  const dir = dirWith({ provider: { corp: { options: { baseURL: 'https://gw/v1', apiKeys: ['A', 'B', 'A'] } } } });
+  const p = getProvider('corp', { dir });
+  assert.deepEqual(p.apiKeys, ['A', 'B']);
+  assert.equal(p.apiKey, 'A');
+});
+
+test('无 apiKeys 时回退单个 apiKey', () => {
+  const dir = dirWith({ provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'S' } } } });
+  const p = getProvider('corp', { dir });
+  assert.deepEqual(p.apiKeys, ['S']);
+  assert.equal(p.apiKey, 'S');
+});
+
+test('apiKeys 全空时 hasKey=false、apiKeys 为空', () => {
+  const dir = dirWith({ provider: { corp: { options: { baseURL: 'https://gw/v1', apiKeys: ['', '{env:MISSING}'] } } } });
+  assert.equal(listProviders({ dir }).providers[0].hasKey, false);
+  assert.deepEqual(getProvider('corp', { dir }).apiKeys, []);
 });
