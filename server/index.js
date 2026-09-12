@@ -29,7 +29,8 @@ import { setLocale, t } from './i18n.js';
 import { isPeerRequest, matchAccessToken, resolveInviteDays } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
-import { dataHome, instanceName, instanceSeedDir, instanceFpRoot, downloadsDir } from './data-home.js';
+import { dataHome, instanceName, instanceSeedDir, instanceFpRoot, downloadsDir, relayPluginsDir } from './data-home.js';
+import { seedPlugins } from './relay-plugins.js';
 import { publicFingerprint } from './collaboration/identity.js';
 import { createVault } from './llm-vault.js';
 import { createUsageStore, normalizeUsage } from './usage-store.js';
@@ -192,7 +193,8 @@ function buildWorkspace({ paths, port }) {
 
   const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..') });
   const llmVault = createVault({ file: path.join(downloadsDir(), 'llm.vault.json') });
-  const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log });
+  seedPlugins(relayPluginsDir(), path.join(__dirname, '..', 'config', 'relay-plugins'));
+  const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: relayPluginsDir() });
   return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, llmMount, llmVault, historyFile: paths.historyFile, paths, heartbeat: null };
 }
 
