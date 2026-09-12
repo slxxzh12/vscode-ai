@@ -170,3 +170,35 @@ test('opencode-config 支持 models 过滤（未提供则全量）', async (t) =
   const manual = JSON.parse((await jget(server, `/api/llm-admin/opencode-config?provider=corp&token=${tok.id}&models=x,y`)).body);
   assert.deepEqual(Object.keys(JSON.parse(manual.config).provider['devflow-corp'].models), ['x', 'y']);
 });
+
+test('签名密钥一次配置后持久、空保存不覆盖、可重新生成', async (t) => {
+  const vault = tmpVault();
+  vault.init('pw');
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234 });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+
+  let st = JSON.parse((await jget(server, '/api/llm-admin/status')).body);
+  assert.equal(st.hasSecret, false);
+
+  const r1 = await jpost(server, '/api/llm-admin/secret', {});
+  assert.equal(r1.status, 200);
+  const first = vault.getData().jwtSecret;
+  assert.ok(first);
+  assert.equal(JSON.parse(r1.body).changed, true);
+
+  st = JSON.parse((await jget(server, '/api/llm-admin/status')).body);
+  assert.equal(st.hasSecret, true);
+
+  const r2 = await jpost(server, '/api/llm-admin/secret', {});
+  assert.equal(JSON.parse(r2.body).changed, false);
+  assert.equal(vault.getData().jwtSecret, first);
+
+  await jpost(server, '/api/llm-admin/secret', { secret: 'MYKEY' });
+  assert.equal(vault.getData().jwtSecret, 'MYKEY');
+
+  const r3 = await jpost(server, '/api/llm-admin/secret/regenerate', {});
+  assert.equal(r3.status, 200);
+  assert.notEqual(vault.getData().jwtSecret, 'MYKEY');
+});

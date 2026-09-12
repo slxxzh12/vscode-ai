@@ -55,7 +55,8 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
       if (seg[0] === 'status' && method === 'GET') {
         const s = vault.status();
         const lp = listProviders();
-        return sendJson(res, 200, { vault: s, enabled: s.unlocked ? !!vault.getData().enabled : false, host, port, defaultProvider: lp.defaultProvider, providers: lp.providers });
+        const hasSecret = s.unlocked ? !!vault.getData().jwtSecret : false;
+        return sendJson(res, 200, { vault: s, enabled: s.unlocked ? !!vault.getData().enabled : false, hasSecret, host, port, defaultProvider: lp.defaultProvider, providers: lp.providers });
       }
       if (seg[0] === 'plugins' && !seg[1] && method === 'GET') return sendJson(res, 200, { entries, dir: pluginsDir, template: EXAMPLE_PLUGIN });
       if (seg[0] === 'plugins' && seg[1] === 'reveal' && method === 'POST') {
@@ -76,11 +77,21 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
         return sendJson(res, 200, { entries: await reloadPlugins(), file });
       }
       if (seg[0] === 'enabled' && method === 'POST') { const b = await readJson(req); vault.update((d) => { d.enabled = !!b.enabled; }); return sendJson(res, 200, { ok: true, enabled: !!b.enabled }); }
-      if (seg[0] === 'secret' && method === 'POST') {
-        const b = await readJson(req);
-        const secret = (typeof b.secret === 'string' && b.secret) ? b.secret : crypto.randomBytes(32).toString('base64url');
+      if (seg[0] === 'secret' && seg[1] === 'regenerate' && method === 'POST') {
+        const secret = crypto.randomBytes(32).toString('base64url');
         vault.update((d) => { d.jwtSecret = secret; });
-        return sendJson(res, 200, { ok: true, secret });
+        return sendJson(res, 200, { ok: true });
+      }
+      if (seg[0] === 'secret' && !seg[1] && method === 'POST') {
+        const b = await readJson(req);
+        if (typeof b.secret === 'string' && b.secret) {
+          vault.update((d) => { d.jwtSecret = b.secret; });
+          return sendJson(res, 200, { ok: true, changed: true });
+        }
+        if (vault.getData().jwtSecret) return sendJson(res, 200, { ok: true, changed: false });
+        const secret = crypto.randomBytes(32).toString('base64url');
+        vault.update((d) => { d.jwtSecret = secret; });
+        return sendJson(res, 200, { ok: true, changed: true });
       }
       if (seg[0] === 'tokens' && method === 'GET') return sendJson(res, 200, { tokens: vault.getData().tokens });
       if (seg[0] === 'tokens' && method === 'POST') {
