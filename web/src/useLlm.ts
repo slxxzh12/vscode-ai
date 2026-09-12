@@ -38,9 +38,9 @@ export function useLlm() {
     createPluginExample: () => post<{ entries: LlmPluginEntry[]; file: string }>('/api/llm-admin/plugins/example', {}),
     revealPlugins: () => post<{ ok: boolean }>('/api/llm-admin/plugins/reveal', {}),
     reloadPlugins: () => post<{ entries: LlmPluginEntry[] }>('/api/llm-admin/plugins/reload', {}),
-    config: (provider: string, token: string, models?: string[]) => {
-      const q = new URLSearchParams({ provider, token });
-      for (const m of models || []) q.append('models', m);
+    config: (token: string, selections: { id: string; models: string[] }[]) => {
+      const q = new URLSearchParams({ token });
+      for (const sel of selections) for (const m of sel.models) { q.append('pid', sel.id); q.append('model', m); }
       return json<{ config: string }>(`/api/llm-admin/opencode-config?${q.toString()}`);
     },
   };

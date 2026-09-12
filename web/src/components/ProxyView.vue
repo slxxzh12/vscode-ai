@@ -18,10 +18,10 @@ const employeeId = ref('');
 const days = ref(30);
 const err = ref('');
 const expanded = ref<string | null>(null);
-const rowProvider = ref('');
-const rowModels = ref<string[]>([]);
-const rowManual = ref('');
+const rowKeys = ref<string[]>([]);
+const rowManual = ref<Record<string, string>>({});
 const providerById = (id: string) => st.value?.providers.find((p) => p.id === id) || null;
+const allModelKeys = () => (st.value?.providers || []).flatMap((p) => p.models.map((m) => `${p.id}::${m}`));
 const configText = ref('');
 const copied = ref(false);
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -82,30 +82,35 @@ async function copyExample() {
 }
 const issue = () => run(() => api.issue(employeeId.value, Number(days.value)));
 const revoke = (id: string) => run(() => api.revoke(id));
+function selectedProviders() {
+  const out: { id: string; models: string[] }[] = [];
+  for (const p of st.value?.providers || []) {
+    if (p.models.length) {
+      const models = p.models.filter((m) => rowKeys.value.includes(`${p.id}::${m}`));
+      if (models.length) out.push({ id: p.id, models });
+    } else {
+      const manual = (rowManual.value[p.id] || '').split(',').map((s) => s.trim()).filter(Boolean);
+      if (manual.length) out.push({ id: p.id, models: manual });
+    }
+  }
+  return out;
+}
 function toggleToken(tk: LlmToken) {
   if (expanded.value === tk.id) { expanded.value = null; return; }
   expanded.value = tk.id;
-  rowProvider.value = st.value?.defaultProvider || st.value?.providers[0]?.id || '';
-  rowModels.value = (providerById(rowProvider.value)?.models || []).slice();
-  rowManual.value = '';
+  rowKeys.value = allModelKeys();
+  rowManual.value = {};
   configText.value = '';
-}
-function onProviderChange() {
-  rowModels.value = (providerById(rowProvider.value)?.models || []).slice();
 }
 async function genConfig(tk: LlmToken) {
   await run(async () => {
-    const p = providerById(rowProvider.value);
-    const models = p && p.models.length ? rowModels.value : rowManual.value.split(',').map((s) => s.trim()).filter(Boolean);
-    const r = await api.config(rowProvider.value, tk.id, models);
+    const r = await api.config(tk.id, selectedProviders());
     configText.value = r.config;
   });
 }
 function bundleUrl(tk: LlmToken) {
-  const p = providerById(rowProvider.value);
-  const models = p && p.models.length ? rowModels.value : rowManual.value.split(',').map((s) => s.trim()).filter(Boolean);
-  const q = new URLSearchParams({ provider: rowProvider.value, token: tk.id });
-  for (const m of models) q.append('models', m);
+  const q = new URLSearchParams({ token: tk.id });
+  for (const sel of selectedProviders()) for (const m of sel.models) { q.append('pid', sel.id); q.append('model', m); }
   return `/api/llm-admin/opencode-bundle?${q.toString()}`;
 }
 async function copyConfig() {
@@ -222,23 +227,22 @@ async function copyConfig() {
         </div>
         <div v-if="expanded === tk.id" class="tok-body">
           <div class="row">
-            <select v-model="rowProvider" @change="onProviderChange">
-              <option v-for="p in st?.providers || []" :key="p.id" :value="p.id">{{ p.id }}</option>
-            </select>
             <button @click="genConfig(tk)">{{ $t('llm.config.generate') }}</button>
             <button :disabled="!configText" @click="copyConfig">{{ copied ? $t('llm.config.copied') : $t('llm.config.copy') }}</button>
             <a class="dlbtn" :href="bundleUrl(tk)" download>{{ $t('llm.config.download') }}</a>
+            <button class="ghost" @click="rowKeys = allModelKeys()">{{ $t('llm.config.all') }}</button>
+            <button class="ghost" @click="rowKeys = []">{{ $t('llm.config.none') }}</button>
           </div>
-          <div v-if="(providerById(rowProvider)?.models || []).length" class="models">
-            <span class="muted">{{ $t('llm.config.models') }}</span>
-            <label v-for="m in providerById(rowProvider)?.models || []" :key="m" class="mchk">
-              <input type="checkbox" :value="m" v-model="rowModels" /> {{ m }}
-            </label>
-            <button class="ghost" @click="rowModels = (providerById(rowProvider)?.models || []).slice()">{{ $t('llm.config.all') }}</button>
-            <button class="ghost" @click="rowModels = []">{{ $t('llm.config.none') }}</button>
-          </div>
-          <div v-else class="row">
-            <input v-model="rowManual" :placeholder="$t('llm.config.manual')" />
+          <div v-for="p in st?.providers || []" :key="p.id" class="pvgroup">
+            <div class="pvname">{{ p.id }}</div>
+            <div v-if="p.models.length" class="models">
+              <label v-for="m in p.models" :key="m" class="mchk">
+                <input type="checkbox" :value="p.id + '::' + m" v-model="rowKeys" /> {{ m }}
+              </label>
+            </div>
+            <div v-else class="row">
+              <input v-model="rowManual[p.id]" :placeholder="$t('llm.config.manual')" />
+            </div>
           </div>
           <div class="muted">{{ $t('llm.config.download_hint') }}</div>
           <pre v-if="configText" class="cfg">{{ configText }}</pre>
@@ -272,6 +276,8 @@ button:disabled { opacity: .5; cursor: default; }
 .tok-body { padding: 8px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--bd); background: var(--bg1); }
 .models { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
 .mchk { display: flex; gap: 4px; align-items: center; color: var(--tx2); }
+.pvgroup { display: flex; flex-direction: column; gap: 4px; }
+.pvname { color: var(--tx2); font-size: 12px; font-weight: 700; }
 .dlbtn { display: inline-flex; align-items: center; background: var(--ac); color: var(--onac); border: 1px solid var(--ac); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-family: inherit; text-decoration: none; font-size: 13px; }
 .cfg { background: var(--bg1); border: 1px solid var(--bd); border-radius: 4px; padding: 8px; font-size: 12px; overflow: auto; max-height: 320px; white-space: pre-wrap; }
 .ex summary { cursor: pointer; color: var(--tx2); font-size: 12px; display: flex; gap: 8px; align-items: center; }
