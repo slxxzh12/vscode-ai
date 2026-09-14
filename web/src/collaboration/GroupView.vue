@@ -31,7 +31,6 @@ async function saveEmployeeId() {
 }
 
 // —— 远程访问（自设置迁入）——
-const remoteTtlDays = ref(1);
 const remoteLink = ref('');
 const remotePassword = ref('');
 const remoteMsg = ref('');
@@ -40,23 +39,10 @@ const remoteState = ref<{ enabled: boolean; expiresAt: number | null; address?: 
 async function loadRemote() {
   try { remoteState.value = await fetch('/api/remote/state').then((r) => r.json()); } catch { /* ignore */ }
 }
-// 修改有效天数：>100 收敛到 100；>7 弹安全告警，取消则回退到 7
-function onTtlChange() {
-  remoteMsg.value = '';
-  const v = Number(remoteTtlDays.value);
-  if (!Number.isFinite(v) || v < 1) { remoteTtlDays.value = 1; remoteMsg.value = t('remote.ttl_invalid'); return; }
-  const days = Math.floor(v);
-  if (days > 100) { remoteTtlDays.value = 100; remoteMsg.value = t('remote.ttl_max'); return; }
-  if (days > 7 && !confirm(t('remote.ttl_warn', { days }))) { remoteTtlDays.value = 7; return; }
-  remoteTtlDays.value = days;
-}
 async function genRemote() {
   remoteMsg.value = '';
-  const days = Math.floor(Number(remoteTtlDays.value));
-  if (!Number.isFinite(days) || days < 1 || days > 100) { remoteMsg.value = t('remote.ttl_invalid'); return; }
-  if (days > 7 && !confirm(t('remote.ttl_warn', { days }))) return;
   try {
-    const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ days }) }).then((x) => x.json());
+    const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }).then((x) => x.json());
     remoteLink.value = r.link || '';
     remotePassword.value = r.password || '';
     remoteState.value = { ...remoteState.value, enabled: !!r.enabled, expiresAt: r.expiresAt || null, address: r.address, needRestart: !!r.needRestart };
@@ -73,7 +59,6 @@ async function revokeRemote() {
 async function copy(v: string) {
   try { await navigator.clipboard.writeText(v); remoteMsg.value = t('remote.copied'); setTimeout(() => { remoteMsg.value = ''; }, 1500); } catch { /* ignore */ }
 }
-function fmtExpire(ts: number | null) { return ts ? new Date(ts).toLocaleString() : ''; }
 
 // —— 加入（粘贴开启方链接）——
 const joinInput = ref('');
@@ -172,15 +157,10 @@ onMounted(async () => {
 
       <div class="sec">
         <h4>{{ $t('collab.remote.title') }}</h4>
-        <div class="cfgrow">
-          <span>{{ $t('remote.ttl_days') }}</span>
-          <input type="number" min="1" max="100" step="1" v-model.number="remoteTtlDays" class="ttlinput" @change="onTtlChange" />
-        </div>
         <div class="addrow">
-          <button class="gen" @click="genRemote">{{ $t('remote.generate') }}</button>
+          <button class="gen red" @click="genRemote">{{ $t('collab.remote.enable') }}</button>
           <button v-if="remoteState.enabled" class="ghost" @click="revokeRemote">{{ $t('remote.revoke') }}</button>
         </div>
-        <div v-if="remoteState.enabled" class="cfghint">{{ $t('remote.enabled_until', { time: fmtExpire(remoteState.expiresAt) }) }}</div>
         <div v-if="remotePassword" class="linkrow">
           <input :value="remotePassword" readonly />
           <button @click="copy(remotePassword)">{{ $t('remote.copy_password') }}</button>
@@ -284,7 +264,7 @@ button { background: var(--ac); color: var(--onac); border: none; border-radius:
 button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2); }
 button.gen { flex: 1; background: var(--err); color: #fff; font-weight: 700; padding: 8px 10px; }
 button.gen:hover { filter: brightness(1.08); }
-.ttlinput { width: 72px; box-sizing: border-box; }
+button.gen.red { background: #d32f2f; }
 .idinput { width: 130px; box-sizing: border-box; }
 .tag { font-size: 10px; font-weight: 400; text-transform: none; color: var(--ok, #22c55e); margin-left: 4px; }
 button.del { color: var(--err); border-color: var(--bd); }
