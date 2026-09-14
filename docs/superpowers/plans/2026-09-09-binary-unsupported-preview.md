@@ -308,7 +308,7 @@ Expected: server + web 全绿。
 
 - [ ] **Step 1: 推送本地 HEAD 到远端 master**
 
-Run: `git push "https://wglj:gycgxscdsq0_@gitee.com/wglj/devflow.git" HEAD:master`
+Run: `git push "https://gitee.com/wglj/devflow.git" HEAD:master`（凭据从 `env/` 读取，禁止写入文档）
 Expected: `old..new HEAD -> master`。
 
 - [ ] **Step 2: devflow 拉取**
