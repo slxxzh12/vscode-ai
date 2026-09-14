@@ -36,9 +36,22 @@
 ## 打包顺序（先构建前端，再打绿色包）
 
 - 打绿色包前必须先 `npm.cmd run build:web`（产物 `web/dist`）。
+- Windows / macOS **各用各的脚本，互不交叉**：node-pty 原生模块与 Node 运行时都按平台/架构绑定，禁止交叉组装。
+
+### Windows
+
 - 一键打包：`node scripts/build.js`（等价 `npm.cmd run build:portable`），产物 `dist-portable/vscode-ai/`（目录）+ `vscode-ai-portable.zip`。
 - 绿色包原理：`env/node.exe` 自带运行时 + 拷贝已编译的 node-pty 原生 `.node` → 目标机免装 Node、免编译。**Node 与 node-pty ABI 必须同大版本**；`env/node.exe` 缺失时 build.js 会自动复制当前 node 过去。
-- `env/`、`dist-portable/`、`node_modules/`、`dist/` 均不入库（.gitignore）。
+
+### macOS
+
+- **必须在 macOS 上执行**：`npm install` + `npm run build:web` 后跑 `node scripts/build-mac.js`（等价 `npm run build:portable:mac`）。
+- 按 opencode 发布惯例**分架构出包**，一次产出两个：`dist-portable-mac/vscode-ai-darwin-arm64/` 与 `...-darwin-x64/`（各含同名 `.zip`）；`--no-zip` 只出目录。
+- 本机架构的 Node 取 `process.execPath`（缓存到 `env/node`），另一架构从 nodejs.org 下同版本官方 tarball（同样缓存进 `env/`，需联网一次）；node-pty 的 `prebuilds/darwin-<arch>/` 随 npm 包自带，无需在 Mac 上编译。
+- 启动器为 `start.command`（双击；探测端口：已在运行只开浏览器，否则前台起服务，关窗即停）；用 `ditto` 压包以保留 `spawn-helper`、`runtime/node` 等的可执行位。
+- 已知 Mac 限制：端口冲突弹窗不可用；`native-dialog`（文件/文件夹选择）在非 Windows 返回 `unsupported`；首次运行可能被 Gatekeeper 拦（右键→打开，或 `xattr -dr com.apple.quarantine <目录>`）。
+
+- `env/`、`dist-portable/`、`dist-portable-mac/`、`node_modules/`、`dist/` 均不入库（.gitignore）。
 
 ## 目录速览
 
