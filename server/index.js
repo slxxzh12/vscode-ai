@@ -55,8 +55,6 @@ const HOST = process.env.DEVFLOW_HOST || BOOT_CFG.server.host || '127.0.0.1';
 const PORT = Number(process.env.DEVFLOW_PORT || BOOT_CFG.server.port || DEFAULT_PORT);
 setLocale(BOOT_CFG.server.language);
 const NODE = instanceName();
-// 用量上报：按天落 SQLite（固定 <dataHome>/usage.db，与端口档案无关）
-const usageStore = createUsageStore({ file: path.join(dataHome(), 'usage.db') });
 
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
 process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
@@ -196,10 +194,11 @@ function buildWorkspace({ paths, port }) {
   });
 
   const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..') });
-  const llmVault = createVault({ file: path.join(downloadsDir(), 'llm.vault.json') });
+  const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(relayPluginsDir(), path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: relayPluginsDir() });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, llmMount, llmVault, historyFile: paths.historyFile, paths, heartbeat: null };
+  const usageStore = createUsageStore({ file: path.join(paths.dir, 'usage.db') });
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, llmMount, llmVault, usageStore, historyFile: paths.historyFile, paths, heartbeat: null };
 }
 
 // ---- 工作区（端口档案）----
@@ -457,8 +456,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 用量上报：按天写入 SQLite（放在未就绪 409 之前，不依赖工作区）
+  // 用量统计：按天写入 SQLite，存于当前端口档案目录（与个人数据一起按端口隔离）
   if (url.pathname === '/api/usage' && req.method === 'POST') {
+    if (!ws) { res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'workspace-not-ready' })); return; }
     let raw = '';
     req.on('data', (c) => { raw += c; if (raw.length > 1024 * 1024) req.destroy(); });
     req.on('end', () => {
@@ -466,14 +466,15 @@ const server = http.createServer(async (req, res) => {
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       const { record, error } = normalizeUsage(body);
       if (error) { res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error })); return; }
-      usageStore.upsert(record);
+      ws.usageStore.upsert(record);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: true, date: record.date }));
     });
     return;
   }
   if (url.pathname === '/api/usage' && req.method === 'GET') {
-    const rows = usageStore.query({
+    if (!ws) { res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'workspace-not-ready' })); return; }
+    const rows = ws.usageStore.query({
       from: url.searchParams.get('from') || undefined,
       to: url.searchParams.get('to') || undefined,
       memberId: url.searchParams.get('memberId') || undefined,
