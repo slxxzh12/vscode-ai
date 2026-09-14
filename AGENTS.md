@@ -102,5 +102,7 @@
 
 ## 提交/推送
 
+- **每次提交/推送前，自动触发并执行 `docs/learn/git仓库提交检查和提交事项.md` 的检查清单（尤其敏感信息扫描）；未通过一律不得 commit / push。** 该文件是提交规范的唯一事实源，更新流程只改它。
+- 团队/流程类知识统一沉淀到 `docs/learn/`；提交、发布、环境等操作规范都放这里，由本节挂钩。
 - 一律在 `master` 操作（无远程 PR 需求时）。`git push origin master`。
 - 仓库远端残留 `feat/web-terminal` 分支，已合并删除需求时：`git push origin --delete feat/web-terminal`。
