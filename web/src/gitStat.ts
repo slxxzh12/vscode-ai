@@ -28,8 +28,7 @@ function fmt(d: Date): string { return `${d.getFullYear()}-${pad(d.getMonth() + 
 
 export function defaultRange(today: Date = new Date()): { since: string; until: string } {
   const until = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const since = new Date(until);
-  since.setDate(since.getDate() - 6);
+  const since = new Date(today.getFullYear(), today.getMonth(), 1);
   return { since: fmt(since), until: fmt(until) };
 }
 

@@ -18,9 +18,9 @@ describe('statusClass', () => {
 });
 
 describe('defaultRange', () => {
-  it('默认近 7 天（含今天）', () => {
+  it('默认从本月 1 号起', () => {
     const r = defaultRange(new Date(2026, 8, 10)); // 2026-09-10
     expect(r.until).toBe('2026-09-10');
-    expect(r.since).toBe('2026-09-04');
+    expect(r.since).toBe('2026-09-01');
   });
 });
