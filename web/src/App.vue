@@ -19,6 +19,7 @@ import WorkspacePicker from './components/WorkspacePicker.vue';
 import ProxyView from './components/ProxyView.vue';
 import MobileView from './components/MobileView.vue';
 import { captureToPngDataUrl, uploadSnapshot } from './snapshot';
+import { useVersion } from './useVersion';
 
 const ws = useWorkspace();
 const wsState = ref<WorkspaceState | null>(null);
@@ -55,6 +56,7 @@ async function onSnapshot() {
 const terminal = useTerminal({});
 const center = useCenter();
 const projectsApi = useProjects();
+const { version: appVersion, loadVersion } = useVersion();
 const { theme, toggle } = useTheme();
 const { locale, setLocale, t } = useI18n();
 function toggleLang() { setLocale(locale.value === 'en' ? 'zh-CN' : 'en'); }
@@ -400,6 +402,7 @@ function releaseWindowColor() {
   } catch { /* ignore */ }
 }
 onMounted(async () => {
+  loadVersion();
   writeRegistry(windowColorId.value);
   colorHeartbeat = setInterval(() => { try { writeRegistry(windowColorId.value); } catch { /* ignore */ } }, 4000);
   try {
@@ -429,6 +432,7 @@ onBeforeUnmount(() => {
   <div class="app" ref="appRef">
     <header class="top" :class="{ colored: !!windowColorValue }" :style="windowColorValue ? { background: windowColorValue } : undefined">
       <span class="logo">◈ {{ $t('brand.title') }}</span>
+      <span v-if="appVersion" class="app-ver">{{ appVersion }}</span>
       <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
       <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="currentProjectInfo?.root || ''" @change="(e: any) => selectProject(e.target.value)">
         <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id" :title="it.project.root">
@@ -518,6 +522,7 @@ onBeforeUnmount(() => {
 .app { display: flex; flex-direction: column; height: 100%; position: relative; }
 .top { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--bd); flex: none; }
 .logo { color: var(--ac3); font-weight: 700; white-space: nowrap; }
+.app-ver { color: var(--tx3); font-size: 12px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
 .addproj { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
 .addproj:hover { border-color: var(--ac2); color: var(--ac2); }
 .projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -533,7 +538,7 @@ onBeforeUnmount(() => {
 .lang-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
 .lang-btn:hover { border-color: var(--ac2); }
 .color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
-.top.colored .logo, .top.colored .projpath, .top.colored .net, .top.colored .snap-msg { color: #fff; }
+.top.colored .logo, .top.colored .projpath, .top.colored .net, .top.colored .snap-msg, .top.colored .app-ver { color: #fff; }
 .top.colored .lang-btn, .top.colored .theme-btn, .top.colored .snap-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel, .top.colored .proj-sel { background: var(--bg1); color: var(--tx); border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel option, .top.colored .proj-sel option { color: #111; background: #fff; }

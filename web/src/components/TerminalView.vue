@@ -11,6 +11,7 @@ import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
+import { useVersion } from '../useVersion';
 import WorkflowEditor from './WorkflowEditor.vue';
 
 const props = defineProps<{
@@ -134,6 +135,7 @@ const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent 
 const settingsOpen = ref(false);
 const editorOpen = ref(false);
 const settingsTab = ref<'general' | 'about'>('general');
+const { version: appVersion } = useVersion();
 const serverPort = ref<number | null>(null);
 const portMsg = ref('');
 async function loadSettings() {
@@ -664,6 +666,7 @@ onBeforeUnmount(() => {
           </template>
           <template v-else>
             <div class="setsec">
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.version') }}</span><span class="aboutv">{{ appVersion || '-' }}</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.author') }}</span><span class="aboutval">Samuel Tsang</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.software') }}</span><span class="aboutv">{{ $t('term.about.name_value') }}</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.location') }}</span><span class="aboutv">{{ $t('term.about.location_value') }}</span></div>

@@ -19,8 +19,13 @@ const { spawnSync } = require("child_process");
 const ROOT = path.resolve(__dirname, "..");
 const ENV_NODE = path.join(ROOT, "env", "node.exe");
 const OUT_ROOT = path.join(ROOT, "dist-portable");
-const APP = path.join(OUT_ROOT, "vscode-ai");
-const ZIP = path.join(OUT_ROOT, "vscode-ai-portable.zip");
+// 产物命名对齐 opencode release 风格：<name>-<os>-<arch>
+const WIN_ARCH = process.arch; // x64 | arm64
+const { todayVersion } = require("../shared/version.cjs");
+const VERSION = todayVersion();
+const APP_NAME = "vscode-ai-windows-" + WIN_ARCH + "-" + VERSION;
+const APP = path.join(OUT_ROOT, APP_NAME);
+const ZIP = path.join(OUT_ROOT, APP_NAME + ".zip");
 const noZip = process.argv.includes("--no-zip");
 const CFG_PORT = (() => {
   try {
@@ -58,6 +63,7 @@ function cpDir(from, to, filter) {
   }
 }
 
+console.log("[build] version " + VERSION);
 console.log("[build] 1/5 prepare Node runtime (env/)");
 if (!fs.existsSync(ENV_NODE)) {
   fs.mkdirSync(path.dirname(ENV_NODE), { recursive: true });
@@ -88,6 +94,7 @@ fs.mkdirSync(path.join(APP, "runtime"), { recursive: true });
 fs.mkdirSync(path.join(APP, "server"), { recursive: true });
 fs.mkdirSync(path.join(APP, "web"), { recursive: true });
 fs.copyFileSync(ENV_NODE, path.join(APP, "runtime", "node.exe"));
+fs.writeFileSync(path.join(APP, "version.txt"), VERSION + "\n", "utf8");
 
 // server 整树 .js/.json（跳过 test/）
 function copyServerTree(from, to) {
@@ -226,7 +233,8 @@ const bat = [
 fs.writeFileSync(path.join(APP, "start.bat"), bat);
 
 const usage = [
-  "vscode-ai（绿色免安装版）",
+  "vscode-ai（绿色免安装版 / windows-" + WIN_ARCH + "）",
+  "版本 / Version：" + VERSION,
   "",
   "启动：双击 start.bat（已在运行则只打开浏览器；否则自动启动服务）",
   "桌面图标：首次运行会在桌面创建「Void」快捷方式，之后双击桌面图标即可拉起服务",
@@ -250,7 +258,8 @@ const entries = [
   ["node", "runtime/node.exe"],
   ["server", "server/index.js"],
   ["static", "web/dist/index.html"],
-  ["pty", "node_modules/node-pty/prebuilds/win32-x64/conpty.node"],
+  ["version", "version.txt"],
+  ["pty", "node_modules/node-pty/prebuilds/win32-" + WIN_ARCH + "/conpty.node"],
   ["ws", "node_modules/ws/package.json"],
   ["shared", "node_modules/@devflow/shared/index.js"],
   ["config", "config/devflow.xml"],

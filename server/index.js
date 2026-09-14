@@ -43,6 +43,7 @@ import {
 import { createWorkspaceHttp } from './workspace-http.js';
 import { askPortConflict } from './native-dialog.js';
 import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
+import { VERSION } from './version.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -307,6 +308,11 @@ const server = http.createServer(async (req, res) => {
     const c = loadDevflowConfig(configFile);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ default: c.agents.default, agents: c.agents.list }));
+    return;
+  }
+  if (url.pathname === '/api/version' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ version: VERSION }));
     return;
   }
   if (url.pathname === '/api/settings' && req.method === 'GET') {
@@ -600,7 +606,7 @@ function startListening(port = currentPort) {
     actualPort = actual;
     currentPort = actual;
     writeRuntimePort(actual);
-    log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)`);
+    log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)  ${VERSION}`);
 
     if (NODE) {   // 逃生通道：沿用 nodes/<name> 机制，不进入端口档案系统
       const seedDir = instanceSeedDir(NODE);

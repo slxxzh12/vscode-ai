@@ -427,6 +427,7 @@ export const messages = {
   'ws.default_profile_name': '端口 {port}',
   'ws.migrated_profile_name': '默认 ({port})',
   'term.about.tab': '关于',
+  'term.about.version': '版本',
   'term.about.author': '作者',
   'term.about.location': '所在地',
   'term.about.location_value': '香港&深圳',

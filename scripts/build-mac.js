@@ -5,7 +5,7 @@
 //   node scripts/build-mac.js --no-zip   # 只生成目录不压缩
 //
 // 说明：
-//   * 按 opencode 发布惯例分架构出包：vscode-ai-darwin-arm64 / vscode-ai-darwin-x64。
+//   * 分架构出包：vscode-ai-macos-arm64 / vscode-ai-macos-x64（输出到 dist-portable/）。
 //   * 本机构架的 Node 取 process.execPath；另一架构从 nodejs.org 下载对应官方 tarball
 //     （版本与本机 node 一致），缓存到 env/，只需联网一次。
 //   * node-pty 的 darwin-arm64 / darwin-x64 预编译随 npm 包自带，无需在 Mac 上编译。
@@ -24,7 +24,9 @@ if (process.platform !== "darwin") {
 }
 
 const ROOT = path.resolve(__dirname, "..");
-const OUT_ROOT = path.join(ROOT, "dist-portable-mac");
+const OUT_ROOT = path.join(ROOT, "dist-portable");
+const { todayVersion } = require("../shared/version.cjs");
+const VERSION = todayVersion();
 const ENV = path.join(ROOT, "env");
 const noZip = process.argv.includes("--no-zip");
 const HOST_ARCH = process.arch; // arm64 | x64
@@ -172,7 +174,8 @@ function makeUsage(arch) {
   return [
     "Void — macOS 绿色免安装版 / portable build",
     "",
-    "架构 / architecture: darwin-" + arch,
+    "版本 / Version: " + VERSION,
+    "架构 / architecture: macos-" + arch,
     "",
     "启动 / Start",
     "  双击 start.command（若被系统拦截：右键 → 打开）",
@@ -189,7 +192,7 @@ function makeUsage(arch) {
     "首次运行被 Gatekeeper 拦截时 / If Gatekeeper blocks the first run:",
     "  终端执行 / in Terminal:  xattr -dr com.apple.quarantine <解压目录>",
     "",
-    "Node 运行时 / runtime: " + NODE_VERSION + " (darwin-" + arch + ")",
+    "Node 运行时 / runtime: " + NODE_VERSION + " (macos-" + arch + ")",
     "",
   ].join("\n");
 }
@@ -205,8 +208,8 @@ function dirMB(p) {
 }
 
 function buildArch(arch, nodeBin) {
-  const APP = path.join(OUT_ROOT, "vscode-ai-darwin-" + arch);
-  const ZIP = path.join(OUT_ROOT, "vscode-ai-darwin-" + arch + ".zip");
+  const APP = path.join(OUT_ROOT, "vscode-ai-macos-" + arch + "-" + VERSION);
+  const ZIP = path.join(OUT_ROOT, "vscode-ai-macos-" + arch + "-" + VERSION + ".zip");
   const prebuildKeep = "prebuilds/darwin-" + arch;
 
   console.log("[build-mac] assembling " + APP);
@@ -215,6 +218,7 @@ function buildArch(arch, nodeBin) {
   fs.mkdirSync(path.join(APP, "server"), { recursive: true });
   fs.mkdirSync(path.join(APP, "web"), { recursive: true });
   fs.copyFileSync(nodeBin, path.join(APP, "runtime", "node"));
+  fs.writeFileSync(path.join(APP, "version.txt"), VERSION + "\n", "utf8");
 
   copyServerTree(path.join(ROOT, "server"), path.join(APP, "server"));
   cpDir(path.join(ROOT, "web", "dist"), path.join(APP, "web", "dist"));
@@ -258,6 +262,7 @@ function buildArch(arch, nodeBin) {
     ["node", "runtime/node"],
     ["server", "server/index.js"],
     ["static", "web/dist/index.html"],
+    ["version", "version.txt"],
     ["pty", "node_modules/node-pty/" + prebuildKeep + "/pty.node"],
     ["pty-helper", "node_modules/node-pty/" + prebuildKeep + "/spawn-helper"],
     ["ws", "node_modules/ws/package.json"],
@@ -300,7 +305,7 @@ check(
 check(fs.existsSync(path.join(ROOT, "shared", "index.js")), "missing shared/index.js");
 console.log(
   "[build-mac]   host arch=" + HOST_ARCH + "  node=" + NODE_VERSION +
-    "  targets=" + TARGETS.join(", "),
+    "  version=" + VERSION + "  targets=" + TARGETS.join(", "),
 );
 
 console.log("[build-mac] 2/3 prepare node binaries");
