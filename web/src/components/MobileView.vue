@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { t } from '../i18n';
+import { onMounted, ref, watch } from 'vue';
+import { locale, t } from '../i18n';
 import { renderRemoteMarkdown } from '../markdown';
 
 const MOBILE_URL = 'https://gitee.com/slxxzh12/vscode-ai-mobile/releases';
@@ -12,60 +12,72 @@ const qrMobile = `${base}mobile/qr-mobile.svg`;
 const noticeHtml = ref('');
 const noticeEmpty = ref('');
 
-onMounted(async () => {
+async function loadNotice() {
   try {
-    const r = await fetch('/api/notice').then((x) => x.json());
+    const r = await fetch(`/api/notice?lang=${encodeURIComponent(locale.value)}`).then((x) => x.json());
     if (r && r.ok && typeof r.content === 'string' && r.content.trim()) {
       noticeHtml.value = renderRemoteMarkdown(r.content);
+      noticeEmpty.value = '';
     } else {
+      noticeHtml.value = '';
       noticeEmpty.value = t('mobile.notice_empty');
     }
   } catch {
+    noticeHtml.value = '';
     noticeEmpty.value = t('mobile.notice_empty');
   }
-});
+}
+
+onMounted(loadNotice);
+watch(locale, loadNotice);
 </script>
 
 <template>
   <div class="mobile">
-    <section class="notice">
-      <h3 class="ntitle">📢 {{ $t('mobile.notice') }}</h3>
-      <div v-if="noticeHtml" class="nbody" v-html="noticeHtml"></div>
-      <div v-else class="hint">{{ noticeEmpty || $t('mobile.notice_empty') }}</div>
-    </section>
+    <div class="col-main">
+      <header class="hero">
+        <h2 class="title">{{ $t('mobile.title') }}</h2>
+        <p class="desc">{{ $t('mobile.desc') }}</p>
+        <p class="pair">{{ $t('mobile.pair_hint') }}</p>
+      </header>
 
-    <header class="hero">
-      <h2 class="title">{{ $t('mobile.title') }}</h2>
-      <p class="desc">{{ $t('mobile.desc') }}</p>
-      <p class="pair">{{ $t('mobile.pair_hint') }}</p>
-    </header>
+      <ul class="feats">
+        <li>{{ $t('mobile.feat.terminal') }}</li>
+        <li>{{ $t('mobile.feat.review') }}</li>
+        <li>{{ $t('mobile.feat.pair') }}</li>
+      </ul>
 
-    <ul class="feats">
-      <li>{{ $t('mobile.feat.terminal') }}</li>
-      <li>{{ $t('mobile.feat.review') }}</li>
-      <li>{{ $t('mobile.feat.pair') }}</li>
-    </ul>
+      <div class="cards">
+        <section class="card">
+          <div class="ctitle">💻 {{ $t('mobile.desktop') }}</div>
+          <a class="link big addr" :href="DESKTOP_URL" target="_blank" rel="noopener">{{ DESKTOP_URL }}</a>
+          <div class="hint">{{ $t('mobile.desktop_hint') }}</div>
+        </section>
+        <section class="card">
+          <div class="ctitle">📱 {{ $t('mobile.mobile') }}</div>
+          <img class="qr" :src="qrMobile" :alt="$t('mobile.mobile')" width="168" height="168" />
+          <a class="link addr" :href="MOBILE_URL" target="_blank" rel="noopener">{{ MOBILE_URL }}</a>
+          <div class="hint">{{ $t('mobile.scan_hint') }}</div>
+        </section>
+      </div>
 
-    <div class="cards">
-      <section class="card">
-        <div class="ctitle">💻 {{ $t('mobile.desktop') }}</div>
-        <a class="link big addr" :href="DESKTOP_URL" target="_blank" rel="noopener">{{ DESKTOP_URL }}</a>
-        <div class="hint">{{ $t('mobile.desktop_hint') }}</div>
-      </section>
-      <section class="card">
-        <div class="ctitle">📱 {{ $t('mobile.mobile') }}</div>
-        <img class="qr" :src="qrMobile" :alt="$t('mobile.mobile')" width="168" height="168" />
-        <a class="link addr" :href="MOBILE_URL" target="_blank" rel="noopener">{{ MOBILE_URL }}</a>
-        <div class="hint">{{ $t('mobile.scan_hint') }}</div>
-      </section>
+      <div class="tutlink">🎬 {{ $t('mobile.tutorial') }} <a class="link addr" :href="TUTORIAL_URL" target="_blank" rel="noopener">{{ TUTORIAL_URL }}</a></div>
     </div>
 
-    <div class="tutlink">🎬 {{ $t('mobile.tutorial') }} <a class="link addr" :href="TUTORIAL_URL" target="_blank" rel="noopener">{{ TUTORIAL_URL }}</a></div>
+    <aside class="col-notice">
+      <section class="notice">
+        <h3 class="ntitle">📢 {{ $t('mobile.notice') }}</h3>
+        <div v-if="noticeHtml" class="nbody" v-html="noticeHtml"></div>
+        <div v-else class="hint">{{ noticeEmpty || $t('mobile.notice_empty') }}</div>
+      </section>
+    </aside>
   </div>
 </template>
 
 <style scoped>
-.mobile { padding: 24px; overflow: auto; height: 100%; box-sizing: border-box; color: var(--tx); }
+.mobile { padding: 24px; overflow: auto; height: 100%; box-sizing: border-box; color: var(--tx); display: flex; gap: 24px; align-items: flex-start; }
+.col-main { flex: 0 1 560px; min-width: 0; }
+.col-notice { flex: 1 1 auto; min-width: 0; }
 .hero { max-width: 560px; }
 .title { margin: 0 0 8px; color: var(--tx1); font-size: 22px; }
 .desc { margin: 0; color: var(--tx3); font-size: 14px; line-height: 1.6; }
@@ -82,7 +94,7 @@ onMounted(async () => {
 .link:hover { text-decoration: underline; }
 .tutlink { margin-top: 16px; color: var(--tx3); font-size: 13px; }
 
-.notice { margin: 0 0 22px; max-width: 720px; border: 1px solid var(--bd); border-radius: 8px; padding: 14px 18px; background: var(--bg2); }
+.notice { margin: 0; border: 1px solid var(--bd); border-radius: 8px; padding: 14px 18px; background: var(--bg2); }
 .ntitle { margin: 0 0 10px; color: var(--tx1); font-size: 15px; }
 .nbody { color: var(--tx2); font-size: 13px; line-height: 1.75; }
 .nbody :deep(h1) { font-size: 18px; margin: 0.6em 0 0.4em; }
@@ -101,4 +113,9 @@ onMounted(async () => {
 .nbody :deep(hr) { border: none; border-top: 1px solid var(--bd); margin: 1em 0; }
 .nbody :deep(table) { border-collapse: collapse; margin: 0.6em 0; }
 .nbody :deep(th), .nbody :deep(td) { border: 1px solid var(--bd); padding: 4px 10px; }
+
+@media (max-width: 760px) {
+  .mobile { flex-direction: column; }
+  .col-notice { flex: none; width: 100%; max-width: none; }
+}
 </style>

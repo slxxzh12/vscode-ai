@@ -8,8 +8,8 @@
 
 移动端页（`web/src/components/MobileView.vue`）新增「最新消息」区块，内容来自 Gitee 上一个可随时编辑的 Markdown 文件，无需发版即可更新公告（版本发布、教程等内容都可写进去）。
 
-- 内容源（raw）：`https://gitee.com/slxxzh12/vscode-ai-mobile/raw/master/notice/readme.md`
-- 用户界面里的地址（blob）：`https://gitee.com/slxxzh12/vscode-ai-mobile/notice/readme.md`（该仓库当前为空，本次一并建初稿）
+- 内容源（raw，按语言分文件）：`https://gitee.com/slxxzh12/vscode-ai-mobile/raw/master/notice/<lang>/main.md`（`<lang>` 为 `zh-CN` / `en`）
+- 用户界面里的地址（blob）：`https://gitee.com/slxxzh12/vscode-ai-mobile/notice/<lang>/main.md`（该仓库当前为空，本次一并建初稿）
 
 ## 2. 为什么走服务端
 
@@ -19,7 +19,7 @@
 
 新增 `server/notice.js`：
 
-- 常量 `NOTICE_URL = 'https://gitee.com/slxxzh12/vscode-ai-mobile/raw/master/notice/readme.md'`。
+- `noticeUrl(lang)`：按语言拼 `<base>/<lang>/main.md`，非法语言回落 `DEFAULT_LOCALE`（zh-CN）。
 - `createNotice({ url, timeoutMs = 5000, cacheMs = 10*60*1000, fetchImpl = fetch })` 返回 `{ get(), clear() }`。
 - `get()` 语义：
   - 命中缓存（未过期）→ `{ ok: true, content, fetchedAt, cached: true }`。
@@ -30,7 +30,7 @@
 
 `server/index.js` 在「配置级接口」区新增路由：
 
-- `GET /api/notice` → 200 + JSON（即 `notice.get()` 的结果）。
+- `GET /api/notice?lang=<locale>` → 200 + JSON（即 `notice.get(lang)` 的结果）。
 
 ## 4. 前端
 
@@ -38,7 +38,7 @@
 
 `web/src/components/MobileView.vue`：
 
-- `onMounted` 拉 `/api/notice`：
+- `onMounted` 与 `watch(locale)` 时拉 `/api/notice?lang=<当前界面语言>`：
   - `ok && content.trim()` → `noticeHtml = renderRemoteMarkdown(content)`。
   - 否则 → 显示 `$t('mobile.notice_empty')`。
 - 在二维码下方渲染「最新消息」区块（标题 `$t('mobile.notice')` + `v-html`）。
@@ -55,7 +55,7 @@
 
 ## 6. 远端文件
 
-在 `slxxzh12/vscode-ai-mobile` 的 `master` 新建 `notice/readme.md`（初稿：最前面放桌面端下载地址，并含版本/教程/移动端），走 Gitee API（令牌在 `env/gitee-release.ini`，不入库）。
+在 `slxxzh12/vscode-ai-mobile` 的 `master` 新建中英两份 `notice/zh-CN/main.md`、`notice/en/main.md`（内容：桌面端下载地址），走 Gitee API（令牌在 `env/gitee-release.ini`，不入库）。
 
 ## 7. 测试与验收
 
@@ -65,7 +65,8 @@
   - 失败但有旧缓存 → 返回旧内容 `stale:true`；
   - 超时/异常 → `ok:false`。
 - `npm.cmd run typecheck`、`npm.cmd run check:i18n` 通过；全量 `npm.cmd test` 通过。
-- 人工：移动端页显示远端 `notice/readme.md` 渲染内容；改远端文件、等缓存过期（10 分钟）后刷新更新。
+- 前端按当前界面语言请求 `/api/notice?lang=<locale>`，切换语言时重新拉取；服务端按语言分别缓存。
+- 人工：移动端页显示远端 `notice/<lang>/main.md` 渲染内容；改远端文件、等缓存过期（10 分钟）后刷新更新。
 
 ## 8. 明确不做
 

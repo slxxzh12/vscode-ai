@@ -669,11 +669,11 @@ onBeforeUnmount(() => {
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.version') }}</span><span class="aboutv">{{ appVersion || '-' }}</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.author') }}</span><span class="aboutval">Samuel Tsang</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.software') }}</span><span class="aboutv">{{ $t('term.about.name_value') }}</span></div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.location') }}</span><span class="aboutv">{{ $t('term.about.location_value') }}</span></div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.download') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai/releases" target="_blank" rel="noopener">{{ $t('term.about.download_windows') }}</a></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.download') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai/releases" target="_blank" rel="noopener">{{ $t('term.about.download_desktop') }}</a></div>
+              <div class="aboutrow"><span class="aboutk"></span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai-mobile/releases" target="_blank" rel="noopener">{{ $t('term.about.download_mobile') }}</a></div>
             </div>
             <div class="setsec">
-              <div class="settitle">{{ $t('term.about.contacts_cn') }}</div>
+              <div class="settitle">{{ $t('term.about.contacts') }}</div>
               <div class="aboutrow"><span class="aboutk">QQ</span><span class="aboutv">914300336</span></div>
               <div class="aboutrow wechat">
                 <span class="aboutk">{{ $t('term.about.wechat') }}</span>
@@ -684,10 +684,6 @@ onBeforeUnmount(() => {
                   </a>
                 </span>
               </div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.email') }}</span><a class="aboutv link" href="mailto:914300336@qq.com">914300336@qq.com</a></div>
-            </div>
-            <div class="setsec">
-              <div class="settitle">{{ $t('term.about.contacts_overseas') }}</div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.email') }}</span><a class="aboutv link" href="mailto:samuel.tsang@outlook.com">samuel.tsang@outlook.com</a></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.tiktok') }}</span><span class="aboutv">slxxzh12</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.instagram') }}</span><span class="aboutv">slxxzh12</span></div>
@@ -696,7 +692,6 @@ onBeforeUnmount(() => {
               <div class="settitle">{{ $t('term.about.license') }}</div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.repo') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai" target="_blank" rel="noopener">https://gitee.com/slxxzh12/vscode-ai</a></div>
               <div class="aboutrow"><span class="aboutk"></span><a class="aboutv link" href="https://github.com/slxxzh12/vscode-ai" target="_blank" rel="noopener">https://github.com/slxxzh12/vscode-ai</a></div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.thanks') }}</span><span class="aboutv">{{ $t('term.about.thanks_value') }}</span></div>
               <pre class="license">{{ $t('term.about.mit') }}</pre>
               <div class="licnote">{{ $t('term.about.note') }}</div>
             </div>

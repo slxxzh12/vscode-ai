@@ -318,7 +318,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/notice' && req.method === 'GET') {
-    const r = await notice.get();
+    const r = await notice.get(url.searchParams.get('lang'));
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(r));
     return;
