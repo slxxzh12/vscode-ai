@@ -20,6 +20,7 @@ import ProxyView from './components/ProxyView.vue';
 import MobileView from './components/MobileView.vue';
 import { captureToPngDataUrl, uploadSnapshot } from './snapshot';
 import { useVersion } from './useVersion';
+import { readMobileLanding, writeMobileLanding } from './mobileLanding';
 
 const ws = useWorkspace();
 const wsState = ref<WorkspaceState | null>(null);
@@ -409,6 +410,11 @@ onMounted(async () => {
     const st = await ws.state();
     if (st && st.needSelect) { wsState.value = st; return; }   // 只显示档案选择弹窗，不连接
   } catch { /* 落回原有流程 */ }
+  try {
+    const landing = readMobileLanding(window.localStorage, Date.now());
+    writeMobileLanding(window.localStorage, landing);
+    if (landing.openMobile) rail.value = 'mobile';
+  } catch { /* ignore */ }
   initFileHistory();
   loadProjects();
   processOpenParam();
