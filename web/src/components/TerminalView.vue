@@ -697,6 +697,7 @@ onBeforeUnmount(() => {
               <div class="settitle">{{ $t('term.about.license') }}</div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.repo') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai" target="_blank" rel="noopener">https://gitee.com/slxxzh12/vscode-ai</a></div>
               <div class="aboutrow"><span class="aboutk"></span><a class="aboutv link" href="https://github.com/slxxzh12/vscode-ai" target="_blank" rel="noopener">https://github.com/slxxzh12/vscode-ai</a></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.thanks') }}</span><span class="aboutv">{{ $t('term.about.thanks_value') }}</span></div>
               <pre class="license">{{ $t('term.about.mit') }}</pre>
               <div class="licnote">{{ $t('term.about.note') }}</div>
             </div>

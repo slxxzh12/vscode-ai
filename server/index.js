@@ -44,9 +44,11 @@ import { createWorkspaceHttp } from './workspace-http.js';
 import { askPortConflict } from './native-dialog.js';
 import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
 import { VERSION } from './version.js';
+import { createNotice } from './notice.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
+const notice = createNotice();
 const configFile = resolveActiveConfigFile(path.join(__dirname, '..'));
 const BOOT_CFG = loadDevflowConfig(configFile);
 const HOST = process.env.DEVFLOW_HOST || BOOT_CFG.server.host || '127.0.0.1';
@@ -313,6 +315,12 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/version' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ version: VERSION }));
+    return;
+  }
+  if (url.pathname === '/api/notice' && req.method === 'GET') {
+    const r = await notice.get();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(r));
     return;
   }
   if (url.pathname === '/api/settings' && req.method === 'GET') {

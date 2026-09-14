@@ -94,6 +94,11 @@ export function renderMarkdown(mdText: string, opt: MarkdownOptions): string {
   return md.render(mdText, { opt });
 }
 
+// 渲染远端 Markdown（如公告）：不做相对路径改写，外链新标签打开
+export function renderRemoteMarkdown(mdText: string): string {
+  return md.render(mdText).replace(/<a href="(https?:[^"]+)"/g, '<a href="$1" target="_blank" rel="noopener"');
+}
+
 export function isMarkdownFile(name: string): boolean {
   const i = name.lastIndexOf('.');
   if (i <= 0) return false;
