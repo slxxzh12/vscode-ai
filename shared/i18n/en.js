@@ -430,7 +430,6 @@ export const messages = {
   'term.about.version': 'Version',
   'term.about.download': 'Download',
   'term.about.download_windows': 'Latest Windows version',
-  'term.about.tutorial': 'Tutorial',
   'term.about.author': 'Author',
   'term.about.location': 'Location',
   'term.about.location_value': 'HongKong&Shenzhen',

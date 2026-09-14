@@ -430,7 +430,6 @@ export const messages = {
   'term.about.version': '版本',
   'term.about.download': '下载',
   'term.about.download_windows': '最新 Windows 版',
-  'term.about.tutorial': '教程',
   'term.about.author': '作者',
   'term.about.location': '所在地',
   'term.about.location_value': '香港&深圳',

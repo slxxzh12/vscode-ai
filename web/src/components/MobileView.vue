@@ -49,18 +49,18 @@ onMounted(async () => {
     <div class="cards">
       <section class="card">
         <div class="ctitle">💻 {{ $t('mobile.desktop') }}</div>
-        <a class="link big" :href="DESKTOP_URL" target="_blank" rel="noopener">{{ $t('mobile.download') }}</a>
+        <a class="link big addr" :href="DESKTOP_URL" target="_blank" rel="noopener">{{ DESKTOP_URL }}</a>
         <div class="hint">{{ $t('mobile.desktop_hint') }}</div>
       </section>
       <section class="card">
         <div class="ctitle">📱 {{ $t('mobile.mobile') }}</div>
         <img class="qr" :src="qrMobile" :alt="$t('mobile.mobile')" width="168" height="168" />
+        <a class="link addr" :href="MOBILE_URL" target="_blank" rel="noopener">{{ MOBILE_URL }}</a>
         <div class="hint">{{ $t('mobile.scan_hint') }}</div>
-        <a class="link" :href="MOBILE_URL" target="_blank" rel="noopener">{{ $t('mobile.download') }}</a>
       </section>
     </div>
 
-    <div class="tutlink">🎬 <a class="link" :href="TUTORIAL_URL" target="_blank" rel="noopener">{{ $t('mobile.tutorial') }}</a></div>
+    <div class="tutlink">🎬 {{ $t('mobile.tutorial') }} <a class="link addr" :href="TUTORIAL_URL" target="_blank" rel="noopener">{{ TUTORIAL_URL }}</a></div>
   </div>
 </template>
 
@@ -78,6 +78,7 @@ onMounted(async () => {
 .hint { color: var(--tx4); font-size: 12px; }
 .link { color: var(--ac2); font-size: 12px; text-decoration: none; }
 .link.big { font-size: 14px; font-weight: 600; }
+.addr { word-break: break-all; text-align: center; line-height: 1.5; }
 .link:hover { text-decoration: underline; }
 .tutlink { margin-top: 16px; color: var(--tx3); font-size: 13px; }
 

@@ -671,7 +671,6 @@ onBeforeUnmount(() => {
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.software') }}</span><span class="aboutv">{{ $t('term.about.name_value') }}</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.location') }}</span><span class="aboutv">{{ $t('term.about.location_value') }}</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.download') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai/releases" target="_blank" rel="noopener">{{ $t('term.about.download_windows') }}</a></div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.tutorial') }}</span><a class="aboutv link" href="https://space.bilibili.com/1933375113" target="_blank" rel="noopener">https://space.bilibili.com/1933375113</a></div>
             </div>
             <div class="setsec">
               <div class="settitle">{{ $t('term.about.contacts_cn') }}</div>
