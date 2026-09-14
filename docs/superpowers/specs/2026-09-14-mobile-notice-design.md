@@ -8,8 +8,8 @@
 
 移动端页（`web/src/components/MobileView.vue`）新增「最新消息」区块，内容来自 Gitee 上一个可随时编辑的 Markdown 文件，无需发版即可更新公告（版本发布、教程等内容都可写进去）。
 
-- 内容源（raw）：`https://gitee.com/slxxzh12/vscode-ai/raw/master/notice/readme.md`
-- 用户界面里的地址（blob）：`https://gitee.com/slxxzh12/vscode-ai/notice/readme.md`（当前该文件尚未创建，本次一并建初稿）
+- 内容源（raw）：`https://gitee.com/slxxzh12/vscode-ai-mobile/raw/master/notice/readme.md`
+- 用户界面里的地址（blob）：`https://gitee.com/slxxzh12/vscode-ai-mobile/notice/readme.md`（该仓库当前为空，本次一并建初稿）
 
 ## 2. 为什么走服务端
 
@@ -19,7 +19,7 @@
 
 新增 `server/notice.js`：
 
-- 常量 `NOTICE_URL = 'https://gitee.com/slxxzh12/vscode-ai/raw/master/notice/readme.md'`。
+- 常量 `NOTICE_URL = 'https://gitee.com/slxxzh12/vscode-ai-mobile/raw/master/notice/readme.md'`。
 - `createNotice({ url, timeoutMs = 5000, cacheMs = 10*60*1000, fetchImpl = fetch })` 返回 `{ get(), clear() }`。
 - `get()` 语义：
   - 命中缓存（未过期）→ `{ ok: true, content, fetchedAt, cached: true }`。
@@ -55,7 +55,7 @@
 
 ## 6. 远端文件
 
-在 `slxxzh12/vscode-ai` 的 `master` 新建 `notice/readme.md`（初稿，含版本发布与教程链接），走 Gitee API（令牌在 `env/gitee-release.ini`，不入库）。
+在 `slxxzh12/vscode-ai-mobile` 的 `master` 新建 `notice/readme.md`（初稿：最前面放桌面端下载地址，并含版本/教程/移动端），走 Gitee API（令牌在 `env/gitee-release.ini`，不入库）。
 
 ## 7. 测试与验收
 

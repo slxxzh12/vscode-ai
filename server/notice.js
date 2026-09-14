@@ -1,4 +1,4 @@
-export const NOTICE_URL = 'https://gitee.com/slxxzh12/vscode-ai/raw/master/notice/readme.md';
+export const NOTICE_URL = 'https://gitee.com/slxxzh12/vscode-ai-mobile/raw/master/notice/readme.md';
 
 export function createNotice({
   url = NOTICE_URL,

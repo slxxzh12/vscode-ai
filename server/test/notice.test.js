@@ -5,8 +5,8 @@ import { createNotice, NOTICE_URL } from '../notice.js';
 const okRes = (body) => ({ ok: true, status: 200, text: async () => body });
 const badRes = (status) => ({ ok: false, status, text: async () => '' });
 
-test('NOTICE_URL 指向 notice/readme.md', () => {
-  assert.equal(NOTICE_URL, 'https://gitee.com/slxxzh12/vscode-ai/raw/master/notice/readme.md');
+test('NOTICE_URL 指向 vscode-ai-mobile 的 notice/readme.md', () => {
+  assert.equal(NOTICE_URL, 'https://gitee.com/slxxzh12/vscode-ai-mobile/raw/master/notice/readme.md');
 });
 
 test('首次抓取写缓存，命中缓存不再请求', async () => {
