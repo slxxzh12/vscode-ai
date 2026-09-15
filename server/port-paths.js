@@ -1,0 +1,37 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { dataHome } from './data-home.js';
+
+// 端口数据根：<dataHome>/ports/<端口>
+export function portRoot(port, root = dataHome()) {
+  return path.join(root, 'ports', String(port));
+}
+
+// 纯路径推导：一个端口一份数据，全部在 ports/<端口>/ 下
+export function portPaths(port, { root = dataHome() } = {}) {
+  const dir = portRoot(port, root);
+  return {
+    id: String(port),
+    port: Number(port),
+    dir,
+    projectsFile: path.join(dir, 'projects.json'),
+    workflowsFile: path.join(dir, 'workflows.json'),
+    schedulerDir: path.join(dir, 'scheduler'),
+    collabDir: path.join(dir, 'collab'),
+    identityFile: path.join(dir, 'collab', 'identity.json'),
+    storeFile: path.join(dir, 'collab', 'collab.json'),
+    uploadDir: path.join(dir, 'upload'),
+    downloadDir: path.join(dir, 'download'),
+    downloadsDir: path.join(dir, 'downloads'),
+    relayPluginsDir: path.join(dir, 'downloads', 'relay-plugins'),
+    historyFile: path.join(dir, 'message-history.jsonc'),
+    skillsRoot: path.join(dir, 'skills-opencode'),
+  };
+}
+
+export function ensurePortDirs(paths) {
+  for (const d of [paths.dir, paths.schedulerDir, paths.collabDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.skillsRoot]) {
+    fs.mkdirSync(d, { recursive: true });
+  }
+  return paths;
+}
