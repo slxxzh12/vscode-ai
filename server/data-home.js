@@ -1,51 +1,28 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import fs from 'node:fs';
 
-// 运行时数据统一落在用户数据目录（Windows：%USERPROFILE%\.local\share\devflow；
-// Linux/macOS：$XDG_DATA_HOME 或 ~/.local/share 下 /devflow）。
+// 运行时数据统一落在用户数据目录（Windows：%USERPROFILE%\.local\share\void；
+// Linux/macOS：$XDG_DATA_HOME 或 ~/.local/share 下 /void）。
 export function dataHome() {
   if (process.env.DEVFLOW_DATA_HOME) return path.resolve(process.env.DEVFLOW_DATA_HOME);
   const base = process.platform === 'win32'
     ? path.join(process.env.USERPROFILE || os.homedir(), '.local', 'share')
     : path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'));
-  return path.join(base, 'devflow');
+  return path.join(base, 'void');
 }
-export function ensureDataHome() {
-  const d = dataHome();
-  fs.mkdirSync(d, { recursive: true });
-  return d;
+
+// 一个端口一份数据：<dataHome>/ports/<端口>
+function portRoot(port, root) {
+  return path.join(root, 'ports', String(port));
 }
-export function collabDir() {
-  const d = path.join(dataHome(), 'collab');
-  fs.mkdirSync(d, { recursive: true });
-  return d;
+// 活动配置目录（<端口>/downloads/devflow.xml）；注意与协作收件目录 downloadDir（单数）区分
+export function downloadsDir(port, root = dataHome()) {
+  return path.join(portRoot(port, root), 'downloads');
 }
-// 我发出的文件/技能 zip 落 upload；收到的落 download（下载页/收件箱展示同目录）
-export function uploadDir() {
-  const d = path.join(dataHome(), 'upload');
-  fs.mkdirSync(d, { recursive: true });
-  return d;
-}
-export function downloadDir() {
-  const d = path.join(dataHome(), 'download');
-  fs.mkdirSync(d, { recursive: true });
-  return d;
-}
-// 活动配置目录（<dataHome>/downloads/devflow.xml）；注意与协作收件目录 downloadDir()（单数）区分
-export function downloadsDir() {
-  return path.join(dataHome(), 'downloads');
-}
-// 中转站转换插件目录（<dataHome>/downloads/relay-plugins）；仅加载其下 *.mjs
-export function relayPluginsDir() {
-  return path.join(downloadsDir(), 'relay-plugins');
-}
-// 老版本把数据写在仓库 server/ 里；首次启动时若新位置没有、旧文件存在则迁移过去
-export function seedFromLegacy(target, legacySource) {
-  if (!fs.existsSync(target) && fs.existsSync(legacySource)) {
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.copyFileSync(legacySource, target);
-  }
+// 中转站转换插件目录（<端口>/downloads/relay-plugins）；仅加载其下 *.mjs
+export function relayPluginsDir(port, root = dataHome()) {
+  return path.join(downloadsDir(port, root), 'relay-plugins');
 }
 
 // ---- 多实例（同机模拟集群）：DEVFLOW_NODE 指定实例，状态按该实例公钥指纹隔离 ----

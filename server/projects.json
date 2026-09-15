@@ -1,5 +1,0 @@
-{
-  "projects": [
-    { "id": "local", "name": "本地项目", "root": "." }
-  ]
-}

@@ -115,13 +115,13 @@ function withDataHome(fn) {
   }
 }
 
-test('resolveActiveConfigFile 首次从模板复制到 dataHome/downloads', () => {
+test('resolveActiveConfigFile 首次从模板复制到 ports/<端口>/downloads', () => {
   withDataHome((data) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
     fs.mkdirSync(path.join(root, 'config'), { recursive: true });
     fs.writeFileSync(path.join(root, 'config', 'devflow.xml'), SAMPLE, 'utf8');
-    const active = resolveActiveConfigFile(root);
-    assert.equal(active, path.join(data, 'downloads', 'devflow.xml'));
+    const active = resolveActiveConfigFile(root, 22222);
+    assert.equal(active, path.join(data, 'ports', '22222', 'downloads', 'devflow.xml'));
     assert.equal(fs.readFileSync(active, 'utf8'), SAMPLE);
   });
 });
@@ -131,9 +131,9 @@ test('resolveActiveConfigFile 已存在则不覆盖', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
     fs.mkdirSync(path.join(root, 'config'), { recursive: true });
     fs.writeFileSync(path.join(root, 'config', 'devflow.xml'), SAMPLE, 'utf8');
-    const first = resolveActiveConfigFile(root);
+    const first = resolveActiveConfigFile(root, 22222);
     fs.writeFileSync(first, '<devflow><server port="9999" language="en"/></devflow>', 'utf8');
-    const second = resolveActiveConfigFile(root);
+    const second = resolveActiveConfigFile(root, 22222);
     assert.equal(second, first);
     assert.match(fs.readFileSync(second, 'utf8'), /port="9999"/);
   });
@@ -142,18 +142,19 @@ test('resolveActiveConfigFile 已存在则不覆盖', () => {
 test('resolveActiveConfigFile 模板缺失写入内置默认', () => {
   withDataHome(() => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
-    const active = resolveActiveConfigFile(root);
+    const active = resolveActiveConfigFile(root, 22222);
     const c = loadDevflowConfig(active);
     assert.equal(c.agents.list.length, buildDefaultConfig().agents.list.length);
     assert.ok(c.workflows.length >= 1);
   });
 });
 
-test('resolveActiveConfigFile downloads 不可创建时抛错', () => {
+test('resolveActiveConfigFile 目录不可创建时抛错', () => {
   withDataHome((data) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
-    fs.writeFileSync(path.join(data, 'downloads'), 'not-a-dir', 'utf8');   // 占位成文件 → mkdir 失败
-    assert.throws(() => resolveActiveConfigFile(root));
+    fs.mkdirSync(path.join(data, 'ports'), { recursive: true });
+    fs.writeFileSync(path.join(data, 'ports', '22222'), 'not-a-dir', 'utf8');   // 占位成文件 → mkdir 失败
+    assert.throws(() => resolveActiveConfigFile(root, 22222));
   });
 });
 

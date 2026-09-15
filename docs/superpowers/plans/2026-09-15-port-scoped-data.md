@@ -512,57 +512,7 @@ git commit -m "refactor(server): 数据目录端口化（dataHome 数据根、do
   ```js
     assert.equal(c.server.language, 'en');
   ```
-- 第 118-127 行整个 test 替换为：
-  ```js
-  test('resolveActiveConfigFile 首次从模板复制到 ports/<端口>/downloads', () => {
-    withDataHome((data) => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
-      fs.mkdirSync(path.join(root, 'config'), { recursive: true });
-      fs.writeFileSync(path.join(root, 'config', 'devflow.xml'), SAMPLE, 'utf8');
-      const active = resolveActiveConfigFile(root, 22222);
-      assert.equal(active, path.join(data, 'ports', '22222', 'downloads', 'devflow.xml'));
-      assert.equal(fs.readFileSync(active, 'utf8'), SAMPLE);
-    });
-  });
-  ```
-- 第 129-140 行整个 test 替换为：
-  ```js
-  test('resolveActiveConfigFile 已存在则不覆盖', () => {
-    withDataHome(() => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
-      fs.mkdirSync(path.join(root, 'config'), { recursive: true });
-      fs.writeFileSync(path.join(root, 'config', 'devflow.xml'), SAMPLE, 'utf8');
-      const first = resolveActiveConfigFile(root, 22222);
-      fs.writeFileSync(first, '<devflow><server language="en"/></devflow>', 'utf8');
-      const second = resolveActiveConfigFile(root, 22222);
-      assert.equal(second, first);
-      assert.match(fs.readFileSync(second, 'utf8'), /language="en"/);
-    });
-  });
-  ```
-- 第 142-150 行整个 test 替换为：
-  ```js
-  test('resolveActiveConfigFile 模板缺失写入内置默认', () => {
-    withDataHome(() => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
-      const active = resolveActiveConfigFile(root, 22222);
-      const c = loadDevflowConfig(active);
-      assert.equal(c.agents.list.length, buildDefaultConfig().agents.list.length);
-      assert.ok(c.workflows.length >= 1);
-    });
-  });
-  ```
-- 第 152-158 行整个 test 替换为：
-  ```js
-  test('resolveActiveConfigFile 目录不可创建时抛错', () => {
-    withDataHome((data) => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devflow-root-'));
-      fs.mkdirSync(path.join(data, 'ports'), { recursive: true });
-      fs.writeFileSync(path.join(data, 'ports', '22222'), 'not-a-dir', 'utf8');   // 占位成文件 → mkdir 失败
-      assert.throws(() => resolveActiveConfigFile(root, 22222));
-    });
-  });
-  ```
+- 第 118-158 行（4 个 `resolveActiveConfigFile` 测试）**已在 Task 2 一并更新**（签名在 Task 2 变更，测试必须同步），这里不再重复。
 
 `server/test/i18n-settings.test.js` 第 14-22 行（第二个 test）替换为：
 

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { signJwt } from './llm-jwt.js';
 import { listProviders, getProvider, buildOpencodeConfigMulti } from './llm-config.js';
@@ -8,7 +9,6 @@ import { createCache } from './llm-cache.js';
 import { loadPlugins, EXAMPLE_PLUGIN, writeExamplePlugin } from './relay-plugins.js';
 import { revealInOs } from './reveal.js';
 import { buildZip } from './collaboration/zip.js';
-import { downloadsDir } from './data-home.js';
 
 function readJson(req) {
   return new Promise((resolve) => {
@@ -100,7 +100,7 @@ function buildTestBat({ host, port, pid, baseURL, jwt, model, stream }) {
   ].join('\r\n');
 }
 
-export function createLlmMount({ vault, host, port, logger = console, pluginsDir = null, cache = createCache(), reveal = revealInOs } = {}) {
+export function createLlmMount({ vault, host, port, logger = console, pluginsDir = null, relayTestsDir = null, cache = createCache(), reveal = revealInOs } = {}) {
   let plugins = [];
   let entries = [];
   const proxy = createProxyHandler({
@@ -245,7 +245,7 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
         const stream = !!b.stream;
         const model = String(b.model || '') || p.models[0] || '';
         const bat = buildTestBat({ host, port, pid, baseURL: p.baseURL, jwt: rec.jwt, model, stream });
-        const dir = path.join(downloadsDir(), 'relay-tests');
+        const dir = relayTestsDir || (pluginsDir ? path.join(path.dirname(pluginsDir), 'relay-tests') : path.join(os.tmpdir(), 'devflow-relay-tests'));
         fs.mkdirSync(dir, { recursive: true });
         const file = path.join(dir, `test-${pid}-${stream ? 'stream' : 'plain'}.bat`);
         fs.writeFileSync(file, bat, 'utf8');

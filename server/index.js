@@ -23,13 +23,14 @@ import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
-import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, DEFAULT_PORT } from './devflow-config.js';
+import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows } from './devflow-config.js';
 import { readSeed, updateSeed } from './workflow-seed.js';
 import { setLocale, t } from './i18n.js';
 import { isPeerRequest, matchAccessToken, resolveInviteDays } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
-import { dataHome, instanceName, instanceSeedDir, instanceFpRoot, downloadsDir, relayPluginsDir } from './data-home.js';
+import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
+import { APP_DIR, resolvePort } from './port-file.js';
 import { seedPlugins } from './relay-plugins.js';
 import { publicFingerprint } from './collaboration/identity.js';
 import { createVault } from './llm-vault.js';
@@ -49,10 +50,10 @@ import { createNotice } from './notice.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
 const notice = createNotice();
-const configFile = resolveActiveConfigFile(path.join(__dirname, '..'));
-const BOOT_CFG = loadDevflowConfig(configFile);
+let configFile = resolveActiveConfigFile(APP_DIR, resolvePort());
+let BOOT_CFG = loadDevflowConfig(configFile);
 const HOST = process.env.DEVFLOW_HOST || BOOT_CFG.server.host || '127.0.0.1';
-const PORT = Number(process.env.DEVFLOW_PORT || BOOT_CFG.server.port || DEFAULT_PORT);
+const PORT = resolvePort();
 setLocale(BOOT_CFG.server.language);
 const NODE = instanceName();
 
@@ -201,8 +202,8 @@ function buildWorkspace({ paths, port }) {
 
   const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..') });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
-  seedPlugins(relayPluginsDir(), path.join(__dirname, '..', 'config', 'relay-plugins'));
-  const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: relayPluginsDir() });
+  seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
+  const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
   const usageStore = createUsageStore({ file: path.join(paths.dir, 'usage.db') });
   return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, llmMount, llmVault, usageStore, historyFile: paths.historyFile, paths, heartbeat: null };
 }

@@ -101,9 +101,9 @@ export function ensureConfigFile(file) {
   return true;
 }
 
-// 解析运行时活动配置：优先 <dataHome>/downloads/devflow.xml；不存在则从仓库模板 seed（不覆盖已存在的）
-export function resolveActiveConfigFile(baseDir) {
-  const dir = downloadsDir();
+// 解析运行时活动配置：优先 <dataHome>/ports/<端口>/downloads/devflow.xml；不存在则从仓库模板 seed（不覆盖已存在的）
+export function resolveActiveConfigFile(baseDir, port) {
+  const dir = downloadsDir(port);
   const active = path.join(dir, 'devflow.xml');
   if (fs.existsSync(active)) return active;
   fs.mkdirSync(dir, { recursive: true });        // 失败向上抛出 → 启动失败
