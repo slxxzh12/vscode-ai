@@ -30,7 +30,7 @@ import { isPeerRequest, matchAccessToken, resolveInviteDays } from './remote-gat
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 import { instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
-import { APP_DIR, resolvePort, validPort, writePortFile, writeRuntimePort } from './port-file.js';
+import { APP_DIR, resolvePort, validPort, writePortFile, writeRuntimePort, readPortFile } from './port-file.js';
 import { seedPlugins } from './relay-plugins.js';
 import { publicFingerprint } from './collaboration/identity.js';
 import { createVault } from './llm-vault.js';
@@ -38,6 +38,7 @@ import { createUsageStore, normalizeUsage } from './usage-store.js';
 import { createLlmMount } from './llm-mount.js';
 import { detectEmployeeId } from './llm-config.js';
 import { portPaths, ensurePortDirs } from './port-paths.js';
+import { restartGuard, spawnRestart } from './port-restart.js';
 import { askPortConflict } from './native-dialog.js';
 import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
 import { VERSION } from './version.js';
@@ -50,6 +51,7 @@ let configFile = resolveActiveConfigFile(APP_DIR, resolvePort());
 let BOOT_CFG = loadDevflowConfig(configFile);
 const HOST = process.env.DEVFLOW_HOST || BOOT_CFG.server.host || '127.0.0.1';
 const PORT = resolvePort();
+const PORT_SOURCE = validPort(process.env.DEVFLOW_PORT) ? 'env' : (readPortFile() ? 'file' : 'default');
 setLocale(BOOT_CFG.server.language);
 const NODE = instanceName();
 
@@ -318,8 +320,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/settings' && req.method === 'GET') {
     const s = loadDevflowConfig(configFile).server;
+    const canRestart = restartGuard({ appDir: APP_DIR }).ok;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ settings: { ...s, port: PORT }, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT, host: HOST }));
+    res.end(JSON.stringify({ settings: { ...s, port: PORT }, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT, host: HOST, portSource: PORT_SOURCE, restartable: canRestart }));
     return;
   }
   if (url.pathname === '/api/settings' && req.method === 'POST') {
@@ -341,6 +344,20 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ port, needRestart: true }));
     });
+    return;
+  }
+  if (url.pathname === '/api/server/restart' && req.method === 'POST') {
+    const g = restartGuard({ appDir: APP_DIR });
+    if (!g.ok) {
+      res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: g.code, message: g.message }));
+      return;
+    }
+    spawnRestart({ appDir: APP_DIR });
+    log.info('restart requested; exiting so the launcher can bring it back');
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: true, restarting: true }));
+    setTimeout(() => process.exit(0), 300);
     return;
   }
   if (url.pathname === '/api/settings/language' && req.method === 'POST') {
