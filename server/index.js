@@ -29,7 +29,7 @@ import { setLocale, t } from './i18n.js';
 import { isPeerRequest, matchAccessToken, resolveInviteDays } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
-import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
+import { instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
 import { APP_DIR, resolvePort, validPort, writePortFile, writeRuntimePort } from './port-file.js';
 import { seedPlugins } from './relay-plugins.js';
 import { publicFingerprint } from './collaboration/identity.js';
@@ -37,11 +37,7 @@ import { createVault } from './llm-vault.js';
 import { createUsageStore, normalizeUsage } from './usage-store.js';
 import { createLlmMount } from './llm-mount.js';
 import { detectEmployeeId } from './llm-config.js';
-import {
-  migrateLegacy, resolveProfile, createProfile, bindProfile, touchProfile,
-  profilePaths, createWorkspaceService,
-} from './workspace.js';
-import { createWorkspaceHttp } from './workspace-http.js';
+import { portPaths, ensurePortDirs } from './port-paths.js';
 import { askPortConflict } from './native-dialog.js';
 import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
 import { VERSION } from './version.js';
@@ -211,7 +207,6 @@ function buildWorkspace({ paths, port }) {
 // ---- 工作区（端口档案）----
 let ws = null;               // ready 后指向 bundle
 let actualPort = null;       // 实际监听端口
-let workspaceHttp = null;    // needs-selection 时可用
 
 function initWorkspace(paths, port) {
   ws = buildWorkspace({ paths, port });
@@ -231,7 +226,7 @@ function initWorkspace(paths, port) {
     ws.scheduler.engine.start();
     log.info('scheduler started');
   }
-  log.info(`workspace ready: profile=${paths.id} port=${port}`);
+  log.info(`workspace ready: port=${port} dataDir=${paths.dir}`);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -295,14 +290,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
     }
-  }
-
-  // 工作区选择（永远可用）
-  if (url.pathname.startsWith('/api/workspace')) {
-    if (!ws && workspaceHttp) { await workspaceHttp(req, res, url); return; }
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ ready: true, needSelect: false, listenPort: actualPort, current: ws ? ws.paths.id : null, profiles: [] }));
-    return;
   }
 
   // 配置类接口永远可用（不依赖档案）
@@ -641,13 +628,18 @@ function startListening(port = currentPort) {
     actualPort = actual;
     currentPort = actual;
     writeRuntimePort(actual);
+    // 端口可能因冲突弹窗变化：配置路径与数据目录一律按「实际端口」重算
+    configFile = resolveActiveConfigFile(APP_DIR, actual);
+    BOOT_CFG = loadDevflowConfig(configFile);
+    setLocale(BOOT_CFG.server.language);
     log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)  ${VERSION}`);
 
-    if (NODE) {   // 逃生通道：沿用 nodes/<name> 机制，不进入端口档案系统
+    if (NODE) {   // 逃生通道：沿用 nodes/<name> 机制，不进端口数据目录
       const seedDir = instanceSeedDir(NODE);
       const identity = loadIdentity({ file: path.join(seedDir, 'identity.json'), host: HOST, port: actual });
       const stateRoot = instanceFpRoot(publicFingerprint(identity.publicKey));
-      const paths = {
+      const paths = ensurePortDirs({
+        ...portPaths(actual),
         id: `node-${NODE}`,
         dir: stateRoot,
         identityFile: path.join(seedDir, 'identity.json'),
@@ -655,36 +647,19 @@ function startListening(port = currentPort) {
         uploadDir: path.join(stateRoot, 'upload'),
         downloadDir: path.join(stateRoot, 'download'),
         downloadsDir: path.join(stateRoot, 'downloads'),
-        skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(stateRoot, 'skills-opencode'),
-        projectsFile: path.join(dataHome(), 'projects.json'),
-        workflowsFile: path.join(dataHome(), 'workflows.json'),
-        schedulerDir: path.join(dataHome(), 'scheduler'),
+        relayPluginsDir: path.join(stateRoot, 'downloads', 'relay-plugins'),
+        schedulerDir: path.join(stateRoot, 'scheduler'),
+        projectsFile: path.join(stateRoot, 'projects.json'),
+        workflowsFile: path.join(stateRoot, 'workflows.json'),
         historyFile: path.join(stateRoot, 'message-history.jsonc'),
-      };
-      fs.mkdirSync(paths.uploadDir, { recursive: true });
-      fs.mkdirSync(paths.downloadDir, { recursive: true });
-      fs.mkdirSync(paths.downloadsDir, { recursive: true });
-      fs.mkdirSync(paths.skillsRoot, { recursive: true });
+        skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(stateRoot, 'skills-opencode'),
+      });
       initWorkspace(paths, actual);
       return;
     }
 
-    migrateLegacy(dataHome());      // 首次：复制旧数据为档案 22222
-    const r = resolveProfile({ listenPort: actual });
-    if (r.status === 'ready') {
-      const prof = r.profile || createProfile(dataHome(), { id: String(actual), name: t('ws.default_profile_name', { port: actual }), port: actual });
-      bindProfile(dataHome(), actual, prof.id);
-      touchProfile(dataHome(), prof.id);
-      initWorkspace(profilePaths(dataHome(), prof.id), actual);
-    } else {
-      const service = createWorkspaceService({
-        root: dataHome(), listenPort: actual,
-        onProfile: (paths) => initWorkspace(paths, actual),
-        logger: log,
-      });
-      workspaceHttp = createWorkspaceHttp({ service });
-      log.info(`workspace: ${r.profiles.length} profiles found, awaiting selection`);
-    }
+    const paths = ensurePortDirs(portPaths(actual));
+    initWorkspace(paths, actual);
   };
   server.once('error', onError);
   server.once('listening', onListening);
