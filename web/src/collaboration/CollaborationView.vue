@@ -6,6 +6,7 @@ import { EMPTY_SNAPSHOT } from './types';
 import type { useTerminal } from '../useTerminal';
 import GroupView from './GroupView.vue';
 import TasksView from './TasksView.vue';
+import SyncUpdateDialog from './SyncUpdateDialog.vue';
 import { t } from '../i18n';
 
 type CollabTab = 'group' | 'tasks';
@@ -18,11 +19,44 @@ const tabs = computed(() => [
   { id: 'tasks' as const, label: t('collab.tabs.tasks') },
 ]);
 
+// —— slave：master 同步种子更新弹窗 ——
+const pending = ref<{ masterId: string; masterLabel: string; version: string; files: { name: string; size?: number }[] } | null>(null);
+const updateResult = ref<string | null>(null);
+async function checkUpdates() {
+  const ids = (snap.value.groups || [])
+    .filter((g) => g.hubId !== snap.value.identity.machineId)
+    .map((g) => g.hubId);
+  for (const id of [...new Set(ids)]) {
+    try {
+      const r = await collab.checkUpdate(id);
+      if (r.code === 'ok' && r.newer && r.update) {
+        pending.value = { masterId: r.masterId || id, masterLabel: r.masterLabel || id, version: r.update.version, files: r.update.files || [] };
+        updateResult.value = null;
+        return;
+      }
+    } catch { /* ignore */ }
+  }
+}
+async function acceptUpdate() {
+  if (!pending.value) return;
+  try {
+    const r = await collab.applyUpdate(pending.value.masterId, 'accept');
+    updateResult.value = t('collab.update.synced', { count: (r.files || []).length });
+  } catch (e) { updateResult.value = String((e as Error).message || e); }
+}
+async function rejectUpdate() {
+  if (pending.value && !updateResult.value) {
+    try { await collab.applyUpdate(pending.value.masterId, 'reject'); } catch { /* ignore */ }
+  }
+  pending.value = null;
+  updateResult.value = null;
+}
+
 let unsubs: (() => void)[] = [];
 onMounted(() => {
-  collab.refresh().catch(() => {});
+  collab.refresh().then(() => checkUpdates()).catch(() => {});
   unsubs = [
-    props.terminal.on(CollabS2C.COLLAB_SYNCED, () => collab.refresh().catch(() => {})),
+    props.terminal.on(CollabS2C.COLLAB_SYNCED, () => { collab.refresh().then(() => checkUpdates()).catch(() => {}); }),
     props.terminal.on(CollabS2C.COLLAB_INBOX, () => collab.refresh().catch(() => {})),
     props.terminal.on(CollabS2C.COLLAB_CHAT, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CHAT, payload)),
     props.terminal.on(CollabS2C.COLLAB_CMD_PENDING, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CMD_PENDING, payload)),
@@ -51,6 +85,15 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
       <GroupView v-if="tab === 'group'" :collab="collab" />
       <TasksView v-else :collab="collab" />
     </section>
+    <SyncUpdateDialog
+      :open="!!pending"
+      :master-label="pending?.masterLabel || ''"
+      :version="pending?.version || ''"
+      :files="pending?.files || []"
+      :result="updateResult"
+      @accept="acceptUpdate"
+      @reject="rejectUpdate"
+    />
   </div>
 </template>
 

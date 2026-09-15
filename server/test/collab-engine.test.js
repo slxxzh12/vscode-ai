@@ -188,3 +188,59 @@ test('pull-sync 拉取对方群与 groupSkills', async () => {
     assert.ok(gs.some((s) => s.skillName === 'demo'), 'pull 后能看到群内 skill 清单');
   } finally { await h.stop(); }
 });
+
+test('publishUpdate 写 update.json 且只含选中文件；checkUpdate 版本比较', async () => {
+  const h = await createPairHarness({ skipSkills: false });
+  try {
+    const [A, B] = h.nodes;
+    await groupUp(A, B);
+    A.writeDownload('group.json', Buffer.from('{"x":1}'), 'group');
+    A.writeDownload('usage.json', Buffer.from('{"y":2}'), 'usage');
+    const pub = A.publishUpdate(['group.json']);
+    assert.equal(pub.code, 'ok');
+    assert.equal(pub.update.files.length, 1);
+    assert.equal(pub.update.files[0].name, 'group.json');
+    assert.equal(A.readUpdate().version, pub.update.version);
+
+    const chk = await B.checkUpdate(A.pub.machineId);
+    assert.equal(chk.code, 'ok');
+    assert.equal(chk.newer, true);
+    assert.equal(chk.update.files[0].name, 'group.json');
+  } finally { await h.stop(); }
+});
+
+test('applyUpdate accept 只拉选中文件；reject 也推进版本且不改文件', async () => {
+  const h = await createPairHarness({ skipSkills: false });
+  try {
+    const [A, B] = h.nodes;
+    await groupUp(A, B);
+    A.writeDownload('group.json', Buffer.from('G'), 'group');
+    A.writeDownload('usage.json', Buffer.from('U'), 'usage');
+    A.publishUpdate(['group.json']);
+
+    const acc = await B.applyUpdate({ masterId: A.pub.machineId, action: 'accept' });
+    assert.equal(acc.code, 'ok');
+    assert.deepEqual(acc.files, ['group.json']);
+    assert.ok(fs.existsSync(path.join(B.downloadsDir, 'group.json')));
+    assert.ok(!fs.existsSync(path.join(B.downloadsDir, 'usage.json')), '未勾选的不该被拉取');
+
+    const pub2 = A.publishUpdate(['usage.json']);
+    const rej = await B.applyUpdate({ masterId: A.pub.machineId, action: 'reject' });
+    assert.equal(rej.action, 'reject');
+    assert.equal(rej.version, pub2.update.version);
+    const chk = await B.checkUpdate(A.pub.machineId);
+    assert.equal(chk.newer, false, 'reject 后同版本不再提示');
+  } finally { await h.stop(); }
+});
+
+test('_inUpdateCheck/_inListDownloads 非成员被拒', () => {
+  return createPairHarness({ skipSkills: true }).then(async (h) => {
+    try {
+      const [A, B] = h.nodes;
+      A.ensureGroup();
+      assert.equal(A._inUpdateCheck({ from: B.pub, payload: {} }).ok, false);
+      assert.equal(A._inListDownloads({ from: B.pub, payload: {} }).ok, false);
+    } finally { await h.stop(); }
+  });
+});
+

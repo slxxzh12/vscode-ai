@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import GroupChatView from './GroupChatView.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi }>();
@@ -17,9 +18,9 @@ watch(groups, (gs) => {
 }, { immediate: true });
 const me = computed(() => snap.value.identity?.machineId);
 
-// —— 我的工号（身份展示 = 工号@IP:端口）——
-const myEmployeeId = ref(snap.value.identity.employeeId || '');
-watch(() => snap.value.identity.employeeId, (v) => { myEmployeeId.value = v || ''; });
+// —— 我的工号（身份展示 = 工号@IP:端口）；默认填入当前机器登录用户名 ——
+const myEmployeeId = ref(snap.value.identity.employeeId || snap.value.identity.username || '');
+watch(() => snap.value.identity.employeeId, (v) => { myEmployeeId.value = v || snap.value.identity.username || ''; });
 const idMsg = ref('');
 async function saveEmployeeId() {
   idMsg.value = '';
@@ -29,10 +30,19 @@ async function saveEmployeeId() {
     setTimeout(() => { idMsg.value = ''; }, 1500);
   } catch (e) { idMsg.value = String((e as Error).message || e); }
 }
+// 首次拿到身份且工号为空时，自动填入登录用户名并保存一次
+watch(() => snap.value.identity.machineId, async (mid) => {
+  const id = snap.value.identity;
+  if (mid && !id.employeeId && id.username) {
+    myEmployeeId.value = id.username;
+    await saveEmployeeId();
+  }
+}, { immediate: true });
 
 // —— 远程访问（自设置迁入）——
 const remoteLink = ref('');
 const remotePassword = ref('');
+const inviteRevealed = ref(false);
 const remoteMsg = ref('');
 const remoteState = ref<{ enabled: boolean; expiresAt: number | null; address?: string | null; needRestart?: boolean; host?: string; locked?: boolean }>({ enabled: false, expiresAt: null });
 
@@ -45,14 +55,31 @@ async function genRemote() {
     const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }).then((x) => x.json());
     remoteLink.value = r.link || '';
     remotePassword.value = r.password || '';
+    inviteRevealed.value = true;
     remoteState.value = { ...remoteState.value, enabled: !!r.enabled, expiresAt: r.expiresAt || null, address: r.address, needRestart: !!r.needRestart };
     await loadDir();
+    try { await props.collab.refresh(); } catch { /* ignore */ }
   } catch (e) { remoteMsg.value = t('remote.failed', { msg: (e as Error)?.message || String(e) }); }
 }
-async function revokeRemote() {
+async function revealInvite() {
+  if (inviteRevealed.value) { inviteRevealed.value = false; return; }
+  remoteMsg.value = '';
+  try {
+    const r = await fetch('/api/remote/reveal').then((x) => x.json());
+    if (!r.enabled) { await loadRemote(); return; }
+    remoteLink.value = r.link || '';
+    remotePassword.value = r.password || '';
+    inviteRevealed.value = true;
+  } catch (e) { remoteMsg.value = t('remote.failed', { msg: (e as Error)?.message || String(e) }); }
+}
+const closeConfirmOpen = ref(false);
+function revokeRemote() { closeConfirmOpen.value = true; }
+async function doRevokeRemote() {
+  closeConfirmOpen.value = false;
   try {
     await fetch('/api/remote/revoke', { method: 'POST' });
     remoteLink.value = ''; remotePassword.value = '';
+    inviteRevealed.value = false;
     remoteState.value = { ...remoteState.value, enabled: false, expiresAt: null };
   } catch { /* ignore */ }
 }
@@ -104,16 +131,47 @@ function fmtSize(n: number) {
   return n + ' B';
 }
 
-// —— master downloads（点击才拉取）——
+// —— master 同步种子 / slave 主动同步 ——
+const isMaster = computed(() => !!group.value && group.value.hubId === me.value);
 const downloads = ref<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] } }>({ manifest: { files: [] } });
-const dlMsg = ref('');
+const seed = ref<{ version: string; files: { name: string }[] }>({ version: '', files: [] });
+const selected = ref<Record<string, boolean>>({});
+const seedMsg = ref('');
 async function loadDownloads() {
   try { downloads.value = await props.collab.listDownloads() as typeof downloads.value; } catch { /* ignore */ }
 }
-async function syncMaster() {
-  dlMsg.value = '';
-  try { await props.collab.syncDownloads(); await loadDownloads(); }
-  catch (e) { dlMsg.value = String((e as Error).message || e); }
+async function loadSeed() {
+  try { const r = await props.collab.getUpdate(); seed.value = r.update; } catch { /* ignore */ }
+}
+function setAll(v: boolean) { for (const f of downloads.value.manifest.files) selected.value[f.name] = v; }
+async function saveSeed() {
+  seedMsg.value = '';
+  const names = Object.keys(selected.value).filter((k) => selected.value[k]);
+  try { const r = await props.collab.publishUpdate(names); seed.value = r.update; seedMsg.value = t('collab.update.saved', { version: r.update.version }); }
+  catch (e) { seedMsg.value = String((e as Error).message || e); }
+}
+// slave：从 master 列文件并拉取
+const remote = ref<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] }; update: { version: string; files: { name: string }[] } | null } | null>(null);
+const remoteSel = ref<Record<string, boolean>>({});
+const pullMsg = ref('');
+const remoteVer = computed(() => remote.value?.update?.version || '');
+function isSeedFile(name: string) { return !!remote.value?.update?.files?.some((f) => f.name === name); }
+async function loadRemoteFiles() {
+  pullMsg.value = '';
+  const mid = group.value?.hubId;
+  try { const r = await props.collab.listRemoteFiles(mid); remote.value = { manifest: r.manifest, update: r.update }; }
+  catch (e) { pullMsg.value = String((e as Error).message || e); }
+}
+function setAllRemote(v: boolean) { for (const f of remote.value?.manifest.files || []) remoteSel.value[f.name] = v; }
+async function pullSelected() {
+  pullMsg.value = '';
+  const names = Object.keys(remoteSel.value).filter((k) => remoteSel.value[k]);
+  if (!names.length) return;
+  try {
+    const r = await props.collab.pullDownloads(names, group.value?.hubId);
+    pullMsg.value = t('collab.update.pulled', { count: (r.files || names).length });
+    await loadDir();
+  } catch (e) { pullMsg.value = String((e as Error).message || e); }
 }
 const installMsg = ref('');
 async function install(name: string) {
@@ -127,7 +185,9 @@ async function install(name: string) {
 onMounted(async () => {
   await loadRemote();
   await loadDownloads();
+  await loadSeed();
   await loadDir();
+  if (!isMaster.value) { try { await loadRemoteFiles(); } catch { /* ignore */ } }
 });
 </script>
 
@@ -136,41 +196,91 @@ onMounted(async () => {
     <aside class="cw-left">
       <div class="sec">
         <h4>{{ $t('collab.identity.title') }}</h4>
-        <div class="cfgrow">
-          <span>{{ $t('collab.identity.employee') }}</span>
-          <input v-model="myEmployeeId" class="idinput" :placeholder="$t('collab.identity.employee')" @keyup.enter="saveEmployeeId" />
-        </div>
         <div class="addrow">
+          <span class="idlbl">{{ $t('collab.identity.employee') }}</span>
+          <input v-model="myEmployeeId" :placeholder="$t('collab.identity.employee')" @keyup.enter="saveEmployeeId" />
           <button @click="saveEmployeeId">{{ $t('common.save') }}</button>
         </div>
         <div class="cfghint">{{ $t('collab.identity.hint') }}</div>
         <div v-if="idMsg" class="cfghint">{{ idMsg }}</div>
       </div>
 
-      <div class="sec">
-        <h4>{{ $t('collab.groups.title') }}</h4>
-        <div v-if="!groups.length" class="empty">{{ $t('collab.groups.empty') }}</div>
-        <button v-for="g in groups" :key="g.id" class="gitem" :class="{ on: group?.id === g.id }" @click="activeId = g.id">
-          {{ g.name }}
-        </button>
-      </div>
+      <details class="sec fold">
+        <summary>{{ $t('collab.downloads.dir_title') }} <span class="tag">{{ $t('collab.downloads.dir_open') }}</span></summary>
+        <div class="cfghint">{{ $t('collab.downloads.dir_hint') }}</div>
+        <div v-if="dirFiles.length === 0" class="empty">{{ $t('collab.downloads.dir_empty') }}</div>
+        <div v-for="f in dirFiles" :key="f.name" class="rowline">
+          <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}<span class="sub">{{ fmtSize(f.size) }}</span></a>
+        </div>
+      </details>
 
-      <div class="sec">
+      <div class="sec boxed">
         <h4>{{ $t('collab.remote.title') }}</h4>
         <div class="addrow">
-          <button class="gen red" @click="genRemote">{{ $t('collab.remote.enable') }}</button>
-          <button v-if="remoteState.enabled" class="ghost" @click="revokeRemote">{{ $t('remote.revoke') }}</button>
+          <button class="gen" :class="remoteState.enabled ? 'stop' : 'start'" @click="remoteState.enabled ? revokeRemote() : genRemote()">
+            {{ remoteState.enabled ? '⏹ ' + $t('collab.remote.disable') : '▶ ' + $t('collab.remote.enable') }}
+          </button>
         </div>
-        <div v-if="remotePassword" class="linkrow">
-          <input :value="remotePassword" readonly />
-          <button @click="copy(remotePassword)">{{ $t('remote.copy_password') }}</button>
+        <div v-if="remoteState.enabled" class="sec">
+          <h4>{{ $t('collab.groups.title') }}</h4>
+          <div v-if="!groups.length" class="empty">{{ $t('collab.groups.empty') }}</div>
+          <button v-for="g in groups" :key="g.id" class="gitem" :class="{ on: group?.id === g.id }" @click="activeId = g.id">
+            {{ g.name }}
+          </button>
         </div>
-        <div v-if="remoteLink" class="linkrow">
-          <input :value="remoteLink" readonly @focus="($event.target as HTMLInputElement).select()" />
-          <button @click="copy(remoteLink)">{{ $t('remote.copy') }}</button>
+
+        <div v-if="remoteState.enabled" class="addrow">
+          <button class="ghost" @click="revealInvite">{{ inviteRevealed ? $t('remote.hide_invite') : $t('remote.show_invite') }}</button>
         </div>
+        <template v-if="inviteRevealed">
+          <div class="cfghint">{{ $t('remote.invite_hint') }}</div>
+          <div v-if="remotePassword" class="linkrow">
+            <input :value="remotePassword" readonly />
+            <button @click="copy(remotePassword)">{{ $t('remote.copy_password') }}</button>
+          </div>
+          <div v-if="remoteLink" class="linkrow">
+            <input :value="remoteLink" readonly @focus="($event.target as HTMLInputElement).select()" />
+            <button @click="copy(remoteLink)">{{ $t('remote.copy') }}</button>
+          </div>
+        </template>
         <div v-if="remoteState.needRestart" class="err">{{ $t('remote.need_restart') }}</div>
         <div v-if="remoteMsg" class="cfghint">{{ remoteMsg }}</div>
+
+        <div v-if="group" class="sec">
+          <h4>{{ $t('collab.downloads.title') }}</h4>
+          <template v-if="isMaster">
+            <div class="cfghint">{{ $t('collab.update.version', { version: seed.version || '—' }) }}</div>
+            <div class="addrow">
+              <button class="ghost" @click="setAll(true)">{{ $t('collab.update.select_all') }}</button>
+              <button @click="saveSeed">{{ $t('collab.update.save_seed') }}</button>
+            </div>
+            <div v-if="seedMsg" class="cfghint">{{ seedMsg }}</div>
+            <div v-if="installMsg" class="cfghint">{{ installMsg }}</div>
+            <div v-if="downloads.manifest.files.length === 0" class="empty">{{ $t('collab.downloads.empty') }}</div>
+            <div v-for="f in downloads.manifest.files" :key="f.name" class="rowline">
+              <input type="checkbox" v-model="selected[f.name]" />
+              <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}</a>
+              <template v-if="f.kind === 'skill'">
+                <button class="ghost" @click="install(f.name)">{{ $t('collab.downloads.install') }}</button>
+              </template>
+            </div>
+          </template>
+          <template v-else>
+            <div class="cfghint">{{ $t('collab.update.version', { version: remoteVer || '—' }) }}</div>
+            <div class="addrow">
+              <button class="ghost" @click="loadRemoteFiles">{{ $t('collab.update.check') }}</button>
+              <button class="ghost" @click="setAllRemote(true)">{{ $t('collab.update.select_all') }}</button>
+              <button @click="pullSelected">{{ $t('collab.update.pull_selected') }}</button>
+            </div>
+            <div v-if="pullMsg" class="cfghint">{{ pullMsg }}</div>
+            <div v-if="!remote || remote.manifest.files.length === 0" class="empty">{{ $t('collab.update.no_remote') }}</div>
+            <div v-for="f in (remote?.manifest.files || [])" :key="f.name" class="rowline">
+              <input type="checkbox" v-model="remoteSel[f.name]" />
+              <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}</a>
+              <span v-if="isSeedFile(f.name)" class="tag">{{ $t('collab.update.seed_badge') }}</span>
+            </div>
+          </template>
+        </div>
       </div>
 
       <div class="sec">
@@ -183,31 +293,13 @@ onMounted(async () => {
       </div>
 
       <div class="sec">
-        <h4>{{ $t('collab.downloads.dir_title') }} <span class="tag">{{ $t('collab.downloads.dir_open') }}</span></h4>
-        <div class="cfghint">{{ $t('collab.downloads.dir_hint') }}</div>
-        <div v-if="dirFiles.length === 0" class="empty">{{ $t('collab.downloads.dir_empty') }}</div>
-        <div v-for="f in dirFiles" :key="f.name" class="rowline">
-          <span class="txt">{{ f.name }}<span class="sub">{{ fmtSize(f.size) }}</span></span>
-          <a class="dl" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ $t('collab.downloads.download') }}</a>
-        </div>
+        <h4>{{ $t('collab.groups.all') }}</h4>
+        <div v-if="!groups.length" class="empty">{{ $t('collab.groups.empty') }}</div>
+        <button v-for="g in groups" :key="g.id" class="gitem" :class="{ on: group?.id === g.id }" @click="activeId = g.id">
+          {{ g.name }}
+        </button>
       </div>
 
-      <details class="sec fold">
-        <summary>{{ $t('collab.downloads.title') }}</summary>
-        <div class="addrow">
-          <button @click="syncMaster">{{ $t('collab.downloads.sync') }}</button>
-        </div>
-        <div v-if="dlMsg" class="err">{{ dlMsg }}</div>
-        <div v-if="installMsg" class="cfghint">{{ installMsg }}</div>
-        <div v-if="downloads.manifest.files.length === 0" class="empty">{{ $t('collab.downloads.empty') }}</div>
-        <div v-for="f in downloads.manifest.files" :key="f.name" class="rowline">
-          <span class="txt">{{ f.name }}</span>
-          <template v-if="f.kind === 'skill'">
-            <a class="dl" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ $t('collab.downloads.download') }}</a>
-            <button class="ghost" @click="install(f.name)">{{ $t('collab.downloads.install') }}</button>
-          </template>
-        </div>
-      </details>
     </aside>
 
     <section class="cw-right">
@@ -235,6 +327,17 @@ onMounted(async () => {
       <div v-else class="placeholder"><div class="ph">{{ $t('collab.placeholder') }}</div></div>
     </section>
   </div>
+
+  <ConfirmDialog
+    :open="closeConfirmOpen"
+    :title="$t('collab.remote.disable')"
+    :message="$t('collab.remote.close_warn')"
+    :confirm-text="$t('common.ok')"
+    :cancel-text="$t('common.cancel')"
+    type="warning"
+    @confirm="doRevokeRemote"
+    @cancel="closeConfirmOpen = false"
+  />
 </template>
 
 <style scoped>
@@ -248,6 +351,7 @@ onMounted(async () => {
 h4 { color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; }
 .sec h4:first-child { margin-top: 0; }
 .sec { margin-bottom: 6px; }
+.sec.boxed { border: 1px solid var(--bd); border-radius: 8px; padding: 10px 12px; margin: 8px 0 10px; background: var(--bg2); }
 .err { color: var(--err); font-size: 12px; margin: 4px 0; }
 .empty { color: var(--tx6); padding: 6px 2px; font-size: 12px; }
 .addrow { display: flex; gap: 6px; margin: 6px 0; }
@@ -264,8 +368,11 @@ button { background: var(--ac); color: var(--onac); border: none; border-radius:
 button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2); }
 button.gen { flex: 1; background: var(--err); color: #fff; font-weight: 700; padding: 8px 10px; }
 button.gen:hover { filter: brightness(1.08); }
-button.gen.red { background: #d32f2f; }
-.idinput { width: 130px; box-sizing: border-box; }
+button.gen.start { background: #2e7d32; }
+button.gen.stop { background: #d32f2f; }
+.idlbl { color: var(--tx2); font-size: 12px; white-space: nowrap; }
+.rowline .fname { color: var(--ac2); text-decoration: none; cursor: pointer; }
+.rowline .fname:hover { text-decoration: underline; }
 .tag { font-size: 10px; font-weight: 400; text-transform: none; color: var(--ok, #22c55e); margin-left: 4px; }
 button.del { color: var(--err); border-color: var(--bd); }
 input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 5px 8px; }
@@ -275,7 +382,7 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .dl { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; text-decoration: none; }
 .placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--tx6); }
 .gitem { text-align: left; background: none; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx2); padding: 5px 8px; font-size: 12px; cursor: pointer; font-family: inherit; margin-bottom: 4px; width: 100%; }
-.gitem.on { background: var(--ac); color: var(--onac); border-color: var(--ac); }
+.gitem.on { background: none; color: var(--tx1); border-color: var(--ac); }
 .gitem .sub { color: var(--tx6); margin-left: 6px; }
 .rtabs { margin-left: auto; display: flex; gap: 6px; }
 .rtabs button { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }

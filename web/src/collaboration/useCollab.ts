@@ -88,6 +88,20 @@ export function useCollab() {
       return r;
     },
     listDownloads: () => http<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] }; usage: unknown; group: unknown }>('/api/collab/downloads'),
+    getUpdate: () => http<{ update: { version: string; updatedAt: number; files: { name: string; kind: string; size: number; sha256: string }[] } }>('/api/collab/update'),
+    publishUpdate: (names: string[]) => post<{ code: string; update: { version: string; files: { name: string }[] } }>('/api/collab/update/publish', { names }),
+    checkUpdate: (masterId?: string) => post<{
+      code: string; masterId?: string; masterLabel?: string;
+      update: { version: string; files: { name: string; kind?: string; size?: number }[] } | null;
+      newer?: boolean;
+    }>('/api/collab/update/check', { masterId: masterId ?? null }),
+    listRemoteFiles: (masterId?: string) => http<{
+      code: string; masterId?: string; masterLabel?: string;
+      manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] };
+      update: { version: string; files: { name: string }[] } | null;
+    }>(`/api/collab/downloads/remote${masterId ? `?masterId=${encodeURIComponent(masterId)}` : ''}`),
+    pullDownloads: (names: string[], masterId?: string) => post<{ code: string; files?: string[] }>('/api/collab/downloads/pull', { names, masterId: masterId ?? null }),
+    applyUpdate: (masterId: string, action: 'accept' | 'reject') => post<{ code: string; action?: string; version?: string; files?: string[] }>('/api/collab/update/apply', { masterId, action }),
     listSkills: () => http<{ skills: { name: string }[] }>('/api/collab/skills'),
     async sendGroupFile(groupId: string, fileName: string, blob: Blob) {
       if (blob.size > 40 * 1024 * 1024) throw new Error(t('collab.file.too_large'));

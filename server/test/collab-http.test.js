@@ -207,3 +207,30 @@ test('downloads/dir：实时列出共享目录文件并支持下载（含子目�
     assert.equal(await file.text(), 'hi');
   } finally { A.server.close(); }
 });
+
+test('update 端点：publish → check → remote → pull → apply', async () => {
+  const A = await startNode('aliceU');
+  const B = await startNode('bobU');
+  try {
+    await joinGroup(A, B);
+    A.engine.writeDownload('group.json', Buffer.from('G'), 'group');
+    const pub = await post(`http://127.0.0.1:${A.port}/api/collab/update/publish`, { names: ['group.json'] });
+    assert.equal(pub.status, 200);
+    assert.equal(pub.body.update.files.length, 1);
+
+    const chk = await post(`http://127.0.0.1:${B.port}/api/collab/update/check`, { masterId: A.engine.pub.machineId });
+    assert.equal(chk.body.code, 'ok');
+    assert.equal(chk.body.newer, true);
+
+    const remote = await fetch(`http://127.0.0.1:${B.port}/api/collab/downloads/remote?masterId=${A.engine.pub.machineId}`).then((r) => r.json());
+    assert.equal(remote.code, 'ok');
+    assert.ok(remote.manifest.files.some((f) => f.name === 'group.json'));
+
+    const pull = await post(`http://127.0.0.1:${B.port}/api/collab/downloads/pull`, { names: ['group.json'], masterId: A.engine.pub.machineId });
+    assert.deepEqual(pull.body.files, ['group.json']);
+
+    const apply = await post(`http://127.0.0.1:${B.port}/api/collab/update/apply`, { masterId: A.engine.pub.machineId, action: 'accept' });
+    assert.equal(apply.body.action, 'accept');
+  } finally { A.server.close(); B.server.close(); }
+});
+

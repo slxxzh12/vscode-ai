@@ -103,6 +103,10 @@ function lanAddress() {
   }
   return null;
 }
+function inviteLink(inv) {
+  const addr = lanAddress() || HOST;
+  return { address: addr, link: `http://${addr}:${actualPort || PORT}/?access=${inv.token}` };
+}
 function pageShell(title, body) {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:system-ui,Segoe UI,sans-serif;background:#1e1e1e;color:#ddd;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}.box{max-width:520px;padding:28px 32px;background:#252526;border:1px solid #3c3c3c;border-radius:10px;text-align:center}.box h1{font-size:18px;margin:0 0 12px}.box p{color:#aaa;line-height:1.7;font-size:13px}.box input{width:100%;box-sizing:border-box;margin:14px 0 10px;padding:10px 12px;background:#1e1e1e;border:1px solid #3c3c3c;border-radius:6px;color:#eee;font-size:14px}.box button{width:100%;padding:10px;background:#0e639c;border:none;border-radius:6px;color:#fff;font-size:14px;cursor:pointer}.err{color:#f48771;margin-top:10px}</style></head><body><div class="box"><h1>${title}</h1>${body}</div></body></html>`;
 }
@@ -161,6 +165,7 @@ function buildWorkspace({ paths, port }) {
     uploadDir: paths.uploadDir,
     downloadDir: paths.downloadDir,
     downloadsDir: paths.downloadsDir,
+    syncDir: path.join(paths.dir, 'sync'),
     events: eventBus,
     logger: log,
     getWorkflows: () => loadDevflowConfig(configFile).workflows,
@@ -375,6 +380,23 @@ const server = http.createServer(async (req, res) => {
     }));
     return;
   }
+  if (url.pathname === '/api/remote/reveal' && req.method === 'GET') {
+    if (!isLocalReq(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'local-only' }));
+      return;
+    }
+    const inv = activeInvite();
+    if (!inv) {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ enabled: false }));
+      return;
+    }
+    const { address, link } = inviteLink(inv);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ enabled: true, password: inv.password, token: inv.token, link, address, expiresAt: inv.expiresAt }));
+    return;
+  }
   if (url.pathname === '/api/remote/invite' && req.method === 'POST') {
     let raw = '';
     req.on('data', (c) => { raw += c; });
@@ -394,8 +416,7 @@ const server = http.createServer(async (req, res) => {
         needRestart = true;
       }
       if (ws && ws.engine) ws.engine.ensureGroup();
-      const addr = lanAddress() || HOST;
-      const link = `http://${addr}:${actualPort || PORT}/?access=${token}`;
+      const { address: addr, link } = inviteLink(remoteInvite);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ enabled: true, token, password, days, expiresAt: remoteInvite.expiresAt, link, address: addr, needRestart }));
     });

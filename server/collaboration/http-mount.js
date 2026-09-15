@@ -39,6 +39,7 @@ function listDownloadFiles(root) {
     for (const d of entries) {
       const r = rel ? `${rel}/${d.name}` : d.name;
       if (r === 'manifest.json') continue;                 // 内部索引，不对外列出
+      if (r === 'update.json') continue;                   // 同步种子，不对外列出
       if (d.isDirectory()) { walk(r); continue; }
       if (!d.isFile()) continue;
       try { const st = fs.statSync(path.join(root, r)); out.push({ name: r, size: st.size, updatedAt: st.mtimeMs }); } catch { /* ignore */ }
@@ -174,6 +175,25 @@ export function createCollabMount({ engine, logger = console }) {
         });
         fs.createReadStream(abs).pipe(res);
         return;
+      }
+      // 同步种子（update.json）
+      if (seg[0] === 'update' && seg.length === 1 && m === 'GET') {
+        return ok(res, { update: engine.readUpdate() });
+      }
+      if (seg[0] === 'update' && seg.length === 2 && seg[1] === 'publish' && m === 'POST') {
+        return ok(res, engine.publishUpdate(body.names || []));
+      }
+      if (seg[0] === 'update' && seg.length === 2 && seg[1] === 'check' && m === 'POST') {
+        return ok(res, await engine.checkUpdate(body.masterId || undefined));
+      }
+      if (seg[0] === 'update' && seg.length === 2 && seg[1] === 'apply' && m === 'POST') {
+        return ok(res, await engine.applyUpdate({ masterId: body.masterId, action: body.action }));
+      }
+      if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'remote' && m === 'GET') {
+        return ok(res, await engine.listRemoteFiles(url.searchParams.get('masterId') || undefined));
+      }
+      if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'pull' && m === 'POST') {
+        return ok(res, await engine.pullDownloads(body.names || null, body.masterId || null));
       }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'distribute' && m === 'POST') { const r = await engine.distributeToGroup(seg[1], body.skillNames || []); return ok(res, r); }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'files' && m === 'POST') {

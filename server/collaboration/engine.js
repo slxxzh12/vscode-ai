@@ -11,6 +11,7 @@ import { installZip } from './skill-installer.js';
 import { installBundleZip } from './bundle-installer.js';
 import { buildZip } from './zip.js';
 import { createOpenCodeRunner } from './remote-runner.js';
+import * as seed from './sync-seed.js';
 import { t } from '../i18n.js';
 
 // 递归收集目录内文件（跳过隐藏/.git）
@@ -39,7 +40,7 @@ export function profileLabel(p) {
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
+  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.events = events;
@@ -48,6 +49,7 @@ export class CollabEngine {
     this.uploadDir = uploadDir;           // 发出的 zip 落盘目录
     this.downloadDir = downloadDir || inboxDir;   // 收到的 zip 落盘目录（下载页目录）
     this.downloadsDir = downloadsDir || path.join(os.tmpdir(), `devflow-downloads-${identity?.machineId || 'x'}`);
+    this.syncDir = syncDir || path.join(os.tmpdir(), `devflow-sync-${identity?.machineId || 'x'}`);
     this.runner = runner || createOpenCodeRunner();
     this.getWorkflows = typeof getWorkflows === 'function' ? getWorkflows : null;
     this.mergeWorkflows = typeof mergeWorkflows === 'function' ? mergeWorkflows : null;
@@ -256,6 +258,8 @@ export class CollabEngine {
       case CollabPeer.CHAT_PULL: return this._inChatPull(env);
       case CollabPeer.HEARTBEAT: return this._inHeartbeat(env);
       case CollabPeer.PULL_DOWNLOADS: return this._inPullDownloads(env);
+      case CollabPeer.UPDATE_CHECK: return this._inUpdateCheck(env);
+      case CollabPeer.LIST_DOWNLOADS: return this._inListDownloads(env);
       default: return { ok: false, error: 'unknown-type' };
     }
   }
@@ -389,11 +393,86 @@ export class CollabEngine {
     this._emit('heartbeat', {});
     return { ok: true };
   }
-  pullDownloads() {
-    const g = this.store.listGroups().find((x) => x.hubId !== this.pub.machineId && x.members.find((m) => m.machineId === this.pub.machineId)) || this.store.getGroup();
-    const hub = g && g.members.find((m) => m.machineId === g.hubId);
-    if (!hub || hub.machineId === this.pub.machineId) return Promise.resolve({ code: 'no-master' });
-    return this._post(hub.host, hub.port, this._sign(CollabPeer.PULL_DOWNLOADS, {})).then((res) => {
+  // ---- 同步种子（update.json）----
+  _hubFor(masterId) {
+    const groups = this.store.listGroups()
+      .filter((g) => g.hubId !== this.pub.machineId && g.members.find((m) => m.machineId === this.pub.machineId));
+    if (!groups.length) return null;
+    const g = masterId ? groups.find((x) => x.hubId === masterId) : groups[0];
+    if (!g) return null;
+    const hub = g.members.find((m) => m.machineId === g.hubId);
+    return hub ? { group: g, hub } : null;
+  }
+  publishUpdate(names) {
+    const g = this.store.ownedGroup(this.pub.machineId);
+    if (!g || g.hubId !== this.pub.machineId) return { code: 'not-master' };
+    const wanted = new Set([...new Set(Array.isArray(names) ? names : [])]);
+    const manifest = this.readManifest();
+    const files = (manifest.files || [])
+      .filter((f) => wanted.has(f.name))
+      .map((f) => ({ name: f.name, kind: f.kind, size: f.size, sha256: f.sha256 }));
+    const prev = this.readUpdate();
+    const update = { version: seed.nextVersion(prev.version, new Date()), updatedAt: Date.now(), files };
+    seed.writeUpdate(this.downloadsDir, update);
+    this._emit('synced', {});
+    return { code: 'ok', update };
+  }
+  readUpdate() { return seed.readUpdate(this.downloadsDir); }
+  async checkUpdate(masterId) {
+    const hit = this._hubFor(masterId);
+    if (!hit) return { code: 'no-master' };
+    const res = await this._post(hit.hub.host, hit.hub.port, this._sign(CollabPeer.UPDATE_CHECK, {}));
+    if (!res.ok) return { code: 'unreachable', error: res.error };
+    const update = (res.data && res.data.update) || null;
+    const local = seed.readRecord(this.syncDir, hit.hub.machineId);
+    const newer = !!(update && update.version && update.version > ((local && local.version) || ''));
+    return { code: 'ok', masterId: hit.hub.machineId, masterLabel: profileLabel(hit.hub), update, local, newer };
+  }
+  async listRemoteFiles(masterId) {
+    const hit = this._hubFor(masterId);
+    if (!hit) return { code: 'no-master' };
+    const res = await this._post(hit.hub.host, hit.hub.port, this._sign(CollabPeer.LIST_DOWNLOADS, {}));
+    if (!res.ok) return { code: 'unreachable', error: res.error };
+    return {
+      code: 'ok', masterId: hit.hub.machineId, masterLabel: profileLabel(hit.hub),
+      manifest: (res.data && res.data.manifest) || { files: [] },
+      update: (res.data && res.data.update) || null,
+    };
+  }
+  async applyUpdate({ masterId, action } = {}) {
+    const check = await this.checkUpdate(masterId);
+    if (check.code !== 'ok') return { code: check.code, error: check.error };
+    if (!check.update) return { code: 'no-update' };
+    const reject = action === 'reject';
+    let files = [];
+    if (!reject) {
+      const r = await this.pullDownloads((check.update.files || []).map((f) => f.name), check.masterId);
+      if (r.code !== 'ok') return { code: r.code, error: r.error };
+      files = r.files || [];
+    }
+    seed.writeRecord(this.syncDir, check.masterId, {
+      masterId: check.masterId, version: check.update.version,
+      action: reject ? 'reject' : 'accept', checkedAt: Date.now(), update: check.update,
+    });
+    this._emit('synced', {});
+    return { code: 'ok', action: reject ? 'reject' : 'accept', version: check.update.version, files };
+  }
+  _inUpdateCheck(env) {
+    const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();
+    if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
+    return { ok: true, data: { update: seed.readUpdate(this.downloadsDir) } };
+  }
+  _inListDownloads(env) {
+    const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();
+    if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
+    return { ok: true, data: { manifest: this.readManifest(), update: seed.readUpdate(this.downloadsDir) } };
+  }
+  pullDownloads(names = null, masterId = null) {
+    const hit = this._hubFor(masterId);
+    if (!hit) return Promise.resolve({ code: 'no-master' });
+    const { hub } = hit;
+    const payload = Array.isArray(names) && names.length ? { names } : {};
+    return this._post(hub.host, hub.port, this._sign(CollabPeer.PULL_DOWNLOADS, payload)).then((res) => {
       if (!res.ok) return { code: 'unreachable', error: res.error };
       const data = res.data || {};
       for (const f of data.files || []) {
@@ -415,8 +494,11 @@ export class CollabEngine {
     const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();
     if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
     const manifest = this.readManifest();
+    const wanted = Array.isArray(env.payload && env.payload.names) && env.payload.names.length
+      ? new Set(env.payload.names) : null;
     const files = [];
     for (const f of manifest.files) {
+      if (wanted && !wanted.has(f.name)) continue;
       const abs = path.join(this.downloadsDir, f.name);
       if (!fs.existsSync(abs)) continue;
       files.push({ name: f.name, b64: fs.readFileSync(abs).toString('base64') });
