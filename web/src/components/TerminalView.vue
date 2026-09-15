@@ -12,6 +12,7 @@ import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
 import { useVersion } from '../useVersion';
+import { canRestart, restartHintKey, type PortRuntimeState } from './portRestart';
 import WorkflowEditor from './WorkflowEditor.vue';
 
 const props = defineProps<{
@@ -138,10 +139,14 @@ const settingsTab = ref<'general' | 'about'>('general');
 const { version: appVersion } = useVersion();
 const serverPort = ref<number | null>(null);
 const portMsg = ref('');
+const portState = ref<PortRuntimeState>({});
+const restartMsg = ref('');
+const restarting = ref(false);
 async function loadSettings() {
   try {
     const r = await fetch('/api/settings').then((x) => x.json());
     serverPort.value = r?.settings?.port ?? r?.currentPort ?? null;
+    portState.value = { restartable: r?.restartable, portSource: r?.portSource };
   } catch { /* ignore */ }
 }
 async function savePort() {
@@ -153,6 +158,27 @@ async function savePort() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     portMsg.value = t('term.port_saved');
   } catch (e: any) { portMsg.value = t('term.save_failed', { msg: e?.message || e }); }
+}
+async function restartBackend() {
+  restartMsg.value = '';
+  restarting.value = true;
+  try {
+    const res = await fetch('/api/server/restart', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    restartMsg.value = t('term.port_restarting');
+    const deadline = Date.now() + 30000;
+    for (;;) {
+      if (Date.now() > deadline) throw new Error(t('term.port_restarting'));
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        const v = await fetch('/api/version', { cache: 'no-store' });
+        if (v.ok) { location.reload(); return; }
+      } catch { /* 服务重启中，继续等 */ }
+    }
+  } catch (e: any) {
+    restartMsg.value = t('term.port_restart_failed', { msg: e?.message || e });
+  } finally { restarting.value = false; }
 }
 function onOpenSettings() { settingsOpen.value = true; loadSettings(); }
 
@@ -659,8 +685,10 @@ onBeforeUnmount(() => {
           </div>
           <div class="setsec">
             <div class="settitle">{{ $t('term.service') }}</div>
-            <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="22222" /><button class="ghostcfg" @click="savePort">{{ $t('common.save') }}</button></div>
+            <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="22222" /><button class="ghostcfg" @click="savePort">{{ $t('common.save') }}</button><button class="ghostcfg" :disabled="!canRestart(portState) || restarting" @click="restartBackend">{{ $t('term.port_restart') }}</button></div>
+            <div v-if="!canRestart(portState)" class="cfghint">{{ $t(restartHintKey(portState)) }}</div>
             <div v-if="portMsg" class="cfghint">{{ portMsg }}</div>
+            <div v-if="restartMsg" class="cfghint">{{ restartMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>
           </template>
