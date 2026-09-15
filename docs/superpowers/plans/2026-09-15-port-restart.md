@@ -365,7 +365,8 @@ function writeLauncher({ desired, running }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-plan-'));
   fs.mkdirSync(path.join(root, 'script'), { recursive: true });
   fs.mkdirSync(path.join(root, 'data'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'script', 'launch.ps1'), makeLaunchPs1({ port: 22222 }), 'utf8');
+  // 必须带 BOM：PowerShell 5.1 对无 BOM 的 UTF-8 .ps1 会按 ANSI 解码，含中文即语法错误
+  fs.writeFileSync(path.join(root, 'script', 'launch.ps1'), '\uFEFF' + makeLaunchPs1({ port: 22222 }), 'utf8');
   if (desired != null) fs.writeFileSync(path.join(root, 'data', 'port.txt'), String(desired), 'utf8');
   if (running != null) fs.writeFileSync(path.join(root, 'data', 'runtime-port.txt'), String(running), 'utf8');
   return path.join(root, 'script', 'launch.ps1');
