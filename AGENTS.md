@@ -19,8 +19,8 @@
 
 - **所有常驻进程必须异步（非阻塞）启动**，严禁前台阻塞式命令。
 - 统一做法：PowerShell `Start-Process` 后台运行 + `-RedirectStandardOutput`/`-RedirectStandardError` 指向日志文件；启动命令立即返回。
-- 开发：两个终端分别 `npm.cmd run dev:server`（= `set DEVFLOW_PORT=33333&& node --watch server/index.js`，dev 固定端口 **33333**，与 release 的 22222 区分；改后端自动重启）与 `npm.cmd run dev:web`（Vite :5173，代理 `/api`、`/ws` 到 33333）。访问 http://localhost:5173。
-- 生产/绿色包：`node server/index.js`（静态托管 `web/dist`，访问 http://127.0.0.1:22222）。
+- 开发：两个终端分别 `npm.cmd run dev:server`（= `set DEVFLOW_PORT=33333&& node --watch server/index.js`，dev 固定端口 **33333**，与 release 的 22222 区分；改后端自动重启）与 `npm.cmd run dev:web`（Vite :5173，代理 `/api`、`/ws` 到 33333）。访问 http://localhost:5173。dev 与绿色包各用各的数据目录（`ports/33333` 与 `ports/22222`），互不干扰。
+- 生产/绿色包：`node server/index.js`（静态托管 `web/dist`，端口取 `data/port.txt`，默认 22222，访问 http://127.0.0.1:22222）。
 - 改 `projects.json` / `workflows.json` 后需重启后端才生效（dev:server 的 `--watch` 不监听 json）。
 
 ## 已验证教训（勿再犯）
@@ -58,14 +58,17 @@
 ## 目录速览
 
 - `shared/` — WS 协议常量/类型（唯一事实源）；`server/` — Node ESM 后端（ws + node-pty，测试在 `server/test/`，`node --test`）；`web/` — Vue3+Vite+TS+xterm（vitest + vue-tsc）。
+- 数据按端口隔离在 `%USERPROFILE%\.local\share\void\ports\<端口>\`；宿主端口文件在仓库根/绿色包根的 `data/port.txt`。
 - 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`；代码行统计：`npm.cmd run count:code`（去注释/空行/纯括号/无英文行，输出每文件实际代码行）。
 
-## 配置（统一 XML）
+## 配置（端口 + XML）
 
-- 活动配置文件：`<dataHome>/downloads/devflow.xml`（Windows：`%USERPROFILE%\.local\share\devflow\downloads\devflow.xml`）；首次启动从仓库模板 `config/devflow.xml` 复制生成，**已存在则不覆盖**，之后为整份配置（`<server>` + `<agents>` + `<workflows>`）的唯一权威源。
-- 端口/语言可在 UI 设置面板修改，服务端会**就地改写**活动文件的 `<server>` 属性；Agent 列表与工作流提示语直接编辑活动文件。
-- 改活动配置后需**重启后端**（dev:server 的 `--watch` 不监听 xml）；仓库 `config/devflow.xml` 仅作首次 seed 模板，seed 后修改它不生效（删除 `<dataHome>/downloads/devflow.xml` 可重新生成）。
-- 环境变量 `DEVFLOW_PORT` 优先于 XML 的 `port`。
+- **监听端口**存 `<应用目录>/data/port.txt`（单行纯数字；应用目录 = 仓库根 / 绿色包根，即 `server/` 的上一级，与启动 cwd 无关）。优先级：`DEVFLOW_PORT` 环境变量 > `data/port.txt` > 默认 `22222`。设置面板保存端口只写该文件，**需重启后端**才生效；`devflow.xml` 不再有 `port` 属性。
+- **数据目录按端口隔离**：`<dataHome>/ports/<端口>/`（Windows：`%USERPROFILE%\.local\share\void\ports\<端口>\`），内含 `projects.json`、`workflows.json`、`scheduler/`、`collab/`、`upload/`、`download/`、`downloads/devflow.xml` + `relay-plugins/`、`message-history.jsonc`、`skills-opencode/`、`usage.db`、`llm.vault.json`。**一个端口一份档案，端口之间零共享；换端口 = 换一份数据。**
+- 活动配置文件：`<dataHome>/ports/<端口>/downloads/devflow.xml`（只含 `<server language host>` + `<agents>` + `<workflows>`）；首次启动从仓库模板 `config/devflow.xml` 复制生成，**已存在则不覆盖**。
+- 语言可在 UI 设置面板修改，服务端就改写该文件的 `<server language>`；Agent 列表与工作流提示语直接编辑该文件。改后需**重启后端**（dev:server 的 `--watch` 不监听 xml）；仓库 `config/devflow.xml` 仅作首次 seed 模板。
+- 运行时端口记录写 `<应用目录>/data/runtime-port.txt`（供启动器打开浏览器用）。
+- **不做自动迁移**：旧 `%USERPROFILE%\.local\share\devflow` 的数据不会被读取；需要时手动把 `...\devflow\ports\22222\` 内容复制到 `...\void\ports\<新端口>\`。
 - `config/server.json`、`config/workflow.xml` 已废弃。
 
 ## 国际化（i18n，强制）
@@ -84,6 +87,7 @@
   - IDE/编辑器：`.idea/`、`.vscode/`、`*.iml`、`*.swp`、`*.swo`；
   - OS：`Thumbs.db`、`desktop.ini`、`.DS_Store`；
   - 构建产物/依赖：`node_modules/`、`dist/`、`dist-portable/`、`env/`、`*.log`；
+  - 宿主端口文件与运行时记录：`data/`（含 `data/port.txt`、`data/runtime-port.txt`）；
   - 运行时数据/密钥：`server/collaboration/*.json`（含 Ed25519 私钥）、`server/collaboration/inbox/`、`.env`、`.env.*`；
   - superpowers 本地状态：`.superpowers/`。
 - 若不慎已入库：`git rm -r --cached <路径>` 移出版本库（保留本地文件），补进 `.gitignore` 后再提交。
