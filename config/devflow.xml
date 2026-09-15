@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   DevFlow 统一配置
-  - server：监听端口与语言（设置面板可改，服务端就地改写本标签属性）
+  - server：语言与监听地址（设置面板可改语言，服务端就地改写本标签属性）
+  - 监听端口不在这里：存 <应用目录>/data/port.txt（DEVFLOW_PORT 环境变量优先）
   - agents：默认 Agent 列表（default 为默认选中的 id）
   - workflows：工作流/阶段/提示语（点击填入输入框）
 -->
 <devflow>
-  <server port="22222" language="zh-CN" host="0.0.0.0" />
+  <server language="zh-CN" host="0.0.0.0" />
 
   <agents default="opencode">
     <agent id="opencode" name="OpenCode" cmd="opencode" />
