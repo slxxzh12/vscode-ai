@@ -12,7 +12,7 @@ import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
 import { useVersion } from '../useVersion';
-import { canRestart, restartHintKey, type PortRuntimeState } from './portRestart';
+import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from './portRestart';
 import WorkflowEditor from './WorkflowEditor.vue';
 
 const props = defineProps<{
@@ -138,6 +138,7 @@ const editorOpen = ref(false);
 const settingsTab = ref<'general' | 'about'>('general');
 const { version: appVersion } = useVersion();
 const serverPort = ref<number | null>(null);
+const loadedPort = ref<number | null>(null);
 const portMsg = ref('');
 const portState = ref<PortRuntimeState>({});
 const restartMsg = ref('');
@@ -146,18 +147,29 @@ async function loadSettings() {
   try {
     const r = await fetch('/api/settings').then((x) => x.json());
     serverPort.value = r?.settings?.port ?? r?.currentPort ?? null;
+    loadedPort.value = serverPort.value;
     portState.value = { restartable: r?.restartable, portSource: r?.portSource };
   } catch { /* ignore */ }
 }
-async function savePort() {
+function persistPort(p: number) {
+  return fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: p }) })
+    .then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); });
+}
+// 右下角「确定」：保存当前设置并立即生效（端口变了就重启后端并重载页面）
+async function confirmSettings() {
   portMsg.value = '';
-  const p = Number(serverPort.value);
-  if (!p || p < 1 || p > 65535) { portMsg.value = t('term.port_invalid'); return; }
+  const plan = planConfirm({ port: Number(serverPort.value), loadedPort: loadedPort.value, state: portState.value });
+  if (plan.action === 'blocked') { portMsg.value = t(plan.hintKey); return; }
+  if (plan.action === 'close') { settingsOpen.value = false; return; }
   try {
-    const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ port: p }) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    portMsg.value = t('term.port_saved');
-  } catch (e: any) { portMsg.value = t('term.save_failed', { msg: e?.message || e }); }
+    await persistPort(plan.port);
+  } catch (e: any) {
+    portMsg.value = t('term.save_failed', { msg: e?.message || e });
+    return;
+  }
+  settingsOpen.value = false;
+  await restartBackend();
+  if (restartMsg.value) { settingsOpen.value = true; portMsg.value = restartMsg.value; }
 }
 async function restartBackend() {
   restartMsg.value = '';
@@ -685,10 +697,10 @@ onBeforeUnmount(() => {
           </div>
           <div class="setsec">
             <div class="settitle">{{ $t('term.service') }}</div>
-            <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="22222" /><button class="ghostcfg" @click="savePort">{{ $t('common.save') }}</button><button class="ghostcfg" :disabled="!canRestart(portState) || restarting" @click="restartBackend">{{ $t('term.port_restart') }}</button></div>
+            <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="22222" @keyup.enter="confirmSettings" /><button class="ghostcfg" :disabled="!canRestart(portState) || restarting" @click="restartBackend">{{ $t('term.port_restart') }}</button></div>
             <div v-if="!canRestart(portState)" class="cfghint">{{ $t(restartHintKey(portState)) }}</div>
-            <div v-if="portMsg" class="cfghint">{{ portMsg }}</div>
-            <div v-if="restartMsg" class="cfghint">{{ restartMsg }}</div>
+            <div v-if="portMsg" class="cfghint warn">{{ portMsg }}</div>
+            <div v-if="restartMsg" class="cfghint warn">{{ restartMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>
           </template>
@@ -728,7 +740,7 @@ onBeforeUnmount(() => {
         </div>
         <footer class="setf">
           <button class="ghostcfg" @click="resetCfg">{{ $t('term.restore_default') }}</button>
-          <button class="ago" @click="settingsOpen = false">{{ $t('term.done') }}</button>
+          <button class="ago" @click="confirmSettings" :disabled="restarting">{{ restarting ? $t('term.port_restarting') : $t('term.done') }}</button>
         </footer>
       </div>
     </div>
