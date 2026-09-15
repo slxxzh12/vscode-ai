@@ -6,12 +6,32 @@ export function resolveCwd(task, projectRoot, fallback) {
   return task.cwd || projectRoot || fallback;
 }
 
-export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null }) {
+// 去掉开头的 YAML frontmatter，避免 prompt 以 `---` 开头被当成命令行参数
+export function stripFrontmatter(s) {
+  return String(s ?? '').replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+}
+
+export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null } = {}) {
+  const ocEnv = opencodeDataDir ? { XDG_DATA_HOME: opencodeDataDir } : undefined;
   if (task.type === 'shell') {
     if (process.platform === 'win32') return { bin: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-Command', task.command], cwd };
     return { bin: '/bin/sh', args: ['-c', task.command], cwd };
   }
-  if (task.type === 'ai') return { bin: aiBin, args: ['run', aiPrompt ?? ''], cwd };
+  if (task.type === 'ai') {
+    if (task.ai && task.ai.source === 'command' && task.ai.commandName) {
+      const name = String(task.ai.commandName).replace(/\.md$/i, '');
+      return { bin: aiBin, args: ['run', '--command', name], cwd, env: ocEnv };
+    }
+    if (task.ai && task.ai.source === 'file' && task.filePath) {
+      // 注意：--file 是数组型，会把其后的位置参数也当成文件；消息必须放在 --file 之前
+      const msg = String(task.ai.prompt || '').trim();
+      const args = ['run'];
+      if (msg) args.push(msg);
+      args.push('--file', task.filePath);
+      return { bin: aiBin, args, cwd, env: ocEnv };
+    }
+    return { bin: aiBin, args: ['run', stripFrontmatter(aiPrompt ?? '')], cwd, env: ocEnv };
+  }
   if (task.type === 'script') {
     const abs = path.isAbsolute(task.script.path) ? task.script.path : path.join(cwd, task.script.path);
     const ext = path.extname(abs).toLowerCase();
@@ -41,7 +61,7 @@ export function createRunner({ spawnFn = spawn, killChild = defaultKill } = {}) 
       const stream = fs.createWriteStream(logPath, { flags: 'a' });
       let child;
       try {
-        child = spawnFn(spec.bin, spec.args, { cwd: spec.cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+        child = spawnFn(spec.bin, spec.args, { cwd: spec.cwd, env: spec.env ? { ...process.env, ...spec.env } : undefined, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       } catch (e) {
         stream.end();
         const result = { exitCode: -1, timedOut: false, spawnError: true, error: String(e && e.message || e), durationMs: 0 };

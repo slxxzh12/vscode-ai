@@ -237,7 +237,7 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       }
       if (url.pathname === '/api/git/changes' && req.method === 'POST') {
         const body = await readJsonBody(req);
-        sendJson(res, 200, await collectGitChanges({ repo: body.repo, since: body.since, until: body.until }));
+        sendJson(res, 200, await collectGitChanges({ repo: body.repo, since: body.since, until: body.until, filter: body.filter }));
         return;
       }
     } catch (err) {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useScheduler, type TaskView } from './useScheduler';
-import { scheduleSummary, formatTime, runStatusLabel } from './format';
+import { scheduleSummary, formatTime, runStatusLabel, recentRunsOf } from './format';
 import type { SchedulerRun } from '@devflow/shared/scheduler';
 import { t } from '../i18n';
 
@@ -9,9 +9,9 @@ const props = defineProps<{ terminal: any }>();
 const sched = useScheduler(props.terminal);
 const { state } = sched;
 
-const projects = ref<{ id: string; name: string; root: string }[]>([]);
 const showEditor = ref(false);
 const editingId = ref<string | null>(null);
+const pickedPath = ref('');
 const form = ref<any>(emptyForm());
 const runs = ref<SchedulerRun[]>([]);
 const runsTaskId = ref<string | null>(null);
@@ -21,20 +21,22 @@ let logTimer: ReturnType<typeof setInterval> | null = null;
 
 function emptyForm() {
   return {
-    name: '', enabled: true, projectId: '', cwd: '', type: 'shell', command: '',
+    name: '', enabled: true, cwd: '', filePath: '', type: 'shell', command: '',
     ai: { source: 'command', commandName: '', prompt: '' }, script: { path: '' },
     schedule: { mode: 'interval', interval: { every: 30, unit: 'minute' }, daily: { at: '09:30', weekdays: [] } },
   };
 }
-async function loadProjects() {
-  try { const d = await fetch('/api/projects').then((r) => r.json()); projects.value = d.projects || []; }
-  catch { projects.value = []; }
+function openCreate() {
+  editingId.value = null;
+  pickedPath.value = '';
+  form.value = emptyForm();
+  showEditor.value = true;
 }
-function openCreate() { editingId.value = null; form.value = emptyForm(); showEditor.value = true; }
 function openEdit(task: TaskView) {
   editingId.value = task.id;
+  pickedPath.value = task.filePath || (task.type === 'script' ? (task.script?.path || '') : '');
   form.value = JSON.parse(JSON.stringify({
-    name: task.name, enabled: task.enabled, projectId: task.projectId || '', cwd: task.cwd || '', type: task.type,
+    name: task.name, enabled: task.enabled, cwd: task.cwd || '', filePath: task.filePath || '', type: task.type,
     command: task.command || '', ai: task.ai || { source: 'command', commandName: '', prompt: '' },
     script: task.script || { path: '' }, schedule: task.schedule,
   }));
@@ -48,11 +50,17 @@ async function pickCommandFile() {
     const r = await sched.pickFile();
     if (r.error) { state.error = r.error === 'unsupported' ? t('sched.pick_unsupported') : t('sched.pick_failed', { msg: r.message || r.error }); return; }
     if (r.cancelled || !r.path) return;
+    pickedPath.value = r.path;
+    form.value.filePath = r.path;
     const ext = extOf(r.path);
     form.value.cwd = dirOf(r.path);
     if (ext === '.md') {
+      const base = r.path.replace(/\\/g, '/').split('/').pop() || '';
+      const isCommand = state.aiCommands.some((c) => c.name === base);
       form.value.type = 'ai';
-      form.value.ai = { source: 'prompt', commandName: '', prompt: r.content || '' };
+      form.value.ai = isCommand
+        ? { source: 'command', commandName: base, prompt: '' }
+        : { source: 'file', commandName: '', prompt: t('sched.ai.file_prompt') };
     } else if (['.py', '.bat', '.cmd', '.ps1', '.sh'].includes(ext)) {
       form.value.type = 'script';
       form.value.script = { path: r.path };
@@ -63,8 +71,8 @@ async function pickCommandFile() {
 }
 async function save() {
   const body = JSON.parse(JSON.stringify(form.value));
-  if (!body.projectId) body.projectId = null;
   if (!body.cwd) body.cwd = null;
+  if (!body.filePath) body.filePath = null;
   if (body.type !== 'shell') delete body.command;
   if (body.type !== 'ai') delete body.ai;
   if (body.type !== 'script') delete body.script;
@@ -112,8 +120,9 @@ function toggleWeekday(v: number) {
   const i = arr.indexOf(v);
   if (i >= 0) arr.splice(i, 1); else arr.push(v);
 }
-// 近 5 次执行结果（左→右 时间递增）
-function last5(task: TaskView) { return (task.recentRuns || []).slice(-5); }
+// 近 N 次执行结果（左→右 时间递增）
+const RECENT_N = 10;
+function lastRuns(task: TaskView) { return recentRunsOf(task.recentRuns, RECENT_N); }
 function barClass(status: string): string {
   if (status === 'success') return 'success';
   if (status === 'failed' || status === 'timeout') return 'failed';
@@ -121,7 +130,7 @@ function barClass(status: string): string {
   return 'killed';
 }
 
-onMounted(async () => { await loadProjects(); await sched.refresh(); sched.loadAiCommands(); });
+onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); });
 onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 </script>
 
@@ -140,7 +149,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
         <div v-if="state.tasks.length" class="listhead">
           <span class="lh-main">{{ $t('sched.col.name') }}</span>
           <span class="lh-status">{{ $t('sched.col.status') }}</span>
-          <span class="lh-hist">{{ $t('sched.recent5') }}</span>
+          <span class="lh-hist">{{ $t('sched.recent_n', { n: RECENT_N }) }}</span>
           <span class="lh-acts">{{ $t('sched.col.actions') }}</span>
         </div>
         <div v-if="!state.tasks.length" class="empty">{{ $t('sched.empty') }}</div>
@@ -153,6 +162,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             </div>
             <div class="meta">
               <span class="nextline">⏱ {{ $t('sched.next', { time: formatTime(t.nextRunAt) }) }}</span>
+              <span v-if="t.filePath" class="dim path" :title="t.filePath">📄 {{ t.filePath }}</span>
             </div>
           </div>
           <div class="statuscol">
@@ -161,7 +171,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <span class="st" :class="t.enabled ? 'on' : 'paused'">{{ t.enabled ? $t('sched.status.running') : $t('sched.status.paused') }}</span>
           </div>
           <div class="histcol" :title="$t('sched.recent_runs')">
-            <span v-for="r in last5(t)" :key="r.id" class="vbar" :class="barClass(r.status)" :title="`${runStatusLabel(r.status)} · ${formatTime(r.startedAt)}`" />
+            <span v-for="r in lastRuns(t)" :key="r.id" class="vbar" :class="barClass(r.status)" :title="`${runStatusLabel(r.status)} · ${formatTime(r.startedAt)}`" />
           </div>
           <div class="acts">
             <button v-if="t.enabled" @click="toggle(t)">{{ $t('sched.pause') }}</button>
@@ -176,17 +186,14 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
       </div>
     </div>
 
-    <div v-if="showEditor" class="overlay" @click.self="showEditor = false">
+    <div v-if="showEditor" class="overlay">
       <div class="modal">
         <h3>{{ editingId ? $t('sched.edit_task') : $t('sched.new_task') }}</h3>
         <label>{{ $t('sched.field.name') }} <input v-model="form.name" /></label>
-        <label>{{ $t('sched.field.project') }}
-          <select v-model="form.projectId">
-            <option value="">{{ $t('sched.field.no_project') }}</option>
-            <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-          </select>
-        </label>
         <button class="pickfile" @click="pickCommandFile">{{ $t('sched.pick_file') }}</button>
+        <label v-if="pickedPath" class="inline">{{ $t('sched.field.file') }}
+          <input class="fileinp" :value="pickedPath" readonly :title="pickedPath" />
+        </label>
         <label>{{ $t('sched.field.cwd') }} <input v-model="form.cwd" :placeholder="$t('sched.field.cwd_placeholder')" /></label>
         <label>{{ $t('sched.field.type') }}
           <select v-model="form.type">
@@ -203,6 +210,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <select v-model="form.ai.source">
               <option value="command">{{ $t('sched.source.command') }}</option>
               <option value="prompt">{{ $t('sched.source.prompt') }}</option>
+              <option value="file">{{ $t('sched.source.file') }}</option>
             </select>
           </label>
           <label v-if="form.ai.source === 'command'">Command
@@ -211,7 +219,8 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
               <option v-for="c in state.aiCommands" :key="c.name" :value="c.name">{{ c.name }}</option>
             </select>
           </label>
-          <label v-else>Prompt <textarea v-model="form.ai.prompt" rows="4" /></label>
+          <label v-else-if="form.ai.source === 'prompt'">Prompt <textarea v-model="form.ai.prompt" rows="4" /></label>
+          <div v-else class="dim">{{ $t('sched.source.file_hint') }}</div>
         </template>
         <template v-else>
           <label>{{ $t('sched.field.script_path') }} <input v-model="form.script.path" /></label>
@@ -224,8 +233,9 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
           </select>
         </label>
         <template v-if="form.schedule.mode === 'interval'">
-          <label>{{ $t('sched.field.every') }} <input type="number" min="1" v-model.number="form.schedule.interval.every" style="width:80px" />
-            <select v-model="form.schedule.interval.unit">
+          <label class="inline">{{ $t('sched.field.every') }}
+            <input type="number" min="1" v-model.number="form.schedule.interval.every" class="num" />
+            <select v-model="form.schedule.interval.unit" class="unit">
               <option value="second">{{ $t('sched.unit.second') }}</option>
               <option value="minute">{{ $t('sched.unit.minute') }}</option>
               <option value="hour">{{ $t('sched.unit.hour') }}</option>
@@ -234,7 +244,9 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
           </label>
         </template>
         <template v-else>
-          <label>{{ $t('sched.field.at') }} <input type="time" v-model="form.schedule.daily.at" /></label>
+          <label class="inline">{{ $t('sched.field.at') }}
+            <input type="time" v-model="form.schedule.daily.at" class="time" />
+          </label>
           <div class="wd">
             {{ $t('sched.field.weekdays') }}
             <label v-for="w in WEEKDAYS" :key="w.v" class="wditem">
@@ -287,11 +299,12 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .badge.script { background: var(--warn, #b58900); color: #000; }
 .meta { color: var(--tx4); font-size: 12px; margin-top: 2px; display: flex; gap: 12px; align-items: center; }
 .nextline { color: var(--tx3); font-size: 12px; }
+.path { font-family: ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
 .dim { color: var(--tx5); font-size: 12px; }
 .listhead { display: flex; align-items: center; gap: 8px; padding: 2px 10px 6px; color: var(--tx5); font-size: 11px; }
 .listhead .lh-main { flex: 1; }
 .listhead .lh-status { width: 72px; text-align: center; }
-.listhead .lh-hist { width: 96px; text-align: center; }
+.listhead .lh-hist { width: 148px; text-align: center; }
 .listhead .lh-acts { width: 370px; text-align: right; }
 .statuscol { display: flex; align-items: center; justify-content: center; gap: 4px; width: 72px; flex: none; }
 .statuscol .st { font-size: 11px; color: var(--tx5); }
@@ -300,8 +313,8 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .st-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .st-dot.on { background: #3fb950; }
 .st-dot.paused { background: #d29922; }
-.histcol { display: flex; gap: 3px; align-items: center; justify-content: center; width: 96px; flex: none; }
-.vbar { width: 4px; height: 18px; border-radius: 2px; background: var(--tx5); }
+.histcol { display: flex; gap: 4px; align-items: center; justify-content: center; width: 148px; flex: none; }
+.vbar { width: 9px; height: 24px; border-radius: 3px; background: var(--tx5); }
 .vbar.success { background: #3fb950; }
 .vbar.failed { background: #e5534b; }
 .vbar.running { background: var(--ac2); }
@@ -322,10 +335,16 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .modal.wide { width: 720px; }
 .modal h3 { margin: 0 0 6px; color: var(--tx1); }
 .modal label { display: flex; flex-direction: column; gap: 3px; color: var(--tx3); font-size: 12px; }
+.modal label.inline { flex-direction: row; align-items: center; gap: 6px; }
+.modal input.num { width: 64px; flex: none; }
+.modal select.unit { width: auto; flex: none; padding: 4px 6px; }
+.modal input.time { width: auto; flex: none; }
+.modal input.fileinp { flex: 1; min-width: 0; }
 .modal input, .modal select, .modal textarea { background: var(--bg4, var(--bg5)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 6px; font-family: inherit; }
-.wd { color: var(--tx3); font-size: 12px; }
-.wditem { display: inline-flex; flex-direction: row; align-items: center; gap: 2px; margin-right: 6px; }
+.wd { color: var(--tx3); font-size: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.wditem { display: inline-flex; flex-direction: row; align-items: center; gap: 2px; }
 .pickfile { align-self: flex-start; background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; }
+.picked { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modalacts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .histwrap { display: flex; gap: 8px; min-height: 260px; }
 .histlist { width: 220px; overflow: auto; border-right: 1px solid var(--bd); }

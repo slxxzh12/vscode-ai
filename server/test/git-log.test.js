@@ -4,9 +4,35 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { collectGitChanges } from '../git-log.js';
-import { tmpDir, makeRepo, seedRepo } from './helpers/git-fixture.js';
+import { tmpDir, makeRepo, seedRepo, commit } from './helpers/git-fixture.js';
 
 const RANGE = { since: '2026-09-01', until: '2026-09-10' };
+
+test('collectGitChanges filter 仅代码/排除 docs、test、测试文件', async () => {
+  const repo = makeRepo();
+  fs.mkdirSync(path.join(repo, 'src'));
+  fs.mkdirSync(path.join(repo, 'docs'));
+  fs.mkdirSync(path.join(repo, 'test'));
+  fs.writeFileSync(path.join(repo, 'src', 'app.js'), 'x');
+  fs.writeFileSync(path.join(repo, 'src', 'util.py'), 'x');
+  fs.writeFileSync(path.join(repo, 'README.md'), 'x');
+  fs.writeFileSync(path.join(repo, 'docs', 'guide.md'), 'x');
+  fs.writeFileSync(path.join(repo, 'test', 'app.test.js'), 'x');
+  commit(repo, 'one', '2026-09-02T10:00:00');
+
+  const all = await collectGitChanges({ repo, ...RANGE });
+  assert.equal(all.stats.files, 5);
+
+  const code = await collectGitChanges({ repo, ...RANGE, filter: { codeOnly: true } });
+  assert.deepEqual(code.summary.map((s) => s.path).sort(), ['src/app.js', 'src/util.py', 'test/app.test.js']);
+
+  const clean = await collectGitChanges({
+    repo, ...RANGE,
+    filter: { codeOnly: true, excludeDirs: ['docs', 'test'], excludeTestFiles: true },
+  });
+  assert.deepEqual(clean.summary.map((s) => s.path).sort(), ['src/app.js', 'src/util.py']);
+  assert.equal(clean.stats.commits, 1);
+});
 
 test('collectGitChanges 汇总新增/修改/删除/重命名', async () => {
   const repo = seedRepo();

@@ -11,8 +11,9 @@ export interface SchedulerTask {
   projectId: string | null;
   cwd: string | null;
   type: 'shell' | 'ai' | 'script';
+  filePath?: string | null;
   command?: string;
-  ai?: { source: 'command' | 'prompt'; commandName?: string; prompt?: string };
+  ai?: { source: 'command' | 'prompt' | 'file'; commandName?: string; prompt?: string };
   script?: { path: string };
   schedule: Schedule;
   createdAt: number;

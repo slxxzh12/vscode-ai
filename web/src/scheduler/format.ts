@@ -28,3 +28,8 @@ const STATUS_KEY: Record<string, string> = { running: 'sched.status.running', su
 export function runStatusLabel(s: string): string {
   return STATUS_KEY[s] ? t(STATUS_KEY[s]) : s;
 }
+
+// runs 为倒序（最新在前）；取最新 n 条并按时间递增返回，便于左→右展示
+export function recentRunsOf<T extends { startedAt: number }>(runs: T[] | null | undefined, n = 5): T[] {
+  return (runs || []).slice(0, Math.max(0, n)).reverse();
+}

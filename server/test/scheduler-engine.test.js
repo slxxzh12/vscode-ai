@@ -98,3 +98,15 @@ test('manualRun 立即执行；未知任务返回 not-found', () => {
   assert.equal(r.run.trigger, 'manual');
   assert.equal(engine.manualRun('nope').error, 'not-found');
 });
+
+test('command 来源任务：prompt loader 抛错不阻断运行', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const runner = fakeRunner();
+  const engine = createEngine({ store, runner, now: () => 1000 });
+  engine.setAiPromptLoader(() => { throw new Error('ENOENT'); });
+  const { task: t } = store.createTask(task({ name: 'cmd', type: 'ai', ai: { source: 'command', commandName: 'code-review' } }));
+  const r = engine.manualRun(t.id);
+  assert.ok(r.run && r.run.id, '应正常开始一次运行');
+  assert.equal(runner.calls.length, 1);
+  assert.deepEqual(runner.calls[0].spec.args, ['run', '--command', 'code-review']);
+});

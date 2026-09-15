@@ -11,6 +11,7 @@
     "./scheduler": { "types": "./scheduler.d.ts", "default": "./scheduler.js" },
     "./i18n": { "types": "./i18n/index.d.ts", "default": "./i18n/index.js" },
     "./workflow-xml": { "types": "./workflow-xml.d.ts", "default": "./workflow-xml.js" },
+    "./git-filter": { "types": "./git-filter.d.ts", "default": "./git-filter.js" },
     "./version.cjs": { "default": "./version.cjs" }
   }
 }

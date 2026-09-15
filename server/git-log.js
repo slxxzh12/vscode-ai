@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import { makeKeepPath } from '@devflow/shared/git-filter';
 
 const STATUS_MAP = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', C: 'modified', T: 'modified' };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -186,12 +187,13 @@ async function cloneToTemp(repo) {
   return { target, cleanup: () => fs.rmSync(parent, { recursive: true, force: true }) };
 }
 
-export async function collectGitChanges({ repo, since, until } = {}) {
+export async function collectGitChanges({ repo, since, until, filter } = {}) {
   if (typeof repo !== 'string' || !repo.trim()) throw err('bad-repo', 'repo required');
   const source = repo.trim();
   if (source.startsWith('-')) throw err('bad-repo', 'invalid repo');
   if (!DATE_RE.test(since || '') || !DATE_RE.test(until || '')) throw err('bad-date', 'date must be YYYY-MM-DD');
   if (since > until) throw err('bad-range', 'since is after until');
+  const flt = filter && typeof filter === 'object' ? filter : null;
 
   const remote = isGitUrl(source);
   let target = source;
@@ -242,13 +244,18 @@ export async function collectGitChanges({ repo, since, until } = {}) {
     ]);
 
     const parsed = parseLog(out);
-    const commits = parsed.slice(0, MAX_COMMITS).map((c) => ({
+    const allCommits = parsed.map((c) => ({
       hash: c.hash, short: c.short, author: c.author, email: c.email, date: c.date, subject: c.subject, files: c.files,
     }));
-    mergeNumstat(commits, parseNumstat(numOut));
+    mergeNumstat(allCommits, parseNumstat(numOut));
+    const keep = flt ? makeKeepPath(flt) : null;
+    const kept = keep
+      ? allCommits.filter((c) => { c.files = c.files.filter((fp) => keep(fp.path)); return c.files.length > 0; })
+      : allCommits;
+    const commits = kept.slice(0, MAX_COMMITS);
     const summaryAll = summarize(commits);
     const summary = summaryAll.slice(0, MAX_FILES);
-    const truncated = parsed.length > MAX_COMMITS || summaryAll.length > MAX_FILES;
+    const truncated = kept.length > MAX_COMMITS || summaryAll.length > MAX_FILES;
 
     const stats = { commits: commits.length, files: summary.length, added: 0, modified: 0, deleted: 0, renamed: 0 };
     for (const r of summary) stats[r.status] = (stats[r.status] || 0) + 1;

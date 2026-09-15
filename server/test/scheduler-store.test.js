@@ -18,6 +18,8 @@ test('validateTask 校验各字段', () => {
   assert.equal(validateTask(shellTask({ type: 'ai', ai: { source: 'command' } })).error, 'ai.commandName required');
   assert.equal(validateTask(shellTask({ schedule: { mode: 'daily', daily: { at: 'x' } } })).error, 'daily.at must be HH:MM');
   assert.equal(validateTask(shellTask({ schedule: { mode: 'interval', interval: { every: 0, unit: 'minute' } } })).error, 'interval.every must be > 0');
+  assert.ok(validateTask(shellTask({ type: 'ai', ai: { source: 'file' }, filePath: 'C:/x/run.md' })).ok);
+  assert.equal(validateTask(shellTask({ type: 'ai', ai: { source: 'file' } })).error, 'ai.filePath required');
 });
 
 test('createTask 生成 id 并持久化', () => {
@@ -37,6 +39,18 @@ test('updateTask 合并并刷新 updatedAt；未知 id 返回 not-found', () => 
   assert.equal(r.task.name, 'b');
   assert.equal(r.task.enabled, false);
   assert.equal(store.updateTask('nope', {}).error, 'not-found');
+});
+
+test('filePath / script.path 记录为绝对路径', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const cwd = path.join(os.tmpdir(), 'sched-cwd');
+  const { task } = store.createTask({ name: 's', enabled: true, type: 'script', cwd,
+    filePath: 'sub/y.py', script: { path: 'sub/y.py' },
+    schedule: { mode: 'interval', interval: { every: 5, unit: 'minute' } } });
+  assert.equal(task.filePath, path.resolve(cwd, 'sub/y.py'));
+  assert.equal(task.script.path, path.resolve(cwd, 'sub/y.py'));
+  const upd = store.updateTask(task.id, { filePath: 'z.py' });
+  assert.equal(upd.task.filePath, path.resolve(cwd, 'z.py'));
 });
 
 test('deleteTask 连带删除运行记录与日志文件', () => {

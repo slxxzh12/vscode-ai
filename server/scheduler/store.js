@@ -17,6 +17,11 @@ function readJson(file, fallback) {
   try { if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* ignore */ }
   return fallback;
 }
+// 记录绝对路径（相对路径按 cwd / 进程 cwd 解析）
+function toAbs(p, cwd) {
+  if (!p || typeof p !== 'string') return null;
+  return path.isAbsolute(p) ? p : path.resolve(cwd || process.cwd(), p);
+}
 
 export function validateTask(input) {
   const t = input || {};
@@ -25,9 +30,10 @@ export function validateTask(input) {
   if (t.type === 'shell' && typeof t.command !== 'string') return { error: 'command required' };
   if (t.type === 'ai') {
     const ai = t.ai || {};
-    if (ai.source !== 'command' && ai.source !== 'prompt') return { error: 'ai.source must be command|prompt' };
+    if (ai.source !== 'command' && ai.source !== 'prompt' && ai.source !== 'file') return { error: 'ai.source must be command|prompt|file' };
     if (ai.source === 'command' && !ai.commandName) return { error: 'ai.commandName required' };
     if (ai.source === 'prompt' && typeof ai.prompt !== 'string') return { error: 'ai.prompt required' };
+    if (ai.source === 'file' && !t.filePath) return { error: 'ai.filePath required' };
   }
   if (t.type === 'script') {
     const s = t.script || {};
@@ -75,10 +81,11 @@ export class SchedulerStore {
       enabled: input.enabled !== false,
       projectId: input.projectId || null,
       cwd: input.cwd || null,
+      filePath: toAbs(input.filePath, input.cwd),
       type: input.type,
       command: input.type === 'shell' ? input.command : undefined,
       ai: input.type === 'ai' ? { ...input.ai } : undefined,
-      script: input.type === 'script' ? { ...input.script } : undefined,
+      script: input.type === 'script' ? { ...input.script, path: toAbs(input.script.path, input.cwd) } : undefined,
       schedule: { ...input.schedule },
       createdAt: now,
       updatedAt: now,
@@ -91,6 +98,8 @@ export class SchedulerStore {
     const i = this.tasks.findIndex((x) => x.id === id);
     if (i < 0) return { error: 'not-found' };
     const merged = { ...this.tasks[i], ...patch, id, createdAt: this.tasks[i].createdAt, updatedAt: Date.now() };
+    merged.filePath = toAbs(merged.filePath, merged.cwd);
+    if (merged.type === 'script' && merged.script) merged.script = { ...merged.script, path: toAbs(merged.script.path, merged.cwd) };
     const v = validateTask(merged);
     if (v.error) return { error: v.error };
     this.tasks[i] = merged;

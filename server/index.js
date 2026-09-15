@@ -190,6 +190,7 @@ function buildWorkspace({ paths, port }) {
     dir: paths.schedulerDir,
     projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
     logger: log,
+    opencodeDataDir: path.join(paths.dir, 'opencode-data'),
   });
   scheduler.engine.onEvent((evt, payload) => {
     const type = evt === 'run-start' ? SchedulerS2C.SCHED_RUN_START

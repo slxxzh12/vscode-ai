@@ -37,6 +37,20 @@ test('buildSpawnSpec：shell / ai / script', () => {
   assert.equal(ai.bin, 'myopencode');
   assert.deepEqual(ai.args, ['run', 'do it']);
 
+  const aiFm = buildSpawnSpec({ type: 'ai' }, { cwd: 'C:/p', aiBin: 'myopencode', aiPrompt: '---\ndescription: x\n---\nHello' });
+  assert.deepEqual(aiFm.args, ['run', 'Hello']);
+
+  const aiCmd = buildSpawnSpec({ type: 'ai', ai: { source: 'command', commandName: 'review.md' } }, { cwd: 'C:/p', aiBin: 'myopencode' });
+  assert.deepEqual(aiCmd.args, ['run', '--command', 'review']);
+
+  const aiFile = buildSpawnSpec({ type: 'ai', filePath: 'C:/x/run.md', ai: { source: 'file', prompt: 'go' } }, { cwd: 'C:/p', aiBin: 'myopencode' });
+  assert.deepEqual(aiFile.args, ['run', 'go', '--file', 'C:/x/run.md']);
+  const aiFileNoMsg = buildSpawnSpec({ type: 'ai', filePath: 'C:/x/run.md', ai: { source: 'file' } }, { cwd: 'C:/p', aiBin: 'myopencode' });
+  assert.deepEqual(aiFileNoMsg.args, ['run', '--file', 'C:/x/run.md']);
+
+  const aiEnv = buildSpawnSpec({ type: 'ai', ai: { source: 'prompt', prompt: 'x' } }, { cwd: 'C:/p', opencodeDataDir: 'C:/oc-data' });
+  assert.deepEqual(aiEnv.env, { XDG_DATA_HOME: 'C:/oc-data' });
+
   const ps = buildSpawnSpec({ type: 'script', script: { path: 'x/y.ps1' } }, { cwd: 'C:/p' });
   assert.deepEqual(ps.args.slice(0, 4), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File']);
   assert.ok(ps.args[4].endsWith(path.join('x', 'y.ps1')));

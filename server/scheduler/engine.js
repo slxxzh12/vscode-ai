@@ -13,7 +13,8 @@ function timeoutFor(task) {
 
 export function createEngine({
   store, runner = createRunner(), logger = console,
-  now = () => Date.now(), tickMs = TICK_MS,
+  now = () => Date.now(), tickMs = TICK_MS, aiBin = 'opencode',
+  opencodeDataDir = null,
   maxConcurrent = Number(process.env.DEVFLOW_SCHED_MAX_CONCURRENT) || 3,
 } = {}) {
   const nextAt = new Map();
@@ -54,10 +55,15 @@ export function createEngine({
     const cwd = task.cwd || projectResolver(task.projectId) || process.cwd();
     let aiPrompt = null;
     if (task.type === 'ai') {
-      aiPrompt = task.ai.source === 'command' ? (aiPromptLoader ? aiPromptLoader(task.ai.commandName) : '') : (task.ai.prompt || '');
+      if (task.ai.source === 'command') {
+        // 命令可能只定义在 opencode 配置里（没有 command/*.md 源文件），loader 失败不能阻断运行
+        try { aiPrompt = aiPromptLoader ? aiPromptLoader(task.ai.commandName) : ''; } catch { aiPrompt = ''; }
+      } else {
+        aiPrompt = task.ai.prompt || '';
+      }
     }
     let spec;
-    try { spec = buildSpawnSpec(task, { cwd, aiPrompt }); }
+    try { spec = buildSpawnSpec(task, { cwd, aiPrompt, aiBin, opencodeDataDir }); }
     catch (e) { return { run: finishImmediate(task, trigger, String(e.message)) }; }
     const id = runIdGen();
     const logFile = store.logFileFor(task.id, id);
