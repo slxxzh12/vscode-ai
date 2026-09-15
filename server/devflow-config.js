@@ -6,7 +6,6 @@ import { serializeWorkflow, decode } from '@devflow/shared/workflow-xml';
 import { downloadsDir } from './data-home.js';
 import { updateSeed } from './workflow-seed.js';
 
-export const DEFAULT_PORT = 22222;
 export const DEFAULT_AGENT = 'opencode';
 export const DEFAULT_AGENTS = [
   { id: 'opencode', name: 'OpenCode', cmd: 'opencode' },
@@ -26,14 +25,10 @@ function escXml(s) {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-function validPort(n) {
-  const p = Number(n);
-  return Number.isInteger(p) && p >= 1 && p <= 65535 ? p : null;
-}
 
 export function buildDefaultConfig() {
   return {
-    server: { port: DEFAULT_PORT, language: DEFAULT_LOCALE, host: '127.0.0.1' },
+    server: { language: DEFAULT_LOCALE, host: '127.0.0.1' },
     agents: { default: DEFAULT_AGENT, list: DEFAULT_AGENTS.map((a) => ({ ...a })) },
     workflows: fallbackWorkflows(),
   };
@@ -44,7 +39,6 @@ export function parseDevflowConfig(xml) {
   const text = String(xml || '');
 
   const serverTag = (text.match(/<server\b([^>]*?)\/?>/i) || [])[1] || '';
-  const port = validPort(attr(serverTag, 'port')) || defaults.server.port;
   const language = normalizeLocale(decode(attr(serverTag, 'language')) || defaults.server.language);
   const host = decode(attr(serverTag, 'host')) || defaults.server.host;
 
@@ -67,7 +61,7 @@ export function parseDevflowConfig(xml) {
 
   const workflows = parseWorkflowXml(text);
   return {
-    server: { port, language, host },
+    server: { language, host },
     agents: { default: defAgent, list },
     workflows: workflows.length ? workflows : fallbackWorkflows(),
   };
@@ -81,7 +75,7 @@ export function serializeDevflowConfig(cfg) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!-- DevFlow 统一配置：server（端口/语言）+ agents（默认 Agent 列表）+ workflows（工作流/提示语） -->
 <devflow>
-  <server port="${cfg.server.port}" language="${escXml(cfg.server.language)}" host="${escXml(cfg.server.host || '127.0.0.1')}" />
+  <server language="${escXml(cfg.server.language)}" host="${escXml(cfg.server.host || '127.0.0.1')}" />
 
   <agents default="${escXml(cfg.agents.default)}">
 ${agents}
@@ -125,18 +119,17 @@ export function updateServerAttrs(file, patch = {}) {
   let xml = fs.readFileSync(file, 'utf8');
   const m = xml.match(/<server\b([^>]*?)\s*\/?>/i);
   const cur = m ? m[1] : '';
-  const port = patch.port != null ? (validPort(patch.port) || DEFAULT_PORT) : (validPort(attr(cur, 'port')) || DEFAULT_PORT);
   const language = patch.language != null
     ? normalizeLocale(patch.language)
     : normalizeLocale(decode(attr(cur, 'language')) || DEFAULT_LOCALE);
   const host = patch.host != null
     ? (String(patch.host).trim() || '127.0.0.1')
     : (decode(attr(cur, 'host')) || '127.0.0.1');
-  const tag = `<server port="${port}" language="${language}" host="${escXml(host)}" />`;
+  const tag = `<server language="${language}" host="${escXml(host)}" />`;
   if (m) xml = xml.slice(0, m.index) + tag + xml.slice(m.index + m[0].length);
   else xml = xml.replace(/<devflow(\s*)>/i, `<devflow$1>\n  ${tag}`);
   fs.writeFileSync(file, xml, 'utf8');
-  return { port, language, host };
+  return { language, host };
 }
 
 // 校验一份工作流定义（workflow → stages → prompts）

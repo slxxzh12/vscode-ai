@@ -30,7 +30,7 @@ import { isPeerRequest, matchAccessToken, resolveInviteDays } from './remote-gat
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
-import { APP_DIR, resolvePort } from './port-file.js';
+import { APP_DIR, resolvePort, validPort, writePortFile, writeRuntimePort } from './port-file.js';
 import { seedPlugins } from './relay-plugins.js';
 import { publicFingerprint } from './collaboration/identity.js';
 import { createVault } from './llm-vault.js';
@@ -332,7 +332,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/settings' && req.method === 'GET') {
     const s = loadDevflowConfig(configFile).server;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ settings: s, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT, host: HOST }));
+    res.end(JSON.stringify({ settings: { ...s, port: PORT }, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT, host: HOST }));
     return;
   }
   if (url.pathname === '/api/settings' && req.method === 'POST') {
@@ -341,11 +341,18 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
-      const port = Number(body.port);
-      if (!port || port < 1 || port > 65535) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid port' })); return; }
-      const next = updateServerAttrs(configFile, { port });
+      const port = validPort(body.port);
+      if (!port) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid port' })); return; }
+      try {
+        writePortFile(port);
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'port-save-failed', message: String(e && e.message || e) }));
+        return;
+      }
+      log.info(t('term.port_saved'));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ settings: next, needRestart: true }));
+      res.end(JSON.stringify({ port, needRestart: true }));
     });
     return;
   }
@@ -570,10 +577,6 @@ let conflictAttempts = 0;
 const MAX_CONFLICT_ATTEMPTS = 5;
 const PORT_CANDIDATES = [33333, 44444];
 
-function writeRuntimePort(port) {
-  try { fs.writeFileSync(path.join(__dirname, '..', 'config', 'runtime-port.txt'), String(port), 'utf8'); } catch { /* ignore */ }
-}
-
 async function freeCandidatePorts() {
   const free = [];
   for (const p of PORT_CANDIDATES) {
@@ -614,9 +617,9 @@ async function handlePortConflict(port) {
     return;
   }
   if (r && r.action === 'switch' && Number.isInteger(r.port)) {
-    currentPort = r.port;
-    try { updateServerAttrs(configFile, { port: r.port }); log.info(t('port.in_use.switched', { port: r.port })); }
+    try { writePortFile(r.port); log.info(t('port.in_use.switched', { port: r.port })); }
     catch (e) { log.warn('failed to persist port', e && e.message); }
+    currentPort = r.port;
     startListening(r.port);
     return;
   }

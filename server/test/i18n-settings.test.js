@@ -12,14 +12,14 @@ test('devflow.xml 默认 language=zh-CN', () => {
   assert.equal(loadDevflowConfig(tmpFile()).server.language, 'zh-CN');
 });
 
-test('updateServerAttrs 持久化 language 并可按 port 合并', () => {
+test('updateServerAttrs 持久化 language 且不影响 host', () => {
   const f = tmpFile();
   updateServerAttrs(f, { language: 'en' });
   assert.equal(loadDevflowConfig(f).server.language, 'en');
-  updateServerAttrs(f, { port: 4100 });
+  updateServerAttrs(f, { host: '0.0.0.0' });
   const s = loadDevflowConfig(f).server;
-  assert.equal(s.port, 4100);
-  assert.equal(s.language, 'en', '改 port 不丢 language');
+  assert.equal(s.host, '0.0.0.0');
+  assert.equal(s.language, 'en', '改 host 不丢 language');
 });
 
 test('server i18n：setLocale 切换并按语言翻译', () => {

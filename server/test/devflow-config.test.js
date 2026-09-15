@@ -29,8 +29,8 @@ const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
 
 test('parseDevflowConfig 解析 server/agents/workflows', () => {
   const c = parseDevflowConfig(SAMPLE);
-  assert.equal(c.server.port, 4123);
   assert.equal(c.server.language, 'en');
+  assert.equal(c.server.port, undefined, '端口不再来自 XML');
   assert.equal(c.agents.default, 'nga');
   assert.deepEqual(c.agents.list.map((a) => a.id), ['opencode', 'nga']);
   assert.equal(c.workflows.length, 1);
@@ -40,7 +40,6 @@ test('parseDevflowConfig 解析 server/agents/workflows', () => {
 
 test('parseDevflowConfig 非法/缺失回落默认', () => {
   const c = parseDevflowConfig('<devflow><server port="abc" language="fr"/></devflow>');
-  assert.equal(c.server.port, buildDefaultConfig().server.port);
   assert.equal(c.server.language, 'zh-CN');
   assert.equal(c.agents.default, 'opencode');
 });
@@ -49,7 +48,6 @@ test('serialize → parse 往返一致', () => {
   const cfg = buildDefaultConfig();
   const xml = serializeDevflowConfig(cfg);
   const back = parseDevflowConfig(xml);
-  assert.equal(back.server.port, cfg.server.port);
   assert.deepEqual(back.agents.list.map((a) => a.id), cfg.agents.list.map((a) => a.id));
   assert.equal(back.workflows[0].id, cfg.workflows[0].id);
 });
@@ -61,20 +59,21 @@ test('ensureConfigFile 缺失时生成默认，二次不覆盖', () => {
   assert.equal(ensureConfigFile(f), false);
 });
 
-test('updateServerAttrs 就地改属性并保留注释', () => {
+test('updateServerAttrs 只写 language/host，不再写 port，且保留注释', () => {
   const f = tmpFile();
   fs.writeFileSync(f, SAMPLE, 'utf8');
-  const next = updateServerAttrs(f, { port: 5000, language: 'zh-CN' });
-  assert.deepEqual(next, { port: 5000, language: 'zh-CN', host: '127.0.0.1' });
+  const next = updateServerAttrs(f, { language: 'zh-CN', host: '0.0.0.0' });
+  assert.deepEqual(next, { language: 'zh-CN', host: '0.0.0.0' });
   const xml = fs.readFileSync(f, 'utf8');
-  assert.match(xml, /<server port="5000" language="zh-CN" host="127.0.0.1" \/>/);
+  assert.doesNotMatch(xml, /<server[^>]*\bport=/, 'XML 不应再写 port 属性');
+  assert.match(xml, /<server language="zh-CN" host="0\.0\.0\.0" \/>/);
   assert.ok(xml.includes('<!-- keep me -->'), '注释保留');
   assert.ok(xml.includes('nga.cmd'), '其余内容保留');
 });
 
 test('loadDevflowConfig 文件缺失返回默认', () => {
   const c = loadDevflowConfig(tmpFile());
-  assert.equal(c.server.port, buildDefaultConfig().server.port);
+  assert.equal(c.server.language, 'zh-CN');
   assert.ok(c.agents.list.length >= 1);
 });
 
@@ -93,13 +92,12 @@ test('validateWorkflows 非数组抛错', () => {
 test('updateWorkflows 覆盖 <workflows> 且保留 server/agents', () => {
   const f = tmpFile();
   ensureConfigFile(f);
-  updateServerAttrs(f, { port: 25000, language: 'en' });
+  updateServerAttrs(f, { language: 'en' });
   const saved = updateWorkflows(f, [
     { id: 'doc', label: '文档流', stages: [{ id: 'scan', label: '盘点', prompts: ['请盘点'] }] },
   ]);
   assert.equal(saved.length, 1);
   const c = loadDevflowConfig(f);
-  assert.equal(c.server.port, 25000);
   assert.equal(c.server.language, 'en');
   assert.equal(c.workflows[0].id, 'doc');
   assert.ok(c.agents.list.some((a) => a.id === 'opencode'));
