@@ -26,6 +26,7 @@ if (process.platform !== "darwin") {
 const ROOT = path.resolve(__dirname, "..");
 const OUT_ROOT = path.join(ROOT, "dist-portable");
 const { todayVersion } = require("../shared/version.cjs");
+const { makeLaunchSh, makeStartCommand } = require("./launcher.js");
 const VERSION = todayVersion();
 const ENV = path.join(ROOT, "env");
 const noZip = process.argv.includes("--no-zip");
@@ -128,48 +129,6 @@ function ensureNodeForArch(arch) {
   return binPath;
 }
 
-function makeLaunchSh() {
-  return [
-    "#!/bin/bash",
-    "# Void launcher (macOS). Run start.command, or: bash script/launch.sh",
-    "set -u",
-    'DIR="$(cd "$(dirname "$0")/.." && pwd)"',
-    'cd "$DIR" || exit 1',
-    "",
-    "# 端口优先取 data/runtime-port.txt；缺省用服务端默认（data/port.txt > 22222）",
-    'PORT=""',
-    'if [ -f "data/runtime-port.txt" ]; then',
-    "  PORT=\"$(tr -cd '0-9' < \"data/runtime-port.txt\")\"",
-    "fi",
-    'if [ -z "$PORT" ] && [ -f "data/port.txt" ]; then',
-    '  PORT="$(tr -cd \'0-9\' < "data/port.txt")"',
-    "fi",
-    'if [ -z "$PORT" ]; then PORT="' + CFG_PORT + '"; fi',
-    "",
-    'URL="http://127.0.0.1:${PORT}"',
-    "",
-    "# 已在运行：只打开浏览器",
-    'if /usr/bin/nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then',
-    '  open "$URL"',
-    "  exit 0",
-    "fi",
-    "",
-    "# 未运行：稍后自动开浏览器，然后前台启动服务（关闭本终端窗口或 Ctrl-C 即停止）",
-    '( sleep 1.5; open "$URL" ) >/dev/null 2>&1 &',
-    'exec "$DIR/runtime/node" "server/index.js"',
-    "",
-  ].join("\n");
-}
-
-function makeStartCommand() {
-  return [
-    "#!/bin/bash",
-    'DIR="$(cd "$(dirname "$0")" && pwd)"',
-    'exec "$DIR/script/launch.sh" "$@"',
-    "",
-  ].join("\n");
-}
-
 function makeUsage(arch) {
   return [
     "Void — macOS 绿色免安装版 / portable build",
@@ -246,7 +205,7 @@ function buildArch(arch, nodeBin) {
 
   // 启动脚本
   fs.mkdirSync(path.join(APP, "script"), { recursive: true });
-  fs.writeFileSync(path.join(APP, "script", "launch.sh"), makeLaunchSh(), "utf8");
+  fs.writeFileSync(path.join(APP, "script", "launch.sh"), makeLaunchSh({ port: CFG_PORT }), "utf8");
   fs.writeFileSync(path.join(APP, "start.command"), makeStartCommand(), "utf8");
   fs.writeFileSync(path.join(APP, "使用说明.txt"), makeUsage(arch), "utf8");
 
