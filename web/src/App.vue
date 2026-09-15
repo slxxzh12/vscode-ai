@@ -13,17 +13,13 @@ import GitStat from './components/GitStat.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
 import { useI18n } from './i18n';
-import { useWorkspace, type WorkspaceState } from './useWorkspace';
 import { parseOpenParam } from './deeplink';
-import WorkspacePicker from './components/WorkspacePicker.vue';
 import ProxyView from './components/ProxyView.vue';
 import MobileView from './components/MobileView.vue';
 import { captureToPngDataUrl, uploadSnapshot } from './snapshot';
 import { useVersion } from './useVersion';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
 
-const ws = useWorkspace();
-const wsState = ref<WorkspaceState | null>(null);
 const appRef = ref<HTMLDivElement | null>(null);
 const snapshotting = ref(false);
 const snapshotMsg = ref('');
@@ -434,10 +430,6 @@ onMounted(async () => {
   writeRegistry(windowColorId.value);
   colorHeartbeat = setInterval(() => { try { writeRegistry(windowColorId.value); } catch { /* ignore */ } }, 4000);
   try {
-    const st = await ws.state();
-    if (st && st.needSelect) { wsState.value = st; return; }   // 只显示档案选择弹窗，不连接
-  } catch { /* 落回原有流程 */ }
-  try {
     const landing = readMobileLanding(window.localStorage, Date.now());
     writeMobileLanding(window.localStorage, landing);
     if (landing.openMobile) rail.value = 'mobile';
@@ -551,7 +543,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <WorkspacePicker v-if="wsState" :state="wsState" />
   </div>
 </template>
 
