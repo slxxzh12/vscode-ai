@@ -841,6 +841,13 @@ git rm web/src/components/WorkspacePicker.vue web/src/useWorkspace.ts
   const wsState = ref<WorkspaceState | null>(null);
   ```
 - 删第 554 行 `<WorkspacePicker v-if="wsState" :state="wsState" />`
+- 删 `onMounted` 里的档案判断块（执行时由 `vue-tsc` 报错定位到，约第 432-435 行）：
+  ```js
+    try {
+      const st = await ws.state();
+      if (st && st.needSelect) { wsState.value = st; return; }   // 只显示档案选择弹窗，不连接
+    } catch { /* 落回原有流程 */ }
+  ```
 
 - [ ] **Step 3: 删除 11 条 `ws.*` 词条（中英各 11 条）**
 
