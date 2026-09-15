@@ -1,6 +1,6 @@
 import { collectAgentStats } from './agent-stats.js';
 
-export function createHeartbeat({ engine, cmd = 'opencode', days = 7, intervalMinMs = 5 * 60 * 1000, intervalMaxMs = 10 * 60 * 1000, collect = collectAgentStats, logger = console }) {
+export function createHeartbeat({ engine, cmd = 'opencode', days = 7, intervalMinMs = 60 * 60 * 1000, intervalMaxMs = 65 * 60 * 1000, collect = collectAgentStats, logger = console }) {
   let timer = null;
   let stopped = false;
   const nextDelay = () => intervalMinMs + Math.floor(Math.random() * Math.max(1, intervalMaxMs - intervalMinMs));

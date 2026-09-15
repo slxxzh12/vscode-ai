@@ -49,13 +49,42 @@ node server/index.js   # 访问 http://127.0.0.1:22222
 
 1. **高风险管理**：开启后，任何拿到「地址 + 密码」的人都能远程操作这台电脑（执行命令、读写文件），存在被劫持风险。仅请在完全可信的环境下临时开启，用完立即「立即失效」。
 2. **生成**：有效期下拉（4 小时 / 1 天 / 2 天 / 5 天 / 7 天，默认 1 天）→ 点「生成邀请链接与密码」。
-   - 服务端生成**一次性随机访问密码**（22 位，`crypto` 随机，≥16 位）。密码/链接在生成后可从**本机** UI 点「显示邀请信息」再次查看（走 `GET /api/remote/reveal`，仅回环请求可用）；**远程客户端**（即使已持 Cookie）拿不到，`/api/remote/state` 也始终不返回密码。
+   - 服务端生成**一次性随机访问密码**（22 位，`crypto` 随机，≥16 位）。开启 master 模式后，密码/链接在本机 UI **默认直接展示**（走 `GET /api/remote/reveal`，仅回环请求可用）；**远程客户端**（即使已持 Cookie）拿不到，`/api/remote/state` 也始终不返回密码。
    - 若当前监听仍是 `127.0.0.1`，会自动把 `config/devflow.xml` 的 `host` 改为 `0.0.0.0`，**需重启服务**后远程才能连上。
 3. **远程访问**：把「访问地址」和「密码」给对方，用浏览器打开地址 → 出现密码输入页 → 输入正确密码后进入（服务端下发 `HttpOnly; SameSite=Lax` Cookie，有效期同邀请）。
 4. **失败锁定**：连续输错 **5 次锁定 5 分钟**；锁定期间禁用输入。管理员「立即失效」或重新生成会清除失败计数与锁定。
 5. **有效期与失效**：邀请/密码仅为**内存态，服务重启即失效**，需重新生成；到期自动失效。
 
 相关接口（仅本机可操作）：`GET /api/remote/state`、`GET /api/remote/reveal`（仅回环，返回密码/链接）、`POST /api/remote/invite {hours}`、`POST /api/remote/revoke`。配置项 `config/devflow.xml` 的 `<server host="...">` 控制监听地址（`127.0.0.1` 本机 / `0.0.0.0` 允许远程）。
+
+### 用量统计上报（每小时）
+
+各实例每小时采集本机 opencode stats（`sessions / messages / input / output / days / totalCost / cacheRead / cacheWrite`），以**签名信封** `POST /api/collab/stats` 上报给所属 master（hub）；master 校验发送方为群成员后写入 heartbeat 并刷新 `downloads/usage.json`，供群内汇总查看。非成员或坏签名一律拒绝。该路径在远程门禁中按「机器↔机器」接口放行（不依赖 Cookie），安全性由信封签名 + 成员校验保证。
+
+### 本机 LLM 中转站（relay）
+
+在「LLM 中转站」面板初始化并解锁密钥库后，可给外部机器签发 JWT，并用中转地址代理到上游 provider。
+
+- **请求地址**：`POST http://<host>:<port>/api/llm/<providerId>/<上游路径>`
+  - `<providerId>`：opencode 配置里 `provider` 的键（面板「Provider」列表可见）。
+  - `<上游路径>`：与上游 baseURL 的路径一致，例如 `v1/chat/completions`。
+- **鉴权**：请求头 `Authorization: Bearer <签发的 JWT>`（或 `x-api-key`）。
+- **请求体**：与上游 OpenAI 兼容接口一致；**模型放在 JSON body 的 `model` 字段，不要放进 URL**。
+- **上游 baseURL**：取 `provider.<id>.options.baseURL`；未配置时对已知 provider 用内置兜底（如 `deepseek` → `https://api.deepseek.com/v1`）。**路径版本段（如 `/v1`）由 baseURL 提供**，中转只做原样透传。
+
+```bash
+# 非流式
+curl "http://127.0.0.1:22222/api/llm/deepseek/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <JWT>" \
+  -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"Hello!"}]}'
+
+# 流式（SSE）
+curl -N "http://127.0.0.1:22222/api/llm/deepseek/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <JWT>" \
+  -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"Hello!"}],"stream":true}'
+```
 
 ## 会话语义
 

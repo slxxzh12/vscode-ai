@@ -79,9 +79,13 @@ async function remove(task: TaskView) {
   await sched.removeTask(task.id);
 }
 async function runNow(task: TaskView) {
+  runPending.value[task.id] = true;
   try { await sched.runNow(task.id); await sched.refresh(); }
   catch (e: any) { state.error = String(e?.message || e); }
+  finally { delete runPending.value[task.id]; }
 }
+const runPending = ref<Record<string, boolean>>({});
+function isRunning(task: TaskView) { return !!task.runningRunId || !!runPending.value[task.id]; }
 async function stop(task: TaskView) { await sched.stopTask(task.id); await sched.refresh(); }
 async function toggle(task: TaskView) { await sched.updateTask(task.id, { enabled: !task.enabled }); }
 async function openRuns(task: TaskView) {
@@ -108,14 +112,13 @@ function toggleWeekday(v: number) {
   const i = arr.indexOf(v);
   if (i >= 0) arr.splice(i, 1); else arr.push(v);
 }
-// 最近运行：最新在右（左→右按时间递增）
-function histRuns(task: TaskView) { return (task.recentRuns || []).slice().reverse(); }
-function runIcon(status: string): string {
-  if (status === 'success') return '✓';
-  if (status === 'timeout') return '⏱';
-  if (status === 'killed') return '■';
-  if (status === 'running') return '●';
-  return '✕';
+// 近 5 次执行结果（左→右 时间递增）
+function last5(task: TaskView) { return (task.recentRuns || []).slice(-5); }
+function barClass(status: string): string {
+  if (status === 'success') return 'success';
+  if (status === 'failed' || status === 'timeout') return 'failed';
+  if (status === 'running') return 'running';
+  return 'killed';
 }
 
 onMounted(async () => { await loadProjects(); await sched.refresh(); sched.loadAiCommands(); });
@@ -134,26 +137,37 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 
     <div class="body">
       <div class="list">
+        <div v-if="state.tasks.length" class="listhead">
+          <span class="lh-main">{{ $t('sched.col.name') }}</span>
+          <span class="lh-status">{{ $t('sched.col.status') }}</span>
+          <span class="lh-hist">{{ $t('sched.recent5') }}</span>
+          <span class="lh-acts">{{ $t('sched.col.actions') }}</span>
+        </div>
         <div v-if="!state.tasks.length" class="empty">{{ $t('sched.empty') }}</div>
         <div v-for="t in state.tasks" :key="t.id" class="row">
           <div class="rowmain">
             <div class="name">
               <span class="badge" :class="t.type">{{ t.type === 'shell' ? $t('sched.type.shell') : t.type === 'ai' ? 'AI' : $t('sched.type.script') }}</span>
               {{ t.name }}
-              <span v-if="t.recentRuns && t.recentRuns.length" class="runhist" :title="$t('sched.recent_runs')">
-                <span v-for="r in histRuns(t)" :key="r.id" class="rh" :class="r.status" :title="`${runStatusLabel(r.status)} · ${formatTime(r.startedAt)}`">{{ runIcon(r.status) }}</span>
-              </span>
               <span class="dim">{{ scheduleSummary(t.schedule) }}</span>
             </div>
             <div class="meta">
-              <span v-if="t.runningRunId" class="dot running" />{{ t.runningRunId ? $t('sched.running') : '' }}
-              <span class="dim">{{ $t('sched.next', { time: formatTime(t.nextRunAt) }) }}</span>
+              <span class="nextline">⏱ {{ $t('sched.next', { time: formatTime(t.nextRunAt) }) }}</span>
             </div>
           </div>
+          <div class="statuscol">
+            <span v-if="isRunning(t)" class="spinner" />
+            <span class="st-dot" :class="t.enabled ? 'on' : 'paused'" />
+            <span class="st" :class="t.enabled ? 'on' : 'paused'">{{ t.enabled ? $t('sched.status.running') : $t('sched.status.paused') }}</span>
+          </div>
+          <div class="histcol" :title="$t('sched.recent_runs')">
+            <span v-for="r in last5(t)" :key="r.id" class="vbar" :class="barClass(r.status)" :title="`${runStatusLabel(r.status)} · ${formatTime(r.startedAt)}`" />
+          </div>
           <div class="acts">
-            <label class="sw"><input type="checkbox" :checked="t.enabled" @change="toggle(t)" /> {{ $t('sched.enabled') }}</label>
-            <button v-if="!t.runningRunId" @click="runNow(t)">{{ $t('sched.run') }}</button>
-            <button v-else @click="stop(t)">{{ $t('sched.stop') }}</button>
+            <button v-if="t.enabled" @click="toggle(t)">{{ $t('sched.pause') }}</button>
+            <button v-else @click="toggle(t)">{{ $t('sched.start') }}</button>
+            <button v-if="!isRunning(t)" @click="runNow(t)">{{ $t('sched.run') }}</button>
+            <button v-else-if="t.runningRunId" @click="stop(t)">{{ $t('sched.stop') }}</button>
             <button @click="openRuns(t)">{{ $t('sched.history') }}</button>
             <button @click="openEdit(t)">{{ $t('sched.edit') }}</button>
             <button @click="remove(t)">{{ $t('sched.delete') }}</button>
@@ -272,15 +286,27 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .badge.ai { background: var(--ac2); color: #fff; }
 .badge.script { background: var(--warn, #b58900); color: #000; }
 .meta { color: var(--tx4); font-size: 12px; margin-top: 2px; display: flex; gap: 12px; align-items: center; }
+.nextline { color: var(--tx3); font-size: 12px; }
 .dim { color: var(--tx5); font-size: 12px; }
-.runhist { display: inline-flex; gap: 3px; align-items: center; }
-.rh { font-size: 14px; line-height: 1; font-weight: 900; }
-.rh.success { color: #3fb950; }
-.rh.failed { color: #e5534b; }
-.rh.timeout { color: #d29922; }
-.rh.killed { color: var(--tx5); }
-.rh.running { color: var(--ac2); }
-.acts { display: flex; gap: 4px; align-items: center; flex: none; }
+.listhead { display: flex; align-items: center; gap: 8px; padding: 2px 10px 6px; color: var(--tx5); font-size: 11px; }
+.listhead .lh-main { flex: 1; }
+.listhead .lh-status { width: 72px; text-align: center; }
+.listhead .lh-hist { width: 96px; text-align: center; }
+.listhead .lh-acts { width: 370px; text-align: right; }
+.statuscol { display: flex; align-items: center; justify-content: center; gap: 4px; width: 72px; flex: none; }
+.statuscol .st { font-size: 11px; color: var(--tx5); }
+.statuscol .st.on { color: #3fb950; }
+.statuscol .st.paused { color: #d29922; }
+.st-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.st-dot.on { background: #3fb950; }
+.st-dot.paused { background: #d29922; }
+.histcol { display: flex; gap: 3px; align-items: center; justify-content: center; width: 96px; flex: none; }
+.vbar { width: 4px; height: 18px; border-radius: 2px; background: var(--tx5); }
+.vbar.success { background: #3fb950; }
+.vbar.failed { background: #e5534b; }
+.vbar.running { background: var(--ac2); }
+.vbar.killed { background: var(--tx5); }
+.acts { display: flex; gap: 4px; align-items: center; flex: none; width: 370px; justify-content: flex-end; }
 .acts button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
 .sw { color: var(--tx4); font-size: 12px; display: flex; align-items: center; gap: 3px; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tx5); margin-right: 4px; }
@@ -288,6 +314,9 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .dot.success { background: #3fb950; }
 .dot.failed, .dot.timeout { background: #e5534b; }
 .dot.killed { background: var(--tx5); }
+.running { display: inline-flex; align-items: center; gap: 4px; color: var(--ac2); font-size: 12px; }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--tx5); border-top-color: var(--ac2); border-radius: 50%; animation: sched-spin .8s linear infinite; }
+@keyframes sched-spin { to { transform: rotate(360deg); } }
 .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .modal { background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; padding: 16px; width: 460px; max-height: 86vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
 .modal.wide { width: 720px; }

@@ -207,10 +207,10 @@ export class CollabEngine {
   _sign(type, payload) {
     return signEnvelope(this.identity.privateKey, type, this.pub, payload);
   }
-  async _post(host, port, env, headers = null) {
+  async _post(host, port, env, headers = null, path = '/api/collab/peer') {
     if (!this.peer) { this.log?.warn?.('peer transport not configured'); return { ok: false, error: 'no-transport' }; }
-    try { return await this.peer.post(host, port, env, headers); }
-    catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+    try { return await this.peer.post(host, port, env, headers, path); }
+    catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
   }
   // 按公钥反查已知身份（单例群成员），供接收方头部公钥鉴权
   profileByPublicKey(pem) {
@@ -260,6 +260,7 @@ export class CollabEngine {
       case CollabPeer.PULL_DOWNLOADS: return this._inPullDownloads(env);
       case CollabPeer.UPDATE_CHECK: return this._inUpdateCheck(env);
       case CollabPeer.LIST_DOWNLOADS: return this._inListDownloads(env);
+      case CollabPeer.STATS: return this._inStats(env);
       default: return { ok: false, error: 'unknown-type' };
     }
   }
@@ -370,13 +371,13 @@ export class CollabEngine {
         this.writeUsageSnapshot();
       } else {
         const hub = g.members.find((m) => m.machineId === g.hubId);
-        if (hub) tasks.push(this._post(hub.host, hub.port, this._sign(CollabPeer.HEARTBEAT, { groupId: g.id, usage })));
+        if (hub) tasks.push(this._post(hub.host, hub.port, this._sign(CollabPeer.STATS, { groupId: g.id, usage }), null, '/api/collab/stats'));
       }
     }
     this._emit('heartbeat', {});
     return Promise.all(tasks).then(() => ({ code: 'ok' }));
   }
-  _inHeartbeat(env) {
+  _storeHeartbeat(env) {
     const g = this.store.findGroup(env.payload && env.payload.groupId) || this.store.getGroup();
     if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
     if (g.hubId !== this.pub.machineId) return { ok: false, error: 'not-hub' };
@@ -393,6 +394,8 @@ export class CollabEngine {
     this._emit('heartbeat', {});
     return { ok: true };
   }
+  _inHeartbeat(env) { return this._storeHeartbeat(env); }
+  _inStats(env) { return this._storeHeartbeat(env); }
   // ---- 同步种子（update.json）----
   _hubFor(masterId) {
     const groups = this.store.listGroups()

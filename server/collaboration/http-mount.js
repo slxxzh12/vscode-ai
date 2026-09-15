@@ -89,6 +89,11 @@ export function createCollabMount({ engine, logger = console }) {
       const r = await engine.handleIncoming(body);
       return r.ok ? ok(res, r.data ? { ok: true, data: r.data } : { ok: true }) : ok(res, { ok: false, error: r.error });
     }
+    if (seg[0] === 'stats' && m === 'POST') {
+      // slave 上报 opencode stats（签名信封，校验群成员后存 heartbeat/usage）
+      const r = await engine.handleIncoming(body);
+      return r.ok ? ok(res, { ok: true }) : ok(res, { ok: false, error: r.error });
+    }
     try {
       // identity
       if (seg[0] === 'identity' && m === 'GET') return ok(res, { identity: engine.pub });

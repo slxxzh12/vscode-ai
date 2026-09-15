@@ -10,6 +10,11 @@ function stripJsonc(text) {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
+// 常见 provider 的上游 baseURL 兜底：配置里未写 options.baseURL 时使用（显式配置优先）
+export const DEFAULT_BASE_URLS = {
+  deepseek: 'https://api.deepseek.com/v1',
+};
+
 function readConfigFile(dir) {
   for (const name of ['opencode.json', 'opencode.jsonc']) {
     const f = path.join(dir, name);
@@ -27,7 +32,7 @@ export function loadOpencodeProviders({ dir = opencodeConfigDir() } = {}) {
   for (const [id, p] of Object.entries(json.provider || {})) {
     const o = (p && p.options) || {};
     const apiKeysRaw = Array.isArray(o.apiKeys) ? o.apiKeys : (o.apiKey ? [o.apiKey] : []);
-    providers.push({ id, name: (p && p.name) || id, baseURL: o.baseURL || '', apiKeysRaw, models: Object.keys((p && p.models) || {}) });
+    providers.push({ id, name: (p && p.name) || id, baseURL: o.baseURL || DEFAULT_BASE_URLS[id] || '', apiKeysRaw, models: Object.keys((p && p.models) || {}) });
   }
   const model = typeof json.model === 'string' ? json.model : '';
   const defaultProvider = model.includes('/') ? model.split('/')[0] : (providers[0] ? providers[0].id : null);

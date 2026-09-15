@@ -55,6 +55,16 @@ test('禁用任务不触发', () => {
   assert.equal(runner.calls.length, 0);
 });
 
+test('无论启用与否都算出下次运行时间', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const engine = createEngine({ store, runner: fakeRunner(), now: () => 1000 });
+  const { task: a } = store.createTask(task());
+  const { task: b } = store.createTask(task({ enabled: false }));
+  engine.refreshAll();
+  assert.equal(engine.nextRunAtOf(a.id), 1000 + HOUR);
+  assert.equal(engine.nextRunAtOf(b.id), 1000 + HOUR, '禁用任务也应有下次运行时间');
+});
+
 test('运行中不重叠（跳过本次）', () => {
   const store = new SchedulerStore({ dir: tmpDir() });
   const runner = fakeRunner();

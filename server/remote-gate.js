@@ -1,6 +1,7 @@
 // 远程访问门禁的纯判定（便于单测；index.js 消费）
 export function isPeerRequest(pathname, method) {
-  return pathname === '/api/collab/peer' && method === 'POST';
+  if (method !== 'POST') return false;
+  return pathname === '/api/collab/peer' || pathname === '/api/collab/stats';
 }
 
 export function matchAccessToken(access, invite, safeEqual) {

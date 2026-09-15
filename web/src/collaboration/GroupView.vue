@@ -4,6 +4,7 @@ import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import GroupChatView from './GroupChatView.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import SyncSeedDialog from './SyncSeedDialog.vue';
 import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi }>();
@@ -42,12 +43,21 @@ watch(() => snap.value.identity.machineId, async (mid) => {
 // —— 远程访问（自设置迁入）——
 const remoteLink = ref('');
 const remotePassword = ref('');
-const inviteRevealed = ref(false);
 const remoteMsg = ref('');
 const remoteState = ref<{ enabled: boolean; expiresAt: number | null; address?: string | null; needRestart?: boolean; host?: string; locked?: boolean }>({ enabled: false, expiresAt: null });
 
+async function loadInvite() {
+  remoteMsg.value = '';
+  try {
+    const r = await fetch('/api/remote/reveal').then((x) => x.json());
+    if (!r.enabled) return;
+    remoteLink.value = r.link || '';
+    remotePassword.value = r.password || '';
+  } catch (e) { remoteMsg.value = t('remote.failed', { msg: (e as Error)?.message || String(e) }); }
+}
 async function loadRemote() {
   try { remoteState.value = await fetch('/api/remote/state').then((r) => r.json()); } catch { /* ignore */ }
+  if (remoteState.value.enabled) await loadInvite();
 }
 async function genRemote() {
   remoteMsg.value = '';
@@ -55,21 +65,9 @@ async function genRemote() {
     const r = await fetch('/api/remote/invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }).then((x) => x.json());
     remoteLink.value = r.link || '';
     remotePassword.value = r.password || '';
-    inviteRevealed.value = true;
     remoteState.value = { ...remoteState.value, enabled: !!r.enabled, expiresAt: r.expiresAt || null, address: r.address, needRestart: !!r.needRestart };
     await loadDir();
     try { await props.collab.refresh(); } catch { /* ignore */ }
-  } catch (e) { remoteMsg.value = t('remote.failed', { msg: (e as Error)?.message || String(e) }); }
-}
-async function revealInvite() {
-  if (inviteRevealed.value) { inviteRevealed.value = false; return; }
-  remoteMsg.value = '';
-  try {
-    const r = await fetch('/api/remote/reveal').then((x) => x.json());
-    if (!r.enabled) { await loadRemote(); return; }
-    remoteLink.value = r.link || '';
-    remotePassword.value = r.password || '';
-    inviteRevealed.value = true;
   } catch (e) { remoteMsg.value = t('remote.failed', { msg: (e as Error)?.message || String(e) }); }
 }
 const closeConfirmOpen = ref(false);
@@ -79,7 +77,6 @@ async function doRevokeRemote() {
   try {
     await fetch('/api/remote/revoke', { method: 'POST' });
     remoteLink.value = ''; remotePassword.value = '';
-    inviteRevealed.value = false;
     remoteState.value = { ...remoteState.value, enabled: false, expiresAt: null };
   } catch { /* ignore */ }
 }
@@ -104,7 +101,7 @@ async function join() {
   } catch (e) { joinErr.value = (e as Error).message || String(e); }
 }
 
-const online = (receivedAt?: number) => !!receivedAt && Date.now() - receivedAt < 20 * 60 * 1000;
+const online = (receivedAt?: number) => !!receivedAt && Date.now() - receivedAt < 90 * 60 * 1000;   // 心跳/stats 为小时级
 function fmtNum(n?: number) { return n == null ? '?' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(n); }
 function memberLabel(m: { machineId: string; username: string; employeeId?: string; host: string; port: number }) {
   const hb = snap.value.heartbeats[m.machineId];
@@ -135,7 +132,7 @@ function fmtSize(n: number) {
 const isMaster = computed(() => !!group.value && group.value.hubId === me.value);
 const downloads = ref<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] } }>({ manifest: { files: [] } });
 const seed = ref<{ version: string; files: { name: string }[] }>({ version: '', files: [] });
-const selected = ref<Record<string, boolean>>({});
+const seedOpen = ref(false);
 const seedMsg = ref('');
 async function loadDownloads() {
   try { downloads.value = await props.collab.listDownloads() as typeof downloads.value; } catch { /* ignore */ }
@@ -143,10 +140,9 @@ async function loadDownloads() {
 async function loadSeed() {
   try { const r = await props.collab.getUpdate(); seed.value = r.update; } catch { /* ignore */ }
 }
-function setAll(v: boolean) { for (const f of downloads.value.manifest.files) selected.value[f.name] = v; }
-async function saveSeed() {
+async function onSaveSeed(names: string[]) {
+  seedOpen.value = false;
   seedMsg.value = '';
-  const names = Object.keys(selected.value).filter((k) => selected.value[k]);
   try { const r = await props.collab.publishUpdate(names); seed.value = r.update; seedMsg.value = t('collab.update.saved', { version: r.update.version }); }
   catch (e) { seedMsg.value = String((e as Error).message || e); }
 }
@@ -229,10 +225,7 @@ onMounted(async () => {
           </button>
         </div>
 
-        <div v-if="remoteState.enabled" class="addrow">
-          <button class="ghost" @click="revealInvite">{{ inviteRevealed ? $t('remote.hide_invite') : $t('remote.show_invite') }}</button>
-        </div>
-        <template v-if="inviteRevealed">
+        <template v-if="remoteState.enabled && (remotePassword || remoteLink)">
           <div class="cfghint">{{ $t('remote.invite_hint') }}</div>
           <div v-if="remotePassword" class="linkrow">
             <input :value="remotePassword" readonly />
@@ -246,40 +239,30 @@ onMounted(async () => {
         <div v-if="remoteState.needRestart" class="err">{{ $t('remote.need_restart') }}</div>
         <div v-if="remoteMsg" class="cfghint">{{ remoteMsg }}</div>
 
-        <div v-if="group" class="sec">
+        <div v-if="isMaster && remoteState.enabled" class="sec">
           <h4>{{ $t('collab.downloads.title') }}</h4>
-          <template v-if="isMaster">
-            <div class="cfghint">{{ $t('collab.update.version', { version: seed.version || '—' }) }}</div>
-            <div class="addrow">
-              <button class="ghost" @click="setAll(true)">{{ $t('collab.update.select_all') }}</button>
-              <button @click="saveSeed">{{ $t('collab.update.save_seed') }}</button>
-            </div>
-            <div v-if="seedMsg" class="cfghint">{{ seedMsg }}</div>
-            <div v-if="installMsg" class="cfghint">{{ installMsg }}</div>
-            <div v-if="downloads.manifest.files.length === 0" class="empty">{{ $t('collab.downloads.empty') }}</div>
-            <div v-for="f in downloads.manifest.files" :key="f.name" class="rowline">
-              <input type="checkbox" v-model="selected[f.name]" />
-              <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}</a>
-              <template v-if="f.kind === 'skill'">
-                <button class="ghost" @click="install(f.name)">{{ $t('collab.downloads.install') }}</button>
-              </template>
-            </div>
-          </template>
-          <template v-else>
-            <div class="cfghint">{{ $t('collab.update.version', { version: remoteVer || '—' }) }}</div>
-            <div class="addrow">
-              <button class="ghost" @click="loadRemoteFiles">{{ $t('collab.update.check') }}</button>
-              <button class="ghost" @click="setAllRemote(true)">{{ $t('collab.update.select_all') }}</button>
-              <button @click="pullSelected">{{ $t('collab.update.pull_selected') }}</button>
-            </div>
-            <div v-if="pullMsg" class="cfghint">{{ pullMsg }}</div>
-            <div v-if="!remote || remote.manifest.files.length === 0" class="empty">{{ $t('collab.update.no_remote') }}</div>
-            <div v-for="f in (remote?.manifest.files || [])" :key="f.name" class="rowline">
-              <input type="checkbox" v-model="remoteSel[f.name]" />
-              <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}</a>
-              <span v-if="isSeedFile(f.name)" class="tag">{{ $t('collab.update.seed_badge') }}</span>
-            </div>
-          </template>
+          <div class="cfghint">{{ $t('collab.update.version', { version: seed.version || '—' }) }}</div>
+          <div class="addrow">
+            <button @click="seedOpen = true">{{ $t('collab.downloads.title') }}</button>
+          </div>
+          <div v-if="seedMsg" class="cfghint">{{ seedMsg }}</div>
+          <div v-if="installMsg" class="cfghint">{{ installMsg }}</div>
+        </div>
+        <div v-else-if="group && !isMaster" class="sec">
+          <h4>{{ $t('collab.update.pull_title') }}</h4>
+          <div class="cfghint">{{ $t('collab.update.version', { version: remoteVer || '—' }) }}</div>
+          <div class="addrow">
+            <button class="ghost" @click="loadRemoteFiles">{{ $t('collab.update.check') }}</button>
+            <button class="ghost" @click="setAllRemote(true)">{{ $t('collab.update.select_all') }}</button>
+            <button @click="pullSelected">{{ $t('collab.update.pull_selected') }}</button>
+          </div>
+          <div v-if="pullMsg" class="cfghint">{{ pullMsg }}</div>
+          <div v-if="!remote || remote.manifest.files.length === 0" class="empty">{{ $t('collab.update.no_remote') }}</div>
+          <div v-for="f in (remote?.manifest.files || [])" :key="f.name" class="rowline">
+            <input type="checkbox" v-model="remoteSel[f.name]" />
+            <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}</a>
+            <span v-if="isSeedFile(f.name)" class="tag">{{ $t('collab.update.seed_badge') }}</span>
+          </div>
         </div>
       </div>
 
@@ -327,6 +310,15 @@ onMounted(async () => {
       <div v-else class="placeholder"><div class="ph">{{ $t('collab.placeholder') }}</div></div>
     </section>
   </div>
+
+  <SyncSeedDialog
+    :open="seedOpen"
+    :files="downloads.manifest.files"
+    :version="seed.version"
+    @confirm="onSaveSeed"
+    @cancel="seedOpen = false"
+    @install="install"
+  />
 
   <ConfirmDialog
     :open="closeConfirmOpen"

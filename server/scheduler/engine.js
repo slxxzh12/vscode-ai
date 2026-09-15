@@ -29,7 +29,7 @@ export function createEngine({
   function setAiPromptLoader(fn) { aiPromptLoader = fn; }
 
   function scheduleTask(task, from = now()) {
-    if (!task.enabled) { nextAt.delete(task.id); return null; }
+    // 无论启用与否都算出「下次运行时间」，供界面展示；是否真正触发由 tick 按 enabled 判断
     const n = computeNextRun(task.schedule, from);
     if (n == null) nextAt.delete(task.id); else nextAt.set(task.id, n);
     return n;

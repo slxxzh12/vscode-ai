@@ -150,6 +150,33 @@ const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
 const historyTab = ref<'files' | 'messages'>('messages');
+const collabTab = ref<'group' | 'tasks'>('group');
+
+// —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
+const RAILS = ['explorer', 'history', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
+function parseHashSegs(): string[] {
+  try { return decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/').filter(Boolean); }
+  catch { return []; }
+}
+function applyHash() {
+  const [r, sub] = parseHashSegs();
+  if (!r || !RAILS.includes(r)) return;
+  rail.value = r as typeof rail.value;
+  if (r === 'history' && (sub === 'files' || sub === 'messages')) historyTab.value = sub;
+  if (r === 'contacts' && (sub === 'group' || sub === 'tasks')) collabTab.value = sub;
+}
+function currentHash() {
+  if (rail.value === 'history') return `#history/${historyTab.value}`;
+  if (rail.value === 'contacts') return `#contacts/${collabTab.value}`;
+  return `#${rail.value}`;
+}
+function syncHash() {
+  const next = currentHash();
+  if (window.location.hash !== next) {
+    window.history.replaceState({}, '', window.location.pathname + window.location.search + next);
+  }
+}
+watch([rail, historyTab, collabTab], syncHash);
 const msgHistory = useMessageHistory();
 // 当天输入超过 3 条消息时，主动展示一次历史消息；当天已展示过则不再主动，仅用户点击才展示
 const AUTO_SHOWN_KEY = 'devflow-history-auto-shown';
@@ -415,10 +442,13 @@ onMounted(async () => {
     writeMobileLanding(window.localStorage, landing);
     if (landing.openMobile) rail.value = 'mobile';
   } catch { /* ignore */ }
+  applyHash();
   initFileHistory();
   loadProjects();
   processOpenParam();
   msgHistory.load();
+  syncHash();
+  window.addEventListener('hashchange', applyHash);
   window.addEventListener('df-open-history', onOpenHistory);
   window.addEventListener('beforeunload', persistFileHistory);
   window.addEventListener('beforeunload', releaseWindowColor);
@@ -428,6 +458,7 @@ onBeforeUnmount(() => {
   if (colorHeartbeat) { clearInterval(colorHeartbeat); colorHeartbeat = null; }
   if (snapshotMsgTimer) { clearTimeout(snapshotMsgTimer); snapshotMsgTimer = null; }
   releaseWindowColor();
+  window.removeEventListener('hashchange', applyHash);
   window.removeEventListener('df-open-history', onOpenHistory);
   window.removeEventListener('beforeunload', persistFileHistory);
   window.removeEventListener('beforeunload', releaseWindowColor);
@@ -470,7 +501,7 @@ onBeforeUnmount(() => {
       </aside>
       <template v-if="rail === 'contacts'">
         <section class="center">
-          <CollaborationView :terminal="terminal" />
+          <CollaborationView :terminal="terminal" v-model:tab="collabTab" />
         </section>
       </template>
       <template v-else-if="rail === 'stat'">

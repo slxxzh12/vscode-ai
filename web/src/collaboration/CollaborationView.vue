@@ -10,10 +10,12 @@ import SyncUpdateDialog from './SyncUpdateDialog.vue';
 import { t } from '../i18n';
 
 type CollabTab = 'group' | 'tasks';
-const props = defineProps<{ terminal: ReturnType<typeof useTerminal> }>();
+const props = defineProps<{ terminal: ReturnType<typeof useTerminal>; tab?: CollabTab }>();
+const emit = defineEmits<{ (e: 'update:tab', v: CollabTab): void }>();
 const collab = useCollab();
 const snap = computed(() => collab.state.value ?? EMPTY_SNAPSHOT);
-const tab = ref<CollabTab>('group');
+const tab = computed(() => props.tab ?? 'group');
+function setTab(v: CollabTab) { emit('update:tab', v); }
 const tabs = computed(() => [
   { id: 'group' as const, label: t('collab.tabs.group') },
   { id: 'tasks' as const, label: t('collab.tabs.tasks') },
@@ -71,7 +73,7 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
     <header class="topbar">
       <span class="title">{{ $t('collab.title') }}</span>
       <nav class="tabs">
-        <button v-for="t in tabs" :key="t.id" class="tab" :class="{ on: tab === t.id }" @click="tab = t.id">
+        <button v-for="t in tabs" :key="t.id" class="tab" :class="{ on: tab === t.id }" @click="setTab(t.id)">
           {{ t.label }}
         </button>
       </nav>

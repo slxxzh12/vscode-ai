@@ -37,6 +37,20 @@ test('解析 provider 列表与默认 provider', () => {
   assert.deepEqual(providers[0].models, ['gpt-4o', 'gpt-4o-mini']);
 });
 
+test('未配 baseURL 时用已知 provider 默认值；显式配置优先', () => {
+  const dir = dirWith({
+    provider: {
+      deepseek: { options: { apiKey: 'K' }, models: { 'deepseek-v4-flash': {} } },
+      corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: {} },
+    },
+  });
+  const { providers } = loadOpencodeProviders({ dir });
+  const ds = providers.find((p) => p.id === 'deepseek');
+  assert.equal(ds.baseURL, 'https://api.deepseek.com/v1');
+  const corp = providers.find((p) => p.id === 'corp');
+  assert.equal(corp.baseURL, 'https://gw/v1');
+});
+
 test('resolveApiKey 支持 {env:}', () => {
   assert.equal(resolveApiKey('{env:FOO}', { FOO: 'bar' }), 'bar');
   assert.equal(resolveApiKey('plain', {}), 'plain');

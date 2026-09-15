@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveInviteDays, DEFAULT_INVITE_DAYS, MAX_INVITE_DAYS } from '../remote-gate.js';
+import { resolveInviteDays, DEFAULT_INVITE_DAYS, MAX_INVITE_DAYS, isPeerRequest } from '../remote-gate.js';
 
 test('resolveInviteDays：默认 1 天，允许 1..100，>100 收敛到 100，非法回退默认', () => {
   assert.equal(resolveInviteDays({}), DEFAULT_INVITE_DAYS);
@@ -19,4 +19,11 @@ test('resolveInviteDays：默认 1 天，允许 1..100，>100 收敛到 100，�
 test('resolveInviteDays：兼容旧 hours 字段', () => {
   assert.equal(resolveInviteDays({ hours: 48 }), 2);
   assert.equal(resolveInviteDays({ hours: 4 }), 1);
+});
+
+test('isPeerRequest：peer 与 stats 的 POST 放行，其余拒绝', () => {
+  assert.equal(isPeerRequest('/api/collab/peer', 'POST'), true);
+  assert.equal(isPeerRequest('/api/collab/stats', 'POST'), true);
+  assert.equal(isPeerRequest('/api/collab/stats', 'GET'), false);
+  assert.equal(isPeerRequest('/api/collab/downloads', 'POST'), false);
 });

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { useLlm, type LlmStatus, type LlmToken, type LlmPluginEntry } from '../useLlm';
+import ChangePassphraseDialog from './ChangePassphraseDialog.vue';
+import ConfirmDialog from './ConfirmDialog.vue';
 import { t } from '../i18n';
 
 const api = useLlm();
@@ -12,7 +14,10 @@ const pluginTemplate = ref('');
 const exampleCopied = ref(false);
 let exampleTimer: ReturnType<typeof setTimeout> | null = null;
 const pass = ref('');
-const newPass = ref('');
+const changeOpen = ref(false);
+const needSecretOpen = ref(false);
+const resetOpen = ref(false);
+const regenOpen = ref(false);
 const secret = ref('');
 const employeeId = ref('');
 const days = ref(30);
@@ -25,9 +30,42 @@ const configText = ref('');
 const copied = ref(false);
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
+// —— 中转接口说明/curl 示例（取默认 provider 生成）——
+const defProvider = computed(() => {
+  const list = st.value?.providers || [];
+  return list.find((p) => p.id === st.value?.defaultProvider) || list[0] || null;
+});
+const relayBase = computed(() => {
+  const p = defProvider.value;
+  if (!p) return '';
+  let bp = '';
+  try { bp = new URL(p.baseURL).pathname.replace(/\/+$/, ''); } catch { /* ignore */ }
+  return `http://${st.value?.host}:${st.value?.port}/api/llm/${encodeURIComponent(p.id)}${bp}`;
+});
+const proxyCurl = computed(() => {
+  const p = defProvider.value;
+  if (!p) return '';
+  const model = (p.models && p.models[0]) || '<model>';
+  return `curl "${relayBase.value}/chat/completions" -H "Content-Type: application/json" -H "Authorization: Bearer <JWT>" -d '{"model":"${model}","messages":[{"role":"user","content":"Hello!"}]}'`;
+});
+const curlCopied = ref(false);
+let curlTimer: ReturnType<typeof setTimeout> | null = null;
+async function copyCurl() {
+  if (!proxyCurl.value) return;
+  try {
+    await navigator.clipboard.writeText(proxyCurl.value);
+    curlCopied.value = true;
+    if (curlTimer) clearTimeout(curlTimer);
+    curlTimer = setTimeout(() => { curlCopied.value = false; }, 1500);
+  } catch { /* ignore */ }
+}
+
 async function refresh() {
   try {
     st.value = await api.status();
+    if (st.value.vault.unlocked && !st.value.enabled) {
+      try { await api.setEnabled(true); st.value.enabled = true; } catch { /* ignore */ }
+    }
     tokens.value = st.value.vault.unlocked ? (await api.tokens()).tokens : [];
     if (st.value.vault.unlocked) {
       const pl = await api.plugins();
@@ -54,19 +92,26 @@ const initVault = () => {
 };
 const unlockVault = () => run(() => api.vaultUnlock(pass.value));
 const lockVault = () => run(() => api.vaultLock());
-const changePass = () => run(() => api.vaultPassphrase(pass.value, newPass.value));
-async function resetVault() {
-  if (!window.confirm(t('llm.vault.reset_confirm'))) return;
+function onChangeConfirm(v: { oldPass: string; newPass: string }) {
+  changeOpen.value = false;
+  return run(() => api.vaultPassphrase(v.oldPass, v.newPass));
+}
+async function resetVault() { resetOpen.value = true; }
+async function doResetVault() {
+  resetOpen.value = false;
   await run(() => api.vaultReset());
 }
 const saveSecret = () => run(async () => { await api.setSecret(secret.value); secret.value = ''; });
-async function regenerateSecret() {
-  const word = window.prompt(t('llm.secret.regenerate_prompt'));
-  if (word === null) return;
-  if (word.trim().toUpperCase() !== 'REGENERATE') { err.value = t('llm.secret.regenerate_mismatch'); return; }
+function genRandomSecret() {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  secret.value = Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+function regenerateSecret() { regenOpen.value = true; }
+async function doRegenerateSecret() {
+  regenOpen.value = false;
   await run(() => api.regenerateSecret());
 }
-const toggleEnabled = () => run(() => api.setEnabled(!st.value?.enabled));
 const reloadPlugins = () => run(() => api.reloadPlugins());
 const openPluginsDir = () => run(() => api.revealPlugins());
 const createExample = () => run(() => api.createPluginExample());
@@ -79,7 +124,14 @@ async function copyExample() {
     exampleTimer = setTimeout(() => { exampleCopied.value = false; }, 1500);
   } catch { /* ignore */ }
 }
-const issue = () => run(() => api.issue(employeeId.value, Number(days.value)));
+function issue() {
+  if (!st.value?.hasSecret) { needSecretOpen.value = true; return; }
+  return run(() => api.issue(employeeId.value, Number(days.value)));
+}
+function onGenerateSecret() {
+  needSecretOpen.value = false;
+  return run(() => api.regenerateSecret());
+}
 const revoke = (id: string) => run(() => api.revoke(id));
 function selectedProviders() {
   const out: { id: string; models: string[] }[] = [];
@@ -192,48 +244,77 @@ async function copyConfig() {
       </div>
       <div v-else-if="!st?.vault.unlocked" class="row">
         <input v-model="pass" type="password" :placeholder="$t('llm.vault.passphrase')" @keyup.enter="unlockVault" />
-        <button @click="unlockVault">{{ $t('llm.vault.unlock') }}</button>
+        <button @click="unlockVault">{{ $t('llm.vault.show_tokens') }}</button>
       </div>
-      <div v-else class="row">
-        <input v-model="pass" type="password" :placeholder="$t('llm.vault.old')" />
-        <input v-model="newPass" type="password" :placeholder="$t('llm.vault.new')" />
-        <button @click="changePass">{{ $t('llm.vault.change') }}</button>
-        <button class="ghost" @click="lockVault">{{ $t('llm.vault.lock') }}</button>
-      </div>
-      <div v-if="st?.vault.initialized" class="row">
-        <button class="danger" @click="resetVault">{{ $t('llm.vault.reset') }}</button>
+      <div v-else class="row vault-actions">
+        <button class="lockbtn" @click="lockVault">{{ $t('llm.vault.close_tokens') }}</button>
+        <div class="vault-right">
+          <button class="ghost" @click="changeOpen = true">{{ $t('llm.vault.change') }}</button>
+          <button class="danger" @click="resetVault">{{ $t('llm.vault.reset') }}</button>
+        </div>
       </div>
     </section>
 
-    <section v-if="st?.vault.unlocked" class="card">
-      <div class="ch">{{ $t('llm.secret.title') }}
-        <span class="badge" :class="{ ok: st?.hasSecret }">{{ st?.hasSecret ? $t('llm.secret.configured') : $t('llm.secret.not_set') }}</span>
-      </div>
-      <div class="muted">{{ $t('llm.secret.hint') }}</div>
-      <div v-if="!st?.hasSecret" class="row">
-        <input v-model="secret" :placeholder="$t('llm.secret.placeholder')" />
-        <button @click="saveSecret">{{ $t('llm.secret.set') }}</button>
-      </div>
-      <div v-else class="row">
-        <button class="danger" @click="regenerateSecret">{{ $t('llm.secret.regenerate') }}</button>
-      </div>
-    </section>
+    <ChangePassphraseDialog :open="changeOpen" @confirm="onChangeConfirm" @cancel="changeOpen = false" />
+
+    <ConfirmDialog
+      :open="needSecretOpen"
+      :title="$t('llm.secret.need_title')"
+      :message="$t('llm.secret.need_msg')"
+      :confirm-text="$t('llm.secret.regenerate')"
+      :cancel-text="$t('common.cancel')"
+      type="warning"
+      @confirm="onGenerateSecret"
+      @cancel="needSecretOpen = false"
+    />
+
+    <ConfirmDialog
+      :open="resetOpen"
+      :title="$t('llm.vault.reset')"
+      :message="$t('llm.vault.reset_confirm')"
+      :confirm-text="$t('common.ok')"
+      :cancel-text="$t('common.cancel')"
+      type="danger"
+      @confirm="doResetVault"
+      @cancel="resetOpen = false"
+    />
+
+    <ConfirmDialog
+      :open="regenOpen"
+      :title="$t('llm.secret.regenerate')"
+      :message="$t('llm.secret.regenerate_prompt')"
+      :confirm-text="$t('common.ok')"
+      :cancel-text="$t('common.cancel')"
+      type="danger"
+      require-text="REGENERATE"
+      placeholder="REGENERATE"
+      @confirm="doRegenerateSecret"
+      @cancel="regenOpen = false"
+    />
 
     <section class="card">
       <div class="ch">{{ $t('llm.provider.title') }}</div>
       <div v-if="!st?.providers.length" class="muted">{{ $t('llm.provider.none') }}</div>
       <div v-for="p in st?.providers || []" :key="p.id" class="prow">
         <b>{{ p.id }}</b><span class="muted">{{ p.baseURL }}</span>
+        <span v-if="!p.baseURL" class="warn">{{ $t('llm.provider.nobase') }}</span>
         <span v-if="!p.hasKey" class="warn">{{ $t('llm.provider.nokey') }}</span>
       </div>
     </section>
 
     <section v-if="st?.vault.unlocked" class="card">
       <div class="ch">{{ $t('llm.proxy.title') }}
-        <label class="sw"><input type="checkbox" :checked="st?.enabled" @change="toggleEnabled" /> {{ $t('llm.proxy.enable') }}</label>
+        <span class="badge" :class="{ ok: st?.enabled }">{{ st?.enabled ? $t('llm.proxy.on') : $t('llm.proxy.off') }}</span>
       </div>
       <div class="muted">{{ $t('llm.proxy.listen', { host: st?.host, port: st?.port }) }}</div>
       <div class="warn">{{ $t('llm.proxy.warn') }}</div>
+      <div class="muted">{{ $t('llm.proxy.endpoint') }}</div>
+      <pre class="cfg">{{ relayBase }}/chat/completions</pre>
+      <div class="row">
+        <span class="muted">{{ $t('llm.proxy.curl_hint') }}</span>
+        <button class="ghost" @click="copyCurl">{{ curlCopied ? $t('llm.config.copied') : $t('llm.config.copy') }}</button>
+      </div>
+      <pre class="cfg">{{ proxyCurl }}</pre>
     </section>
 
     <section v-if="st?.vault.unlocked" class="card">
@@ -262,6 +343,20 @@ async function copyConfig() {
 
     <section v-if="st?.vault.unlocked" class="card">
       <div class="ch">{{ $t('llm.token.title') }}</div>
+
+      <div class="ch">{{ $t('llm.secret.title') }}
+        <span class="badge" :class="{ ok: st?.hasSecret }">{{ st?.hasSecret ? $t('llm.secret.configured') : $t('llm.secret.not_set') }}</span>
+      </div>
+      <div class="muted">{{ $t('llm.secret.hint') }}</div>
+      <div v-if="!st?.hasSecret" class="row">
+        <input v-model="secret" :placeholder="$t('llm.secret.placeholder')" />
+        <button @click="saveSecret">{{ $t('llm.secret.set') }}</button>
+        <button class="ghost" @click="genRandomSecret">{{ $t('llm.secret.random') }}</button>
+      </div>
+      <div v-else class="row">
+        <button class="danger" @click="regenerateSecret">{{ $t('llm.secret.regenerate') }}</button>
+      </div>
+
       <div class="row">
         <input v-model="employeeId" :placeholder="$t('llm.token.employee')" />
         <input v-model.number="days" type="number" min="1" class="days" :placeholder="$t('llm.token.days')" />
@@ -322,6 +417,8 @@ async function copyConfig() {
 button { background: var(--ac); color: var(--onac); border: 1px solid var(--ac); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-family: inherit; }
 button.ghost { background: var(--bg5); color: var(--tx2); border-color: var(--bd); }
 button.danger { background: none; border-color: var(--err); color: var(--err); }
+button.lockbtn { background: var(--err); border-color: var(--err); color: #fff; font-weight: 700; padding: 10px 26px; font-size: 14px; }
+.vault-right { margin-left: auto; display: flex; gap: 6px; }
 button:disabled { opacity: .5; cursor: default; }
 .badge { font-size: 11px; color: var(--tx3); border: 1px solid var(--bd); border-radius: 10px; padding: 1px 8px; }
 .badge.ok { color: var(--ac2); border-color: var(--ac2); }
