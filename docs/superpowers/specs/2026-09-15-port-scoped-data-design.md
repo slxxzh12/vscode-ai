@@ -168,22 +168,22 @@ portPaths(port, { root = dataHome() }) -> { id, port, dir, projectsFile, workflo
 ## 6. 前端改造
 
 - `web/src/App.vue`：删除 `WorkspacePicker` 导入、`useWorkspace` 导入与 `wsState`、模板第 554 行的 `<WorkspacePicker>`（服务端不再有「需要选择档案」状态）。
-- 设置面板改端口：改调新的写端口接口（`POST /api/server/port`，见下），成功后提示「需重启后端生效」。
+- 设置面板端口保存：**前端无需改动**。`web/src/components/TerminalView.vue:147-156` 已经调用 `POST /api/settings`，失败走 `term.save_failed`，成功文案 `term.port_saved` 本就是「已保存，重启后生效」。
 - 其余数据无需变更：项目/工作流/调度接口的 URL 不变，只是服务端换了数据根。
 
-**新增接口** `POST /api/server/port`（`server/http-api.js`）
-- 入参 `{ port }`；校验 1–65535；原子写 `<APP_DIR>/data/port.txt`。
-- 返回 `{ ok: true, port, restartRequired: true }`；写入失败返回 400/500 与可读 `message`（走 `t()`）。
-- 原改 XML `port` 的调用点（设置面板、端口冲突弹窗）全部改走这里。
+**改造现有接口（`server/index.js`，不新增端点）**
+
+| 接口 | 改造 |
+| --- | --- |
+| `GET /api/settings` | 返回 `{ settings: { language, host, port }, envPort, currentPort, host }`，其中 `port` 取自运行时 `PORT`（不再取自 XML）；前端 `r.settings.port` 因此照常可用 |
+| `POST /api/settings { port }` | 校验 1–65535（非法 → 400 `{ error: 'invalid port' }`）；原子写 `<APP_DIR>/data/port.txt`；成功 → `{ port, needRestart: true }`；写入失败 → 500 `{ error: 'port-save-failed', message }`（`message` 走 `t()`） |
+| 端口冲突弹窗（`server/index.js:617`） | 选「更换端口」时改调同一个写端口函数，不再 `updateServerAttrs(configFile, { port })` |
 
 ## 7. i18n
 
-| key | zh-CN | en | 说明 |
-| --- | --- | --- | --- |
-| `srv.port.save_failed` | 保存端口失败：{msg} | Failed to save port: {msg} | 新增 |
-| `srv.port.restart_required` | 端口已保存为 {port}，重启后端后生效 | Port saved as {port}; restart the backend to apply | 新增 |
-
-删除 11 条 `ws.*`（见 5.2）。中英必须同时增删，跑 `npm.cmd run check:i18n`。
+- 只做删除：`ws.pick.*`（9 条）与 `ws.default_profile_name`、`ws.migrated_profile_name`，共 11 条（见 5.2）。
+- **无新增词条**：设置面板的成功/失败提示复用现有 `term.port_saved`（'已保存，重启后生效' / 'Saved. Takes effect after restart'）与 `term.save_failed`、`term.port_invalid`。
+- 中英必须同时删，跑 `npm.cmd run check:i18n`。
 
 ## 8. 打包脚本
 
@@ -212,7 +212,7 @@ portPaths(port, { root = dataHome() }) -> { id, port, dir, projectsFile, workflo
 | `server/test/data-home.test.js` | 更新：`dataHome()` 以 `void` 结尾；`downloadsDir(port)`/`relayPluginsDir(port)` 落在 `ports/<port>/downloads` |
 | `server/test/devflow-config.test.js` | 更新：解析/序列化不再含 `port` 属性 |
 | `server/test/i18n-settings.test.js` | 更新：`updateServerAttrs` 只处理 `language`/`host` |
-| `server/test/server-port.test.js` | 新增：`POST /api/server/port` 的成功、非法值 400、只读目标失败 500（含可读 `message`） |
+| `server/test/server-port.test.js` | 新增：`POST /api/settings {port}` 成功写文件、非法值 400、只读目标 500（含可读 `message`）；`GET /api/settings` 的 `settings.port` 等于运行时 PORT |
 
 **人工验收**
 
