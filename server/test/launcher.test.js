@@ -1,0 +1,47 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { makeLaunchPs1, makeLaunchSh, makeStartCommand } = require('../../scripts/launcher.js');
+
+test('launch.ps1 含 desired/running 双端口与 -Plan 钩子', () => {
+  const ps = makeLaunchPs1({ port: 22222 });
+  assert.match(ps, /param\(\[switch\]\$NoBrowser, \[switch\]\$NoShortcut, \[switch\]\$Plan/);
+  assert.match(ps, /'data\\port\.txt'/);
+  assert.match(ps, /'data\\runtime-port\.txt'/);
+  assert.match(ps, /\$desired/);
+  assert.match(ps, /\$running/);
+  assert.match(ps, /PLAN desired=\{0\} running=\{1\} alive=\{2\} action=\{3\}/);
+  assert.match(ps, /-f \$desired, \$running, \[int\]\$alive, \$action/);
+});
+
+test('launch.ps1 结束旧实例前有安全校验（只杀本应用）', () => {
+  const ps = makeLaunchPs1({ port: 22222 });
+  assert.match(ps, /runtime\\node\.exe/);
+  assert.match(ps, /server\\\\index\\\.js/, '命令行匹配 server\\\\index\\.js（PS 正则转义）');
+  assert.match(ps, /Stop-Process/);
+  assert.match(ps, /WARN/, '非本应用进程要打印告警而不是杀掉');
+});
+
+test('launch.ps1 保留原有能力（快捷方式 / Open-with / 浏览器）', () => {
+  const ps = makeLaunchPs1({ port: 22222 });
+  assert.match(ps, /Void\.lnk/);
+  assert.match(ps, /OpenWithProgids/);
+  assert.match(ps, /\?open=/);
+  assert.match(ps, /22222/, '默认端口写入脚本');
+});
+
+test('launch.sh 含 desired 优先、nc 存活探测与 --plan 钩子', () => {
+  const sh = makeLaunchSh({ port: 22222 });
+  assert.match(sh, /data\/port\.txt/);
+  assert.match(sh, /data\/runtime-port\.txt/);
+  assert.match(sh, /--plan/);
+  assert.match(sh, /PLAN desired=/);
+  assert.match(sh, /nc -z 127\.0\.0\.1 "\$RUNNING"/);
+  assert.match(sh, /exec "\$DIR\/runtime\/node" "server\/index\.js"/);
+});
+
+test('start.command 只转发到 launch.sh', () => {
+  const sc = makeStartCommand();
+  assert.match(sc, /exec "\$DIR\/script\/launch\.sh" "\$@"/);
+});
