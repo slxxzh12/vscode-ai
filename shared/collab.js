@@ -9,6 +9,7 @@ export const CollabS2C = Object.freeze({
 export const CollabPeer = Object.freeze({
   GROUP_JOIN: 'group-join',
   MEMBER_SYNC: 'member-sync',
+  MEMBER_INFO: 'member-info',
   SKILL_PUSH: 'skill-push',
   FILE_PUSH: 'file-push',
   PULL_SYNC: 'pull-sync',

@@ -20,6 +20,7 @@ import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
 import { UsagePeersStore } from './usage-peers.js';
 import { createSeedStore } from './seed-store.js';
+import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
 import { createUsageMount } from './usage-mount.js';
 import { loadInvite, saveInvite, clearInvite, isInviteActive } from './remote-invite.js';
@@ -176,6 +177,7 @@ function buildWorkspace({ paths, port }) {
     identity,
     peers: new UsagePeersStore({ file: paths.usagePeersFile, dailyFile: path.join(paths.dir, 'peer-usage.db'), logger: log }),
     seedStore: createSeedStore({ file: path.join(paths.dir, 'seed.db'), logger: log }),
+    collabDb: createCollabDb({ file: path.join(paths.dir, 'collab.db'), logger: log }),
     skillsRoot: paths.skillsRoot,
     uploadDir: paths.uploadDir,
     downloadDir: paths.downloadDir,
@@ -264,6 +266,8 @@ function initWorkspace(paths, port) {
   ws.engine.setAdvertised({ host: HOST, port });
   // 群主换了地址后重新上线：自动签名广播一次，成员据此把群主指到新地址
   Promise.resolve(ws.engine.announceIfMoved?.()).catch((e) => log.warn('announce group move failed', (e && e.message) || e));
+  // 启动即把本机的 command 等资产注册到群里（hub 落 collab.db 的成员/命令表）
+  Promise.resolve(ws.engine.registerSelfAssets?.()).then((r) => { if (r) log.info(`assets registered: groups=${r.groups} commands=${r.commands}`); }).catch((e) => log.warn('register assets failed', (e && e.message) || e));
   remoteInvite = loadInvite(paths.inviteFile);   // 令牌落盘：重启后仍有效（expiresAt=0 为长期）
   // 用量上报：启动即报一次，之后 60–90 分钟随机再报
   if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }

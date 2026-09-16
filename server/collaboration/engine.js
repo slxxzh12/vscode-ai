@@ -44,11 +44,12 @@ export function profileLabel(p) {
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, peers = null, seedStore = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
+  constructor({ store, identity, events = null, peer = null, peers = null, seedStore = null, collabDb = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.peers = peers;            // 用量上报库（master 侧），见 server/usage-peers.js
     this.seedStore = seedStore;    // 种子表（SQLite），见 server/seed-store.js
+    this.collabDb = collabDb;      // 群成员/命令/消息表（SQLite），见 server/collab-db.js
     this.events = events;
     this.peer = peer;              // { post(host, port, envelope) -> Promise<{ok, data?, error?}> }
     this.skillDefaultRoot = skillsRoot;   // opencode 技能根（env 覆盖优先）
@@ -279,6 +280,7 @@ export class CollabEngine {
     switch (env.type) {
       case CollabPeer.GROUP_JOIN: return this._inJoin(env);
       case CollabPeer.MEMBER_SYNC: return this._inMemberSync(env);
+      case CollabPeer.MEMBER_INFO: return this._inMemberInfo(env);
       case CollabPeer.SKILL_PUSH: return this._inSkillPush(env);
       case CollabPeer.FILE_PUSH: return this._inFilePush(env);
       case CollabPeer.PULL_SYNC: return this._inPullSync(env);
@@ -376,6 +378,74 @@ export class CollabEngine {
     if (g.name === expect && !moved) return { ok: true, unchanged: true };
     return this.renameGroup(expect);
   }
+  // 我拥有的 command 名单（供入群注册）
+  myCommands() {
+    const root = this.assetDir('command');
+    if (!root || !fs.existsSync(root)) return [];
+    const files = [];
+    collectTree(root, '', files);
+    return files.map((f) => f.rel).sort();
+  }
+  // 启动/入群：把自己的成员资料 + command 注册到群里（hub 落 SQLite，成员报给 hub）
+  async registerSelfAssets() {
+    this.myCmdCache = this.myCommands();
+    const groups = this.store.listGroups().filter((g) => g.members.find((m) => m.machineId === this.pub.machineId));
+    for (const g of groups) {
+      const me = g.members.find((m) => m.machineId === this.pub.machineId);
+      Object.assign(me, {
+        host: this.pub.host, port: this.pub.port, username: this.pub.username,
+        employeeId: this.pub.employeeId || '', commands: this.myCmdCache,
+      });
+      this.store.upsertGroup(g);
+      this._registerToDb(g, me);
+      if (g.hubId === this.pub.machineId) await this._broadcastMemberSync(g);
+      else {
+        const hub = g.members.find((m) => m.machineId === g.hubId);
+        if (hub) {
+          await this._post(hub.host, hub.port, this._sign(CollabPeer.MEMBER_INFO, { groupId: g.id, profile: me, commands: this.myCmdCache }))
+            .catch(() => { /* hub 离线时下次启动再报 */ });
+        }
+      }
+    }
+    this._emit('synced', {});
+    return { ok: true, groups: groups.length, commands: this.myCmdCache.length };
+  }
+  _registerToDb(g, member) {
+    if (!this.collabDb || !g || !member) return;
+    try {
+      this.collabDb.registerMember({
+        groupId: g.id, machineId: member.machineId, username: member.username, employeeId: member.employeeId,
+        host: member.host, port: member.port, publicKey: member.publicKey,
+      });
+      if (Array.isArray(member.commands)) this.collabDb.setCommands({ groupId: g.id, machineId: member.machineId, commands: member.commands });
+    } catch { /* 表不可用不影响协作 */ }
+  }
+  _logMessage({ groupId, id, src, target = null, message = '', command = null, ts = Date.now() }) {
+    if (!this.collabDb) return;
+    try { this.collabDb.addMessage({ id, groupId, src, target, message, command, updateTime: ts }); } catch { /* ignore */ }
+  }
+  _isHub(groupId) {
+    const g = this.store.findGroup(groupId);
+    return !!g && g.hubId === this.pub.machineId;
+  }
+  _inMemberInfo(env) {
+    const p = env.from;
+    const g = this.store.findGroup(env.payload && env.payload.groupId) || this.store.getGroup();
+    if (!g || g.hubId !== this.pub.machineId) return { ok: false, error: 'not-hub' };
+    const m = g.members.find((x) => x.machineId === p.machineId);
+    if (!m) return { ok: false, error: 'not-member' };
+    const prof = (env.payload && env.payload.profile) || {};
+    Object.assign(m, {
+      host: prof.host || m.host, port: prof.port || m.port,
+      username: prof.username || m.username, employeeId: prof.employeeId || m.employeeId || '',
+      commands: Array.isArray(env.payload && env.payload.commands) ? env.payload.commands : (m.commands || []),
+    });
+    this.store.upsertGroup(g);
+    this._registerToDb(g, m);
+    this._broadcastMemberSync(g);
+    this._emit('synced', {});
+    return { ok: true };
+  }
   _inMemberSync(env) {
     const g = env.payload.group;
     if (!g || !Array.isArray(g.members)) return { ok: false, error: 'bad-payload' };
@@ -396,6 +466,7 @@ export class CollabEngine {
         }
       }
       this.store.upsertGroup(local);
+      for (const m of local.members) this._registerToDb(local, m);   // 成员维护表 + 各成员的 command
     }
     this._emit('synced', {});
     return { ok: true };
@@ -811,6 +882,7 @@ export function _extendChat(engine) {
     if (toId && !r.group.members.find((m) => m.machineId === toId)) return { code: 'no-target' };
     const msg = { id: crypto.randomUUID(), groupId, kind: 'text', fromId: this.pub.machineId, text, toId, ts: Date.now(), seq: this.store.nextChatSeq() };
     this.store.addChatMessage(msg);
+    if (this._isHub(groupId)) this._logMessage({ groupId, id: msg.id, src: msg.fromId, target: msg.toId, message: msg.text, ts: msg.ts });
     this._broadcastChat(groupId, msg);
     this._emit('chat', { groupId, msg });
     return { code: 'ok', msg };
@@ -822,6 +894,7 @@ export function _extendChat(engine) {
     const r = this._requireMember(msg.groupId, p.machineId);
     if (r.code !== 'ok') return { ok: false, error: 'not-member' };
     this.store.addChatMessage({ ...msg, seq: this.store.nextChatSeq(), ts: msg.ts ?? Date.now() });
+    if (this._isHub(msg.groupId)) this._logMessage({ groupId: msg.groupId, id: msg.id, src: p.machineId, target: msg.toId, message: msg.text, ts: msg.ts });
     this._emit('chat', { groupId: msg.groupId, msg });
     return { ok: true };
   };
@@ -860,6 +933,7 @@ export function _extendChat(engine) {
       text: res.stdout || '(no output)', toId: fromId, ts: Date.now(), seq: this.store.nextChatSeq(),
       meta: { reqId, exitCode: res.exitCode, stderr: res.stderr || '', durationMs: res.durationMs ?? 0 } };
     this.store.addChatMessage(msg);
+    if (this._isHub(groupId)) this._logMessage({ groupId, id: msg.id, src: msg.fromId, target: fromId, message: msg.text, command: text, ts: msg.ts });
     this._broadcastChat(groupId, msg);
     this._emit('chat', { groupId, msg });
   };
