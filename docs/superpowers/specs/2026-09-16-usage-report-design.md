@@ -48,7 +48,7 @@ slave（任意机器）                                   master（被上报方�
 │                            │  X-DF-Token: <tk>  │ 落库 usage-peers.json       │
 │                            │  body: 机器身份+用量│ WS 广播 / 界面刷新          │
 └───────────────────────────┘                    └────────────────────────────┘
-                                                    GET /api/usage（本机界面读）
+                                                    GET /api/usage/peers（本机界面读）
 ```
 
 上报 body 的机器身份取自本机协作身份（`server/collaboration/identity.js`）：`machineId/employeeId/username/host/port`。
@@ -72,14 +72,16 @@ slave（任意机器）                                   master（被上报方�
 ```
 
 - 响应：`200 {"ok":true}`；令牌错/过期 `403 {"error":"bad-token"}`；body 非法 `400 {"error":"bad-body"}`。
-- 必须在 `server/remote-gate.js` 的 `isPeerRequest()` 白名单里（与 `/api/collab/peer`、`/api/collab/stats` 同级），否则「未开启远程访问」会被 Cookie 门禁以 `403 remote-disabled` 拦掉。
+- 必须在 `server/remote-gate.js` 的 `isPeerRequest()` 白名单里（与 `/api/collab/peer` 同级；旧的 `/api/collab/stats` 已随本设计删除），否则「未开启远程访问」会被 Cookie 门禁以 `403 remote-disabled` 拦掉。
 
-### 4.2 `GET /api/usage`（仅 master，供本机界面）
+### 4.2 `GET /api/usage/peers`（仅 master，供本机界面）
 
 ```json
 { "updatedAt": 1758000000000,
   "peers": { "<machineId>": { "machineId": "…", "employeeId": "…", "username": "…", "host": "…", "port": 22222, "sessions": 12, "days": 7, "messages": 340, "input": 1234567, "output": 234567, "totalCost": 1.23, "receivedAt": 1758000000000 } } }
 ```
+
+> 命名为 `/api/usage/peers` 而不是 `/api/usage`：`server/index.js` 已有 `GET /api/usage`（LLM token 用量，读 `usage.db`），不能复用同一路径。
 
 ### 4.3 删除
 
@@ -126,7 +128,7 @@ slave（任意机器）                                   master（被上报方�
 ## 8. 界面
 
 - 新增「机器用量」视图（独立页或在协作页顶部区块）：每台上报机器一行，列出 `员工/用户名`、`host:port`、`sessions`、`days`、`messages`、`input`、`output`、`totalCost`、`最后上报时间`、在线点。
-- 群成员列表的用量列改读同一份数据（`GET /api/usage`）；该成员从未上报过则显示 `—`。
+- 群成员列表的用量列改读同一份数据（`GET /api/usage/peers`）；该成员从未上报过则显示 `—`。
 - 新增词条中英同时补齐（如 `usage.title`、`usage.machine`、`usage.last_report`、`usage.online`、`usage.report_link_placeholder`、`usage.report_ok`、`usage.report_failed`、`usage.bad_link`）。
 
 ## 9. 测试
@@ -145,7 +147,7 @@ web 单测（vitest）：链接解析（合法/缺 token/非法 URL）→ `{ mas
 手工验收：
 
 1. release（22222）当 master：开启访问 → 复制链接 → `data/collab/invite.json` 落盘。
-2. dev（33333）当 slave：粘贴该链接 → 点「立即上报一次」→ master 的 `usage.json` 出现该机器一行，`GET /api/usage` 返回该 `machineId`。
+2. dev（33333）当 slave：粘贴该链接 → 点「立即上报一次」→ master 的 `usage.json` 出现该机器一行，`GET /api/usage/peers` 返回该 `machineId`。
 3. 重启 master 后再上报一次仍成功（令牌持久化）。
 4. 故意用错令牌 → `403 bad-token`，slave 界面显示失败原因。
 
