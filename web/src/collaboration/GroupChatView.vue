@@ -141,8 +141,16 @@ onMounted(async () => {
         <div v-if="mentionMembers.length === 0" class="empty">{{ $t('collab.chat.no_match') }}</div>
       </div>
       <div class="row">
-        <input v-model="composer" :placeholder="$t('collab.chat.input_placeholder')" @input="onComposerInput" @keyup.enter="submit" />
-        <button @click="submit">{{ $t('common.send') }}</button>
+        <div class="cinputwrap">
+          <textarea
+            v-model="composer"
+            class="cinput"
+            :placeholder="$t('collab.chat.input_placeholder')"
+            @input="onComposerInput"
+            @keydown.enter.exact.prevent="submit"
+          />
+        </div>
+        <button class="csend" @click="submit">{{ $t('common.send') }}</button>
       </div>
     </div>
   </div>
@@ -174,9 +182,12 @@ onMounted(async () => {
 .mentions { position: absolute; bottom: 100%; left: 8px; background: var(--bg2); border: 1px solid var(--bd); border-radius: 6px; padding: 4px; display: flex; flex-direction: column; max-height: 180px; overflow: auto; }
 .mentions button { background: none; border: none; color: var(--tx1); text-align: left; padding: 4px 8px; cursor: pointer; }
 .mentions button:hover { background: var(--ac); color: var(--onac); border-radius: 4px; }
-.row { display: flex; gap: 6px; }
-input { flex: 1; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 7px 10px; }
-button { background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+.row { display: flex; align-items: stretch; gap: 8px; }
+.cinputwrap { position: relative; flex: 1; min-width: 0; display: flex; }
+.cinput { flex: 1; min-width: 0; min-height: 62px; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
+.cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
+.cinput::placeholder { color: var(--tx3); }
+.csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
 button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2); }
 .empty { color: var(--tx6); padding: 8px; }
 </style>
