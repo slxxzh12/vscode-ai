@@ -2,11 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isPeerRequest, matchAccessToken } from '../remote-gate.js';
 
-test('isPeerRequest 仅匹配 /api/collab/peer 与 /api/collab/stats 的 POST', () => {
+test('isPeerRequest 仅匹配 /api/collab/peer 与 /api/usage/report 的 POST', () => {
   assert.equal(isPeerRequest('/api/collab/peer', 'POST'), true);
   assert.equal(isPeerRequest('/api/collab/peer', 'GET'), false);
-  assert.equal(isPeerRequest('/api/collab/stats', 'POST'), true);
-  assert.equal(isPeerRequest('/api/collab/stats', 'GET'), false);
+  assert.equal(isPeerRequest('/api/usage/report', 'POST'), true);
+  assert.equal(isPeerRequest('/api/usage/report', 'GET'), false);
+  assert.equal(isPeerRequest('/api/collab/stats', 'POST'), false);
   assert.equal(isPeerRequest('/api/collab/snapshot', 'POST'), false);
 });
 
