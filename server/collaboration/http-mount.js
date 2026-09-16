@@ -203,6 +203,10 @@ export function createCollabMount({ engine, logger = console }) {
         return ok(res, await engine.pullDownloads(body.names || null, body.masterId || null));
       }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'distribute' && m === 'POST') { const r = await engine.distributeToGroup(seg[1], body.skillNames || []); return ok(res, r); }
+      if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'rename' && m === 'POST') {
+        const r = await engine.renameGroup(body.name);
+        return r.ok ? ok(res, { group: r.group }) : sendJson(res, 400, { error: r.error });
+      }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'files' && m === 'POST') {
         const name = url.searchParams.get('name') || '';
         const data = await readRaw(req).catch((e) => null);

@@ -322,6 +322,28 @@ export class CollabEngine {
     this._emit('synced', {});
     return { ok: true, group: g };
   }
+  // 群主（hub）更换地址/名称后，用私钥签名广播给所有成员；成员据此把群主指到新的
+  async renameGroup(name) {
+    const g = this.store.ownedGroup(this.pub.machineId);
+    if (!g) return { ok: false, error: 'not-hub' };
+    g.name = String(name == null ? '' : name).trim() || profileLabel(this.pub);
+    g.hubId = this.pub.machineId;
+    const self = g.members.find((m) => m.machineId === this.pub.machineId);
+    const me = { host: this.pub.host, port: this.pub.port, username: this.pub.username, employeeId: this.pub.employeeId || '' };
+    if (self) Object.assign(self, me); else g.members.push({ ...this.pub });
+    this.store.upsertGroup(g);
+    await this._broadcastMemberSync(g);
+    this._emit('synced', {});
+    return { ok: true, group: g };
+  }
+  // 启动时：我是群主且对外地址（群名 = 用户名@host:port）变了 → 自动广播一次
+  async announceIfMoved() {
+    const g = this.store.ownedGroup(this.pub.machineId);
+    if (!g) return { ok: false, error: 'not-hub' };
+    const expect = profileLabel(this.pub);
+    if (g.name === expect) return { ok: true, unchanged: true };
+    return this.renameGroup(expect);
+  }
   _inMemberSync(env) {
     const g = env.payload.group;
     if (!g || !Array.isArray(g.members)) return { ok: false, error: 'bad-payload' };
@@ -329,8 +351,18 @@ export class CollabEngine {
     if (!local) this.store.upsertGroup({ ...g });
     else {
       for (const m of g.members) if (!local.members.find((x) => x.machineId === m.machineId)) local.members.push(m);
-      if (typeof g.name === 'string' && g.name) local.name = g.name;
-      if (typeof g.announcement === 'string') local.announcement = g.announcement;
+      // 只认「当前群主」发来的群资料变更（口令：换地址 / 换新群主都由旧群主签名告知）
+      if (local.hubId === env.from.machineId) {
+        if (typeof g.name === 'string' && g.name) local.name = g.name;
+        if (typeof g.announcement === 'string') local.announcement = g.announcement;
+        if (typeof g.hubId === 'string' && g.hubId) local.hubId = g.hubId;
+        const hub = (g.members || []).find((m) => m.machineId === local.hubId);
+        if (hub) {
+          const stale = local.members.find((m) => m.machineId === hub.machineId);
+          if (stale) Object.assign(stale, { host: hub.host, port: hub.port, username: hub.username, employeeId: hub.employeeId });
+          else local.members.push({ ...hub });
+        }
+      }
       this.store.upsertGroup(local);
     }
     this._emit('synced', {});

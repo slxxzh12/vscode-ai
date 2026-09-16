@@ -71,6 +71,8 @@ export const messages = {
   'collab.announce.save': 'Save',
   'collab.announce.empty': 'No announcement',
   'collab.announce.placeholder': 'Announcement text (only the master can edit; synced to members on save)',
+  'collab.group.announce_move': 'Update group name & notify members',
+  'collab.group.move_done': 'Members notified (they will point the hub to the new address)',
   'collab.member.empty': 'No members yet. Enable remote access and share the link',
   'collab.heartbeat.usage': 'opencode in {input} / out {output} · {messages} msgs · {days} d',
   'usage.title': 'Machine usage',

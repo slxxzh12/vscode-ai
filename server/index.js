@@ -250,6 +250,8 @@ function initWorkspace(paths, port) {
     gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log });
   }
   ws.engine.setAdvertised({ host: HOST, port });
+  // 群主换了地址后重新上线：自动签名广播一次，成员据此把群主指到新地址
+  Promise.resolve(ws.engine.announceIfMoved?.()).catch((e) => log.warn('announce group move failed', (e && e.message) || e));
   remoteInvite = loadInvite(paths.inviteFile);   // 令牌落盘：重启后仍有效（expiresAt=0 为长期）
   // 用量上报：启动即报一次，之后 60–90 分钟随机再报
   if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }

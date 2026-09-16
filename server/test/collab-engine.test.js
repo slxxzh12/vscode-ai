@@ -259,3 +259,37 @@ test('群公告：群主设置后随 member-sync 下发给成员；非群主被拒', async () => {
     assert.equal(denied.error, 'not-hub');
   } finally { await h.stop(); }
 });
+
+test('群主换地址：renameGroup 签名广播后，成员把群主指到新地址', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    await groupUp(A, B);
+    // 模拟 A 换了对外地址（host/port 变化后重新上线）
+    A.identity.host = '10.9.9.9';
+    A.identity.port = 45678;
+    const moved = await A.announceIfMoved();
+    assert.equal(moved.ok, true, JSON.stringify(moved));
+    await new Promise((res) => setTimeout(res, 200));
+    const hubInB = B.store.getGroup().members.find((m) => m.machineId === A.pub.machineId);
+    assert.equal(hubInB.host, '10.9.9.9');
+    assert.equal(hubInB.port, 45678);
+    assert.equal(B.store.getGroup().name, `${A.pub.username}@10.9.9.9:45678`);
+    assert.equal(B.store.getGroup().hubId, A.pub.machineId);
+    // 地址没变时不做无谓广播
+    const again = await A.announceIfMoved();
+    assert.equal(again.unchanged, true);
+  } finally { await h.stop(); }
+});
+
+test('群主换新：旧群主签名告知新 hubId，成员跟随更换群主', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const g = await groupUp(A, B);
+    const g2 = { ...A.store.getGroup(), hubId: B.pub.machineId, members: [...A.store.getGroup().members, { ...B.pub }] };
+    await A._broadcastMemberSync(g2);
+    await new Promise((res) => setTimeout(res, 200));
+    assert.equal(B.store.getGroup().hubId, B.pub.machineId);
+  } finally { await h.stop(); }
+});

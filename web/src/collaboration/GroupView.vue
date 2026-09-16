@@ -117,6 +117,16 @@ function fmtSize(n: number) {
 // —— master 同步种子 / slave 主动同步 ——
 const isMaster = computed(() => !!group.value && group.value.hubId === me.value);
 const mtab = ref<'members' | 'trend'>('members');
+// —— 群主换地址后：签名广播新的群名/地址，成员据此把群主指到新的 ——
+const moveMsg = ref('');
+async function announceMove() {
+  moveMsg.value = '';
+  try {
+    await props.collab.renameGroup(group.value!.id);
+    moveMsg.value = t('collab.group.move_done');
+    setTimeout(() => { moveMsg.value = ''; }, 2000);
+  } catch (e) { moveMsg.value = String((e as Error).message || e); }
+}
 // —— 用量上报快照（成员表与趋势图共用）——
 const peers = ref<Record<string, import('./types').CollabUsage>>({});
 async function loadPeers() {
@@ -278,6 +288,10 @@ onMounted(async () => {
           <div class="addrow">
             <button @click="seedOpen = true">{{ $t('collab.downloads.title') }}</button>
           </div>
+          <div class="addrow">
+            <button @click="announceMove">{{ $t('collab.group.announce_move') }}</button>
+          </div>
+          <div v-if="moveMsg" class="cfghint">{{ moveMsg }}</div>
           <div v-if="seedMsg" class="cfghint">{{ seedMsg }}</div>
           <div v-if="installMsg" class="cfghint">{{ installMsg }}</div>
         </div>
