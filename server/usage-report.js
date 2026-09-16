@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { collectAgentStats } from './collaboration/agent-stats.js';
 import path from 'node:path';
 
 export const MIN_INTERVAL_MS = 60 * 60 * 1000;   // 60 鍒嗛挓
@@ -41,4 +42,67 @@ export function saveReportConfig(file, cfg) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(next, null, 2), 'utf8');
   return next;
+}
+
+// slave 侧上报器：启动即报一次，之后 60–90 分钟随机再报
+export function createUsageReporter({
+  file, identity, cmd = 'opencode', collect = collectAgentStats,
+  fetchFn = fetch, logger = console, random = Math.random,
+  now = () => Date.now(), scheduleFn = (fn, ms) => setTimeout(fn, ms),
+} = {}) {
+  let timer = null;
+  let stopped = false;
+  let status = { lastAt: 0, lastOk: null, lastError: '', nextAt: 0 };
+
+  const config = () => loadReportConfig(file);
+  const statusOf = () => ({ ...status, config: config() });
+
+  async function reportNow() {
+    const cfg = config();
+    if (!cfg.masterUrl || !cfg.token) {
+      status = { ...status, lastAt: now(), lastOk: false, lastError: 'not-configured' };
+      return { ok: false, error: 'not-configured' };
+    }
+    let usage;
+    try { usage = await collect({ cmd, days: cfg.days }); }
+    catch (e) { usage = { agent: cmd, days: cfg.days, error: String((e && e.message) || e) }; }
+    const me = (typeof identity === 'function' ? identity() : identity) || {};
+    const body = {
+      machineId: me.machineId || '', employeeId: me.employeeId || '', username: me.username || '',
+      host: me.host || '', port: me.port || 0, usage,
+    };
+    try {
+      const res = await fetchFn(`${cfg.masterUrl}/api/usage/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-DF-Token': cfg.token },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
+      status = { ...status, lastAt: now(), lastOk: true, lastError: '' };
+      return { ok: true };
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      status = { ...status, lastAt: now(), lastOk: false, lastError: msg };
+      logger?.warn?.('usage report failed', msg);
+      return { ok: false, error: msg };
+    }
+  }
+
+  function schedule() {
+    if (stopped) return;
+    const delay = nextDelay(random);
+    status.nextAt = now() + delay;
+    timer = scheduleFn(async () => { await reportNow(); schedule(); }, delay);
+    if (timer && timer.unref) timer.unref();
+  }
+
+  return {
+    config,
+    status: statusOf,
+    setConfig(patch) { return saveReportConfig(file, { ...config(), ...patch }); },
+    reportNow,
+    start() { stopped = false; reportNow().then(schedule); },
+    stop() { stopped = true; if (timer) { clearTimeout(timer); timer = null; } },
+  };
 }
