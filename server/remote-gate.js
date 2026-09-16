@@ -1,7 +1,7 @@
 // 远程访问门禁的纯判定（便于单测；index.js 消费）
 export function isPeerRequest(pathname, method) {
   if (method !== 'POST') return false;
-  return pathname === '/api/collab/peer' || pathname === '/api/collab/stats';
+  return pathname === '/api/collab/peer' || pathname === '/api/usage/report';
 }
 
 export function matchAccessToken(access, invite, safeEqual) {
@@ -24,4 +24,10 @@ export function resolveInviteDays(input = {}) {
   if (!Number.isFinite(days) || days < 1) days = DEFAULT_INVITE_DAYS;
   if (days > MAX_INVITE_DAYS) days = MAX_INVITE_DAYS;
   return days;
+}
+
+// days=0 表示「长期不过期」（用作用量上报的长期令牌）；其它值沿用 resolveInviteDays
+export function resolveInviteDaysAllowForever(input = {}) {
+  if (Number(input.days) === 0) return 0;
+  return resolveInviteDays(input);
 }
