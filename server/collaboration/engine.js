@@ -272,6 +272,60 @@ export class CollabEngine {
     this._emit('chat', { groupId, msg });
     return msg;
   }
+
+  // ---- 本机任务表：分发通知落任务 ----
+  listTasks(filter = {}) { return this.taskStore?.list?.(filter) || []; }
+  _advanceCursor(groupId, msg) {
+    if (!groupId || !msg) return;
+    try { this.taskStore?.advanceCursor?.(groupId, Number(msg.ts) || 0, msg.id); } catch { /* ignore */ }
+  }
+  // 一条 kind:'dist' 群消息 → 本机任务（按类型各一条；同 hash 幂等）
+  ingestDist(msg) {
+    if (!msg || msg.kind !== 'dist' || !msg.groupId || !msg.meta) return { code: 'skip' };
+    const g = this.store.findGroup(msg.groupId);
+    if (!g) return { code: 'no-group' };
+    if (msg.fromId === this.pub.machineId) return { code: 'self' };                 // 群主本机不建任务
+    if (msg.fromId !== g.hubId) return { code: 'not-hub' };                         // 只认群主的通知
+    if (!g.members.find((m) => m.machineId === this.pub.machineId)) return { code: 'not-member' };
+    const meta = msg.meta;
+    if (!meta.hash || !meta.name) return { code: 'bad-meta' };
+    if (meta.type && !['skills', 'workflow', 'mixed'].includes(String(meta.type))) return { code: 'bad-meta' };
+    const kinds = distKindsOf(meta);
+    if (!kinds.length) return { code: 'bad-meta' };
+    const payload = {
+      skills: meta.skills || [], command: meta.command || [], agent: meta.agent || [], workflow: meta.workflow || [],
+      count: Number(meta.count) || 0, size: Number(meta.size) || 0,
+      skillsUpdatedAt: Number(meta.skillsUpdatedAt) || 0, workflowUpdatedAt: Number(meta.workflowUpdatedAt) || 0,
+    };
+    const created = [];
+    for (const kind of kinds) {
+      const r = this.taskStore?.upsert?.({
+        id: crypto.randomUUID(), groupId: msg.groupId, hubId: g.hubId, kind, hash: String(meta.hash),
+        name: String(meta.name), url: String(meta.url || ''), payload, status: 'pending',
+        messageId: msg.id, createdAt: Date.now(), updatedAt: Date.now(),
+      });
+      if (r?.created) created.push(kind);
+    }
+    this._emit('tasks', { groupId: msg.groupId, created, msgId: msg.id });
+    return { code: 'ok', created };
+  }
+  // 启动补扫：拉各群历史聊天，把错过的分发通知补成任务（失败只记日志，等下次心跳/拉取）
+  async backfillDistTasks() {
+    const groups = this.store.listGroups()
+      .filter((g) => g.hubId !== this.pub.machineId && g.members.find((m) => m.machineId === this.pub.machineId));
+    let scanned = 0;
+    let pending = 0;
+    for (const g of groups) {
+      try {
+        const r = await this.pullChatFrom(g.hubId, { groupId: g.id });
+        if (r.code !== 'ok' || !Array.isArray(r.messages) || !r.messages.length) continue;
+        scanned += r.messages.filter((m) => m.kind === 'dist').length;
+        this.applyChatPull({ groupId: g.id, messages: r.messages });
+        pending += this.listTasks({ groupId: g.id, status: 'pending' }).length;
+      } catch (e) { this.log?.warn?.('dist backfill failed', (e && e.message) || e); }
+    }
+    return { code: 'ok', groups: groups.length, distMessages: scanned, pending };
+  }
   _sign(type, payload) {
     return signEnvelope(this.identity.privateKey, type, this.pub, payload);
   }
@@ -945,6 +999,8 @@ export function _extendChat(engine) {
     const r = this._requireMember(msg.groupId, p.machineId);
     if (r.code !== 'ok') return { ok: false, error: 'not-member' };
     this.store.addChatMessage({ ...msg, seq: this.store.nextChatSeq(), ts: msg.ts ?? Date.now() });
+    if (msg.kind === 'dist') this.ingestDist(msg);
+    this._advanceCursor(msg.groupId, msg);
     if (this._isHub(msg.groupId)) this._logMessage({ groupId: msg.groupId, id: msg.id, src: p.machineId, target: msg.toId, message: msg.text, ts: msg.ts });
     this._emit('chat', { groupId: msg.groupId, msg });
     return { ok: true };
@@ -1034,6 +1090,8 @@ export function _extendChat(engine) {
     for (const m of messages) {
       if (existing.has(m.id)) continue;
       this.store.addChatMessage({ ...m, seq: this.store.nextChatSeq(), ts: m.ts ?? Date.now() });
+      if (m.kind === 'dist' && shouldProcess(this.taskStore?.getCursor?.(groupId), m)) this.ingestDist(m);
+      this._advanceCursor(groupId, m);
     }
     this._emit('chat', { groupId, msg: null });
   };
