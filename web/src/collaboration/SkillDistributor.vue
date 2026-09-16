@@ -4,7 +4,8 @@ import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import { t } from '../i18n';
 
-const props = defineProps<{ collab: CollabApi; groupId: string }>();
+const props = defineProps<{ collab: CollabApi; groupId: string; focus?: 'all' | 'skills' | 'workflow' }>();
+const focus = computed(() => props.focus ?? 'all');
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const group = computed(() => (snap.value.groups || []).find((g) => g.id === props.groupId) || null);
 const isMaster = computed(() => !!snap.value.groups?.find((g) => g.id === props.groupId && g.hubId === snap.value.identity.machineId));
@@ -28,7 +29,13 @@ const selected = computed(() => {
   return s;
 });
 const selectedCount = computed(() => selected.value.skills.length + selected.value.command.length + selected.value.agent.length + selected.value.workflow.length);
-const totalCount = computed(() => assets.value.skills.length + assets.value.command.length + assets.value.agent.length + assets.value.workflow.length);
+const totalCount = computed(() => visible.value.skills.length + visible.value.command.length + visible.value.agent.length + visible.value.workflow.length);
+// 按入口聚焦：分发技能（技能/命令/Agent）或分发工作流
+const visible = computed(() => (focus.value === 'workflow'
+  ? { skills: [], command: [], agent: [], workflow: assets.value.workflow }
+  : focus.value === 'skills'
+    ? { skills: assets.value.skills, command: assets.value.command, agent: assets.value.agent, workflow: [] }
+    : assets.value));
 const pkg = ref<{ id: string; fileName: string; size: number } | null>(null);
 const sent = ref(false);
 
@@ -98,30 +105,30 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
 
     <div class="skilllist">
       <div v-if="totalCount === 0" class="empty">{{ $t('collab.dist.empty') }}</div>
-      <template v-if="assets.skills.length">
-        <div class="sec">{{ $t('collab.dist.skills', { count: assets.skills.length }) }}</div>
-        <label v-for="s in assets.skills" :key="'skills:' + s.name" class="skill">
+      <template v-if="visible.skills.length">
+        <div class="sec">{{ $t('collab.dist.skills', { count: visible.skills.length }) }}</div>
+        <label v-for="s in visible.skills" :key="'skills:' + s.name" class="skill">
           <input type="checkbox" v-model="checked[keyOf('skills', s.name)]" />
           <span class="snm">🛠 {{ s.name }}</span>
         </label>
       </template>
-      <template v-if="assets.command.length">
-        <div class="sec">{{ $t('collab.dist.command', { count: assets.command.length }) }}</div>
-        <label v-for="c in assets.command" :key="'command:' + c.name" class="skill">
+      <template v-if="visible.command.length">
+        <div class="sec">{{ $t('collab.dist.command', { count: visible.command.length }) }}</div>
+        <label v-for="c in visible.command" :key="'command:' + c.name" class="skill">
           <input type="checkbox" v-model="checked[keyOf('command', c.name)]" />
           <span class="snm">⌨ {{ c.name }}</span>
         </label>
       </template>
-      <template v-if="assets.agent.length">
-        <div class="sec">{{ $t('collab.dist.agent', { count: assets.agent.length }) }}</div>
-        <label v-for="a in assets.agent" :key="'agent:' + a.name" class="skill">
+      <template v-if="visible.agent.length">
+        <div class="sec">{{ $t('collab.dist.agent', { count: visible.agent.length }) }}</div>
+        <label v-for="a in visible.agent" :key="'agent:' + a.name" class="skill">
           <input type="checkbox" v-model="checked[keyOf('agent', a.name)]" />
           <span class="snm">🤖 {{ a.name }}</span>
         </label>
       </template>
-      <template v-if="assets.workflow.length">
-        <div class="sec">{{ $t('collab.dist.workflow', { count: assets.workflow.length }) }}</div>
-        <label v-for="w in assets.workflow" :key="'workflow:' + w.id" class="skill">
+      <template v-if="visible.workflow.length">
+        <div class="sec">{{ $t('collab.dist.workflow', { count: visible.workflow.length }) }}</div>
+        <label v-for="w in visible.workflow" :key="'workflow:' + w.id" class="skill">
           <input type="checkbox" v-model="checked[keyOf('workflow', w.id)]" />
           <span class="snm">🧩 {{ w.name }}</span>
         </label>

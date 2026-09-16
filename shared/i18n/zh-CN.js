@@ -145,6 +145,8 @@ export const messages = {
   'collab.chat.need_mention': '先 @ 一个群成员再发命令',
   'collab.chat.distribute': '🛠 分发技能',
   'collab.chat.distribute_title': '把本机技能分发给该群所有成员',
+  'collab.chat.distribute_workflow': '🧩 分发工作流',
+  'collab.dist.workflow_title': '把本机工作流分发给该群所有成员',
   'collab.chat.send_file': '📎 发文件',
   'collab.chat.file_title': '把本机文件发送给该群所有成员（≤40MB）',
   'collab.chat.cmd_request': '@{name} 请求在你这执行：',

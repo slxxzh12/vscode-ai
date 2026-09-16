@@ -14,6 +14,12 @@ const chat = computed(() => props.collab.chatState.value[props.groupId] || { mes
 const me = computed(() => snap.value.identity.machineId);
 const myPending = computed(() => props.collab.pendingCmdState.value.filter((p) => p.groupId === props.groupId));
 const skillOpen = ref(false);
+const skillFocus = ref<'skills' | 'workflow'>('skills');
+function openDist(kind: 'skills' | 'workflow') {
+  if (skillOpen.value && skillFocus.value === kind) { skillOpen.value = false; return; }
+  skillFocus.value = kind;
+  skillOpen.value = true;
+}
 const nameById = computed(() => {
   const map: Record<string, string> = {};
   for (const m of group.value?.members ?? []) map[m.machineId] = m.username;
@@ -115,12 +121,13 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
   <div class="gcv">
     <!-- 群聊工具条 -->
     <div class="tools">
-      <button class="tool" :class="{ on: skillOpen }" :title="$t('collab.chat.distribute_title')" @click="skillOpen = !skillOpen">{{ $t('collab.chat.distribute') }}</button>
+      <button class="tool" :class="{ on: skillOpen && skillFocus === 'skills' }" :title="$t('collab.chat.distribute_title')" @click="openDist('skills')">{{ $t('collab.chat.distribute') }}</button>
+      <button class="tool" :class="{ on: skillOpen && skillFocus === 'workflow' }" :title="$t('collab.dist.workflow_title')" @click="openDist('workflow')">{{ $t('collab.chat.distribute_workflow') }}</button>
       <button class="tool" :disabled="fileSending" :title="$t('collab.chat.file_title')" @click="fileInput?.click()">{{ fileSending ? $t('common.sending') : $t('collab.chat.send_file') }}</button>
       <span v-if="fileMsg" class="filemsg">{{ fileMsg }}</span>
       <input ref="fileInput" type="file" class="filepick" @change="onFilePick" />
     </div>
-    <SkillDistributor v-if="skillOpen" :collab="collab" :group-id="props.groupId" />
+    <SkillDistributor v-if="skillOpen" :collab="collab" :group-id="props.groupId" :focus="skillFocus" />
 
     <!-- 本机待确认执行卡片（按当前群过滤） -->
     <div v-for="p in myPending" :key="p.id" class="pend">

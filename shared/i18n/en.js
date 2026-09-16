@@ -145,6 +145,8 @@ export const messages = {
   'collab.chat.need_mention': 'Mention a group member before sending a command',
   'collab.chat.distribute': '🛠 Distribute skills',
   'collab.chat.distribute_title': 'Distribute local skills to all group members',
+  'collab.chat.distribute_workflow': '🧩 Distribute workflows',
+  'collab.dist.workflow_title': 'Distribute local workflows to all group members',
   'collab.chat.send_file': '📎 Send file',
   'collab.chat.file_title': 'Send local files to all group members (≤40MB)',
   'collab.chat.cmd_request': '@{name} requests execution on your machine:',
