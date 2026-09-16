@@ -289,6 +289,8 @@ export class CollabEngine {
       if (!group) return { code: 'unreachable' };
       this.store.upsertGroup(group);
       this._emit('synced', {});
+      // 入群即知道 master 的地址与邀请令牌：交给上层作为「默认用量上报目标」
+      try { this.onJoined?.({ host, port: Number(port), token, group }); } catch { /* ignore */ }
       return { code: 'joined', group };
     });
   }
