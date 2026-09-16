@@ -440,7 +440,7 @@ const server = http.createServer(async (req, res) => {
       const token = crypto.randomBytes(24).toString('hex');
       const password = crypto.randomBytes(16).toString('base64url');        // 22 字符，≥16
       remoteInvite = { token, password, expiresAt: days === 0 ? 0 : Date.now() + Math.min(days * 24 * 3600 * 1000, MAX_TTL_MS) };
-      saveInvite(paths.inviteFile, remoteInvite);
+      if (ws && ws.paths) saveInvite(ws.paths.inviteFile, remoteInvite);
       remoteFails = 0;
       remoteLockedUntil = 0;
       let needRestart = false;
@@ -458,7 +458,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/remote/revoke' && req.method === 'POST') {
     remoteInvite = null;
-    clearInvite(paths.inviteFile);
+    if (ws && ws.paths) clearInvite(ws.paths.inviteFile);
     remoteFails = 0;
     remoteLockedUntil = 0;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });

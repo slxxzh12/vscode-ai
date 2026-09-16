@@ -34,6 +34,7 @@
 - **会话列表排序**：`createdAt` 同毫秒会并列，必须带单调 `seq` 二级排序。
 - **xterm v5**：`term.onData(cb)` 返回 IDisposable（`offData` 已不存在）；卸载用 `dispose()`。
 - **绿色包「重启后端」的助手必须跑在独立控制台**：`spawnRestart` 的助手若带 `windowsHide:true`（=CREATE_NO_WINDOW），它仍挂在服务的控制台上，服务一退/控制台一关助手即被杀 → 旧实例退了、新实例起不来（实测复现过）。必须走 `cmd /c start "" /min powershell -WindowStyle Hidden ...` 让助手拥有自己的新控制台。
+- **用量上报不走加群**：slave 在协作页「机器用量」粘 master 的访问链接（`http://<host>:<port>/?access=<token>`）即可，每 60–90 分钟随机把 `opencode stats` 结果 `POST /api/usage/report`（请求头 `X-DF-Token`）；master 令牌落盘在 `<数据目录>/collab/invite.json`，`days=0` 表示长期不过期、重启不丢。旧的「群内 Ed25519 签名信封上报」已删除（`/api/collab/stats`、`CollabPeer.STATS`、`store.heartbeats` 都不复存在）。
 - **`ws.data` 只在服务端**：客户端拿不到；验证用服务端 Conn（`gateway.conns`）。
 - WS 消息 type 一律引用 `shared` 的 `C2S`/`S2C` 常量，禁止在 server/web 里写死字符串。
 
