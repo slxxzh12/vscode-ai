@@ -17,13 +17,17 @@ export function restartGuard({ appDir, envPort = process.env.DEVFLOW_PORT, platf
   return { ok: true, launcher };
 }
 
-// 异步（detached + unref）拉起「等我退出后重启我」的助手；调用方随后应立即 process.exit(0)
+// 异步（detached）拉起「等我退出后重启我」的助手；调用方随后应立即 process.exit(0)
+// Windows 注意：助手不能带 windowsHide（=CREATE_NO_WINDOW），否则它仍挂在服务的控制台上，
+// 服务一退、控制台一关助手就被一起杀掉，导致「旧实例退了、新实例没起」。
+// 用 `cmd /c start /min` 让助手跑在独立的新控制台里，从而活过本进程退出。
 export function spawnRestart({ appDir, pid = process.pid, platform = process.platform, spawnFn = spawn } = {}) {
+  const wait = `Wait-Process -Id ${pid} -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300; Start-Process -FilePath '${path.join(appDir, 'start.bat')}'`;
   const child = platform === 'win32'
-    ? spawnFn('powershell.exe', [
-        '-NoProfile', '-WindowStyle', 'Hidden', '-Command',
-        `Wait-Process -Id ${pid} -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300; Start-Process -FilePath '${path.join(appDir, 'start.bat')}'`,
-      ], { cwd: appDir, detached: true, stdio: 'ignore', windowsHide: true })
+    ? spawnFn('cmd.exe', [
+        '/c', 'start', '""', '/min',
+        'powershell.exe', '-NoProfile', '-WindowStyle', 'Hidden', '-Command', wait,
+      ], { cwd: appDir, detached: true, stdio: 'ignore' })
     : spawnFn('sh', [
         '-c',
         `while kill -0 ${pid} 2>/dev/null; do sleep 0.3; done; open "${path.join(appDir, 'start.command')}"`,

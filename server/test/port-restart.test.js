@@ -46,15 +46,19 @@ test('env 为空串/未定义/纯空白视为未设', () => {
   assert.equal(restartGuard({ appDir, envPort: '   ', platform: 'win32' }).ok, true);
 });
 
-test('spawnRestart：Windows 用等待本进程退出的助手并 detached', () => {
+test('spawnRestart：Windows 用新控制台里的助手等本进程退出（避免随本进程控制台一起被杀）', () => {
   const calls = [];
   const fakeSpawn = (bin, args, opts) => { calls.push({ bin, args, opts }); return { unref() { calls.push({ unref: true }); } }; };
   spawnRestart({ appDir: 'C:\\app', pid: 4321, platform: 'win32', spawnFn: fakeSpawn });
-  assert.equal(calls[0].bin, 'powershell.exe');
-  assert.ok(calls[0].args.join(' ').includes('Wait-Process -Id 4321'));
-  assert.ok(calls[0].args.join(' ').includes('start.bat'));
-  assert.equal(calls[0].opts.detached, true);
-  assert.equal(calls[0].opts.windowsHide, true);
+  const { bin, args, opts } = calls[0];
+  assert.equal(bin, 'cmd.exe');
+  assert.deepEqual(args.slice(0, 4), ['/c', 'start', '""', '/min']);
+  assert.ok(args.join(' ').includes('powershell.exe'));
+  assert.ok(args.join(' ').includes('Wait-Process -Id 4321'));
+  assert.ok(args.join(' ').includes('start.bat'));
+  assert.equal(opts.detached, true);
+  assert.equal(opts.stdio, 'ignore');
+  assert.notEqual(opts.windowsHide, true); // CREATE_NO_WINDOW 会让助手继续挂在本进程控制台上
   assert.deepEqual(calls[1], { unref: true });
 });
 
