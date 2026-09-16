@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { CollabPeer } from '@devflow/shared/collab';
+import { serializeWorkflowsFragment } from '@devflow/shared/workflow-xml';
 
 // 成员从群主拉聊天时的单次上限（群主侧保留全量，按需分页拉取）
 const CHAT_PULL_LIMIT = 20000;
@@ -115,6 +116,7 @@ export class CollabEngine {
     const cSel = [...new Set(command || [])];
     const aSel = [...new Set(agent || [])];
     const wSel = [...new Set(workflow || [])];
+    const pickedWorkflows = [];
     const files = [];
     for (const n of sSel) {
       assertSafeRel(n);
@@ -140,8 +142,11 @@ export class CollabEngine {
     for (const id of wSel) {
       assertSafeRel(id);
       const w = (this.getWorkflows ? this.getWorkflows() : []).find((x) => x.id === id);
-      if (!w) continue;
-      files.push({ rel: `workflow/${id}.json`, data: Buffer.from(JSON.stringify(w), 'utf8') });
+      if (w) pickedWorkflows.push(w);
+    }
+    // 工作流勾选后打成一份 XML（与 devflow.xml 的 <workflow> 片段同构）
+    if (pickedWorkflows.length) {
+      files.push({ rel: 'workflow/workflows.xml', data: Buffer.from(serializeWorkflowsFragment(pickedWorkflows), 'utf8') });
     }
     if (!files.length) throw new Error(t('collab.err.no_content'));
     const zip = buildZip(files.map((f) => ({ name: f.rel, data: f.data })));
@@ -151,6 +156,13 @@ export class CollabEngine {
     if (!this.uploadDir) throw new Error(t('collab.err.no_upload_dir'));
     fs.mkdirSync(this.uploadDir, { recursive: true });
     fs.writeFileSync(path.join(this.uploadDir, label), zip);
+    // 同时落一份到本机 download 目录（用户在「download」里能直接拿到 zip）
+    if (this.downloadDir) {
+      try {
+        fs.mkdirSync(this.downloadDir, { recursive: true });
+        fs.writeFileSync(path.join(this.downloadDir, label), zip);
+      } catch { /* download 目录不可写时忽略 */ }
+    }
     const rec = this.store.addOutbox({
       id: crypto.randomUUID(), kind: 'file', groupId: null, skillName: null, fileName: label,
       storedFile: label, size: zip.length, hash, createdAt: Date.now(),

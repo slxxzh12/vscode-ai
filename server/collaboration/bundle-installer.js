@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readZip } from './zip.js';
+import { parseWorkflowsXml } from '@devflow/shared/workflow-xml';
 
 function writeAtomic(dest, data) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -27,6 +28,14 @@ export function installBundleZip({ zip, skillRoot, configRoot, installWorkflows 
       writeAtomic(path.join(configRoot, top, ...seg.slice(1)), e.data);
       counts[top]++;
     } else if (top === 'workflow') {
+      // 新格式：workflow/workflows.xml（勾选的工作流打成一份 XML）；兼容旧的 workflow/<id>.json
+      if (seg.length >= 2 && seg[1].endsWith('.xml')) {
+        try {
+          const list = parseWorkflowsXml(e.data.toString('utf8'));
+          for (const w of list) { workflows.push(w); counts.workflow++; }
+        } catch { /* skip bad xml */ }
+        continue;
+      }
       if (seg.length < 2 || !seg[1].endsWith('.json')) continue;
       try { workflows.push(JSON.parse(e.data.toString('utf8'))); counts.workflow++; } catch { /* skip bad json */ }
     }
