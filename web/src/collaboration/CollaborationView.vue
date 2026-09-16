@@ -6,10 +6,11 @@ import { EMPTY_SNAPSHOT } from './types';
 import type { useTerminal } from '../useTerminal';
 import GroupView from './GroupView.vue';
 import TasksView from './TasksView.vue';
+import UsageView from './UsageView.vue';
 import SyncUpdateDialog from './SyncUpdateDialog.vue';
 import { t } from '../i18n';
 
-type CollabTab = 'group' | 'tasks';
+type CollabTab = 'group' | 'tasks' | 'usage';
 const props = defineProps<{ terminal: ReturnType<typeof useTerminal>; tab?: CollabTab }>();
 const emit = defineEmits<{ (e: 'update:tab', v: CollabTab): void }>();
 const collab = useCollab();
@@ -19,6 +20,7 @@ function setTab(v: CollabTab) { emit('update:tab', v); }
 const tabs = computed(() => [
   { id: 'group' as const, label: t('collab.tabs.group') },
   { id: 'tasks' as const, label: t('collab.tabs.tasks') },
+  { id: 'usage' as const, label: t('usage.title') },
 ]);
 
 // —— slave：master 同步种子更新弹窗 ——
@@ -85,7 +87,8 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
     </header>
     <section class="body">
       <GroupView v-if="tab === 'group'" :collab="collab" />
-      <TasksView v-else :collab="collab" />
+      <TasksView v-else-if="tab === 'tasks'" :collab="collab" />
+      <UsageView v-else :terminal="props.terminal" />
     </section>
     <SyncUpdateDialog
       :open="!!pending"
