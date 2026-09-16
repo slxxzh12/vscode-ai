@@ -20,6 +20,7 @@ import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
 import { UsagePeersStore } from './usage-peers.js';
 import { createSeedStore } from './seed-store.js';
+import { mergeWorkflowList } from './collaboration/workflow-merge.js';
 import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
 import { createUsageMount } from './usage-mount.js';
@@ -197,10 +198,8 @@ function buildWorkspace({ paths, port }) {
     logger: log,
     getWorkflows: () => loadDevflowConfig(configFile).workflows,
     mergeWorkflows: (incoming) => {
-      const cur = loadDevflowConfig(configFile).workflows;
-      const byId = new Map(cur.map((w) => [w.id, w]));
-      for (const w of incoming) if (w && w.id) byId.set(w.id, w);
-      return updateWorkflows(configFile, [...byId.values()]);
+      const merged = mergeWorkflowList(loadDevflowConfig(configFile).workflows, incoming);
+      return updateWorkflows(configFile, merged);
     },
   });
   engine.peer = makePeerClient();
