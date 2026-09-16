@@ -32,6 +32,7 @@
 - **node-pty 原生可用性验证**：`node -e` spawn powershell 后 `echo df-pty-ok` 能收到即 OK。ConPTY 对 OSC 完成标记**透传已实测通过**（`[char]27` 构造 `ESC]777;dfdone;...BEL` 会原样回流）→ workflow auto 步在 Windows 可用。
 - **`import.meta.url` 在单文件打包/内嵌环境是虚拟路径**（如 bun exe 内 `B:/~BUN/root/...`）→ 依赖 `__dirname` 的配置/静态路径会坏；不要把服务做成无磁盘资源的单文件 exe。
 - **会话列表排序**：`createdAt` 同毫秒会并列，必须带单调 `seq` 二级排序。
+- **数据库只有一个文件**：`<数据目录>/void.db`，五张表 `usage`/`seed`/`member`/`member_command`/`message`；`usage` 一表两粒度——`agent='*'` 是该机器当天合计（原独立的 `peer_daily` 表已合并进来，30 天只是趋势图的**读取窗口**，不再删数据），其余为 agent 明细。`GET /api/usage` 不带 agent 时自动排除合计行。改名/改结构（`usage.db`→`void.db`、老 camelCase `usage`→snake_case、`peer_daily`→合计行）都在 `createUsageStore` 里一次性幂等迁移，勿再新增 `.db` 文件。
 - **xterm v5**：`term.onData(cb)` 返回 IDisposable（`offData` 已不存在）；卸载用 `dispose()`。
 - **绿色包「重启后端」的助手必须跑在独立控制台**：`spawnRestart` 的助手若带 `windowsHide:true`（=CREATE_NO_WINDOW），它仍挂在服务的控制台上，服务一退/控制台一关助手即被杀 → 旧实例退了、新实例起不来（实测复现过）。必须走 `cmd /c start "" /min powershell -WindowStyle Hidden ...` 让助手拥有自己的新控制台。
 - **用量上报不走加群**：slave 在协作页「机器用量」粘 master 的访问链接（`http://<host>:<port>/?access=<token>`）即可，每 60–90 分钟随机把 `opencode stats` 结果 `POST /api/usage/report`（请求头 `X-DF-Token`）；master 令牌落盘在 `<数据目录>/collab/invite.json`，`days=0` 表示长期不过期、重启不丢。旧的「群内 Ed25519 签名信封上报」已删除（`/api/collab/stats`、`CollabPeer.STATS`、`store.heartbeats` 都不复存在）。
@@ -68,7 +69,7 @@
 
 - **监听端口**存 `<应用目录>/data/port.txt`（单行纯数字；应用目录 = 仓库根 / 绿色包根，即 `server/` 的上一级，与启动 cwd 无关）。优先级：`DEVFLOW_PORT` 环境变量 > `data/port.txt` > 默认 `22222`。设置面板保存端口只写该文件，**需重启后端**才生效；`devflow.xml` 不再有 `port` 属性。
 - **改端口后如何生效**：绿色包在设置面板保存端口后点「重启后端」即可；或关闭服务窗口后重新双击 `start.bat`（启动器比对 `data/port.txt`（期望端口）与 `data/runtime-port.txt`（上次运行端口），不一致时结束旧实例并按新端口启动）。dev 环境端口由 `DEVFLOW_PORT=33333` 固定，界面改端口无效、重启按钮禁用。
-- **数据目录按端口隔离**：`<dataHome>/ports/<端口>/`（Windows：`%USERPROFILE%\.local\share\void\ports\<端口>\`），内含 `projects.json`、`workflows.json`、`scheduler/`、`collab/`、`upload/`、`download/`、`downloads/devflow.xml` + `relay-plugins/`、`message-history.jsonc`、`skills-opencode/`、`usage.db`、`llm.vault.json`。**一个端口一份档案，端口之间零共享；换端口 = 换一份数据。**
+- **数据目录按端口隔离**：`<dataHome>/ports/<端口>/`（Windows：`%USERPROFILE%\.local\share\void\ports\<端口>\`），内含 `projects.json`、`workflows.json`、`scheduler/`、`collab/`、`upload/`、`download/`、`downloads/devflow.xml` + `relay-plugins/`、`message-history.jsonc`、`skills-opencode/`、`void.db`（单一 SQLite 五张表：`usage`/`seed`/`member`/`member_command`/`message`；其中 `usage` 一表两粒度——`agent='*'` 是该机器当天合计，其余为 agent 明细）、`llm.vault.json`。**一个端口一份档案，端口之间零共享；换端口 = 换一份数据。**
 - 活动配置文件：`<dataHome>/ports/<端口>/downloads/devflow.xml`（只含 `<server language host>` + `<agents>` + `<workflows>`）；首次启动从仓库模板 `config/devflow.xml` 复制生成，**已存在则不覆盖**。
 - 语言可在 UI 设置面板修改，服务端就改写该文件的 `<server language>`；Agent 列表与工作流提示语直接编辑该文件。改后需**重启后端**（dev:server 的 `--watch` 不监听 xml）；仓库 `config/devflow.xml` 仅作首次 seed 模板。
 - 运行时端口记录写 `<应用目录>/data/runtime-port.txt`（供启动器打开浏览器用）。

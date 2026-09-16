@@ -155,8 +155,15 @@ const broadcastSched = (type, payload) => {
 
 // ---- 由档案路径构建所有数据模块（不监听端口、不建 gateway）----
 function buildWorkspace({ paths, port }) {
-  // 所有表共用一个 SQLite 文件：<数据目录>/usage.db（usage / peer_daily / seed / member / member_command / message）
-  const usageDbFile = path.join(paths.dir, 'usage.db');
+  // 所有表共用一个 SQLite 文件：<数据目录>/void.db（usage / seed / member / member_command / message）
+  const usageDbFile = path.join(paths.dir, 'void.db');
+  // 老库兼容：曾用名 usage.db，存在则改名迁移（不丢数据）
+  try {
+    const legacyDb = path.join(paths.dir, 'usage.db');
+    if (!fs.existsSync(usageDbFile) && fs.existsSync(legacyDb)) fs.renameSync(legacyDb, usageDbFile);
+  } catch { /* 迁移失败就按新库启动 */ }
+  // usage 表既是 agent 明细，也存每台每天的合计行（agent='*'，原 peer_daily），故先建 store 供各方共用
+  const usageStore = createUsageStore({ file: usageDbFile, logger: log });
   const projectsFile = process.env.DEVFLOW_PROJECTS || paths.projectsFile;
   const workflowsFile = process.env.DEVFLOW_WORKFLOWS || paths.workflowsFile;
   ensureDefaults(projectsFile, workflowsFile);
@@ -177,7 +184,7 @@ function buildWorkspace({ paths, port }) {
   const engine = new CollabEngine({
     store: new CollabStore({ file: paths.storeFile, logger: log }),
     identity,
-    peers: new UsagePeersStore({ file: paths.usagePeersFile, dailyFile: usageDbFile, logger: log }),
+    peers: new UsagePeersStore({ file: paths.usagePeersFile, usageStore, logger: log }),
     seedStore: createSeedStore({ file: usageDbFile, logger: log }),
     collabDb: createCollabDb({ file: usageDbFile, logger: log }),
     getWorkflowsUpdatedAt: () => { try { return fs.statSync(configFile).mtimeMs; } catch { return 0; } },
@@ -250,7 +257,6 @@ function buildWorkspace({ paths, port }) {
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
-  const usageStore = createUsageStore({ file: usageDbFile });
   return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, llmVault, usageStore, historyFile: paths.historyFile, paths };
 }
 

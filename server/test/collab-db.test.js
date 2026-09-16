@@ -63,15 +63,15 @@ test('æ¶ˆæ¯è¡¨ï¼šè½ç›˜åé‡æ–°æ‰“å¼€ä»åœ¨', () => {
   b.close();
 });
 
-test('¹²ÓÃÒ»¸öÊı¾İ¿âÎÄ¼ş£ºusage / peer_daily / seed / member / message ¶¼ÔÚÍ¬Ò»¿â', async () => {
+test('ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½İ¿ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½usage / peer_daily / seed / member / message ï¿½ï¿½ï¿½ï¿½Í¬Ò»ï¿½ï¿½', async () => {
   const { createSeedStore } = await import('../seed-store.js');
   const { UsagePeersStore } = await import('../usage-peers.js');
   const { createUsageStore } = await import('../usage-store.js');
   const file = tmpDb();
   const db = createCollabDb({ file, logger: { warn() {} } });
   const seed = createSeedStore({ file, logger: { warn() {} } });
-  const peers = new UsagePeersStore({ file: path.join(path.dirname(file), 'usage-peers.json'), dailyFile: file, logger: { warn() {} } });
   const usage = createUsageStore({ file });
+  const peers = new UsagePeersStore({ file: path.join(path.dirname(file), 'usage-peers.json'), usageStore: usage, logger: { warn() {} } });
 
   db.registerMember({ groupId: 'g1', machineId: 'm1', username: 'u1' }, 1);
   db.setCommands({ groupId: 'g1', machineId: 'm1', commands: ['dev'] }, 1);
@@ -81,12 +81,20 @@ test('¹²ÓÃÒ»¸öÊı¾İ¿âÎÄ¼ş£ºusage / peer_daily / seed / member / message ¶¼ÔÚÍ¬Ò»¿
   usage.upsert({ date: '2026-09-16', memberId: 'm1', agent: 'opencode', input: 1 });
 
   const tables = db.db.prepare('SELECT name FROM sqlite_master WHERE type = ? ORDER BY name').all('table').map((r) => r.name);
-  for (const t of ['usage', 'peer_daily', 'seed', 'member', 'member_command', 'message']) {
-    assert.ok(tables.includes(t), `È±ÉÙ±í ${t}£¨ÏÖÓĞ£º${tables.join(',')}£©`);
+  for (const t of ['usage', 'seed', 'member', 'member_command', 'message']) {
+    assert.ok(tables.includes(t), `missing table ${t} (have: ${tables.join(',')})`);
   }
-  // ÖÖ×Ó±í£º¸üĞÂÊ±¼äÓëÃ÷Ï¸Ò²´æ½øÈ¥ÁË
+  assert.ok(!tables.includes('peer_daily'), 'peer_daily should be merged into usage');
+  // ä¸ŠæŠ¥çš„ã€Œæ¯å°æ¯å¤©ä¸€æ¡ã€å°±æ˜¯ usage é‡Œçš„åˆè®¡è¡Œï¼ˆagent = '*'ï¼‰ï¼Œä¸ agent æ˜ç»†åŒè¡¨ä¸åŒç²’åº¦
+  const total = db.db.prepare("SELECT * FROM usage WHERE agent = '*'").get();
+  assert.equal(total.member_id, 'm1');
+  assert.equal(total.messages, 5);
+  assert.equal(usage.query({}).length, 1, 'agent æ˜ç»†:ä¸å«åˆè®¡è¡Œ');
+  assert.equal(usage.query({ agent: '*' }).length, 1, 'åˆè®¡è¡Œå¯æŒ‰ agent=* å–');
+  assert.equal(usage.listDaily('m1')[Object.keys(usage.listDaily('m1'))[0]].messages, 5);
+  // ï¿½ï¿½ï¿½Ó±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¸Ò²ï¿½ï¿½ï¿½È¥ï¿½ï¿½
   assert.equal(seed.get('p1').skillsUpdatedAt, 11);
   assert.equal(seed.get('p1').workflowUpdatedAt, 22);
   assert.deepEqual(seed.get('p1').detail.skills, [{ name: 'demo', files: 3 }]);
-  peers.close(); usage.close ? usage.close() : null; db.close();
+  peers.close(); usage.close(); db.close();
 });
