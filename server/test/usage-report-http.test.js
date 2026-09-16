@@ -118,3 +118,19 @@ test('æœªçŸ¥ /api/usage/* è·¯å¾„ â†’ 404', async (t) => {
   const r = await call(A.port, 'GET', '/api/usage/nope');
   assert.equal(r.status, 404);
 });
+
+test('GET /api/usage/daily£º·µ»ØÃ¿ÈÕÁô´æ£¨¿ÉÑ¡°´»úÆ÷¹ýÂË£©', async (t) => {
+  const A = await start();
+  t.after(() => A.server.close());
+  await call(A.port, 'POST', '/api/usage/report', { headers: { 'X-DF-Token': 'good' }, body: { machineId: 'm1', usage: { messages: 3, output: 9 } } });
+  const all = await call(A.port, 'GET', '/api/usage/daily');
+  assert.equal(all.status, 200);
+  assert.equal(Object.keys(all.body.daily).length, 1);
+  const one = await call(A.port, 'GET', '/api/usage/daily?machineId=m1');
+  const days = Object.keys(one.body.daily.m1);
+  assert.equal(days.length, 1);
+  assert.equal(one.body.daily.m1[days[0]].messages, 3);
+  assert.equal(one.body.daily.m1[days[0]].output, 9);
+  const none = await call(A.port, 'GET', '/api/usage/daily?machineId=nope');
+  assert.deepEqual(none.body.daily, {});
+});

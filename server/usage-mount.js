@@ -49,6 +49,14 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, logger
 
     if (seg[0] === 'peers' && seg.length === 1 && m === 'GET') return sendJson(res, 200, peers.snapshot());
 
+    // 每日留存（每台每天一条，最多 30 天）供趋势曲线；始终按 machineId 嵌套
+    if (seg[0] === 'daily' && seg.length === 1 && m === 'GET') {
+      const id = url.searchParams.get('machineId') || '';
+      if (!id) return sendJson(res, 200, { daily: peers.listDaily() });
+      const days = peers.listDaily(id);
+      return sendJson(res, 200, { daily: Object.keys(days).length ? { [id]: days } : {} });
+    }
+
     if (seg[0] === 'reporter' && seg.length === 1 && m === 'GET') {
       return sendJson(res, 200, { config: reporter.config(), status: reporter.status() });
     }
