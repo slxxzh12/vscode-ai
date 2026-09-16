@@ -47,6 +47,15 @@ watch(locale, loadNotice);
         <li>{{ $t('mobile.feat.pair') }}</li>
       </ul>
 
+      <section class="gitnote">
+        <h3 class="gtitle">🔗 {{ $t('mobile.git.title') }}</h3>
+        <ul class="glist">
+          <li>{{ $t('mobile.git.same') }}</li>
+          <li>{{ $t('mobile.git.reachable') }}</li>
+          <li>{{ $t('mobile.git.check') }}</li>
+        </ul>
+      </section>
+
       <div class="cards">
         <section class="card">
           <div class="ctitle">💻 {{ $t('mobile.desktop') }}</div>
@@ -83,8 +92,11 @@ watch(locale, loadNotice);
 .desc { margin: 0; color: var(--tx3); font-size: 14px; line-height: 1.6; }
 .pair { margin: 8px 0 0; color: var(--tx4); font-size: 12px; line-height: 1.6; }
 .feats { margin: 18px 0 22px; padding-left: 20px; color: var(--tx2); font-size: 13px; line-height: 2; }
-.cards { display: flex; flex-wrap: wrap; gap: 16px; }
-.card { width: 240px; border: 1px solid var(--bd); border-radius: 8px; padding: 16px; background: var(--bg2); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.gitnote { max-width: 560px; margin: 0 0 22px; border: 1px solid var(--bd); border-left: 3px solid var(--ac2); border-radius: 8px; padding: 12px 16px; background: var(--bg2); }
+.gtitle { margin: 0 0 6px; color: var(--tx1); font-size: 13px; }
+.glist { margin: 0; padding-left: 18px; color: var(--tx3); font-size: 12px; line-height: 1.8; }
+.glist li { margin: 2px 0; }
+.cards { display: flex; flex-wrap: wrap; gap: 16px; }.card { width: 240px; border: 1px solid var(--bd); border-radius: 8px; padding: 16px; background: var(--bg2); display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .ctitle { font-weight: 700; color: var(--tx1); font-size: 13px; }
 .qr { background: #fff; border-radius: 6px; padding: 8px; box-sizing: content-box; }
 .hint { color: var(--tx4); font-size: 12px; }
