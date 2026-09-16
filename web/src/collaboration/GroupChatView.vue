@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import { filterMentions, parseComposer, splitAtCommand, highlightMentions } from './chat-parser';
+import { distCardOf, type DistCard } from './distTasks';
 import type { CollabChatMessage } from './types';
 import SkillDistributor from './SkillDistributor.vue';
 import { t } from '../i18n';
@@ -11,6 +12,16 @@ const props = defineProps<{ collab: CollabApi; groupId: string }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const group = computed(() => (snap.value.groups || []).find((g) => g.id === props.groupId) || null);
 const chat = computed(() => props.collab.chatState.value[props.groupId] || { messages: [] });
+// 分发通知：预先算好每条的卡片模型，模板里索引取用（避免重复调用与空值断言）
+const distCards = computed<Record<string, DistCard>>(() => {
+  const out: Record<string, DistCard> = {};
+  for (const m of chat.value.messages) { const c = distCardOf(m); if (c) out[m.id] = c; }
+  return out;
+});
+function cardTypeKey(type: string): string {
+  return type === 'workflow' ? 'collab.task.workflow' : type === 'mixed' ? 'collab.dist.msg.mixed_short' : 'collab.task.skills';
+}
+function openTasks() { window.location.hash = '#contacts/tasks'; }
 const me = computed(() => snap.value.identity.machineId);
 const myPending = computed(() => props.collab.pendingCmdState.value.filter((p) => p.groupId === props.groupId));
 const skillOpen = ref(false);
@@ -120,6 +131,13 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
           <div class="res-head">{{ $t('collab.chat.result') }}<template v-if="m.meta"> · {{ $t('collab.chat.exit_code', { code: m.meta.exitCode ?? '-' }) }}</template></div>
           <pre class="res-body">{{ resultText(m) }}</pre>
         </template>
+        <div v-else-if="distCards[m.id]" class="dcard">
+          <div class="dhead">📦 {{ $t(cardTypeKey(distCards[m.id].type)) }}</div>
+          <div class="dname">{{ distCards[m.id].name }}</div>
+          <div class="dmeta">{{ $t('collab.task.items', { count: distCards[m.id].count }) }}</div>
+          <a class="dlink" :href="distCards[m.id].url" target="_blank" rel="noopener">{{ $t('collab.task.download_addr') }}: {{ distCards[m.id].url }}</a>
+          <button class="dtasks" @click="openTasks">{{ $t('collab.task.goto_tasks') }}</button>
+        </div>
         <div v-else class="bubble">
           <span v-for="(seg, i) in highlightMentions(m.text, nameById)" :key="i" :class="{ at: seg.mention }">{{ seg.text }}</span>
         </div>
@@ -180,4 +198,10 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
 .csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
 button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2); }
 .empty { color: var(--tx6); padding: 8px; }
+.dcard { border: 1px solid var(--ac); border-radius: 8px; padding: 8px 10px; background: color-mix(in srgb, var(--ac) 12%, transparent); display: flex; flex-direction: column; gap: 4px; align-self: flex-start; max-width: 100%; }
+.dhead { color: var(--tx1); font-weight: 700; font-size: 12px; }
+.dname { color: var(--tx2); font-size: 12px; word-break: break-all; }
+.dmeta { color: var(--tx6); font-size: 11px; }
+.dlink { color: var(--ac2); font-size: 11px; word-break: break-all; text-decoration: none; }
+.dtasks { align-self: flex-start; background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
 </style>

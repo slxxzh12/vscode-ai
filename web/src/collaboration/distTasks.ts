@@ -55,8 +55,8 @@ export function taskItemCount(task: DistTask): number {
 
 export interface DistCard { type: string; name: string; url: string; count: number }
 
-export function distCardOf(msg: { kind?: string; meta?: Record<string, unknown> } | null | undefined): DistCard | null {
-  if (!msg || msg.kind !== 'dist' || !msg.meta) return null;
+export function distCardOf(msg: { kind?: string; meta?: unknown } | null | undefined): DistCard | null {
+  if (!msg || msg.kind !== 'dist' || !msg.meta || typeof msg.meta !== 'object') return null;
   const meta = msg.meta as { type?: string; name?: string; url?: string; count?: number };
   return { type: meta.type || 'skills', name: meta.name || '', url: meta.url || '', count: Number(meta.count) || 0 };
 }
