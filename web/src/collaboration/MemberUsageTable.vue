@@ -21,7 +21,7 @@ const num = (v?: number) => fmtNum(v);
     :default-sort="{ prop: 'messages', order: 'descending' }"
     :empty-text="t('collab.member.empty')"
   >
-    <el-table-column :label="$t('usage.machine')" sortable :sort-by="(r: any) => machineLabel(r)" min-width="170">
+    <el-table-column :label="$t('usage.machine')" sortable :sort-by="(r: any) => machineLabel(r)" min-width="130">
       <template #default="{ row }">
         <span class="dot" :class="{ on: isOnline(row.receivedAt) }" />
         <span class="mname">{{ machineLabel(row) }}</span>
@@ -29,13 +29,13 @@ const num = (v?: number) => fmtNum(v);
         <span v-if="!row.inGroup" class="tag">{{ $t('usage.not_in_group') }}</span>
       </template>
     </el-table-column>
-    <el-table-column prop="messages" :label="$t('usage.messages')" sortable width="96" align="right">
+    <el-table-column prop="messages" :label="$t('usage.messages')" sortable width="80" align="right">
       <template #default="{ row }">{{ num(row.messages) }}</template>
     </el-table-column>
-    <el-table-column prop="input" :label="$t('usage.input')" sortable width="96" align="right">
+    <el-table-column prop="input" :label="$t('usage.input')" sortable width="80" align="right">
       <template #default="{ row }">{{ num(row.input) }}</template>
     </el-table-column>
-    <el-table-column prop="output" :label="$t('usage.output')" sortable width="96" align="right">
+    <el-table-column prop="output" :label="$t('usage.output')" sortable width="80" align="right">
       <template #default="{ row }">{{ num(row.output) }}</template>
     </el-table-column>
   </el-table>

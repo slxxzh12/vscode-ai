@@ -420,17 +420,16 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .gitem { text-align: left; background: none; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx2); padding: 5px 8px; font-size: 12px; cursor: pointer; font-family: inherit; margin-bottom: 4px; width: 100%; }
 .gitem.on { background: none; color: var(--tx1); border-color: var(--ac); }
 .gitem .sub { color: var(--tx6); margin-left: 6px; }
-.cw-members { width: 46%; min-width: 460px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--bd); background: var(--bg1); }
-.mtabs { flex: none; display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--bd); }
+.cw-members { width: 32%; min-width: 380px; max-width: 440px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--bd); background: var(--bg1); }
+.mtabs { flex: none; display: flex; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--bd); }
 .mtabs button { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .mtabs button.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .mbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .mpanel { display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--bd); }
-.mpanel:first-child { flex: 1; }
-.mtitle { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--tx2); }
-.mtable { flex: 1; min-height: 0; }
 .announce { flex: none; }
-.abody { padding: 0 12px 12px; color: var(--tx); font-size: 12px; line-height: 1.7; white-space: pre-wrap; max-height: 160px; overflow: auto; }
+.mtitle { display: flex; align-items: center; gap: 8px; margin: 0; padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--tx2); }
+.mtable { flex: 1; min-height: 0; }
+.abody { padding: 0 10px 10px; color: var(--tx); font-size: 12px; line-height: 1.6; white-space: pre-wrap; max-height: 96px; overflow: auto; }
 .ata { margin: 0 12px; background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 8px; font-family: inherit; font-size: 12px; resize: vertical; }
 .abox { display: flex; align-items: center; gap: 8px; padding: 8px 12px 12px; }
 .ahint { color: var(--tx6); font-size: 11px; }
