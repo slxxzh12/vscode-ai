@@ -20,6 +20,7 @@ import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
 import { UsagePeersStore } from './usage-peers.js';
 import { createSeedStore } from './seed-store.js';
+import { createTaskStore } from './task-store.js';
 import { mergeWorkflowList } from './collaboration/workflow-merge.js';
 import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
@@ -165,6 +166,7 @@ function buildWorkspace({ paths, port }) {
   } catch { /* 迁移失败就按新库启动 */ }
   // usage 表既是 agent 明细，也存每台每天的合计行（agent='*'，原 peer_daily），故先建 store 供各方共用
   const usageStore = createUsageStore({ file: usageDbFile, logger: log });
+  const taskStore = createTaskStore({ file: usageDbFile, logger: log });
   const projectsFile = process.env.DEVFLOW_PROJECTS || paths.projectsFile;
   const workflowsFile = process.env.DEVFLOW_WORKFLOWS || paths.workflowsFile;
   ensureDefaults(projectsFile, workflowsFile);
@@ -188,6 +190,7 @@ function buildWorkspace({ paths, port }) {
     peers: new UsagePeersStore({ file: paths.usagePeersFile, usageStore, logger: log }),
     seedStore: createSeedStore({ file: usageDbFile, logger: log }),
     collabDb: createCollabDb({ file: usageDbFile, logger: log }),
+    taskStore,
     getWorkflowsUpdatedAt: () => { try { return fs.statSync(configFile).mtimeMs; } catch { return 0; } },
     skillsRoot: paths.skillsRoot,
     uploadDir: paths.uploadDir,
@@ -256,7 +259,7 @@ function buildWorkspace({ paths, port }) {
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, llmVault, usageStore, historyFile: paths.historyFile, paths };
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, llmVault, usageStore, taskStore, historyFile: paths.historyFile, paths };
 }
 
 // ---- 工作区（端口档案）----
@@ -276,6 +279,8 @@ function initWorkspace(paths, port) {
   Promise.resolve(ws.engine.announceIfMoved?.()).catch((e) => log.warn('announce group move failed', (e && e.message) || e));
   // 启动即把本机的 command 等资产注册到群里（hub 落 collab.db 的成员/命令表）
   Promise.resolve(ws.engine.registerSelfAssets?.()).then((r) => { if (r) log.info(`assets registered: groups=${r.groups} commands=${r.commands}`); }).catch((e) => log.warn('register assets failed', (e && e.message) || e));
+  // 启动补扫：把离线期间错过的分发通知补成本机任务（拉不到就等下次）
+  Promise.resolve(ws.engine.backfillDistTasks?.()).then((r) => { if (r) log.info(`dist backfill: groups=${r.groups} dist=${r.distMessages} pending=${r.pending}`); }).catch((e) => log.warn('dist backfill failed', (e && e.message) || e));
   remoteInvite = loadInvite(paths.inviteFile);   // 令牌落盘：重启后仍有效（expiresAt=0 为长期）
   // 用量上报：启动即报一次，之后 60–90 分钟随机再报
   if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }
