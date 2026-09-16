@@ -1,6 +1,6 @@
 # 机器用量上报（token 上报替换签名信封）Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** slave 只粘一个 master 访问链接，就每 60–90 分钟随机把本机 `opencode stats` 用量推给 master；master 收下并汇总展示；彻底删掉旧的「加群 + Ed25519 签名信封」上报路径。
 
@@ -57,7 +57,7 @@
 **Files:**
 - Modify: `docs/superpowers/specs/2026-09-16-usage-report-design.md`
 
-- [ ] **Step 1: 改 spec 中的接口名**
+- [x] **Step 1: 改 spec 中的接口名**
 
 把 `### 4.2 \`GET /api/usage\`（仅 master，供本机界面）` 改成 `### 4.2 \`GET /api/usage/peers\`（仅 master，供本机界面）`，并在该节末尾补一行说明：
 
@@ -67,12 +67,12 @@
 
 同时把第 8 节里的「群成员列表的用量列改读同一份数据（`GET /api/usage`）」改成 `GET /api/usage/peers`。
 
-- [ ] **Step 2: 校验没有残留的错误路径**
+- [x] **Step 2: 校验没有残留的错误路径**
 
 Run: `Select-String -Path docs/superpowers/specs/2026-09-16-usage-report-design.md -Pattern "GET /api/usage\b"`
 Expected: 无输出（只剩 `/api/usage/peers` 与 `/api/usage/report`）
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/superpowers/specs/2026-09-16-usage-report-design.md
@@ -87,7 +87,7 @@ git commit -m "docs(spec): 汇总接口改名 /api/usage/peers，避免与既有
 - Modify: `server/port-paths.js`
 - Test: `server/test/port-paths.test.js`
 
-- [ ] **Step 1: 先改测试（红）**
+- [x] **Step 1: 先改测试（红）**
 
 在 `server/test/port-paths.test.js` 的 `portPaths 全部落在 ports/<端口> 下` 用例里，`assert.equal(p.skillsRoot, ...)` 之前插入：
 
@@ -100,7 +100,7 @@ git commit -m "docs(spec): 汇总接口改名 /api/usage/peers，避免与既有
 Run: `node --test "server/test/port-paths.test.js"`
 Expected: FAIL（`undefined !== '...\\usage-peers.json'`）
 
-- [ ] **Step 2: 改实现**
+- [x] **Step 2: 改实现**
 
 `server/port-paths.js` 里 `historyFile` 行之后加：
 
@@ -110,12 +110,12 @@ Expected: FAIL（`undefined !== '...\\usage-peers.json'`）
     inviteFile: path.join(dir, 'collab', 'invite.json'),
 ```
 
-- [ ] **Step 3: 跑测试（绿）**
+- [x] **Step 3: 跑测试（绿）**
 
 Run: `node --test "server/test/port-paths.test.js"`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/port-paths.js server/test/port-paths.test.js
@@ -130,7 +130,7 @@ git commit -m "feat(server): 端口路径补充 usage-peers/usage-report/invite 
 - Create: `server/usage-peers.js`
 - Test: `server/test/usage-peers.test.js`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `server/test/usage-peers.test.js`：
 
@@ -185,12 +185,12 @@ test('文件损坏时回退空结构而不是抛错', () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `node --test "server/test/usage-peers.test.js"`
 Expected: FAIL（无法解析 `../usage-peers.js`）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `server/usage-peers.js`：
 
@@ -247,12 +247,12 @@ export class UsagePeersStore {
 }
 ```
 
-- [ ] **Step 4: 跑测试（绿）**
+- [x] **Step 4: 跑测试（绿）**
 
 Run: `node --test "server/test/usage-peers.test.js"`
 Expected: PASS（4 tests）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/usage-peers.js server/test/usage-peers.test.js
@@ -268,7 +268,7 @@ git commit -m "feat(server): 新增 master 侧用量上报库 UsagePeersStore"
 - Modify: `server/remote-gate.js`
 - Test: `server/test/remote-invite.test.js`, `server/test/remote-gate.test.js`, `server/test/collab-remote.test.js`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `server/test/remote-invite.test.js`：
 
@@ -335,7 +335,7 @@ test('isPeerRequest：放行 POST /api/usage/report', () => {
 Run: `node --test "server/test/remote-invite.test.js" "server/test/remote-gate.test.js"`
 Expected: FAIL（模块不存在 / 函数未导出）
 
-- [ ] **Step 2: 实现 `server/remote-invite.js`**
+- [x] **Step 2: 实现 `server/remote-invite.js`**
 
 ```js
 import fs from 'node:fs';
@@ -367,7 +367,7 @@ export function clearInvite(file) {
 }
 ```
 
-- [ ] **Step 3: 改 `server/remote-gate.js`**
+- [x] **Step 3: 改 `server/remote-gate.js`**
 
 `isPeerRequest` 改为：
 
@@ -390,12 +390,12 @@ export function resolveInviteDaysAllowForever(input = {}) {
 }
 ```
 
-- [ ] **Step 4: 跑测试（绿）**
+- [x] **Step 4: 跑测试（绿）**
 
 Run: `node --test "server/test/remote-invite.test.js" "server/test/remote-gate.test.js"`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/remote-invite.js server/remote-gate.js server/test/remote-invite.test.js server/test/remote-gate.test.js
@@ -410,7 +410,7 @@ git commit -m "feat(server): 邀请令牌落盘（expiresAt=0 长期有效），
 - Create: `server/usage-report.js`
 - Test: `server/test/usage-report.test.js`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `server/test/usage-report.test.js`：
 
@@ -464,12 +464,12 @@ test('loadReportConfig 默认值 / saveReportConfig 落盘读回', () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `node --test "server/test/usage-report.test.js"`
 Expected: FAIL（模块不存在）
 
-- [ ] **Step 3: 只实现这四个纯函数**
+- [x] **Step 3: 只实现这四个纯函数**
 
 `server/usage-report.js` 先写这部分（`createUsageReporter` 在 Task 6 加）：
 
@@ -520,12 +520,12 @@ export function saveReportConfig(file, cfg) {
 }
 ```
 
-- [ ] **Step 4: 跑测试（绿）**
+- [x] **Step 4: 跑测试（绿）**
 
 Run: `node --test "server/test/usage-report.test.js"`
 Expected: PASS（4 tests）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/usage-report.js server/test/usage-report.test.js
@@ -540,7 +540,7 @@ git commit -m "feat(server): slave 侧链接解析/间隔/配置读写（60-90 �
 - Modify: `server/usage-report.js`
 - Test: `server/test/usage-report.test.js`
 
-- [ ] **Step 1: 追加上报器测试（红）**
+- [x] **Step 1: 追加上报器测试（红）**
 
 在 `server/test/usage-report.test.js` 末尾追加（并把 import 补上 `createUsageReporter` 与 `collectAgentStats` 不引入，直接用注入的假 `collect`）：
 
@@ -631,7 +631,7 @@ test('start：启动立即上报一次，下一次延迟落在 60–90 分钟', 
 Run: `node --test "server/test/usage-report.test.js"`
 Expected: FAIL（`createUsageReporter is not a function`）
 
-- [ ] **Step 2: 实现上报器**
+- [x] **Step 2: 实现上报器**
 
 在 `server/usage-report.js` 末尾追加（顶部补 `import { collectAgentStats } from './collaboration/agent-stats.js';`）：
 
@@ -700,12 +700,12 @@ export function createUsageReporter({
 }
 ```
 
-- [ ] **Step 3: 跑测试（绿）**
+- [x] **Step 3: 跑测试（绿）**
 
 Run: `node --test "server/test/usage-report.test.js"`
 Expected: PASS（9 tests）
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/usage-report.js server/test/usage-report.test.js
@@ -720,7 +720,7 @@ git commit -m "feat(server): slave 侧用量上报器（启动即报 + 60-90 分
 - Create: `server/usage-mount.js`
 - Test: `server/test/usage-report-http.test.js`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `server/test/usage-report-http.test.js`：
 
@@ -844,7 +844,7 @@ test('未知 /api/usage/* 路径 → 404', async () => {
 Run: `node --test "server/test/usage-report-http.test.js"`
 Expected: FAIL（模块不存在）
 
-- [ ] **Step 2: 实现 `server/usage-mount.js`**
+- [x] **Step 2: 实现 `server/usage-mount.js`**
 
 ```js
 import { parseInviteLink } from './usage-report.js';
@@ -932,12 +932,12 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, logger
 }
 ```
 
-- [ ] **Step 3: 跑测试（绿）**
+- [x] **Step 3: 跑测试（绿）**
 
 Run: `node --test "server/test/usage-report-http.test.js"`
 Expected: PASS（7 tests）
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add server/usage-mount.js server/test/usage-report-http.test.js
@@ -953,7 +953,7 @@ git commit -m "feat(server): /api/usage/* HTTP 面（收上报/看汇总/配上�
 - Modify: `server/test/collab-store.test.js`, `server/test/collab-const.test.js`, `server/test/collab-http.test.js`
 - Delete: `server/collaboration/heartbeat.js`, `server/test/heartbeat.test.js`
 
-- [ ] **Step 1: 改测试（红）**
+- [x] **Step 1: 改测试（红）**
 
 `server/test/collab-const.test.js`：删掉 `assert.equal(CollabPeer.HEARTBEAT, 'heartbeat');` 与 `assert.equal(CollabPeer.STATS, 'stats');` 两行。
 
@@ -995,11 +995,11 @@ test('旧的 heartbeat 模块与测试文件已删除', () => {
 Run: `node --test "server/test/collab-const.test.js" "server/test/usage-heartbeat-removed.test.js"`
 Expected: FAIL（常量仍存在 / 文件仍存在）
 
-- [ ] **Step 2: 删 shared 常量**
+- [x] **Step 2: 删 shared 常量**
 
 `shared/collab.js` 的 `CollabPeer` 里删掉 `HEARTBEAT: 'heartbeat',` 与 `STATS: 'stats',` 两行；`shared/collab.d.ts` 删掉同名两行。
 
-- [ ] **Step 3: 删 store 心跳**
+- [x] **Step 3: 删 store 心跳**
 
 `server/collaboration/store.js`：删 `defaultData()` 里的 `heartbeats: {},` 行；删整段：
 
@@ -1014,7 +1014,7 @@ Expected: FAIL（常量仍存在 / 文件仍存在）
   }
 ```
 
-- [ ] **Step 4: 改 engine**
+- [x] **Step 4: 改 engine**
 
 `server/collaboration/engine.js`：
 
@@ -1045,7 +1045,7 @@ Expected: FAIL（常量仍存在 / 文件仍存在）
       }
    ```
 
-- [ ] **Step 5: 改 http-mount**
+- [x] **Step 5: 改 http-mount**
 
 `server/collaboration/http-mount.js`：
 
@@ -1053,18 +1053,18 @@ Expected: FAIL（常量仍存在 / 文件仍存在）
 2. `snapshot` 分支里的 `heartbeats: engine.store.listHeartbeats ? engine.store.listHeartbeats() : {},` 改为 `heartbeats: (engine.peers && engine.peers.list) ? engine.peers.list() : {},`
 3. downloads 分支里的 `usage: { members: engine.store.listHeartbeats() }` 改为 `usage: { members: (engine.peers && engine.peers.list) ? engine.peers.list() : {} }`
 
-- [ ] **Step 6: 删文件**
+- [x] **Step 6: 删文件**
 
 ```bash
 git rm server/collaboration/heartbeat.js server/test/heartbeat.test.js
 ```
 
-- [ ] **Step 7: 跑全量 server 测试（绿）**
+- [x] **Step 7: 跑全量 server 测试（绿）**
 
 Run: `npm.cmd run test:server`
 Expected: 全绿（原先 384 条 + 新增用例），且无 `heartbeat.test.js`
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add shared/collab.js shared/collab.d.ts server/collaboration/store.js server/collaboration/engine.js server/collaboration/http-mount.js server/test/collab-store.test.js server/test/collab-const.test.js server/test/collab-http.test.js server/test/usage-heartbeat-removed.test.js
@@ -1078,7 +1078,7 @@ git commit -m "refactor(server): 删除群内签名信封用量上报（engine/s
 **Files:**
 - Modify: `server/index.js`
 
-- [ ] **Step 1: 加 import**
+- [x] **Step 1: 加 import**
 
 在 `server/index.js` 顶部 import 区加（删掉旧行 `import { createHeartbeat } from './collaboration/heartbeat.js';`）：
 
@@ -1097,7 +1097,7 @@ import { isPeerRequest, matchAccessToken, resolveInviteDaysAllowForever } from '
 
 （`activeInvite()` 不再需要 `resolveInviteDays`；`git grep -n "resolveInviteDays(" server/` 自查，除新加的 `resolveInviteDaysAllowForever` 外应无引用。）
 
-- [ ] **Step 2: 令牌落盘（读/写/删）**
+- [x] **Step 2: 令牌落盘（读/写/删）**
 
 `let remoteInvite = null;` 保持不变，但：
 
@@ -1165,7 +1165,7 @@ function activeInvite() { return isInviteActive(remoteInvite, Date.now()) ? remo
 
 （`inviteLink(inv)` 不动。）
 
-- [ ] **Step 3: buildWorkspace 装配 peers + mount**
+- [x] **Step 3: buildWorkspace 装配 peers + mount**
 
 在 `buildWorkspace` 里，`engine` 创建时加 `peers` 依赖（把 `new CollabEngine({...})` 的对象里加一行）：
 
@@ -1203,7 +1203,7 @@ function activeInvite() { return isInviteActive(remoteInvite, Date.now()) ? remo
   return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, llmVault, usageStore, historyFile: paths.historyFile, paths };
 ```
 
-- [ ] **Step 4: 启动上报器**
+- [x] **Step 4: 启动上报器**
 
 `initWorkspace` 里把原 heartbeat 三行：
 
@@ -1220,7 +1220,7 @@ function activeInvite() { return isInviteActive(remoteInvite, Date.now()) ? remo
   if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }
 ```
 
-- [ ] **Step 5: 路由派发**
+- [x] **Step 5: 路由派发**
 
 在 `if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }` 之后加：
 
@@ -1230,12 +1230,12 @@ function activeInvite() { return isInviteActive(remoteInvite, Date.now()) ? remo
 
 （既有 `GET/POST /api/usage`（LLM 用量）是精确匹配、在更前面处理，互不影响。）
 
-- [ ] **Step 6: 语法与全量测试**
+- [x] **Step 6: 语法与全量测试**
 
 Run: `node --check server/index.js; npm.cmd run test:server`
 Expected: 语法通过；测试全绿
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server/index.js
@@ -1250,7 +1250,7 @@ git commit -m "feat(server): 装配用量上报（令牌落盘、/api/usage/* �
 - Create: `web/src/collaboration/usagePeers.ts`, `web/src/collaboration/usagePeers.test.ts`, `web/src/collaboration/UsageView.vue`
 - Modify: `web/src/collaboration/CollaborationView.vue`, `web/src/App.vue`, `shared/i18n/zh-CN.js`, `shared/i18n/en.js`
 
-- [ ] **Step 1: 写纯函数测试（红）**
+- [x] **Step 1: 写纯函数测试（红）**
 
 `web/src/collaboration/usagePeers.test.ts`：
 
@@ -1288,7 +1288,7 @@ describe('usagePeers', () => {
 Run: `npm.cmd --prefix web run test -- src/collaboration/usagePeers.test.ts`
 Expected: FAIL（模块不存在）
 
-- [ ] **Step 2: 实现纯函数**
+- [x] **Step 2: 实现纯函数**
 
 `web/src/collaboration/usagePeers.ts`：
 
@@ -1321,7 +1321,7 @@ export function usageCells(u: CollabUsage): string[] {
 Run: `npm.cmd --prefix web run test -- src/collaboration/usagePeers.test.ts`
 Expected: PASS（4 tests）
 
-- [ ] **Step 3: i18n 词条（中英同时加）**
+- [x] **Step 3: i18n 词条（中英同时加）**
 
 `shared/i18n/zh-CN.js` 的 `collab.*` 区域加：
 
@@ -1380,7 +1380,7 @@ Expected: PASS（4 tests）
 Run: `npm.cmd run check:i18n && node -e "Promise.all([import('./shared/i18n/zh-CN.js'),import('./shared/i18n/en.js')]).then(([z,e])=>{const Z=Object.keys(z.messages),E=Object.keys(e.messages);console.log(Z.length,E.length,Z.filter(k=>!E.includes(k)),E.filter(k=>!Z.includes(k)));})"`
 Expected: `check-i18n` 无中文命中；两文件键数一致、互相差集为空
 
-- [ ] **Step 4: 视图组件**
+- [x] **Step 4: 视图组件**
 
 `web/src/collaboration/UsageView.vue`：
 
@@ -1503,7 +1503,7 @@ onBeforeUnmount(() => { if (off) off(); });
 
 （词条 `usage.saved` 已在 Step 3 中加入，中英各一条，无需额外判断。）
 
-- [ ] **Step 5: 挂到 tab**
+- [x] **Step 5: 挂到 tab**
 
 `web/src/collaboration/CollaborationView.vue`：
 
@@ -1539,12 +1539,12 @@ hash 解析处：
 if (r === 'contacts' && (sub === 'group' || sub === 'tasks' || sub === 'usage')) collabTab.value = sub;
 ```
 
-- [ ] **Step 6: 类型 + 测试 + i18n 全绿**
+- [x] **Step 6: 类型 + 测试 + i18n 全绿**
 
 Run: `npm.cmd run typecheck; npm.cmd --prefix web run test; npm.cmd run check:i18n`
 Expected: 三项全通过
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add web/src/collaboration/usagePeers.ts web/src/collaboration/usagePeers.test.ts web/src/collaboration/UsageView.vue web/src/collaboration/CollaborationView.vue web/src/App.vue shared/i18n/zh-CN.js shared/i18n/en.js
@@ -1558,7 +1558,7 @@ git commit -m "feat(web): 新增「机器用量」视图（汇总表 + 上报到
 **Files:**
 - Modify: `AGENTS.md`
 
-- [ ] **Step 1: AGENTS.md 记一条**
+- [x] **Step 1: AGENTS.md 记一条**
 
 在「目录速览」的 `server/` 说明后或「已验证教训」附近加：
 
@@ -1566,7 +1566,7 @@ git commit -m "feat(web): 新增「机器用量」视图（汇总表 + 上报到
 - **用量上报不走加群**：slave 在「机器用量」页粘 master 的访问链接（`http://<host>:<port>/?access=<token>`）即可，每 60–90 分钟随机把 `opencode stats` 结果 `POST /api/usage/report`（头 `X-DF-Token`）；master 邀请令牌落盘在 `collab/invite.json`，`days=0` 表示长期不过期。旧的群内签名信封上报已删除。
 ```
 
-- [ ] **Step 2: 起双实例（异步、非阻塞）**
+- [x] **Step 2: 起双实例（异步、非阻塞）**
 
 ```powershell
 # master：release 包（22222）
@@ -1575,7 +1575,7 @@ Start-Process -FilePath "cmd.exe" -ArgumentList '/c','start','""','/min',"D:\sof
 Start-Process -FilePath "cmd.exe" -ArgumentList '/c','start','""','/min',"$env:TEMP\opencode\void-dev-server.cmd"
 ```
 
-- [ ] **Step 3: master 生成长期链接**
+- [x] **Step 3: master 生成长期链接**
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Method POST "http://127.0.0.1:22222/api/remote/invite" -ContentType 'application/json' -Body '{"days":0}' | Select-Object -ExpandProperty Content
@@ -1583,7 +1583,7 @@ Invoke-WebRequest -UseBasicParsing -Method POST "http://127.0.0.1:22222/api/remo
 
 Expected: JSON 含 `"days":0`、`expiresAt":0`、`"link":"http://<LAN IP>:22222/?access=<token>"`；且 `D:\soft\...\data\collab\invite.json` 文件存在（用 `Test-Path` 验证）
 
-- [ ] **Step 4: slave 配置并立即上报**
+- [x] **Step 4: slave 配置并立即上报**
 
 ```powershell
 $link = '<Step 3 的 link>'
@@ -1593,7 +1593,7 @@ Invoke-WebRequest -UseBasicParsing -Method POST "http://127.0.0.1:33333/api/usag
 
 Expected: 配置返回 `config.masterUrl`/`token` 正确；`now` 返回 `status.lastOk = true`
 
-- [ ] **Step 5: master 侧可见**
+- [x] **Step 5: master 侧可见**
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:22222/api/usage/peers" | Select-Object -ExpandProperty Content
@@ -1601,11 +1601,11 @@ Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:22222/api/usage/peers" | Se
 
 Expected: `peers` 里出现 dev 机器的 `machineId`，含 `sessions/days/messages/input/output` 与 `receivedAt`
 
-- [ ] **Step 6: 令牌持久化（重启 master 后仍可上报）**
+- [x] **Step 6: 令牌持久化（重启 master 后仍可上报）**
 
 重启 master（设置面板「重启后端」或重开 `start.bat`）→ 再执行 Step 4 的 `now` → Expected: 仍 `lastOk = true`（失败即说明落盘/读取有问题）
 
-- [ ] **Step 7: 错误令牌 → 明确失败**
+- [x] **Step 7: 错误令牌 → 明确失败**
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Method POST "http://127.0.0.1:22222/api/usage/report" -ContentType 'application/json' -Headers @{ 'X-DF-Token' = 'wrong' } -Body '{"machineId":"x","usage":{}}' -SkipHttpErrorCheck
@@ -1613,7 +1613,7 @@ Invoke-WebRequest -UseBasicParsing -Method POST "http://127.0.0.1:22222/api/usag
 
 Expected: 403 `{"error":"bad-token"}`
 
-- [ ] **Step 8: 全量校验 + 打绿色包**
+- [x] **Step 8: 全量校验 + 打绿色包**
 
 ```bash
 npm.cmd test
@@ -1625,7 +1625,7 @@ node scripts/build.js
 
 Expected: 测试/类型/i18n 全绿；产物 `dist-portable/vscode-ai-windows-x64-<日期>/` + `.zip`
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add AGENTS.md
