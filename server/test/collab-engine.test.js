@@ -293,3 +293,22 @@ test('群主换新：旧群主签名告知新 hubId，成员跟随更换群主', async () => {
     assert.equal(B.store.getGroup().hubId, B.pub.machineId);
   } finally { await h.stop(); }
 });
+
+test('群主换地址：即使群名没变，群主那条记录的 host/port 变了也会自动广播', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    await groupUp(A, B);
+    const g = A.store.getGroup();
+    const hub = g.members.find((m) => m.machineId === A.pub.machineId);
+    hub.port = 1111;                       // 制造「本地记录陈旧」但群名恰好等于当前 用户名@host:port
+    g.name = `${A.pub.username}@${A.pub.host}:${A.pub.port}`;
+    A.store.upsertGroup(g);
+
+    const r = await A.announceIfMoved();
+    assert.equal(r.ok, true);
+    await new Promise((res) => setTimeout(res, 200));
+    const hubInB = B.store.getGroup().members.find((m) => m.machineId === A.pub.machineId);
+    assert.equal(hubInB.port, A.pub.port);
+  } finally { await h.stop(); }
+});

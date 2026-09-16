@@ -71,8 +71,6 @@ export const messages = {
   'collab.announce.save': '保存公告',
   'collab.announce.empty': '暂无公告',
   'collab.announce.placeholder': '输入群公告内容（仅群主可编辑，保存后同步给成员）',
-  'collab.group.announce_move': '更新群名并通知成员',
-  'collab.group.move_done': '已通知成员（对方会把群主指到新地址）',
   'collab.member.empty': '暂无成员，开启远程访问并邀请对方粘贴链接',
   'collab.heartbeat.usage': 'opencode 入 {input} / 出 {output} · {messages} 条 · {days} 天',
   'usage.title': '机器用量',

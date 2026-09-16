@@ -336,12 +336,14 @@ export class CollabEngine {
     this._emit('synced', {});
     return { ok: true, group: g };
   }
-  // 启动时：我是群主且对外地址（群名 = 用户名@host:port）变了 → 自动广播一次
+  // 启动时：我是群主且对外地址（host/port）变了 → 自动签名广播一次（无需手动按钮）
   async announceIfMoved() {
     const g = this.store.ownedGroup(this.pub.machineId);
     if (!g) return { ok: false, error: 'not-hub' };
     const expect = profileLabel(this.pub);
-    if (g.name === expect) return { ok: true, unchanged: true };
+    const hub = (g.members || []).find((m) => m.machineId === this.pub.machineId);
+    const moved = !hub || hub.host !== this.pub.host || Number(hub.port) !== Number(this.pub.port);
+    if (g.name === expect && !moved) return { ok: true, unchanged: true };
     return this.renameGroup(expect);
   }
   _inMemberSync(env) {
