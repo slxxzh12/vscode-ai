@@ -65,6 +65,13 @@
 - 数据按端口隔离在 `%USERPROFILE%\.local\share\void\ports\<端口>\`；宿主端口文件在仓库根/绿色包根的 `data/port.txt`。
 - 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`；代码行统计：`npm.cmd run count:code`（去注释/空行/纯括号/无英文行，输出每文件实际代码行）。
 
+## 目录组织（强制）
+
+- **一个独立功能放一个独立文件夹，不要把不相关的代码平铺到同一个目录下**：新功能优先新建自己的模块文件/子目录（必要时含各自的测试文件），按职责聚合，而不是往现有大文件或根目录里堆。
+- 参照现有做法：`server/` 顶层只放与应用装配/HTTP 面相关的少量文件，功能模块各自成文件（如 `usage-store.js`、`usage-peers.js`、`usage-report.js`、`usage-mount.js`、`task-store.js`、`seed-store.js`、`collab-db.js`）；协作子系统的多个文件集中在 `server/collaboration/`；前端同理由 `web/src/collaboration/`、`web/src/components/` 分域存放。
+- 同一功能的后端/前端/词条/测试改动尽量落在一起，便于一个 commit 说清一件事；新增目录时同步在「目录速览」补一行说明。
+- 拆分判据：一个文件只承担一件清晰的事、能被单独理解与测试；文件明显变大且混了多种职责时，先拆再改（但不要为拆分而重构无关代码）。
+
 ## 配置（端口 + XML）
 
 - **监听端口**存 `<应用目录>/data/port.txt`（单行纯数字；应用目录 = 仓库根 / 绿色包根，即 `server/` 的上一级，与启动 cwd 无关）。优先级：`DEVFLOW_PORT` 环境变量 > `data/port.txt` > 默认 `22222`。设置面板保存端口只写该文件，**需重启后端**才生效；`devflow.xml` 不再有 `port` 属性。
