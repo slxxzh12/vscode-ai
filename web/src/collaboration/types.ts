@@ -1,6 +1,6 @@
 export interface CollabProfile { machineId: string; username: string; employeeId?: string; host: string; port: number; publicKey: string; }
 export interface CollabMember extends CollabProfile {}
-export interface CollabGroup { id: string; name: string; hubId: string; createdAt: number; members: CollabMember[]; }
+export interface CollabGroup { id: string; name: string; hubId: string; createdAt: number; members: CollabMember[]; announcement?: string; }
 export interface CollabInboxItem { id: string; fromId: string; groupId: string | null; kind?: 'skill' | 'file'; skillName: string | null; fileName?: string | null; hash: string; size: number; status: 'received' | 'installed' | 'ignored' | 'invalid'; receivedAt: number; }
 export interface CollabGroupSkill { groupId: string; skillName: string; hash: string; distributedBy: string; installed: boolean; }
 export interface CollabOutItem { id: string; kind: 'skill' | 'file'; groupId: string | null; skillName: string | null; fileName: string; size: number; hash: string; createdAt: number; }

@@ -77,6 +77,7 @@ export function useCollab() {
     chat, sendChat, sendCmd, pullChat, loadPendingCmds, approveCmd,
     handleS2C,
     async updateIdentity(host: string, port: number, employeeId?: string) { await post('/api/collab/identity', { host, port, employeeId }); return refresh(); },
+    async setAnnouncement(text: string) { await post('/api/collab/announcement', { text }); return refresh(); },
     async join(host: string, port: number, token: string) {
       const r = await post<{ code: string; group?: CollabGroup }>('/api/collab/join', { host, port, token });
       await refresh();

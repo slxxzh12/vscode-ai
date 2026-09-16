@@ -12,7 +12,6 @@ const props = defineProps<{ collab: CollabApi }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const groups = computed(() => snap.value.groups || []);
 const activeId = ref<string | null>(null);
-const rightTab = ref<'members' | 'chat'>('members');
 const mine = computed(() => groups.value.find((g) => g.hubId === snap.value.identity.machineId) || null);
 const group = computed(() => groups.value.find((g) => g.id === activeId.value) || mine.value || groups.value[0] || null);
 watch(groups, (gs) => {
@@ -116,6 +115,41 @@ function fmtSize(n: number) {
 
 // —— master 同步种子 / slave 主动同步 ——
 const isMaster = computed(() => !!group.value && group.value.hubId === me.value);
+// —— 群公告：仅群主可编辑，改后随 member-sync 下发给成员 ——
+const editAnnounce = ref(false);
+const announceText = ref('');
+const announceMsg = ref('');
+// —— 切换 master 后需要重启服务才能换绑定地址（127.0.0.1 ↔ 0.0.0.0）——
+const restarting = ref(false);
+async function restartBackend() {
+  restarting.value = true;
+  remoteMsg.value = '';
+  try {
+    const res = await fetch('/api/server/restart', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    remoteMsg.value = t('term.port_restarting');
+    const deadline = Date.now() + 30000;
+    for (;;) {
+      if (Date.now() > deadline) throw new Error(t('term.port_restarting'));
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        if ((await fetch('/api/version', { cache: 'no-store' })).ok) { location.reload(); return; }
+      } catch { /* 重启中，继续等 */ }
+    }
+  } catch (e) { remoteMsg.value = t('term.port_restart_failed', { msg: (e as Error).message || String(e) }); }
+  finally { restarting.value = false; }
+}
+watch(() => group.value?.announcement, (v) => { announceText.value = v || ''; }, { immediate: true });
+async function saveAnnounce() {
+  announceMsg.value = '';
+  try {
+    await props.collab.setAnnouncement(announceText.value.trim());
+    announceMsg.value = t('usage.saved');
+    editAnnounce.value = false;
+    setTimeout(() => { announceMsg.value = ''; }, 1500);
+  } catch (e) { announceMsg.value = String((e as Error).message || e); }
+}
 const downloads = ref<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] } }>({ manifest: { files: [] } });
 const seed = ref<{ version: string; files: { name: string }[] }>({ version: '', files: [] });
 const seedOpen = ref(false);
@@ -223,7 +257,10 @@ onMounted(async () => {
             <button @click="copy(remotePassword)">{{ $t('remote.copy_password') }}</button>
           </div>
         </template>
-        <div v-if="remoteState.needRestart" class="err">{{ $t('remote.need_restart') }}</div>
+        <div v-if="remoteState.needRestart" class="err">
+          {{ $t('remote.need_restart') }}
+          <button class="mini" :disabled="restarting" @click="restartBackend">{{ restarting ? $t('term.port_restarting') : $t('term.port_restart') }}</button>
+        </div>
         <div v-if="remoteMsg" class="cfghint">{{ remoteMsg }}</div>
 
         <div v-if="isMaster && remoteState.enabled" class="sec">
@@ -275,18 +312,32 @@ onMounted(async () => {
     <section class="cw-right">
       <div class="chat-col">
         <header class="gtop">
-          <span class="tname">💬 {{ group ? group.name : $t('collab.member.title', { count: 0 }) }}</span>
-          <div class="rtabs">
-            <button :class="{ on: rightTab === 'members' }" @click="rightTab = 'members'">{{ $t('collab.tab.members') }}</button>
-            <button :class="{ on: rightTab === 'chat' }" @click="rightTab = 'chat'">{{ $t('collab.tab.chat') }}</button>
-          </div>
+          <span class="tname">💬 {{ group ? group.name : $t('collab.placeholder_short') }}</span>
         </header>
-        <div v-if="rightTab === 'members'" class="memwrap">
-          <MemberUsageTable :collab="collab" />
-        </div>
-        <GroupChatView v-else-if="group" :collab="collab" :group-id="group.id" />
+        <GroupChatView v-if="group" :collab="collab" :group-id="group.id" />
         <div v-else class="placeholder"><div class="ph">{{ $t('collab.placeholder') }}</div></div>
       </div>
+
+      <aside class="cw-members">
+        <section class="mpanel">
+          <h4 class="mtitle">{{ $t('collab.member.title', { count: (group?.members || []).length }) }}</h4>
+          <MemberUsageTable class="mtable" :collab="collab" />
+        </section>
+        <section class="mpanel announce">
+          <h4 class="mtitle">
+            {{ $t('collab.announce.title') }}
+            <button v-if="isMaster" class="mini" @click="editAnnounce = !editAnnounce">
+              {{ editAnnounce ? $t('common.cancel') : $t('collab.announce.edit') }}
+            </button>
+          </h4>
+          <textarea v-if="isMaster && editAnnounce" v-model="announceText" class="ata" rows="4" :placeholder="$t('collab.announce.placeholder')" />
+          <div v-if="isMaster && editAnnounce" class="abox">
+            <button class="mini primary" @click="saveAnnounce">{{ $t('collab.announce.save') }}</button>
+            <span v-if="announceMsg" class="ahint">{{ announceMsg }}</span>
+          </div>
+          <div v-else class="abody">{{ (group?.announcement || '').trim() || $t('collab.announce.empty') }}</div>
+        </section>
+      </aside>
     </section>
   </div>
 
@@ -355,11 +406,18 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .gitem { text-align: left; background: none; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx2); padding: 5px 8px; font-size: 12px; cursor: pointer; font-family: inherit; margin-bottom: 4px; width: 100%; }
 .gitem.on { background: none; color: var(--tx1); border-color: var(--ac); }
 .gitem .sub { color: var(--tx6); margin-left: 6px; }
-.rtabs { margin-left: auto; display: flex; gap: 6px; }
-.usage-wrap { flex: 1; min-height: 0; overflow: auto; }
-.rtabs button { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
-.rtabs button.on { background: var(--ac); color: var(--onac); border-color: var(--ac); }
-.memwrap { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; }
+.cw-members { width: 46%; min-width: 460px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--bd); background: var(--bg1); }
+.mpanel { display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--bd); }
+.mpanel:first-child { flex: 1; }
+.mtitle { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--tx2); }
+.mtable { flex: 1; min-height: 0; }
+.announce { flex: none; }
+.abody { padding: 0 12px 12px; color: var(--tx); font-size: 12px; line-height: 1.7; white-space: pre-wrap; max-height: 160px; overflow: auto; }
+.ata { margin: 0 12px; background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 8px; font-family: inherit; font-size: 12px; resize: vertical; }
+.abox { display: flex; align-items: center; gap: 8px; padding: 8px 12px 12px; }
+.ahint { color: var(--tx6); font-size: 11px; }
+.mini { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 11px; font-family: inherit; }
+.mini.primary { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 details.fold > summary { cursor: pointer; color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; list-style: none; }
 details.fold > summary::-webkit-details-marker { display: none; }
 details.fold > summary::before { content: '▸ '; }
