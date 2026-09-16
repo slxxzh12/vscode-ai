@@ -13,10 +13,8 @@ test('collab 常量可 import 且冻结', () => {
   for (const p of peer) assert.ok(!s2c.includes(p), `重叠: ${p}`);
   assert.equal(CollabPeer.CHAT_SEND, 'chat-send');
   assert.equal(CollabPeer.CMD_RESULT, 'cmd-result');
-  assert.equal(CollabPeer.HEARTBEAT, 'heartbeat');
   assert.equal(CollabPeer.UPDATE_CHECK, 'update-check');
   assert.equal(CollabPeer.LIST_DOWNLOADS, 'list-downloads');
-  assert.equal(CollabPeer.STATS, 'stats');
   assert.equal(CollabS2C.COLLAB_CHAT, 'collab-chat');
   assert.equal(CollabS2C.COLLAB_HEARTBEAT, 'collab-heartbeat');
 });

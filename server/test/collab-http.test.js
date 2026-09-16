@@ -9,7 +9,6 @@ import { CollabStore } from '../collaboration/store.js';
 import { loadIdentity } from '../collaboration/identity.js';
 import { createCollabMount } from '../collaboration/http-mount.js';
 import { makePeerClient } from '../collaboration/peer-client.js';
-import { CollabPeer } from '@devflow/shared/collab';
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'collab-http-')); }
 
@@ -235,17 +234,11 @@ test('update 端点：publish → check → remote → pull → apply', async ()
   } finally { A.server.close(); B.server.close(); }
 });
 
-test('POST /api/collab/stats：slave 签名上报被 hub 接收并入库', async () => {
+test('legacy route POST /api/collab/stats removed (404)', async () => {
   const A = await startNode('aliceS');
-  const B = await startNode('bobS');
   try {
-    const g = await joinGroup(A, B);
-    const env = B.engine._sign(CollabPeer.STATS, { groupId: g.id, usage: { agent: 'opencode', days: 7, sessions: 3, messages: 9, input: 100, output: 20 } });
-    const r = await post(`http://127.0.0.1:${A.port}/api/collab/stats`, env);
-    assert.equal(r.body.ok, true);
-    const hb = A.engine.store.getHeartbeat(B.engine.pub.machineId);
-    assert.equal(hb.messages, 9);
-    assert.equal(hb.sessions, 3);
-  } finally { A.server.close(); B.server.close(); }
+    const r = await post(`http://127.0.0.1:${A.port}/api/collab/stats`, { type: 'stats', payload: {} });
+    assert.equal(r.status, 404);
+  } finally { A.server.close(); }
 });
 

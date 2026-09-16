@@ -243,21 +243,3 @@ test('_inUpdateCheck/_inListDownloads 非成员被拒', () => {
     } finally { await h.stop(); }
   });
 });
-
-test('stats 上报：hub 存 messages/input/output/sessions/days；非成员拒绝', async () => {
-  const h = await createPairHarness({ skipSkills: true });
-  try {
-    const [A, B] = h.nodes;
-    const g = await groupUp(A, B);
-    const usage = { agent: 'opencode', days: 7, sessions: 3, messages: 40, input: 100, output: 20, totalCost: 0.5 };
-    assert.equal(A._inStats({ from: B.pub, payload: { groupId: g.id, usage } }).ok, true);
-    const hb = A.store.getHeartbeat(B.pub.machineId);
-    assert.equal(hb.messages, 40);
-    assert.equal(hb.input, 100);
-    assert.equal(hb.output, 20);
-    assert.equal(hb.sessions, 3);
-    assert.equal(hb.days, 7);
-    assert.equal(A._inStats({ from: { machineId: 'nobody' }, payload: { groupId: g.id, usage } }).ok, false);
-  } finally { await h.stop(); }
-});
-

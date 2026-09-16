@@ -40,9 +40,10 @@ export function profileLabel(p) {
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
+  constructor({ store, identity, events = null, peer = null, peers = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
+    this.peers = peers;            // 用量上报库（master 侧），见 server/usage-peers.js
     this.events = events;
     this.peer = peer;              // { post(host, port, envelope) -> Promise<{ok, data?, error?}> }
     this.skillDefaultRoot = skillsRoot;   // opencode 技能根（env 覆盖优先）
@@ -256,11 +257,9 @@ export class CollabEngine {
       case CollabPeer.CMD_CONFIRM: return this._inCmdConfirm(env);
       case CollabPeer.CMD_RESULT: return this._inCmdResult(env);
       case CollabPeer.CHAT_PULL: return this._inChatPull(env);
-      case CollabPeer.HEARTBEAT: return this._inHeartbeat(env);
       case CollabPeer.PULL_DOWNLOADS: return this._inPullDownloads(env);
       case CollabPeer.UPDATE_CHECK: return this._inUpdateCheck(env);
       case CollabPeer.LIST_DOWNLOADS: return this._inListDownloads(env);
-      case CollabPeer.STATS: return this._inStats(env);
       default: return { ok: false, error: 'unknown-type' };
     }
   }
@@ -345,57 +344,6 @@ export class CollabEngine {
     this._writeManifest(m);
     return { name, sha256, size: buf.length };
   }
-  writeUsageSnapshot() {
-    this.writeDownload('usage.json', Buffer.from(JSON.stringify({ updatedAt: Date.now(), members: this.store.listHeartbeats() }, null, 2)), 'usage');
-    this.writeDownload('group.json', Buffer.from(JSON.stringify(this.store.getGroup() || {}, null, 2)), 'group');
-  }
-  // 心跳记录：带上上报方身份（工号/IP/端口）+ 用量，供前端据此生成成员名
-  _heartbeatRecord(from, usage) {
-    return {
-      ...(usage || {}),
-      machineId: from.machineId,
-      employeeId: from.employeeId || '',
-      username: from.username || '',
-      host: from.host || '',
-      port: from.port || 0,
-      receivedAt: Date.now(),
-    };
-  }
-  reportHeartbeat(usage) {
-    const groups = this.store.listGroups().filter((g) => g.members.find((m) => m.machineId === this.pub.machineId));
-    if (!groups.length) return Promise.resolve({ code: 'no-group' });
-    const tasks = [];
-    for (const g of groups) {
-      if (g.hubId === this.pub.machineId) {
-        this.store.setHeartbeat(this.pub.machineId, this._heartbeatRecord(this.pub, usage));
-        this.writeUsageSnapshot();
-      } else {
-        const hub = g.members.find((m) => m.machineId === g.hubId);
-        if (hub) tasks.push(this._post(hub.host, hub.port, this._sign(CollabPeer.STATS, { groupId: g.id, usage }), null, '/api/collab/stats'));
-      }
-    }
-    this._emit('heartbeat', {});
-    return Promise.all(tasks).then(() => ({ code: 'ok' }));
-  }
-  _storeHeartbeat(env) {
-    const g = this.store.findGroup(env.payload && env.payload.groupId) || this.store.getGroup();
-    if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
-    if (g.hubId !== this.pub.machineId) return { ok: false, error: 'not-hub' };
-    const m = g.members.find((x) => x.machineId === env.from.machineId);
-    if (m) {
-      Object.assign(m, {
-        employeeId: env.from.employeeId || m.employeeId || '', username: env.from.username || m.username,
-        host: env.from.host || m.host, port: env.from.port || m.port,
-      });
-      this.store.upsertGroup(g);
-    }
-    this.store.setHeartbeat(env.from.machineId, this._heartbeatRecord(env.from, env.payload && env.payload.usage));
-    this.writeUsageSnapshot();
-    this._emit('heartbeat', {});
-    return { ok: true };
-  }
-  _inHeartbeat(env) { return this._storeHeartbeat(env); }
-  _inStats(env) { return this._storeHeartbeat(env); }
   // ---- 同步种子（update.json）----
   _hubFor(masterId) {
     const groups = this.store.listGroups()
@@ -486,7 +434,7 @@ export class CollabEngine {
       if (data.manifest) this._writeManifest(data.manifest);
       if (data.group) this.store.upsertGroup(data.group);
       if (data.usage && data.usage.members) {
-        for (const [mid, u] of Object.entries(data.usage.members)) this.store.setHeartbeat(mid, u);
+        for (const [mid, u] of Object.entries(data.usage.members)) this.peers?.upsert?.({ ...u, machineId: mid });
       }
       this._emit('synced', {});
       this._emit('heartbeat', {});
@@ -506,7 +454,7 @@ export class CollabEngine {
       if (!fs.existsSync(abs)) continue;
       files.push({ name: f.name, b64: fs.readFileSync(abs).toString('base64') });
     }
-    return { ok: true, data: { manifest, files, group: g, usage: { updatedAt: Date.now(), members: this.store.listHeartbeats() } } };
+      return { ok: true, data: { manifest, files, group: g, usage: { updatedAt: Date.now(), members: (this.peers && this.peers.list) ? this.peers.list() : {} } } };
   }
   // master 发布捆绑包到 downloads/skills（不再 push 成员）
   publishPackage(packageId) {

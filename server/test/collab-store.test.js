@@ -89,12 +89,3 @@ test('本地历史 cap 每群 500', () => {
   assert.equal(msgs.length, 500);
   assert.equal(msgs[0].id, 'm2'); // 最旧两条被裁
 });
-
-test('heartbeats 表 upsert / list', () => {
-  const s = new CollabStore({ file: tmpFile() });
-  assert.deepEqual(s.listHeartbeats(), {});
-  s.setHeartbeat('m1', { agent: 'opencode', input: 1, receivedAt: 10 });
-  s.setHeartbeat('m1', { agent: 'opencode', input: 2, receivedAt: 20 });
-  assert.equal(s.listHeartbeats().m1.input, 2);
-  assert.equal(s.listHeartbeats().m1.receivedAt, 20);
-});

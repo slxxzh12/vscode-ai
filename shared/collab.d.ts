@@ -16,9 +16,7 @@ export declare const CollabPeer: Readonly<{
   CMD_CONFIRM: 'cmd-confirm';
   CMD_RESULT: 'cmd-result';
   CHAT_PULL: 'chat-pull';
-  HEARTBEAT: 'heartbeat';
   PULL_DOWNLOADS: 'pull-downloads';
   UPDATE_CHECK: 'update-check';
   LIST_DOWNLOADS: 'list-downloads';
-  STATS: 'stats';
 }>;

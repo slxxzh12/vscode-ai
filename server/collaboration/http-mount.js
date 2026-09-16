@@ -89,11 +89,6 @@ export function createCollabMount({ engine, logger = console }) {
       const r = await engine.handleIncoming(body);
       return r.ok ? ok(res, r.data ? { ok: true, data: r.data } : { ok: true }) : ok(res, { ok: false, error: r.error });
     }
-    if (seg[0] === 'stats' && m === 'POST') {
-      // slave 上报 opencode stats（签名信封，校验群成员后存 heartbeat/usage）
-      const r = await engine.handleIncoming(body);
-      return r.ok ? ok(res, { ok: true }) : ok(res, { ok: false, error: r.error });
-    }
     try {
       // identity
       if (seg[0] === 'identity' && m === 'GET') return ok(res, { identity: engine.pub });
@@ -105,7 +100,7 @@ export function createCollabMount({ engine, logger = console }) {
           identity: engine.pub,
           group: engine.store.getGroup(),
           groups: engine.store.listGroups(),
-          heartbeats: engine.store.listHeartbeats ? engine.store.listHeartbeats() : {},
+          heartbeats: (engine.peers && engine.peers.list) ? engine.peers.list() : {},
           skillsInbox: inbox,
           outbox: engine.store.listOutbox().map(({ storedFile, ...rest }) => rest),
           groupSkills: engine.store.listGroupSkills(),
@@ -156,7 +151,7 @@ export function createCollabMount({ engine, logger = console }) {
       }
       // downloads（master 共享目录；slave 点击时才拉取）
       if (seg[0] === 'downloads' && seg.length === 1 && m === 'GET') {
-        return ok(res, { manifest: engine.readManifest(), usage: { members: engine.store.listHeartbeats() }, group: engine.store.getGroup(), groups: engine.store.listGroups() });
+        return ok(res, { manifest: engine.readManifest(), usage: { members: (engine.peers && engine.peers.list) ? engine.peers.list() : {} }, group: engine.store.getGroup(), groups: engine.store.listGroups() });
       }
       if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'sync' && m === 'POST') {
         return ok(res, await engine.pullDownloads());
