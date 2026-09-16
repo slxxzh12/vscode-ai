@@ -108,7 +108,17 @@ function lanAddress() {
 }
 function inviteLink(inv) {
   const addr = lanAddress() || HOST;
-  return { address: addr, link: `http://${addr}:${actualPort || PORT}/?access=${inv.token}` };
+  // 链接 = 授权口令（access）+ 群主公钥（pk，身份锚点：群主换 IP 后成员仍能认出同一台机器）
+  const pk = publicKeyParam();
+  const pkPart = pk ? `&pk=${encodeURIComponent(pk)}` : '';
+  return { address: addr, link: `http://${addr}:${actualPort || PORT}/?access=${inv.token}${pkPart}`, publicKey: pk };
+}
+// 本机协作身份公钥（PEM → base64url），未就绪时返回空
+function publicKeyParam() {
+  try {
+    const pem = ws && ws.engine && ws.engine.identity && ws.engine.identity.publicKey;
+    return pem ? Buffer.from(pem, 'utf8').toString('base64url') : '';
+  } catch { return ''; }
 }
 function pageShell(title, body) {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:system-ui,Segoe UI,sans-serif;background:#1e1e1e;color:#ddd;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}.box{max-width:520px;padding:28px 32px;background:#252526;border:1px solid #3c3c3c;border-radius:10px;text-align:center}.box h1{font-size:18px;margin:0 0 12px}.box p{color:#aaa;line-height:1.7;font-size:13px}.box input{width:100%;box-sizing:border-box;margin:14px 0 10px;padding:10px 12px;background:#1e1e1e;border:1px solid #3c3c3c;border-radius:6px;color:#eee;font-size:14px}.box button{width:100%;padding:10px;background:#0e639c;border:none;border-radius:6px;color:#fff;font-size:14px;cursor:pointer}.err{color:#f48771;margin-top:10px}</style></head><body><div class="box"><h1>${title}</h1>${body}</div></body></html>`;
@@ -164,7 +174,7 @@ function buildWorkspace({ paths, port }) {
   const engine = new CollabEngine({
     store: new CollabStore({ file: paths.storeFile, logger: log }),
     identity,
-    peers: new UsagePeersStore({ file: paths.usagePeersFile, logger: log }),
+    peers: new UsagePeersStore({ file: paths.usagePeersFile, dailyFile: path.join(paths.dir, 'peer-usage.db'), logger: log }),
     seedStore: createSeedStore({ file: path.join(paths.dir, 'seed.db'), logger: log }),
     skillsRoot: paths.skillsRoot,
     uploadDir: paths.uploadDir,
@@ -439,9 +449,9 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ enabled: false }));
       return;
     }
-    const { address, link } = inviteLink(inv);
+    const { address, link, publicKey: pk } = inviteLink(inv);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ enabled: true, password: inv.password, token: inv.token, link, address, expiresAt: inv.expiresAt, forever: inv.expiresAt === 0 }));
+    res.end(JSON.stringify({ enabled: true, password: inv.password, token: inv.token, link, address, publicKey: pk, expiresAt: inv.expiresAt, forever: inv.expiresAt === 0 }));
     return;
   }
   if (url.pathname === '/api/remote/invite' && req.method === 'POST') {
@@ -459,9 +469,9 @@ const server = http.createServer(async (req, res) => {
       remoteLockedUntil = 0;
       let needRestart = hostRestartNeeded({ current: HOST, masterOn: true, envHost: process.env.DEVFLOW_HOST });
       if (ws && ws.engine) ws.engine.ensureGroup();
-      const { address: addr, link } = inviteLink(remoteInvite);
+      const { address: addr, link, publicKey: pk } = inviteLink(remoteInvite);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ enabled: true, token, password, days, expiresAt: remoteInvite.expiresAt, link, address: addr, needRestart }));
+      res.end(JSON.stringify({ enabled: true, token, password, days, expiresAt: remoteInvite.expiresAt, link, address: addr, publicKey: pk, needRestart }));
     });
     return;
   }

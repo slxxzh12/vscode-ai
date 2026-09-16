@@ -93,3 +93,14 @@ test('dailyï¿½ï¿½ï¿½ï¿½ï¿½Ìºï¿½ï¿½ï¿½ï¿½Â¶ï¿½È¡ï¿½ï¿½ï¿½ï¿½', () => {
   assert.equal(daily['2026-09-16'].output, 7);
   assert.ok(daily['2026-09-16'].at > 0);
 });
+
+test('daily£ºÀÏ JSON ÀïµÄÃ¿ÈÕÁô´æ»áÒ»´ÎÐÔÇ¨ÒÆ½ø SQLite£¬JSON ²»ÔÙ±£Áô daily', () => {
+  const file = tmpFile();
+  fs.writeFileSync(file, JSON.stringify({ updatedAt: 1, peers: {}, daily: { m1: { '2026-09-10': { sessions: 1, messages: 2, at: 123 } } } }), 'utf8');
+  const s = new UsagePeersStore({ file, logger: { warn() {}, info() {} } });
+  const days = s.listDaily('m1');
+  assert.equal(days['2026-09-10'].messages, 2);
+  assert.equal(days['2026-09-10'].sessions, 1);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).daily, undefined);
+  s.close();
+});
