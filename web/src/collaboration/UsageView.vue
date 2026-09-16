@@ -2,7 +2,7 @@
 import { onMounted, onBeforeUnmount, ref, computed } from 'vue';
 import { CollabS2C } from '@devflow/shared/collab';
 import { t } from '../i18n';
-import { isOnline, sortPeers, usageCells } from './usagePeers';
+import { isOnline, machineLabel, nextSort, sortRows, usageCells, type SortDir, type SortKey } from './usagePeers';
 import type { CollabUsage } from './types';
 
 const props = defineProps<{ terminal: { on: (type: string, cb: (p: any) => void) => () => void } }>();
@@ -11,7 +11,10 @@ const cfg = ref<{ masterUrl: string; token: string; days?: number }>({ masterUrl
 const st = ref<{ lastAt: number; lastOk: boolean | null; lastError: string; nextAt: number }>({ lastAt: 0, lastOk: null, lastError: '', nextAt: 0 });
 const link = ref('');
 const msg = ref('');
-const rows = computed(() => sortPeers(peers.value));
+const sort = ref<{ key: SortKey; dir: SortDir }>({ key: 'messages', dir: 'desc' });
+const rows = computed(() => sortRows(Object.values(peers.value || {}), sort.value.key, sort.value.dir));
+function onSort(key: SortKey) { sort.value = nextSort(sort.value, key); }
+function arrow(key: SortKey) { return sort.value.key === key ? (sort.value.dir === 'asc' ? '▲' : '▼') : ''; }
 const fmtTime = (ms?: number) => (ms ? new Date(ms).toLocaleString() : t('usage.not_configured'));
 
 async function loadPeers() {
@@ -57,21 +60,21 @@ onBeforeUnmount(() => { if (off) off(); });
       <table v-else class="ptable">
         <thead>
           <tr>
-            <th>{{ $t('usage.machine') }}</th>
-            <th>{{ $t('usage.sessions') }}</th>
-            <th>{{ $t('usage.days') }}</th>
-            <th>{{ $t('usage.messages') }}</th>
-            <th>{{ $t('usage.input') }}</th>
-            <th>{{ $t('usage.output') }}</th>
-            <th>{{ $t('usage.cost') }}</th>
-            <th>{{ $t('usage.last_report') }}</th>
+            <th class="sortable" @click="onSort('machine')">{{ $t('usage.machine') }}<span class="ar">{{ arrow('machine') }}</span></th>
+            <th class="sortable" @click="onSort('sessions')">{{ $t('usage.sessions') }}<span class="ar">{{ arrow('sessions') }}</span></th>
+            <th class="sortable" @click="onSort('days')">{{ $t('usage.days') }}<span class="ar">{{ arrow('days') }}</span></th>
+            <th class="sortable" @click="onSort('messages')">{{ $t('usage.messages') }}<span class="ar">{{ arrow('messages') }}</span></th>
+            <th class="sortable" @click="onSort('input')">{{ $t('usage.input') }}<span class="ar">{{ arrow('input') }}</span></th>
+            <th class="sortable" @click="onSort('output')">{{ $t('usage.output') }}<span class="ar">{{ arrow('output') }}</span></th>
+            <th class="sortable" @click="onSort('cost')">{{ $t('usage.cost') }}<span class="ar">{{ arrow('cost') }}</span></th>
+            <th class="sortable" @click="onSort('receivedAt')">{{ $t('usage.last_report') }}<span class="ar">{{ arrow('receivedAt') }}</span></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="p in rows" :key="p.machineId">
             <td class="who">
               <span class="dot" :class="{ on: isOnline(p.receivedAt) }" />
-              {{ (p.employeeId || p.username || p.machineId) }}<span class="host">@{{ p.host }}:{{ p.port }}</span>
+              {{ machineLabel(p) }}<span class="host">@{{ p.host }}:{{ p.port }}</span>
             </td>
             <td v-for="(c, i) in usageCells(p)" :key="i">{{ c }}</td>
             <td>{{ fmtTime(p.receivedAt) }}</td>
@@ -104,6 +107,9 @@ onBeforeUnmount(() => { if (off) off(); });
 .ptable { border-collapse: collapse; font-size: 12px; width: 100%; }
 .ptable th, .ptable td { border: 1px solid var(--bd); padding: 4px 8px; text-align: right; }
 .ptable th:first-child, .ptable td:first-child { text-align: left; }
+.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.sortable:hover { color: var(--ac2); }
+.ar { display: inline-block; width: 10px; color: var(--ac2); font-size: 9px; }
 .who { display: flex; align-items: center; gap: 6px; }
 .host { color: var(--tx6); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tx6); flex: none; }
