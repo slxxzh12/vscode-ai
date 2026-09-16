@@ -182,9 +182,15 @@ function buildWorkspace({ paths, port }) {
   engine.peer = makePeerClient();
   const collabMount = createCollabMount({ engine, logger: log });
   const usagePeers = engine.peers;
+  const syncUsageSnapshot = () => {
+    engine.writeDownload?.('usage.json', Buffer.from(JSON.stringify(usagePeers.snapshot(), null, 2)), 'usage');
+    broadcastCollab(CollabS2C.COLLAB_HEARTBEAT, {});
+  };
   const usageReporter = createUsageReporter({
     file: paths.usageReportFile,
     identity: () => ({ ...engine.pub }),
+    peers: usagePeers,
+    onLocal: syncUsageSnapshot,
     cmd: ((BOOT_CFG.agents.list || []).find((a) => a.id === BOOT_CFG.agents.default) || {}).cmd || 'opencode',
     logger: log,
   });
@@ -192,10 +198,7 @@ function buildWorkspace({ paths, port }) {
     peers: usagePeers,
     reporter: usageReporter,
     checkToken: (tk) => { const inv = activeInvite(); return !!inv && safeEqual(tk, inv.token); },
-    onReport: () => {
-      engine.writeDownload?.('usage.json', Buffer.from(JSON.stringify(usagePeers.snapshot(), null, 2)), 'usage');
-      broadcastCollab(CollabS2C.COLLAB_HEARTBEAT, {});
-    },
+    onReport: syncUsageSnapshot,
     logger: log,
   });
   eventBus.on('friend-request', (payload) => broadcastCollab(CollabS2C.COLLAB_FRIEND_REQ, payload));

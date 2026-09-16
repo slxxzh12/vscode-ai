@@ -46,27 +46,49 @@ test('loadReportConfig é»˜è®¤å€¼ / saveReportConfig è½ç›˜è¯»å›ž', () => {
   assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 7 });
 });
 
-test('reportNow£ºÎ´ÅäÖÃÊ±Ö±½ÓÊ§°Ü£¬²»µ÷ÓÃ collect', async () => {
+test('æœªé…ç½® master æ—¶ï¼šä»é‡‡é›†å¹¶æœ¬åœ°è½åº“è‡ªå·±é‚£ä»½ï¼Œä½†ä¸ POST', async () => {
   const file = tmpFile();
+  const local = [];
   const calls = [];
   const r = createUsageReporter({
-    file, identity: () => ({ machineId: 'm1' }),
-    collect: async () => { calls.push('collect'); return {}; },
+    file, identity: () => ({ machineId: 'm1', username: 'u1', host: '10.0.0.2', port: 33333 }),
+    peers: { upsert: (u) => { local.push(u); return u; } },
+    collect: async ({ cmd, days }) => ({ agent: cmd, days, sessions: 9, input: 500 }),
     fetchFn: async () => { calls.push('fetch'); return { ok: true, json: async () => ({ ok: true }) }; },
   });
   const out = await r.reportNow();
   assert.equal(out.ok, false);
   assert.equal(out.error, 'not-configured');
   assert.deepEqual(calls, []);
+  assert.equal(local.length, 1);
+  assert.equal(local[0].machineId, 'm1');
+  assert.equal(local[0].host, '10.0.0.2');
+  assert.equal(local[0].sessions, 9);
+  assert.equal(local[0].input, 500);
 });
 
-test('reportNow£º´ø X-DF-Token POST µ½ /api/usage/report£¬body ´ø»úÆ÷Éí·ÝÓëÓÃÁ¿', async () => {
+test('onLocalï¼šæœ¬åœ°è½åº“åŽå›žè°ƒï¼ˆä¾›å†™å¿«ç…§/å¹¿æ’­ï¼‰', async () => {
+  const file = tmpFile();
+  const seen = [];
+  const r = createUsageReporter({
+    file, identity: () => ({ machineId: 'm1' }),
+    peers: { upsert: (u) => u },
+    onLocal: (rec) => seen.push(rec && rec.machineId),
+    collect: async () => ({ sessions: 1 }),
+  });
+  await r.reportNow();
+  assert.deepEqual(seen, ['m1']);
+});
+
+test('reportNowï¼šå¸¦ X-DF-Token POST åˆ° /api/usage/reportï¼Œbody å¸¦æœºå™¨èº«ä»½ä¸Žç”¨é‡ï¼ŒåŒæ—¶æœ¬åœ°è½åº“', async () => {
   const file = tmpFile();
   saveReportConfig(file, { masterUrl: 'http://10.0.0.9:22222', token: 'tk', days: 7 });
   const seen = [];
+  const local = [];
   const r = createUsageReporter({
     file,
     identity: () => ({ machineId: 'm1', employeeId: 'e1', username: 'u1', host: '10.0.0.2', port: 22222 }),
+    peers: { upsert: (u) => { local.push(u); return u; } },
     collect: async ({ cmd, days }) => ({ agent: cmd, days, sessions: 4, messages: 8, input: 1000, output: 100 }),
     fetchFn: async (url, opts) => { seen.push({ url, opts }); return { ok: true, json: async () => ({ ok: true }) }; },
     cmd: 'opencode',
@@ -82,11 +104,13 @@ test('reportNow£º´ø X-DF-Token POST µ½ /api/usage/report£¬body ´ø»úÆ÷Éí·ÝÓëÓÃÁ¿'
   assert.equal(body.employeeId, 'e1');
   assert.equal(body.host, '10.0.0.2');
   assert.equal(body.usage.sessions, 4);
+  assert.equal(local.length, 1);
+  assert.equal(local[0].sessions, 4);
   assert.equal(r.status().lastOk, true);
   assert.equal(r.status().lastError, '');
 });
 
-test('reportNow£º403 bad-token ¼ÇÈë lastError ÇÒ²»Å×´í', async () => {
+test('reportNowï¼š403 bad-token è®°å…¥ lastError ä¸”ä¸æŠ›é”™', async () => {
   const file = tmpFile();
   saveReportConfig(file, { masterUrl: 'http://10.0.0.9:22222', token: 'bad' });
   const r = createUsageReporter({
@@ -101,7 +125,7 @@ test('reportNow£º403 bad-token ¼ÇÈë lastError ÇÒ²»Å×´í', async () => {
   assert.equal(r.status().lastError, 'bad-token');
 });
 
-test('setConfig£º±£´æÅäÖÃ²¢»Ø¶Á', () => {
+test('setConfigï¼šä¿å­˜é…ç½®å¹¶å›žè¯»', () => {
   const file = tmpFile();
   const r = createUsageReporter({ file, identity: () => ({ machineId: 'm1' }) });
   const cfg = r.setConfig({ masterUrl: 'http://a:22222', token: 'tk', days: 7 });
@@ -109,7 +133,7 @@ test('setConfig£º±£´æÅäÖÃ²¢»Ø¶Á', () => {
   assert.deepEqual(loadReportConfig(file), cfg);
 });
 
-test('start£ºÆô¶¯Á¢¼´ÉÏ±¨Ò»´Î£¬ÏÂÒ»´ÎÑÓ³ÙÂäÔÚ 60¨C90 ·ÖÖÓ', async () => {
+test('startï¼šå¯åŠ¨ç«‹å³ä¸ŠæŠ¥ä¸€æ¬¡ï¼Œä¸‹ä¸€æ¬¡å»¶è¿Ÿè½åœ¨ 60â€“90 åˆ†é’Ÿ', async () => {
   const file = tmpFile();
   saveReportConfig(file, { masterUrl: 'http://a:22222', token: 'tk' });
   const delays = [];

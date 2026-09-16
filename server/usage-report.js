@@ -44,9 +44,9 @@ export function saveReportConfig(file, cfg) {
   return next;
 }
 
-// slave ���ϱ�������������һ�Σ�֮�� 60�C90 ��������ٱ�
+// slave 侧上报器：启动即报一次（先本地落库自己这份，再发给 master），之后 60–90 分钟随机再报
 export function createUsageReporter({
-  file, identity, cmd = 'opencode', collect = collectAgentStats,
+  file, identity, peers = null, onLocal = null, cmd = 'opencode', collect = collectAgentStats,
   fetchFn = fetch, logger = console, random = Math.random,
   now = () => Date.now(), scheduleFn = (fn, ms) => setTimeout(fn, ms),
 } = {}) {
@@ -59,23 +59,36 @@ export function createUsageReporter({
 
   async function reportNow() {
     const cfg = config();
-    if (!cfg.masterUrl || !cfg.token) {
-      status = { ...status, lastAt: now(), lastOk: false, lastError: 'not-configured' };
-      return { ok: false, error: 'not-configured' };
-    }
     let usage;
     try { usage = await collect({ cmd, days: cfg.days }); }
     catch (e) { usage = { agent: cmd, days: cfg.days, error: String((e && e.message) || e) }; }
     const me = (typeof identity === 'function' ? identity() : identity) || {};
-    const body = {
+    const self = {
+      ...usage,
       machineId: me.machineId || '', employeeId: me.employeeId || '', username: me.username || '',
-      host: me.host || '', port: me.port || 0, usage,
+      host: me.host || '', port: me.port || 0,
+    };
+    // 本机自己也留一份：每台机器的「机器用量」至少能看到自己
+    try {
+      if (peers && typeof peers.upsert === 'function' && self.machineId) {
+        const rec = peers.upsert(self);
+        onLocal?.(rec);
+      }
+    } catch (e) { logger?.warn?.('usage local upsert failed', (e && e.message) || e); }
+
+    if (!cfg.masterUrl || !cfg.token) {
+      status = { ...status, lastAt: now(), lastOk: false, lastError: 'not-configured' };
+      return { ok: false, error: 'not-configured' };
+    }
+    const wire = {
+      machineId: self.machineId, employeeId: self.employeeId, username: self.username,
+      host: self.host, port: self.port, usage,
     };
     try {
       const res = await fetchFn(`${cfg.masterUrl}/api/usage/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-DF-Token': cfg.token },
-        body: JSON.stringify(body),
+        body: JSON.stringify(wire),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);

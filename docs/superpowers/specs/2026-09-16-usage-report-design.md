@@ -110,6 +110,8 @@ slave（任意机器）                                   master（被上报方�
 - 配置存 `<dataDir>/usage-report.json`：`{ "masterUrl": "http://<host>:<port>", "token": "<token>", "days": 7 }`。
 - 界面：设置/协作页新增「上报到 master」输入框，粘贴 master 访问链接。链接格式沿用 `server/index.js:106` 的 `inviteLink()`：`http://<addr>:<port>/?access=<token>`；解析规则：取 URL 的 `host`/`port` 与查询参数 `access` 作为 token，三者缺一即报「链接不合法」。另提供「立即上报一次」按钮与状态显示（上次上报时间、成功/失败原因、下次上报时间）。
 - 定时：启动即上报一次；之后每次在 60–90 分钟之间随机取延迟（`60000*60`…`60000*90`）；上报失败只记录日志 + 状态，不影响服务运行。
+- **本机自己也留一份**（实现后补入）：每次触发时先采集 + 写本地 `usage-peers.json`（`onLocal` 同步写 `usage.json` 快照并广播），之后若配置了 `masterUrl/token` 再 POST 给 master；未配置时状态为 `not-configured` 但本机那行照常更新。这样每台机器（含 master 自己）的「机器用量」至少能看到自己。
+- 线上报文格式固定为 `{ machineId, employeeId, username, host, port, usage }`（`usage` 嵌套，master 端校验 `body.usage`）；本地库记录是扁平展开（`{ ...usage, machineId, ..., receivedAt }`），供界面直接取列。
 - 采集：沿用 `collectAgentStats({ cmd, days })`（`opencode stats --days 7`）。
 
 ## 7. 存储（master 侧）
@@ -121,7 +123,7 @@ slave（任意机器）                                   master（被上报方�
   "peers": { "<machineId>": { "…usage 字段…", "machineId": "…", "employeeId": "…", "username": "…", "host": "…", "port": 22222, "receivedAt": 1758000000000 } } }
 ```
 
-- 每台机器只保留**最新一份**（按 `machineId` upsert，旧值整体覆盖）。
+- 每台机器只保留**最新一份**（按 `machineId` upsert，旧值整体覆盖）；**master 自己那一份也写在这里**（由本机上报器写入，见第 6 节）。
 - 在线判定：`receivedAt` 距今小于 **3 小时**（= 上报间隔上限 90 分钟 × 2）显示为在线点。
 - 兼容：`GET /api/collab/snapshot` 的 `heartbeats` 字段保留，值改从新存储取（前端数据结构不变）；`writeUsageSnapshot()` 写进共享下载目录的 `usage.json` 同样改为取新存储。
 
