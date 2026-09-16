@@ -34,19 +34,22 @@ function res() {
 
 // http-mount 对 POST 会先 await readBody(req) → 假 req 必须支持 on('data'/'end'/'error')
 // 且 mount 内部用 req.url 自己解析路径（不吃第三个参数）
-function req(method, url) {
+function req(method, url, payload) {
   return {
     method,
     url,
     headers: {},
-    on(ev, cb) { if (ev === 'end') setImmediate(() => cb()); },
+    on(ev, cb) {
+      if (ev === 'data' && payload) setImmediate(() => cb(Buffer.from(JSON.stringify(payload))));
+      if (ev === 'end') setImmediate(() => cb());
+    },
   };
 }
 
-async function call(mount, method, url) {
+async function call(mount, method, url, payload) {
   const r = res();
   // mount 不返回内部 route 的 promise（POST 会先 await readBody），等一拍再读响应
-  mount(req(method, url), r);
+  mount(req(method, url, payload), r);
   await new Promise((done) => setTimeout(done, 5));
   return { status: r.out.status, json: r.out.body ? JSON.parse(r.out.body) : null };
 }
@@ -68,4 +71,16 @@ test('POST accept / ignore 路由到 engine', async () => {
   assert.equal((await call(mount, 'POST', '/api/collab/tasks/t1/accept')).json.code, 'ok');
   assert.equal((await call(mount, 'POST', '/api/collab/tasks/t1/ignore')).json.code, 'ignored');
   assert.deepEqual(calls, [['accept', 't1'], ['ignore', 't1']]);
+});
+
+test('POST /api/collab/packages 把 workflow 一并传给 buildPackage', async () => {
+  const seen = [];
+  const engine = {
+    store: { listInbox: () => [] },
+    buildPackage: async (sel) => { seen.push(sel); return { id: 'p1', fileName: 'a.zip', size: 1 }; },
+  };
+  const mount = createCollabMount({ engine, logger: { warn() {}, error() {} } });
+  const r = await call(mount, 'POST', '/api/collab/packages', { skills: ['s1'], workflow: ['dev'] });
+  assert.equal(r.status, 200);
+  assert.deepEqual(seen.at(-1), { skills: ['s1'], command: [], agent: [], workflow: ['dev'] });
 });

@@ -117,7 +117,7 @@ export function createCollabMount({ engine, logger = console }) {
       // 可打包资产清单 + 打包/发送两步
       if (seg[0] === 'assets' && m === 'GET') return ok(res, engine.listAssets());
       if (seg[0] === 'packages' && seg.length === 1 && m === 'POST') {
-        try { const r = await engine.buildPackage({ skills: body.skills || [], command: body.command || [], agent: body.agent || [] }); return ok(res, { package: r }); }
+        try { const r = await engine.buildPackage({ skills: body.skills || [], command: body.command || [], agent: body.agent || [], workflow: body.workflow || [] }); return ok(res, { package: r }); }
         catch (e) { return sendJson(res, 400, { error: 'pack-failed', message: String(e && e.message || e) }); }
       }
       if (seg[0] === 'packages' && seg.length === 3 && seg[2] === 'send' && m === 'POST') {
