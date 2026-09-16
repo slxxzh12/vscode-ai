@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import { t } from '../i18n';
 
-const props = defineProps<{ collab: CollabApi; groupId: string; focus?: 'all' | 'skills' | 'workflow' }>();
+const props = defineProps<{ collab: CollabApi; groupId: string; focus?: 'all' | 'skills' | 'workflow'; open?: boolean }>();
+const emit = defineEmits<{ (e: 'close'): void }>();
 const focus = computed(() => props.focus ?? 'all');
+const dialogTitle = computed(() => (focus.value === 'workflow' ? t('collab.chat.distribute_workflow') : t('collab.chat.distribute')));
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const group = computed(() => (snap.value.groups || []).find((g) => g.id === props.groupId) || null);
 const isMaster = computed(() => !!snap.value.groups?.find((g) => g.id === props.groupId && g.hubId === snap.value.identity.machineId));
@@ -44,6 +46,16 @@ onMounted(async () => {
   props.collab.getWorkflowSeed().then((s) => { seedVersion.value = s.version || 0; }).catch(() => {});
   loadAssets();
 });
+// 记住上一次勾选：每次弹出默认带出（按群 + 入口分别存）
+const storeKey = computed(() => `collab-dist-${props.groupId}-${focus.value}`);
+function loadChecked() {
+  try {
+    const raw = localStorage.getItem(storeKey.value);
+    if (raw) checked.value = { ...checked.value, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+}
+watch(checked, (v) => { try { localStorage.setItem(storeKey.value, JSON.stringify(v)); } catch { /* ignore */ } }, { deep: true });
+watch(() => storeKey.value, loadChecked, { immediate: true });
 async function loadAssets() {
   try { assets.value = await props.collab.getAssets(); }
   catch (e) { msgErr.value = String((e as Error).message || e); }
@@ -95,6 +107,7 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
 </script>
 
 <template>
+  <el-dialog :model-value="!!open" :title="dialogTitle" width="640px" append-to-body class="sddlg" @update:model-value="emit('close')">
   <div class="sd">
     <div class="head">
       <span class="htitle">{{ $t('collab.dist.title') }} <span class="gn">{{ group?.name || '' }}</span></span>
@@ -108,28 +121,28 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
       <template v-if="visible.skills.length">
         <div class="sec">{{ $t('collab.dist.skills', { count: visible.skills.length }) }}</div>
         <label v-for="s in visible.skills" :key="'skills:' + s.name" class="skill">
-          <input type="checkbox" v-model="checked[keyOf('skills', s.name)]" />
+          <el-checkbox v-model="checked[keyOf('skills', s.name)]" />
           <span class="snm">🛠 {{ s.name }}</span>
         </label>
       </template>
       <template v-if="visible.command.length">
         <div class="sec">{{ $t('collab.dist.command', { count: visible.command.length }) }}</div>
         <label v-for="c in visible.command" :key="'command:' + c.name" class="skill">
-          <input type="checkbox" v-model="checked[keyOf('command', c.name)]" />
+          <el-checkbox v-model="checked[keyOf('command', c.name)]" />
           <span class="snm">⌨ {{ c.name }}</span>
         </label>
       </template>
       <template v-if="visible.agent.length">
         <div class="sec">{{ $t('collab.dist.agent', { count: visible.agent.length }) }}</div>
         <label v-for="a in visible.agent" :key="'agent:' + a.name" class="skill">
-          <input type="checkbox" v-model="checked[keyOf('agent', a.name)]" />
+          <el-checkbox v-model="checked[keyOf('agent', a.name)]" />
           <span class="snm">🤖 {{ a.name }}</span>
         </label>
       </template>
       <template v-if="visible.workflow.length">
         <div class="sec">{{ $t('collab.dist.workflow', { count: visible.workflow.length }) }}</div>
         <label v-for="w in visible.workflow" :key="'workflow:' + w.id" class="skill">
-          <input type="checkbox" v-model="checked[keyOf('workflow', w.id)]" />
+          <el-checkbox v-model="checked[keyOf('workflow', w.id)]" />
           <span class="snm">🧩 {{ w.name }}</span>
         </label>
       </template>
@@ -152,6 +165,7 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
       </div>
     </div>
   </div>
+  </el-dialog>
 </template>
 
 <style scoped>

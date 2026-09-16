@@ -100,7 +100,7 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
       <button class="tool" :class="{ on: skillOpen && skillFocus === 'skills' }" :title="$t('collab.chat.distribute_title')" @click="openDist('skills')">{{ $t('collab.chat.distribute') }}</button>
       <button class="tool" :class="{ on: skillOpen && skillFocus === 'workflow' }" :title="$t('collab.dist.workflow_title')" @click="openDist('workflow')">{{ $t('collab.chat.distribute_workflow') }}</button>
     </div>
-    <SkillDistributor v-if="skillOpen" :collab="collab" :group-id="props.groupId" :focus="skillFocus" />
+    <SkillDistributor v-if="skillOpen" :open="skillOpen" :collab="collab" :group-id="props.groupId" :focus="skillFocus" @close="skillOpen = false" />
 
     <!-- 本机待确认执行卡片（按当前群过滤） -->
     <div v-for="p in myPending" :key="p.id" class="pend">
