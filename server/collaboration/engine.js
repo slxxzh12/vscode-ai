@@ -44,10 +44,11 @@ export function profileLabel(p) {
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, peers = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
+  constructor({ store, identity, events = null, peer = null, peers = null, seedStore = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.peers = peers;            // 用量上报库（master 侧），见 server/usage-peers.js
+    this.seedStore = seedStore;    // 种子表（SQLite），见 server/seed-store.js
     this.events = events;
     this.peer = peer;              // { post(host, port, envelope) -> Promise<{ok, data?, error?}> }
     this.skillDefaultRoot = skillsRoot;   // opencode 技能根（env 覆盖优先）
@@ -163,11 +164,25 @@ export class CollabEngine {
         fs.writeFileSync(path.join(this.downloadDir, label), zip);
       } catch { /* download 目录不可写时忽略 */ }
     }
+    // 再落一份到共享 downloads 目录（分发产物对外可见）
+    if (this.downloadsDir) {
+      try {
+        fs.mkdirSync(this.downloadsDir, { recursive: true });
+        fs.writeFileSync(path.join(this.downloadsDir, label), zip);
+      } catch { /* downloads 目录不可写时忽略 */ }
+    }
     const rec = this.store.addOutbox({
       id: crypto.randomUUID(), kind: 'file', groupId: null, skillName: null, fileName: label,
       storedFile: label, size: zip.length, hash, createdAt: Date.now(),
       package: { sent: false, skills: sSel, command: cSel, agent: aSel, workflow: wSel },
     });
+    // 打包即入「种子表」（SQLite）：记录 zip 与其内容，供查询/发布追踪
+    try {
+      this.seedStore?.add?.({
+        id: rec.id, fileName: label, hash, size: zip.length, count: total,
+        skills: sSel, command: cSel, agent: aSel, workflow: wSel, createdAt: rec.createdAt,
+      });
+    } catch { /* 种子表不可用时不影响打包 */ }
     this._emit('synced', {});
     return rec;
   }

@@ -19,6 +19,7 @@ import { createCollabMount } from './collaboration/http-mount.js';
 import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
 import { UsagePeersStore } from './usage-peers.js';
+import { createSeedStore } from './seed-store.js';
 import { createUsageReporter } from './usage-report.js';
 import { createUsageMount } from './usage-mount.js';
 import { loadInvite, saveInvite, clearInvite, isInviteActive } from './remote-invite.js';
@@ -164,6 +165,7 @@ function buildWorkspace({ paths, port }) {
     store: new CollabStore({ file: paths.storeFile, logger: log }),
     identity,
     peers: new UsagePeersStore({ file: paths.usagePeersFile, logger: log }),
+    seedStore: createSeedStore({ file: path.join(paths.dir, 'seed.db'), logger: log }),
     skillsRoot: paths.skillsRoot,
     uploadDir: paths.uploadDir,
     downloadDir: paths.downloadDir,
