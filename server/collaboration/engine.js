@@ -739,6 +739,40 @@ export class CollabEngine {
       return { code: 'ok', ...r };
     } catch (e) { return { code: 'invalid', error: String((e && e.message) || e) }; }
   }
+  // 接受分发任务：确保包在本机 → 解包安装（skills/command/agent 落位 + workflow 融合）→ done
+  async acceptTask(id) {
+    const task = this.taskStore?.get?.(id);
+    if (!task) return { code: 'not-found' };
+    if (task.status !== 'pending' && task.status !== 'failed') return { code: 'not-pending' };
+    if (!task.name || task.name.includes('..') || task.name.includes('\\')) {
+      this.taskStore.setStatus(id, 'failed', { payload: { ...task.payload, lastError: 'bad-name' } });
+      return { code: 'bad-name' };
+    }
+    const abs = path.join(this.downloadsDir, task.name);
+    if (!fs.existsSync(abs)) {
+      try { await this.pullDownloads([task.name], task.hubId); } catch (e) { this.log?.warn?.('task pull failed', (e && e.message) || e); }
+    }
+    if (!fs.existsSync(abs)) {
+      this.taskStore.setStatus(id, 'failed', { payload: { ...task.payload, lastError: 'file-missing' } });
+      return { code: 'file-missing' };
+    }
+    const r = this.installDownload(task.name);
+    if (r.code !== 'ok') {
+      this.taskStore.setStatus(id, 'failed', { payload: { ...task.payload, lastError: r.code || 'install-failed' } });
+      return { code: r.code || 'install-failed', error: r.error };
+    }
+    this.taskStore.setStatus(id, 'done');
+    this._emit('synced', {});
+    this._emit('tasks', { groupId: task.groupId, created: [], accepted: id });
+    return { code: 'ok', counts: r.counts };
+  }
+  ignoreTask(id) {
+    const task = this.taskStore?.get?.(id);
+    if (!task) return { code: 'not-found' };
+    this.taskStore.setStatus(id, 'ignored');
+    this._emit('tasks', { groupId: task.groupId, created: [], ignored: id });
+    return { code: 'ignored' };
+  }
 
   // ---- skill 分发 ----
   async distributeToGroup(groupId, skillNames) {
