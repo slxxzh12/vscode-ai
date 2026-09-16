@@ -34,7 +34,7 @@ test('ensureDefaults 生成示例文件', () => {
   const w = path.join(dir, 'workflows.json');
   ensureDefaults(p, w);
   assert.ok(fs.existsSync(p) && fs.existsSync(w));
-  assert.equal(loadProjects(p)[0].root, process.cwd());
+  assert.deepEqual(loadProjects(p), []);
 });
 
 test('loadJson 文件不存在返回 null', () => {

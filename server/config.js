@@ -8,7 +8,7 @@ export function loadJson(file) {
 }
 
 function sampleProjects() {
-  return { projects: [{ id: 'local', name: t('config.default_project'), root: process.cwd() }] };
+  return { projects: [] };
 }
 function sampleWorkflows() {
   return [{
