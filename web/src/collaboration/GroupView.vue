@@ -4,6 +4,7 @@ import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import GroupChatView from './GroupChatView.vue';
 import MemberUsageTable from './MemberUsageTable.vue';
+import UsageTrendChart from './UsageTrendChart.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import SyncSeedDialog from './SyncSeedDialog.vue';
 import { t } from '../i18n';
@@ -115,6 +116,14 @@ function fmtSize(n: number) {
 
 // —— master 同步种子 / slave 主动同步 ——
 const isMaster = computed(() => !!group.value && group.value.hubId === me.value);
+const mtab = ref<'members' | 'trend'>('members');
+// —— 用量上报快照（成员表与趋势图共用）——
+const peers = ref<Record<string, import('./types').CollabUsage>>({});
+async function loadPeers() {
+  try { const r = await fetch('/api/usage/peers').then((x) => x.json()); peers.value = r.peers || {}; } catch { /* ignore */ }
+}
+onMounted(loadPeers);
+watch(() => snap.value, loadPeers);
 // —— 群公告：仅群主可编辑，改后随 member-sync 下发给成员 ——
 const editAnnounce = ref(false);
 const announceText = ref('');
@@ -319,10 +328,6 @@ onMounted(async () => {
       </div>
 
       <aside class="cw-members">
-        <section class="mpanel">
-          <h4 class="mtitle">{{ $t('collab.member.title', { count: (group?.members || []).length }) }}</h4>
-          <MemberUsageTable class="mtable" :collab="collab" />
-        </section>
         <section class="mpanel announce">
           <h4 class="mtitle">
             {{ $t('collab.announce.title') }}
@@ -337,6 +342,15 @@ onMounted(async () => {
           </div>
           <div v-else class="abody">{{ (group?.announcement || '').trim() || $t('collab.announce.empty') }}</div>
         </section>
+
+        <nav class="mtabs">
+          <button :class="{ on: mtab === 'members' }" @click="mtab = 'members'">{{ $t('collab.member.title', { count: (group?.members || []).length }) }}</button>
+          <button :class="{ on: mtab === 'trend' }" @click="mtab = 'trend'">{{ $t('usage.trend') }}</button>
+        </nav>
+        <div class="mbody">
+          <MemberUsageTable v-if="mtab === 'members'" class="mtable" :collab="collab" :peers="peers" />
+          <UsageTrendChart v-else :collab="collab" :peers="peers" />
+        </div>
       </aside>
     </section>
   </div>
@@ -407,6 +421,10 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .gitem.on { background: none; color: var(--tx1); border-color: var(--ac); }
 .gitem .sub { color: var(--tx6); margin-left: 6px; }
 .cw-members { width: 46%; min-width: 460px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--bd); background: var(--bg1); }
+.mtabs { flex: none; display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--bd); }
+.mtabs button { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.mtabs button.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
+.mbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .mpanel { display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--bd); }
 .mpanel:first-child { flex: 1; }
 .mtitle { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--tx2); }

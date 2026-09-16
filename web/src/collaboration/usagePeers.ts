@@ -18,7 +18,7 @@ export function fmtNum(n?: number): string {
   return String(n);
 }
 
-export function machineLabel(u?: CollabUsage): string {
+export function machineLabel(u?: Partial<CollabUsage>): string {
   return (u?.employeeId || u?.username || u?.machineId || '').trim();
 }
 
