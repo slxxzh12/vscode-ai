@@ -231,6 +231,16 @@ export function createCollabMount({ engine, logger = console }) {
         fs.createReadStream(abs).pipe(res);
         return;
       }
+      // 分发任务（本机任务表）
+      if (seg[0] === 'tasks' && seg.length === 1 && m === 'GET') {
+        return ok(res, { tasks: engine.listTasks({ status: url.searchParams.get('status') || null }) });
+      }
+      if (seg[0] === 'tasks' && seg.length === 3 && seg[2] === 'accept' && m === 'POST') {
+        return ok(res, await engine.acceptTask(seg[1]));
+      }
+      if (seg[0] === 'tasks' && seg.length === 3 && seg[2] === 'ignore' && m === 'POST') {
+        return ok(res, engine.ignoreTask(seg[1]));
+      }
       // inbox
       if (seg[0] === 'inbox' && seg.length === 3 && seg[2] === 'install' && m === 'POST') { const r = await engine.installInbox(seg[1]); return ok(res, r); }
       if (seg[0] === 'inbox' && seg.length === 3 && seg[2] === 'ignore' && m === 'POST') { const r = await engine.ignoreInbox(seg[1]); return ok(res, r); }
