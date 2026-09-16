@@ -31,3 +31,19 @@ export function resolveInviteDaysAllowForever(input = {}) {
   if (Number(input.days) === 0) return 0;
   return resolveInviteDays(input);
 }
+
+export const LOOPBACK_HOST = '127.0.0.1';
+export const PUBLIC_HOST = '0.0.0.0';
+
+// 监听地址规则：只有 master 模式（邀请了有效/已开启访问）才对局域网监听，否则只绑回环
+// DEVFLOW_HOST 显式设置时优先（逃生通道）
+export function resolveBindHost({ masterOn = false, envHost = '' } = {}) {
+  const env = String(envHost || '').trim();
+  if (env) return env;
+  return masterOn ? PUBLIC_HOST : LOOPBACK_HOST;
+}
+
+// 切换 master 开关后需要重启服务才能换绑定地址
+export function hostRestartNeeded({ current = '', masterOn = false, envHost = '' } = {}) {
+  return resolveBindHost({ masterOn, envHost }) !== String(current || '');
+}

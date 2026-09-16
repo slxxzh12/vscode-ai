@@ -29,7 +29,7 @@ import { createScheduler } from './scheduler/index.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows } from './devflow-config.js';
 import { readSeed, updateSeed } from './workflow-seed.js';
 import { setLocale, t } from './i18n.js';
-import { isPeerRequest, matchAccessToken, resolveInviteDaysAllowForever } from './remote-gate.js';
+import { isPeerRequest, matchAccessToken, resolveInviteDaysAllowForever, resolveBindHost, hostRestartNeeded } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 import { instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
@@ -52,7 +52,7 @@ const log = createLogger('[server]');
 const notice = createNotice();
 let configFile = resolveActiveConfigFile(APP_DIR, resolvePort());
 let BOOT_CFG = loadDevflowConfig(configFile);
-const HOST = process.env.DEVFLOW_HOST || BOOT_CFG.server.host || '127.0.0.1';
+const HOST = resolveBindHost({ masterOn: isInviteActive(loadInvite(portPaths(resolvePort()).inviteFile)), envHost: process.env.DEVFLOW_HOST });
 const PORT = resolvePort();
 const PORT_SOURCE = validPort(process.env.DEVFLOW_PORT) ? 'env' : (readPortFile() ? 'file' : 'default');
 setLocale(BOOT_CFG.server.language);
@@ -201,6 +201,13 @@ function buildWorkspace({ paths, port }) {
     onReport: syncUsageSnapshot,
     logger: log,
   });
+  // 默认上报目标：入群时记住 master 的地址与邀请令牌（无需手填链接），并立刻补报一次
+  engine.onJoined = ({ host, port, token }) => {
+    if (!host || !port || !token) return;
+    const cfg = usageReporter.setConfig({ masterUrl: `http://${host}:${port}`, token });
+    log.info(`usage report target set: ${cfg.masterUrl}`);
+    usageReporter.reportNow().catch(() => { /* 失败只记状态 */ });
+  };
   eventBus.on('friend-request', (payload) => broadcastCollab(CollabS2C.COLLAB_FRIEND_REQ, payload));
   eventBus.on('group-invite', (payload) => broadcastCollab(CollabS2C.COLLAB_GROUP_INVITE, payload));
   eventBus.on('inbox', (payload) => broadcastCollab(CollabS2C.COLLAB_INBOX, payload));
@@ -344,7 +351,7 @@ const server = http.createServer(async (req, res) => {
     const s = loadDevflowConfig(configFile).server;
     const canRestart = restartGuard({ appDir: APP_DIR }).ok;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ settings: { ...s, port: PORT }, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT, host: HOST, portSource: PORT_SOURCE, restartable: canRestart }));
+      res.end(JSON.stringify({ settings: { ...s, host: HOST, port: PORT }, envPort: process.env.DEVFLOW_PORT || null, currentPort: PORT, host: HOST, portSource: PORT_SOURCE, restartable: canRestart }));
     return;
   }
   if (url.pathname === '/api/settings' && req.method === 'POST') {
@@ -410,7 +417,7 @@ const server = http.createServer(async (req, res) => {
       expiresAt: inv ? inv.expiresAt : null,
       forever: !!inv && inv.expiresAt === 0,
       address: lanAddress(),
-      needRestart: HOST === '127.0.0.1' || HOST === 'localhost',
+      needRestart: hostRestartNeeded({ current: HOST, masterOn: !!inv, envHost: process.env.DEVFLOW_HOST }),
       locked: remoteLocked(),
       lockedUntil: remoteLocked() ? remoteLockedUntil : null,
     }));
@@ -446,12 +453,7 @@ const server = http.createServer(async (req, res) => {
       if (ws && ws.paths) saveInvite(ws.paths.inviteFile, remoteInvite);
       remoteFails = 0;
       remoteLockedUntil = 0;
-      let needRestart = false;
-      // 仍是本机监听时，自动改为 0.0.0.0（需重启生效）
-      if (!process.env.DEVFLOW_HOST && (HOST === '127.0.0.1' || HOST === 'localhost')) {
-        updateServerAttrs(configFile, { host: '0.0.0.0' });
-        needRestart = true;
-      }
+      let needRestart = hostRestartNeeded({ current: HOST, masterOn: true, envHost: process.env.DEVFLOW_HOST });
       if (ws && ws.engine) ws.engine.ensureGroup();
       const { address: addr, link } = inviteLink(remoteInvite);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -465,7 +467,7 @@ const server = http.createServer(async (req, res) => {
     remoteFails = 0;
     remoteLockedUntil = 0;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ enabled: false }));
+    res.end(JSON.stringify({ enabled: false, needRestart: hostRestartNeeded({ current: HOST, masterOn: false, envHost: process.env.DEVFLOW_HOST }) }));
     return;
   }
   if (url.pathname === '/api/config/xml' && req.method === 'GET') {
