@@ -146,7 +146,7 @@ const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
 const historyTab = ref<'files' | 'messages'>('messages');
-const collabTab = ref<'group' | 'tasks' | 'usage'>('group');
+const collabTab = ref<'group' | 'tasks'>('group');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
 const RAILS = ['explorer', 'history', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
@@ -159,7 +159,7 @@ function applyHash() {
   if (!r || !RAILS.includes(r)) return;
   rail.value = r as typeof rail.value;
   if (r === 'history' && (sub === 'files' || sub === 'messages')) historyTab.value = sub;
-  if (r === 'contacts' && (sub === 'group' || sub === 'tasks' || sub === 'usage')) collabTab.value = sub;
+  if (r === 'contacts' && (sub === 'group' || sub === 'tasks')) collabTab.value = sub;
 }
 function currentHash() {
   if (rail.value === 'history') return `#history/${historyTab.value}`;

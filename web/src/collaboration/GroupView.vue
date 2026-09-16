@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import GroupChatView from './GroupChatView.vue';
+import MemberUsageTable from './MemberUsageTable.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import SyncSeedDialog from './SyncSeedDialog.vue';
 import { t } from '../i18n';
@@ -99,21 +100,6 @@ async function join() {
     await props.collab.refresh();
     joinInput.value = '';
   } catch (e) { joinErr.value = (e as Error).message || String(e); }
-}
-
-const online = (receivedAt?: number) => !!receivedAt && Date.now() - receivedAt < 90 * 60 * 1000;   // 心跳/stats 为小时级
-function fmtNum(n?: number) { return n == null ? '?' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(n); }
-function memberLabel(m: { machineId: string; username: string; employeeId?: string; host: string; port: number }) {
-  const hb = snap.value.heartbeats[m.machineId];
-  const id = (hb?.employeeId || m.employeeId || hb?.username || m.username || '').trim();
-  const host = hb?.host || m.host || '127.0.0.1';
-  const port = hb?.port ?? m.port ?? 0;
-  return id ? `${id}@${host}:${port}` : `${host}:${port}`;
-}
-function usageText(machineId: string) {
-  const u = snap.value.heartbeats[machineId];
-  if (!u || u.error) return '';
-  return t('collab.heartbeat.usage', { input: fmtNum(u.input), output: fmtNum(u.output), days: u.days ?? '?', messages: u.messages ?? '?' });
 }
 
 // —— downloads 目录（默认开放的共享目录，实时列出）——
@@ -227,13 +213,14 @@ onMounted(async () => {
 
         <template v-if="remoteState.enabled && (remotePassword || remoteLink)">
           <div class="cfghint">{{ $t('remote.invite_hint') }}</div>
+          <div v-if="remoteLink" class="linkrow">
+            <input :value="remoteLink" readonly @focus="($event.target as HTMLInputElement).select()" />
+            <button @click="copy(remoteLink)">{{ $t('remote.copy_invite') }}</button>
+          </div>
+          <div v-if="remotePassword" class="cfghint">{{ $t('remote.password_hint') }}</div>
           <div v-if="remotePassword" class="linkrow">
             <input :value="remotePassword" readonly />
             <button @click="copy(remotePassword)">{{ $t('remote.copy_password') }}</button>
-          </div>
-          <div v-if="remoteLink" class="linkrow">
-            <input :value="remoteLink" readonly @focus="($event.target as HTMLInputElement).select()" />
-            <button @click="copy(remoteLink)">{{ $t('remote.copy') }}</button>
           </div>
         </template>
         <div v-if="remoteState.needRestart" class="err">{{ $t('remote.need_restart') }}</div>
@@ -286,28 +273,20 @@ onMounted(async () => {
     </aside>
 
     <section class="cw-right">
-      <template v-if="group">
-        <div class="chat-col">
-          <header class="gtop">
-            <span class="tname">💬 {{ group.name }}</span>
-            <div class="rtabs">
-              <button :class="{ on: rightTab === 'members' }" @click="rightTab = 'members'">{{ $t('collab.tab.members') }}</button>
-              <button :class="{ on: rightTab === 'chat' }" @click="rightTab = 'chat'">{{ $t('collab.tab.chat') }}</button>
-            </div>
-          </header>
-          <div v-if="rightTab === 'members'" class="memlist">
-            <div v-for="m in group.members" :key="m.machineId" class="memrow">
-              <span class="dot" :class="{ on: online(snap.heartbeats[m.machineId]?.receivedAt) }" />
-              <span class="txt">
-                {{ memberLabel(m) }}<span v-if="m.machineId === me" class="sub">{{ $t('collab.group.me_suffix') }}</span>
-              </span>
-              <span class="usage">{{ usageText(m.machineId) || $t('collab.member.no_usage') }}</span>
-            </div>
+      <div class="chat-col">
+        <header class="gtop">
+          <span class="tname">💬 {{ group ? group.name : $t('collab.member.title', { count: 0 }) }}</span>
+          <div class="rtabs">
+            <button :class="{ on: rightTab === 'members' }" @click="rightTab = 'members'">{{ $t('collab.tab.members') }}</button>
+            <button :class="{ on: rightTab === 'chat' }" @click="rightTab = 'chat'">{{ $t('collab.tab.chat') }}</button>
           </div>
-          <GroupChatView v-else :collab="collab" :group-id="group.id" />
+        </header>
+        <div v-if="rightTab === 'members'" class="memwrap">
+          <MemberUsageTable :collab="collab" />
         </div>
-      </template>
-      <div v-else class="placeholder"><div class="ph">{{ $t('collab.placeholder') }}</div></div>
+        <GroupChatView v-else-if="group" :collab="collab" :group-id="group.id" />
+        <div v-else class="placeholder"><div class="ph">{{ $t('collab.placeholder') }}</div></div>
+      </div>
     </section>
   </div>
 
@@ -377,13 +356,10 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .gitem.on { background: none; color: var(--tx1); border-color: var(--ac); }
 .gitem .sub { color: var(--tx6); margin-left: 6px; }
 .rtabs { margin-left: auto; display: flex; gap: 6px; }
+.usage-wrap { flex: 1; min-height: 0; overflow: auto; }
 .rtabs button { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .rtabs button.on { background: var(--ac); color: var(--onac); border-color: var(--ac); }
-.memlist { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; }
-.memrow { display: flex; align-items: center; gap: 8px; padding: 6px 2px; border-bottom: 1px solid var(--bd2); font-size: 13px; }
-.memrow .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tx); }
-.memrow .txt .sub { color: var(--tx6); font-size: 11px; margin-left: 6px; }
-.memrow .usage { color: var(--tx4); font-size: 12px; white-space: nowrap; }
+.memwrap { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; }
 details.fold > summary { cursor: pointer; color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 14px 0 6px; list-style: none; }
 details.fold > summary::-webkit-details-marker { display: none; }
 details.fold > summary::before { content: '▸ '; }

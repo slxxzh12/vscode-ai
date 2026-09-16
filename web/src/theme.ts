@@ -16,7 +16,10 @@ const theme = ref<ThemeMode>(initial());
 
 function apply() {
   const root = typeof document !== 'undefined' ? document.documentElement : null;
-  if (root) root.dataset.theme = theme.value;
+  if (root) {
+    root.dataset.theme = theme.value;
+    root.classList.toggle('dark', theme.value === 'dark');   // Element Plus 暗色变量
+  }
   try { localStorage.setItem(STORE, theme.value); } catch { /* ignore */ }
 }
 apply();

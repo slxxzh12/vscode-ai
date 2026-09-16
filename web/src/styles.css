@@ -90,3 +90,42 @@ body { background: var(--bg0); color: var(--tx); font-family: "Segoe UI", system
 .xterm { height: 100%; padding: 4px 0; }
 *::-webkit-scrollbar { width: 9px; height: 9px; }
 *::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 5px; }
+
+/* ---- Element Plus 变量映射：跟随应用配色（html[data-theme] 与 html.dark 同优先级，靠引入顺序覆盖）---- */
+html[data-theme] {
+  --el-color-primary: var(--ac);
+  --el-color-primary-light-3: var(--ac2);
+  --el-color-primary-light-5: var(--ac2);
+  --el-color-primary-light-7: var(--bg4);
+  --el-color-primary-light-8: var(--bg4);
+  --el-color-primary-light-9: var(--bg4);
+  --el-color-primary-dark-2: var(--ac3);
+  --el-bg-color: var(--bg1);
+  --el-bg-color-page: var(--bg0);
+  --el-bg-color-overlay: var(--bg1);
+  --el-text-color-primary: var(--tx);
+  --el-text-color-regular: var(--tx2);
+  --el-text-color-secondary: var(--tx3);
+  --el-text-color-placeholder: var(--tx6);
+  --el-text-color-disabled: var(--tx6);
+  --el-border-color: var(--bd);
+  --el-border-color-light: var(--bd);
+  --el-border-color-lighter: var(--bd);
+  --el-border-color-extra-light: var(--bd);
+  --el-fill-color: var(--bg4);
+  --el-fill-color-light: var(--bg4);
+  --el-fill-color-lighter: var(--bg4);
+  --el-fill-color-blank: var(--bg1);
+  --el-mask-color: color-mix(in srgb, var(--bg0) 80%, transparent);
+  --el-font-size-base: 12px;
+  --el-table-bg-color: var(--bg1);
+  --el-table-tr-bg-color: var(--bg1);
+  --el-table-header-bg-color: var(--bg4);
+  --el-table-header-text-color: var(--tx2);
+  --el-table-text-color: var(--tx);
+  --el-table-row-hover-bg-color: var(--bg4);
+  --el-table-border-color: var(--bd);
+  --el-table-border: 1px solid var(--bd);
+}
+.el-table th.el-table__cell { font-weight: 600; }
+.el-table .cell { line-height: 1.5; }
