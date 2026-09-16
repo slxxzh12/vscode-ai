@@ -38,6 +38,7 @@
 - **用量上报不走加群**：slave 在协作页「机器用量」粘 master 的访问链接（`http://<host>:<port>/?access=<token>`）即可，每 60–90 分钟随机把 `opencode stats` 结果 `POST /api/usage/report`（请求头 `X-DF-Token`）；master 令牌落盘在 `<数据目录>/collab/invite.json`，`days=0` 表示长期不过期、重启不丢。旧的「群内 Ed25519 签名信封上报」已删除（`/api/collab/stats`、`CollabPeer.STATS`、`store.heartbeats` 都不复存在）。
 - **`ws.data` 只在服务端**：客户端拿不到；验证用服务端 Conn（`gateway.conns`）。
 - WS 消息 type 一律引用 `shared` 的 `C2S`/`S2C` 常量，禁止在 server/web 里写死字符串。
+- **绿色包必须带齐 `server/package.json` 的全部运行时依赖**：`server/http-api.js` 顶层 `import { transformSync } from 'esbuild'`，而打包脚本曾只拷 `node-pty`/`ws`/`@devflow/shared` → 包一启动就 `ERR_MODULE_NOT_FOUND: Cannot find package 'esbuild'` 退出（22222 根本起不来，v20260914 起就带着这个缺陷，开发环境因为有根 `node_modules` 才没暴露）。现在两个打包脚本都按 `createRequire('server/package.json')` 的**真实解析结果**拷依赖（npm workspaces 会把它提升到根或嵌套在 `server/node_modules`，位置不固定），且 platform 二进制包 `@esbuild/<platform>-<arch>` 必须与 esbuild 同版本一起带；打包末尾还会做「以包内 `server/` 视角 import 全部 dependencies + 真跑一次 `transformSync`」自检，之后新增运行时依赖只要写进 `server/package.json`，自检会覆盖。
 
 ## 打包顺序（先构建前端，再打绿色包）
 

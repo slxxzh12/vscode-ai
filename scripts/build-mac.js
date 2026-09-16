@@ -17,6 +17,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { createRequire } = require("module");
 
 if (process.platform !== "darwin") {
   console.error("[build-mac] this script must run on macOS (darwin).");
@@ -129,6 +130,52 @@ function ensureNodeForArch(arch) {
   return binPath;
 }
 
+// server 解析到的 esbuild（server/http-api.js 顶层 import，运行时依赖，必须随包发布）
+function resolveEsbuild() {
+  const req = createRequire(path.join(ROOT, "server", "package.json"));
+  let dir = "";
+  try {
+    dir = path.dirname(req.resolve("esbuild/package.json"));
+  } catch (e) {
+    check(false, "esbuild not installed (run npm install): " + e.code);
+  }
+  return { dir, version: require(path.join(dir, "package.json")).version };
+}
+
+// 目标架构的 esbuild 平台二进制包：已装则直接用，另一架构从 npm registry 下载 tarball（缓存 env/）。
+function ensureEsbuildPlatform(arch, version) {
+  const name = "darwin-" + arch;
+  for (const p of [
+    path.join(ROOT, "server", "node_modules", "@esbuild", name),
+    path.join(ROOT, "node_modules", "@esbuild", name),
+  ]) {
+    if (fs.existsSync(path.join(p, "bin", "esbuild"))) return p;
+  }
+  fs.mkdirSync(ENV, { recursive: true });
+  const dirName = "@esbuild-" + name + "-" + version;
+  const pkgDir = path.join(ENV, dirName, "package");
+  if (!fs.existsSync(path.join(pkgDir, "bin", "esbuild"))) {
+    const url =
+      "https://registry.npmjs.org/@esbuild/" + name + "/-/" + name + "-" + version + ".tgz";
+    const tgz = path.join(ENV, dirName + ".tgz");
+    if (!fs.existsSync(tgz)) {
+      console.log("[build-mac] downloading " + url);
+      const r = run("curl", ["-fL", "--retry", "3", "-o", tgz, url], { stdio: "inherit" });
+      check(r.status === 0, "download failed: " + url);
+    }
+    console.log("[build-mac] extracting " + path.basename(tgz));
+    rm(path.join(ENV, dirName));
+    fs.mkdirSync(path.join(ENV, dirName), { recursive: true });
+    const r = run("tar", ["-xzf", tgz, "-C", path.join(ENV, dirName)], { stdio: "inherit" });
+    check(r.status === 0, "extract failed: " + path.basename(tgz));
+  }
+  check(
+    fs.existsSync(path.join(pkgDir, "bin", "esbuild")),
+    "esbuild binary not found for " + name,
+  );
+  return pkgDir;
+}
+
 function makeUsage(arch) {
   return [
     "Void — macOS 绿色免安装版 / portable build",
@@ -203,6 +250,13 @@ function buildArch(arch, nodeBin) {
     path.join(APP, "node_modules", "@devflow", "shared"),
   );
 
+  // esbuild + 目标架构的平台二进制（缺一不可，否则运行时 ERR_MODULE_NOT_FOUND / 找不到二进制）
+  const esbuild = resolveEsbuild();
+  cpDir(esbuild.dir, path.join(APP, "node_modules", "esbuild"));
+  const esbuildPlatform = path.join(APP, "node_modules", "@esbuild", "darwin-" + arch);
+  cpDir(ensureEsbuildPlatform(arch, esbuild.version), esbuildPlatform);
+  chmodX(path.join(esbuildPlatform, "bin", "esbuild"));
+
   // 启动脚本
   fs.mkdirSync(path.join(APP, "script"), { recursive: true });
   fs.writeFileSync(path.join(APP, "script", "launch.sh"), makeLaunchSh({ port: CFG_PORT }), "utf8");
@@ -226,6 +280,8 @@ function buildArch(arch, nodeBin) {
     ["pty-helper", "node_modules/node-pty/" + prebuildKeep + "/spawn-helper"],
     ["ws", "node_modules/ws/package.json"],
     ["shared", "node_modules/@devflow/shared/index.js"],
+    ["esbuild", "node_modules/esbuild/package.json"],
+    ["esbuild-bin", "node_modules/@esbuild/darwin-" + arch + "/bin/esbuild"],
     ["config", "config/devflow.xml"],
     ["launcher", "script/launch.sh"],
     ["start", "start.command"],
@@ -234,6 +290,36 @@ function buildArch(arch, nodeBin) {
     const p = path.join(APP, rel);
     check(fs.existsSync(p), "missing " + rel);
     console.log("[build-mac]   ok " + label + "  (" + rel + ")");
+  }
+
+  // 运行时依赖自检：以包内 server/ 的视角逐个 import，并真正调用一次 esbuild 原生二进制。
+  // 跨架构包不能在本机执行（arm64 二进制在 x64 上跑不了），只在宿主架构做。
+  if (arch === HOST_ARCH) {
+    const serverDeps = Object.keys(
+      require(path.join(ROOT, "server", "package.json")).dependencies || {},
+    );
+    const smokeCode = [
+      "const deps = " + JSON.stringify(serverDeps) + ";",
+      "for (const d of deps) await import(d);",
+      "if (deps.includes('esbuild')) {",
+      "  const { transformSync } = await import('esbuild');",
+      "  if (!transformSync('const a = 1', { minify: true }).code) throw new Error('esbuild minify returned empty');",
+      "}",
+      "console.log('ok');",
+    ].join("\n");
+    const smoke = run(path.join(APP, "runtime", "node"), [
+      "--input-type=module",
+      "-e",
+      smokeCode,
+    ], { cwd: path.join(APP, "server") });
+    if (smoke.status !== 0) {
+      console.error(smoke.stdout || "");
+      console.error(smoke.stderr || "");
+      check(false, "runtime dependency self-check failed");
+    }
+    console.log("[build-mac]   ok runtime deps (" + serverDeps.join(", ") + ")");
+  } else {
+    console.log("[build-mac]   skip runtime self-check (cross-arch " + arch + ")");
   }
 
   if (!noZip) {

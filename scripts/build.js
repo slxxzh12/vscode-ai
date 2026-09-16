@@ -15,6 +15,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { createRequire } = require("module");
 
 const ROOT = path.resolve(__dirname, "..");
 const ENV_NODE = path.join(ROOT, "env", "node.exe");
@@ -134,6 +135,37 @@ cpDir(
   path.join(APP, "node_modules", "@devflow", "shared"),
 );
 
+// esbuild：server 的运行时依赖（server/http-api.js 顶层 import，用于「压缩一行」）；
+// npm workspaces 下可能提升到根也可能留在 server/ 内，按 server 的真实解析结果拷贝，
+// 且必须连平台二进制包（@esbuild/<platform>-<arch>）一起带，否则运行时起不来。
+const ESBUILD_PLATFORM = "@esbuild/" + process.platform + "-" + process.arch;
+const ESBUILD_BIN = process.platform === "win32" ? "esbuild.exe" : "bin/esbuild";
+const serverRequire = createRequire(path.join(ROOT, "server", "package.json"));
+let esbuildDir = "";
+let esbuildPlatformDir = "";
+try {
+  esbuildDir = path.dirname(serverRequire.resolve("esbuild/package.json"));
+  esbuildPlatformDir = path.dirname(
+    serverRequire.resolve(ESBUILD_PLATFORM + "/package.json"),
+  );
+} catch (e) {
+  check(
+    false,
+    "esbuild missing for " +
+      process.platform +
+      "-" +
+      process.arch +
+      " (" +
+      e.code +
+      "); run npm install first",
+  );
+}
+cpDir(esbuildDir, path.join(APP, "node_modules", "esbuild"));
+cpDir(
+  esbuildPlatformDir,
+  path.join(APP, "node_modules", ...ESBUILD_PLATFORM.split("/")),
+);
+
 // 启动脚本：智能启动器（已在跑只开浏览器；否则启动服务） + 首次运行创建桌面快捷方式
 fs.mkdirSync(path.join(APP, "script"), { recursive: true });
 fs.copyFileSync(
@@ -190,6 +222,8 @@ const entries = [
   ["pty", "node_modules/node-pty/prebuilds/win32-" + WIN_ARCH + "/conpty.node"],
   ["ws", "node_modules/ws/package.json"],
   ["shared", "node_modules/@devflow/shared/index.js"],
+  ["esbuild", "node_modules/esbuild/package.json"],
+  ["esbuild-bin", "node_modules/" + ESBUILD_PLATFORM + "/" + ESBUILD_BIN],
   ["config", "config/devflow.xml"],
   ["icon", "script/icon.ico"],
   ["launcher", "script/launch.ps1"],
@@ -199,6 +233,56 @@ for (const [label, rel] of entries) {
   check(fs.existsSync(p), "missing " + rel);
   console.log("[build]   ok " + label + "  (" + rel + ")");
 }
+
+// 运行时依赖自检：收集 server 代码真正 import 的每一个运行时依赖
+// （server/package.json 声明的包 + @devflow/shared 的各个子路径），以包内 server/
+// 为解析起点逐个真实 import，并真正调用一次 esbuild 原生二进制；缺失的依赖会在
+// 这里暴露，而不是等用户双击 start.bat 才崩。
+function collectSharedSpecs(dir, acc) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name === "test") continue;
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      collectSharedSpecs(p, acc);
+      continue;
+    }
+    if (!/\.(js|mjs|cjs)$/.test(entry.name)) continue;
+    const src = fs.readFileSync(p, "utf8");
+    const re = /["'](@devflow\/[^"'\s]+)["']/g;
+    let m;
+    while ((m = re.exec(src))) acc.add(m[1]);
+  }
+}
+const sharedSpecs = new Set();
+collectSharedSpecs(path.join(ROOT, "server"), sharedSpecs);
+const serverDeps = [
+  ...new Set([
+    ...Object.keys(
+      require(path.join(ROOT, "server", "package.json")).dependencies || {},
+    ),
+    ...sharedSpecs,
+  ]),
+].sort();
+const smokeCode = [
+  "const deps = " + JSON.stringify(serverDeps) + ";",
+  "for (const d of deps) await import(d);",
+  "if (deps.includes('esbuild')) {",
+  "  const { transformSync } = await import('esbuild');",
+  "  if (!transformSync('const a = 1', { minify: true }).code) throw new Error('esbuild minify returned empty');",
+  "}",
+  "console.log('ok');",
+].join("\n");
+const smoke = spawnSync(
+  path.join(APP, "runtime", process.platform === "win32" ? "node.exe" : "node"),
+  ["--input-type=module", "-e", smokeCode],
+  { cwd: path.join(APP, "server"), encoding: "utf8" },
+);
+if (smoke.status !== 0) {
+  console.error(smoke.stdout || "");
+  console.error(smoke.stderr || "");
+  check(false, "runtime dependency self-check failed");
+}
+console.log("[build]   ok runtime deps (" + serverDeps.join(", ") + ")");
 
 if (!noZip) {
   console.log("[build] 5/5 zip");
