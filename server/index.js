@@ -18,7 +18,10 @@ import { CollabEngine } from './collaboration/engine.js';
 import { createCollabMount } from './collaboration/http-mount.js';
 import { makePeerClient } from './collaboration/peer-client.js';
 import { createEventBus } from './collaboration/event-bus.js';
-import { createHeartbeat } from './collaboration/heartbeat.js';
+import { UsagePeersStore } from './usage-peers.js';
+import { createUsageReporter } from './usage-report.js';
+import { createUsageMount } from './usage-mount.js';
+import { loadInvite, saveInvite, clearInvite, isInviteActive } from './remote-invite.js';
 import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
@@ -26,7 +29,7 @@ import { createScheduler } from './scheduler/index.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows } from './devflow-config.js';
 import { readSeed, updateSeed } from './workflow-seed.js';
 import { setLocale, t } from './i18n.js';
-import { isPeerRequest, matchAccessToken, resolveInviteDays } from './remote-gate.js';
+import { isPeerRequest, matchAccessToken, resolveInviteDaysAllowForever } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 import { instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
@@ -80,7 +83,7 @@ const MAX_FAILS = 5;
 let remoteInvite = null;   // { token, password, expiresAt }（内存态，重启即失效）
 let remoteFails = 0;
 let remoteLockedUntil = 0;
-function activeInvite() { return remoteInvite && Date.now() < remoteInvite.expiresAt ? remoteInvite : null; }
+function activeInvite() { return isInviteActive(remoteInvite, Date.now()) ? remoteInvite : null; }
 function remoteLocked() { return Date.now() < remoteLockedUntil; }
 function remoteAllowed(req) {
   const inv = activeInvite();
@@ -160,6 +163,7 @@ function buildWorkspace({ paths, port }) {
   const engine = new CollabEngine({
     store: new CollabStore({ file: paths.storeFile, logger: log }),
     identity,
+    peers: new UsagePeersStore({ file: paths.usagePeersFile, logger: log }),
     skillsRoot: paths.skillsRoot,
     uploadDir: paths.uploadDir,
     downloadDir: paths.downloadDir,
@@ -177,6 +181,23 @@ function buildWorkspace({ paths, port }) {
   });
   engine.peer = makePeerClient();
   const collabMount = createCollabMount({ engine, logger: log });
+  const usagePeers = engine.peers;
+  const usageReporter = createUsageReporter({
+    file: paths.usageReportFile,
+    identity: () => ({ ...engine.pub }),
+    cmd: ((BOOT_CFG.agents.list || []).find((a) => a.id === BOOT_CFG.agents.default) || {}).cmd || 'opencode',
+    logger: log,
+  });
+  const usageMount = createUsageMount({
+    peers: usagePeers,
+    reporter: usageReporter,
+    checkToken: (tk) => { const inv = activeInvite(); return !!inv && safeEqual(tk, inv.token); },
+    onReport: () => {
+      engine.writeDownload?.('usage.json', Buffer.from(JSON.stringify(usagePeers.snapshot(), null, 2)), 'usage');
+      broadcastCollab(CollabS2C.COLLAB_HEARTBEAT, {});
+    },
+    logger: log,
+  });
   eventBus.on('friend-request', (payload) => broadcastCollab(CollabS2C.COLLAB_FRIEND_REQ, payload));
   eventBus.on('group-invite', (payload) => broadcastCollab(CollabS2C.COLLAB_GROUP_INVITE, payload));
   eventBus.on('inbox', (payload) => broadcastCollab(CollabS2C.COLLAB_INBOX, payload));
@@ -203,7 +224,7 @@ function buildWorkspace({ paths, port }) {
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
   const usageStore = createUsageStore({ file: path.join(paths.dir, 'usage.db') });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, scheduler, httpApi, llmMount, llmVault, usageStore, historyFile: paths.historyFile, paths, heartbeat: null };
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, llmVault, usageStore, historyFile: paths.historyFile, paths };
 }
 
 // ---- 工作区（端口档案）----
@@ -219,11 +240,9 @@ function initWorkspace(paths, port) {
     gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log });
   }
   ws.engine.setAdvertised({ host: HOST, port });
-  // 心跳：周期采集本机 opencode 用量并上报（5–10 分钟随机）
-  const agentCmd = ((BOOT_CFG.agents.list || []).find((a) => a.id === BOOT_CFG.agents.default) || {}).cmd || 'opencode';
-  if (ws.heartbeat) ws.heartbeat.stop();
-  ws.heartbeat = createHeartbeat({ engine: ws.engine, cmd: agentCmd, logger: log });
-  ws.heartbeat.start();
+  remoteInvite = loadInvite(paths.inviteFile);   // 令牌落盘：重启后仍有效（expiresAt=0 为长期）
+  // 用量上报：启动即报一次，之后 60–90 分钟随机再报
+  if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }
   if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
     ws.scheduler.engine.start();
     log.info('scheduler started');
@@ -386,6 +405,7 @@ const server = http.createServer(async (req, res) => {
       host: HOST,
       port: actualPort || PORT,
       expiresAt: inv ? inv.expiresAt : null,
+      forever: !!inv && inv.expiresAt === 0,
       address: lanAddress(),
       needRestart: HOST === '127.0.0.1' || HOST === 'localhost',
       locked: remoteLocked(),
@@ -407,7 +427,7 @@ const server = http.createServer(async (req, res) => {
     }
     const { address, link } = inviteLink(inv);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ enabled: true, password: inv.password, token: inv.token, link, address, expiresAt: inv.expiresAt }));
+    res.end(JSON.stringify({ enabled: true, password: inv.password, token: inv.token, link, address, expiresAt: inv.expiresAt, forever: inv.expiresAt === 0 }));
     return;
   }
   if (url.pathname === '/api/remote/invite' && req.method === 'POST') {
@@ -416,10 +436,11 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
-      const days = resolveInviteDays(body);   // 默认 1 天，最长 100 天
+      const days = resolveInviteDaysAllowForever(body);   // days=0 = 长期不过期；缺省 1 天，最长 100 天
       const token = crypto.randomBytes(24).toString('hex');
       const password = crypto.randomBytes(16).toString('base64url');        // 22 字符，≥16
-      remoteInvite = { token, password, expiresAt: Date.now() + Math.min(days * 24 * 3600 * 1000, MAX_TTL_MS) };
+      remoteInvite = { token, password, expiresAt: days === 0 ? 0 : Date.now() + Math.min(days * 24 * 3600 * 1000, MAX_TTL_MS) };
+      saveInvite(paths.inviteFile, remoteInvite);
       remoteFails = 0;
       remoteLockedUntil = 0;
       let needRestart = false;
@@ -437,6 +458,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/remote/revoke' && req.method === 'POST') {
     remoteInvite = null;
+    clearInvite(paths.inviteFile);
     remoteFails = 0;
     remoteLockedUntil = 0;
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -548,6 +570,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname.startsWith('/api/llm')) { await ws.llmMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }
+  if (url.pathname.startsWith('/api/usage/')) { await ws.usageMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/scheduler')) { await ws.scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/')) {
     await ws.httpApi(req, res);
