@@ -93,6 +93,13 @@ export function createCollabMount({ engine, logger = console }) {
       // identity
       if (seg[0] === 'identity' && m === 'GET') return ok(res, { identity: engine.pub });
       if (seg[0] === 'identity' && m === 'PUT') { engine.setAdvertised({ host: body.host, port: body.port, employeeId: body.employeeId }); return ok(res, { identity: engine.pub }); }
+      if (seg[0] === 'identity' && m === 'POST') { engine.setAdvertised({ host: body.host, port: body.port, employeeId: body.employeeId }); return ok(res, { identity: engine.pub }); }
+      // 群公告（仅群主可改）
+      if (seg[0] === 'announcement' && m === 'POST') {
+        if (typeof engine.setAnnouncement !== 'function') return sendJson(res, 404, { error: 'not found' });
+        const r = await engine.setAnnouncement(body.text);
+        return r.ok ? ok(res, { group: r.group }) : sendJson(res, 400, { error: r.error });
+      }
       // snapshot / friends / groups / invites / skills / distribute / inbox / pull
       if (seg.length === 1 && seg[0] === 'snapshot' && m === 'GET') {
         const inbox = engine.store.listInbox().map(({ zipPath, ...rest }) => rest);

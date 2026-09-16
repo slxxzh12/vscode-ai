@@ -243,3 +243,19 @@ test('_inUpdateCheck/_inListDownloads éæˆå‘˜è¢«æ‹’', () => {
     } finally { await h.stop(); }
   });
 });
+
+test('Èº¹«¸æ£ºÈºÖ÷ÉèÖÃºóËæ member-sync ÏÂ·¢¸ø³ÉÔ±£»·ÇÈºÖ÷±»¾Ü', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    await groupUp(A, B);
+    const r = await A.setAnnouncement('½ñÌì 18:00 ·¢°æ£¬ÇëÔÚÏÂ°àÇ°Ìá½»');
+    assert.equal(r.ok, true);
+    await new Promise((res) => setTimeout(res, 200));
+    assert.equal(A.store.getGroup().announcement, '½ñÌì 18:00 ·¢°æ£¬ÇëÔÚÏÂ°àÇ°Ìá½»');
+    assert.equal(B.store.getGroup().announcement, '½ñÌì 18:00 ·¢°æ£¬ÇëÔÚÏÂ°àÇ°Ìá½»');
+    const denied = await B.setAnnouncement('²»¸ÃÉúĞ§');
+    assert.equal(denied.ok, false);
+    assert.equal(denied.error, 'not-hub');
+  } finally { await h.stop(); }
+});

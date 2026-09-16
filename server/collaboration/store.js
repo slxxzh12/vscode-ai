@@ -59,16 +59,17 @@ export class CollabStore {
   ensureGroup({ name, hubId, self }) {
     const existing = this.ownedGroup(hubId);
     if (existing) return existing;
-    const g = { id: hubId, name, createdAt: Date.now(), hubId, members: [{ ...self }] };
+    const g = { id: hubId, name, createdAt: Date.now(), hubId, announcement: '', members: [{ ...self }] };
     this.data.groups.push(g);
     this.save();
     return g;
   }
   upsertGroup(group) {
     const i = this.data.groups.findIndex((g) => g.id === group.id);
-    if (i >= 0) this.data.groups[i] = group; else this.data.groups.push(group);
+    const next = { announcement: '', ...group };
+    if (i >= 0) this.data.groups[i] = next; else this.data.groups.push(next);
     this.save();
-    return group;
+    return next;
   }
   setGroup(group) { return this.upsertGroup(group); }
   saveGroup(group) { return this.upsertGroup(group); }

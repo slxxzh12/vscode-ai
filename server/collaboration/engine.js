@@ -312,6 +312,16 @@ export class CollabEngine {
       await this._post(m.host, m.port, env);
     }
   }
+  // 群公告：仅群主（hub）可改，改完随 member-sync 下发给成员
+  async setAnnouncement(text) {
+    const g = this.store.ownedGroup(this.pub.machineId);
+    if (!g) return { ok: false, error: 'not-hub' };
+    g.announcement = String(text == null ? '' : text).slice(0, 2000);
+    this.store.upsertGroup(g);
+    await this._broadcastMemberSync(g);
+    this._emit('synced', {});
+    return { ok: true, group: g };
+  }
   _inMemberSync(env) {
     const g = env.payload.group;
     if (!g || !Array.isArray(g.members)) return { ok: false, error: 'bad-payload' };
@@ -319,6 +329,8 @@ export class CollabEngine {
     if (!local) this.store.upsertGroup({ ...g });
     else {
       for (const m of g.members) if (!local.members.find((x) => x.machineId === m.machineId)) local.members.push(m);
+      if (typeof g.name === 'string' && g.name) local.name = g.name;
+      if (typeof g.announcement === 'string') local.announcement = g.announcement;
       this.store.upsertGroup(local);
     }
     this._emit('synced', {});
