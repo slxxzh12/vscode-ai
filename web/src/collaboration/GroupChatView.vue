@@ -26,29 +26,6 @@ const nameById = computed(() => {
   return map;
 });
 
-const fileInput = ref<HTMLInputElement | null>(null);
-const fileSending = ref(false);
-const fileMsg = ref('');
-let fileMsgTimer: ReturnType<typeof setTimeout> | null = null;
-async function onFilePick(e: Event) {
-  const el = e.target as HTMLInputElement;
-  const f = el.files?.[0];
-  el.value = '';
-  if (!f) return;
-  fileMsg.value = '';
-  fileSending.value = true;
-  try {
-    await props.collab.sendGroupFile(props.groupId, f.name, f);
-    fileMsg.value = t('collab.chat.file_sent', { name: f.name });
-  } catch (err: any) {
-    fileMsg.value = t('common.send_failed', { msg: err?.message || err });
-  } finally {
-    fileSending.value = false;
-  }
-  if (fileMsgTimer) clearTimeout(fileMsgTimer);
-  fileMsgTimer = setTimeout(() => { fileMsg.value = ''; }, 4000);
-}
-
 const composer = ref('');
 const showMentions = ref(false);
 const mentionKeyword = ref('');
@@ -97,7 +74,6 @@ function resultText(m: CollabChatMessage) {
 }
 
 watch(() => chat.value.messages.length, () => scrollBottom());
-onBeforeUnmount(() => { if (fileMsgTimer) clearTimeout(fileMsgTimer); });
 // 聊天数据以群主（master）为准：不是群主时，打开/刷新都从群主拉一份
 async function pullFromHub() {
   const g = group.value;
@@ -123,9 +99,6 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
     <div class="tools">
       <button class="tool" :class="{ on: skillOpen && skillFocus === 'skills' }" :title="$t('collab.chat.distribute_title')" @click="openDist('skills')">{{ $t('collab.chat.distribute') }}</button>
       <button class="tool" :class="{ on: skillOpen && skillFocus === 'workflow' }" :title="$t('collab.dist.workflow_title')" @click="openDist('workflow')">{{ $t('collab.chat.distribute_workflow') }}</button>
-      <button class="tool" :disabled="fileSending" :title="$t('collab.chat.file_title')" @click="fileInput?.click()">{{ fileSending ? $t('common.sending') : $t('collab.chat.send_file') }}</button>
-      <span v-if="fileMsg" class="filemsg">{{ fileMsg }}</span>
-      <input ref="fileInput" type="file" class="filepick" @change="onFilePick" />
     </div>
     <SkillDistributor v-if="skillOpen" :collab="collab" :group-id="props.groupId" :focus="skillFocus" />
 
@@ -182,8 +155,6 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
 .tool:hover { border-color: var(--ac); color: var(--ac); }
 .tool.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .tool:disabled { opacity: .55; cursor: default; }
-.filemsg { color: var(--ok); font-size: 12px; align-self: center; }
-.filepick { display: none; }
 .pend { background: color-mix(in srgb, var(--ac) 18%, transparent); border: 1px solid var(--ac); border-radius: 6px; margin: 8px; padding: 8px 10px; display: flex; gap: 8px; align-items: center; }
 .pend-txt { flex: 1; color: var(--tx1); }
 .pend code { color: var(--warn2); }
