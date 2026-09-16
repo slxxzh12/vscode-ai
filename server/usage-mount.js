@@ -66,7 +66,7 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, logger
       if (typeof body.link === 'string' && body.link.trim()) {
         const parsed = parseInviteLink(body.link);
         if (parsed.error) return sendJson(res, 400, { error: parsed.error });
-        reporter.setConfig({ masterUrl: parsed.masterUrl, token: parsed.token, days: body.days });
+        reporter.setConfig({ masterUrl: parsed.masterUrl, token: parsed.token, days: body.days, masterPublicKey: parsed.masterPublicKey });
       } else {
         reporter.setConfig({ masterUrl: body.masterUrl, token: body.token, days: body.days });
       }

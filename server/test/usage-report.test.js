@@ -12,11 +12,15 @@ function tmpFile() {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-report-')), 'usage-report.json');
 }
 
-test('parseInviteLink：解析 master 访问链接的 host/port/token', () => {
+test('parseInviteLink：解析 master 访问链接的 host/port/token，并解出 pk 里的群主公钥', () => {
   assert.deepEqual(parseInviteLink('http://192.168.1.5:22222/?access=abc123'),
-    { masterUrl: 'http://192.168.1.5:22222', token: 'abc123' });
+    { masterUrl: 'http://192.168.1.5:22222', token: 'abc123', masterPublicKey: '' });
   assert.deepEqual(parseInviteLink('  http://127.0.0.1:12345/?access=tk  '),
-    { masterUrl: 'http://127.0.0.1:12345', token: 'tk' });
+    { masterUrl: 'http://127.0.0.1:12345', token: 'tk', masterPublicKey: '' });
+  const pem = '-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----';
+  const pk = Buffer.from(pem, 'utf8').toString('base64url');
+  assert.deepEqual(parseInviteLink(`http://127.0.0.1:12345/?access=tk&pk=${pk}`),
+    { masterUrl: 'http://127.0.0.1:12345', token: 'tk', masterPublicKey: pem });
 });
 
 test('parseInviteLink：缺 token / 非 http / 空串都报 bad-link', () => {
@@ -39,11 +43,11 @@ test('nextDelay 落在 60–90 分钟闭区间内', () => {
 
 test('loadReportConfig 默认值 / saveReportConfig 落盘读回', () => {
   const file = tmpFile();
-  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 7 });
+  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 7, masterPublicKey: '' });
   saveReportConfig(file, { masterUrl: 'http://a:1', token: 'tk', days: 3 });
-  assert.deepEqual(loadReportConfig(file), { masterUrl: 'http://a:1', token: 'tk', days: 3 });
+  assert.deepEqual(loadReportConfig(file), { masterUrl: 'http://a:1', token: 'tk', days: 3, masterPublicKey: '' });
   fs.writeFileSync(file, 'broken', 'utf8');
-  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 7 });
+  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 7, masterPublicKey: '' });
 });
 
 test('未配置 master 时：仍采集并本地落库自己那份，但不 POST', async () => {
@@ -129,7 +133,7 @@ test('setConfig：保存配置并回读', () => {
   const file = tmpFile();
   const r = createUsageReporter({ file, identity: () => ({ machineId: 'm1' }) });
   const cfg = r.setConfig({ masterUrl: 'http://a:22222', token: 'tk', days: 7 });
-  assert.deepEqual(cfg, { masterUrl: 'http://a:22222', token: 'tk', days: 7 });
+  assert.deepEqual(cfg, { masterUrl: 'http://a:22222', token: 'tk', days: 7, masterPublicKey: '' });
   assert.deepEqual(loadReportConfig(file), cfg);
 });
 

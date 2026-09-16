@@ -4,7 +4,7 @@ import path from 'node:path';
 
 export const MIN_INTERVAL_MS = 60 * 60 * 1000;   // 60 分钟
 export const MAX_INTERVAL_MS = 90 * 60 * 1000;   // 90 分钟
-const DEFAULT_CONFIG = { masterUrl: '', token: '', days: 7 };
+const DEFAULT_CONFIG = { masterUrl: '', token: '', days: 7, masterPublicKey: '' };
 
 // 解析 master 的访问链接：http://<host>:<port>/?access=<token>
 export function parseInviteLink(link) {
@@ -14,7 +14,11 @@ export function parseInviteLink(link) {
   const token = u.searchParams.get('access') || '';
   const port = Number(u.port || (u.protocol === 'https:' ? 443 : 80));
   if (!u.hostname || !port || !token) return { error: 'bad-link' };
-  return { masterUrl: `${u.protocol}//${u.hostname}:${port}`, token };
+  // pk = 群主公钥（PEM 的 base64url），作为身份锚点钉住：群主换 IP 后仍是同一台机器
+  const pkB64 = u.searchParams.get('pk') || '';
+  let masterPublicKey = '';
+  if (pkB64) { try { masterPublicKey = Buffer.from(pkB64, 'base64url').toString('utf8'); } catch { masterPublicKey = ''; } }
+  return { masterUrl: `${u.protocol}//${u.hostname}:${port}`, token, masterPublicKey };
 }
 
 export function nextDelay(random = Math.random) {
@@ -29,6 +33,7 @@ export function loadReportConfig(file) {
       masterUrl: typeof raw.masterUrl === 'string' ? raw.masterUrl : '',
       token: typeof raw.token === 'string' ? raw.token : '',
       days: Number.isFinite(Number(raw.days)) && Number(raw.days) > 0 ? Number(raw.days) : DEFAULT_CONFIG.days,
+      masterPublicKey: typeof raw.masterPublicKey === 'string' ? raw.masterPublicKey : '',
     };
   } catch { return { ...DEFAULT_CONFIG }; }
 }
@@ -38,6 +43,7 @@ export function saveReportConfig(file, cfg) {
     masterUrl: String((cfg && cfg.masterUrl) || ''),
     token: String((cfg && cfg.token) || ''),
     days: Number.isFinite(Number(cfg && cfg.days)) && Number(cfg.days) > 0 ? Number(cfg.days) : DEFAULT_CONFIG.days,
+    masterPublicKey: String((cfg && cfg.masterPublicKey) || ''),
   };
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(next, null, 2), 'utf8');
