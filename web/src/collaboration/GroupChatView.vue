@@ -92,11 +92,23 @@ function resultText(m: CollabChatMessage) {
 
 watch(() => chat.value.messages.length, () => scrollBottom());
 onBeforeUnmount(() => { if (fileMsgTimer) clearTimeout(fileMsgTimer); });
+// 聊天数据以群主（master）为准：不是群主时，打开/刷新都从群主拉一份
+async function pullFromHub() {
+  const g = group.value;
+  if (!g || !me.value || g.hubId === me.value) return;
+  try {
+    // pullChat 会把群主那份合并进本地视图（不覆盖），本地只做缓存
+    await props.collab.pullChat(props.groupId, g.hubId);
+  } catch { /* 群主离线时用本地缓存 */ }
+}
 onMounted(async () => {
   await props.collab.chat(props.groupId).catch(() => {});
+  await pullFromHub();
   await props.collab.loadPendingCmds().catch(() => {});
   await scrollBottom();
 });
+watch(() => props.groupId, () => { pullFromHub().then(() => scrollBottom()); });
+watch(() => snap.value.heartbeats, () => { pullFromHub(); });
 </script>
 
 <template>

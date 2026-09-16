@@ -89,3 +89,17 @@ test('æœ¬åœ°åŽ†å² cap æ¯ç¾¤ 500', () => {
   assert.equal(msgs.length, 500);
   assert.equal(msgs[0].id, 'm2'); // æœ€æ—§ä¸¤æ¡è¢«è£
 });
+
+test('ÁÄÌìÁô´æ£ºÈºÖ÷£¨hub£©±£ÁôÈ«Á¿£¬³ÉÔ±Ö»Áô±¾µØ»º´æ 500', () => {
+  const s = new CollabStore({ file: tmpFile() });
+  s.data.identity = { machineId: 'me' };
+  s.upsertGroup({ id: 'mine', name: 'h', hubId: 'me', members: [{ machineId: 'me' }] });
+  s.upsertGroup({ id: 'other', name: 'o', hubId: 'someone-else', members: [{ machineId: 'me' }] });
+  for (let i = 0; i < 620; i += 1) {
+    s.addChatMessage({ id: `a${i}`, groupId: 'mine', kind: 'text', fromId: 'me', text: String(i), toId: null, ts: i });
+    s.addChatMessage({ id: `b${i}`, groupId: 'other', kind: 'text', fromId: 'me', text: String(i), toId: null, ts: i });
+  }
+  assert.equal(s.listChatMessages('mine', { limit: 9999 }).length, 620, 'ÈºÖ÷±£ÁôÈ«Á¿');
+  assert.equal(s.listChatMessages('other', { limit: 9999 }).length, 500, '³ÉÔ±Ö»Áô 500');
+  assert.equal(s.listChatMessages('other')[0].id, 'b120', '³ÉÔ±²Ãµô×î¾É');
+});

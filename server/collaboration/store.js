@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// 聊天留存上限：群主存全量（权威），成员只留本地缓存
+const CHAT_HUB_CAP = 20000;
+const CHAT_MEMBER_CAP = 500;
+
 export function defaultData() {
   return {
     identity: null,      // { machineId, username, host, port, publicKey, privateKey }
@@ -130,7 +134,7 @@ export class CollabStore {
     const m = { id: msg.id, groupId: msg.groupId, kind: msg.kind, fromId: msg.fromId,
       text: msg.text, toId: msg.toId ?? null, meta: msg.meta ?? null, ts: msg.ts, seq };
     this.data.chatMessages.push(m);
-    const cap = 500;
+    const cap = this._chatCap(m.groupId);
     const same = this.data.chatMessages.filter((x) => x.groupId === m.groupId);
     while (same.length > cap) {
       const first = same.shift();
@@ -138,6 +142,12 @@ export class CollabStore {
     }
     this.save();
     return m;
+  }
+  // 群主（hub）是聊天数据的唯一权威存储：本机为群主时保留全量；其它成员只留本地缓存
+  _chatCap(groupId) {
+    const g = this.findGroup(groupId);
+    const self = this.data.identity && this.data.identity.machineId;
+    return (g && self && g.hubId === self) ? CHAT_HUB_CAP : CHAT_MEMBER_CAP;
   }
   listChatMessages(groupId, { afterSeq = 0, limit = 500 } = {}) {
     return this.data.chatMessages

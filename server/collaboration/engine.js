@@ -3,6 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { CollabPeer } from '@devflow/shared/collab';
+
+// 成员从群主拉聊天时的单次上限（群主侧保留全量，按需分页拉取）
+const CHAT_PULL_LIMIT = 20000;
 import { CollabStore } from './store.js';
 import { loadIdentity, toPublicProfile, detectHost } from './identity.js';
 import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
@@ -887,7 +890,8 @@ export function _extendChat(engine) {
     const { groupId, afterSeq = 0 } = env.payload;
     const r = this._requireMember(groupId, p.machineId);
     if (r.code !== 'ok') return { ok: false, error: 'not-member' };
-    const messages = this.store.listChatMessages(groupId, { afterSeq });
+    // 群主是聊天数据的权威存储：拉取时给全量（成员端自行裁剪本地缓存）
+    const messages = this.store.listChatMessages(groupId, { afterSeq, limit: CHAT_PULL_LIMIT });
     return { ok: true, data: { messages } };
   };
   engine.listPendingCmds = function listPendingCmds() { return this.store.listPendingCmds(); };
