@@ -266,7 +266,7 @@ git commit -m "feat(server): 新增 master 侧用量上报库 UsagePeersStore"
 **Files:**
 - Create: `server/remote-invite.js`
 - Modify: `server/remote-gate.js`
-- Test: `server/test/remote-invite.test.js`, `server/test/remote-gate.test.js`
+- Test: `server/test/remote-invite.test.js`, `server/test/remote-gate.test.js`, `server/test/collab-remote.test.js`
 
 - [ ] **Step 1: 写失败测试**
 
