@@ -839,6 +839,8 @@ test('未知 /api/usage/* 路径 → 404', async () => {
 });
 ```
 
+> 注意：每个用例都要 `async (t) => { ... t.after(() => A.server.close()); }` 关掉 HTTP server，否则 `node --test` 会因句柄未释放而挂住不退出（实测踩过）。
+
 Run: `node --test "server/test/usage-report-http.test.js"`
 Expected: FAIL（模块不存在）
 
