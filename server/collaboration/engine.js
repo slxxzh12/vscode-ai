@@ -151,6 +151,23 @@ export class CollabEngine {
       files.push({ rel: 'workflow/workflows.xml', data: Buffer.from(serializeWorkflowsFragment(pickedWorkflows), 'utf8') });
     }
     if (!files.length) throw new Error(t('collab.err.no_content'));
+    // 种子明细：skill 有哪些文件 / workflow 有哪些阶段，以及各自最后更新时间
+    const skillStat = (n) => { try { return fs.statSync(path.join(this.skillRoot(), n)).mtimeMs; } catch { return 0; } };
+    const skillsUpdatedAt = (() => {
+      let max = 0;
+      for (const n of sSel) max = Math.max(max, skillStat(n));
+      return max || Date.now();
+    })();
+    let workflowUpdatedAt = Date.now();
+    try { const v = Number(this.getWorkflowsUpdatedAt?.()); if (v > 0) workflowUpdatedAt = v; } catch { /* 取不到就用打包时间 */ }
+    const detail = {
+      skills: sSel.map((n) => ({
+        name: n,
+        files: files.filter((f) => f.rel.startsWith(`skills/${n}/`)).length,
+        updatedAt: skillStat(n) || null,
+      })),
+      workflow: pickedWorkflows.map((w) => ({ id: w.id, label: w.label, stages: (w.stages || []).length })),
+    };
     const zip = buildZip(files.map((f) => ({ name: f.rel, data: f.data })));
     const hash = crypto.createHash('sha256').update(zip).digest('hex');
     const total = sSel.length + cSel.length + aSel.length + wSel.length;
@@ -182,6 +199,7 @@ export class CollabEngine {
       this.seedStore?.add?.({
         id: rec.id, fileName: label, hash, size: zip.length, count: total,
         skills: sSel, command: cSel, agent: aSel, workflow: wSel, createdAt: rec.createdAt,
+        skillsUpdatedAt, workflowUpdatedAt, detail,
       });
     } catch { /* 种子表不可用时不影响打包 */ }
     this._emit('synced', {});

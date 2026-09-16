@@ -62,3 +62,31 @@ test('娑堟伅琛細钀界洏鍚庨噸鏂版墦寮�浠嶅湪', () => {
   assert.equal(b.listMessages({ groupId: 'g1' })[0].message, 'k');
   b.close();
 });
+
+test('共用一个数据库文件：usage / peer_daily / seed / member / message 都在同一库', async () => {
+  const { createSeedStore } = await import('../seed-store.js');
+  const { UsagePeersStore } = await import('../usage-peers.js');
+  const { createUsageStore } = await import('../usage-store.js');
+  const file = tmpDb();
+  const db = createCollabDb({ file, logger: { warn() {} } });
+  const seed = createSeedStore({ file, logger: { warn() {} } });
+  const peers = new UsagePeersStore({ file: path.join(path.dirname(file), 'usage-peers.json'), dailyFile: file, logger: { warn() {} } });
+  const usage = createUsageStore({ file });
+
+  db.registerMember({ groupId: 'g1', machineId: 'm1', username: 'u1' }, 1);
+  db.setCommands({ groupId: 'g1', machineId: 'm1', commands: ['dev'] }, 1);
+  db.addMessage({ id: 'x1', groupId: 'g1', src: 'm1', message: 'hi', updateTime: 1 });
+  seed.add({ id: 'p1', fileName: 'a.zip', skills: ['demo'], workflow: ['dev'], skillsUpdatedAt: 11, workflowUpdatedAt: 22, detail: { skills: [{ name: 'demo', files: 3 }] }, createdAt: 1 });
+  peers.upsert({ machineId: 'm1', messages: 5 }, Date.now());
+  usage.upsert({ date: '2026-09-16', memberId: 'm1', agent: 'opencode', input: 1 });
+
+  const tables = db.db.prepare('SELECT name FROM sqlite_master WHERE type = ? ORDER BY name').all('table').map((r) => r.name);
+  for (const t of ['usage', 'peer_daily', 'seed', 'member', 'member_command', 'message']) {
+    assert.ok(tables.includes(t), `缺少表 ${t}（现有：${tables.join(',')}）`);
+  }
+  // 种子表：更新时间与明细也存进去了
+  assert.equal(seed.get('p1').skillsUpdatedAt, 11);
+  assert.equal(seed.get('p1').workflowUpdatedAt, 22);
+  assert.deepEqual(seed.get('p1').detail.skills, [{ name: 'demo', files: 3 }]);
+  peers.close(); usage.close ? usage.close() : null; db.close();
+});

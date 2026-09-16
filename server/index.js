@@ -155,6 +155,8 @@ const broadcastSched = (type, payload) => {
 
 // ---- 由档案路径构建所有数据模块（不监听端口、不建 gateway）----
 function buildWorkspace({ paths, port }) {
+  // 所有表共用一个 SQLite 文件：<数据目录>/usage.db（usage / peer_daily / seed / member / member_command / message）
+  const usageDbFile = path.join(paths.dir, 'usage.db');
   const projectsFile = process.env.DEVFLOW_PROJECTS || paths.projectsFile;
   const workflowsFile = process.env.DEVFLOW_WORKFLOWS || paths.workflowsFile;
   ensureDefaults(projectsFile, workflowsFile);
@@ -175,9 +177,10 @@ function buildWorkspace({ paths, port }) {
   const engine = new CollabEngine({
     store: new CollabStore({ file: paths.storeFile, logger: log }),
     identity,
-    peers: new UsagePeersStore({ file: paths.usagePeersFile, dailyFile: path.join(paths.dir, 'peer-usage.db'), logger: log }),
-    seedStore: createSeedStore({ file: path.join(paths.dir, 'seed.db'), logger: log }),
-    collabDb: createCollabDb({ file: path.join(paths.dir, 'collab.db'), logger: log }),
+    peers: new UsagePeersStore({ file: paths.usagePeersFile, dailyFile: usageDbFile, logger: log }),
+    seedStore: createSeedStore({ file: usageDbFile, logger: log }),
+    collabDb: createCollabDb({ file: usageDbFile, logger: log }),
+    getWorkflowsUpdatedAt: () => { try { return fs.statSync(configFile).mtimeMs; } catch { return 0; } },
     skillsRoot: paths.skillsRoot,
     uploadDir: paths.uploadDir,
     downloadDir: paths.downloadDir,
@@ -247,7 +250,7 @@ function buildWorkspace({ paths, port }) {
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
-  const usageStore = createUsageStore({ file: path.join(paths.dir, 'usage.db') });
+  const usageStore = createUsageStore({ file: usageDbFile });
   return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, llmVault, usageStore, historyFile: paths.historyFile, paths };
 }
 

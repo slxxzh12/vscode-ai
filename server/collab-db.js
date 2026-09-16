@@ -89,5 +89,6 @@ export function createCollabDb({ file, logger = console } = {}) {
         .map((r) => ({ id: r.id, groupId: r.group_id, src: r.src, target: r.target, message: r.message, command: r.command, updateTime: r.update_time }));
     },
     close() { try { db.close(); } catch { /* ignore */ } },
+    db,   // 供自检（如核对同库多表）
   };
 }
