@@ -13,6 +13,7 @@ import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
 import { installBundleZip } from './bundle-installer.js';
+import { distKindsOf, distTypeOf, distUrl, shouldProcess } from './dist-task.js';
 import { buildZip } from './zip.js';
 import { createOpenCodeRunner } from './remote-runner.js';
 import * as seed from './sync-seed.js';
@@ -44,12 +45,13 @@ export function profileLabel(p) {
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, peers = null, seedStore = null, collabDb = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
+  constructor({ store, identity, events = null, peer = null, peers = null, seedStore = null, collabDb = null, taskStore = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.peers = peers;            // 用量上报库（master 侧），见 server/usage-peers.js
     this.seedStore = seedStore;    // 种子表（SQLite），见 server/seed-store.js
     this.collabDb = collabDb;      // 群成员/命令/消息表（SQLite），见 server/collab-db.js
+    this.taskStore = taskStore;    // 本机任务表（SQLite），见 server/task-store.js
     this.events = events;
     this.peer = peer;              // { post(host, port, envelope) -> Promise<{ok, data?, error?}> }
     this.skillDefaultRoot = skillsRoot;   // opencode 技能根（env 覆盖优先）
@@ -254,6 +256,22 @@ export class CollabEngine {
   }
 
   _emit(type, payload) { if (this.events) this.events.emit(type, payload); }
+  // 分发通知：发布成功后广播一条 kind:'dist' 群消息（正文含类型与下载地址，meta 带结构化字段）
+  _broadcastDist(groupId, info) {
+    const g = this.store.findGroup(groupId);
+    if (!g) return null;
+    const meta = { target: 'all', type: distTypeOf(info), url: distUrl(this.pub.host, this.pub.port, info.name), ...info };
+    const text = t(`collab.dist.msg.${meta.type}`, { name: info.name, count: info.count || 0, url: meta.url });
+    const msg = {
+      id: crypto.randomUUID(), groupId, kind: 'dist', fromId: this.pub.machineId, text,
+      toId: null, ts: Date.now(), seq: this.store.nextChatSeq(), meta,
+    };
+    this.store.addChatMessage(msg);
+    this._logMessage({ groupId, id: msg.id, src: msg.fromId, target: 'all', message: text, ts: msg.ts });
+    this._broadcastChat(groupId, msg);
+    this._emit('chat', { groupId, msg });
+    return msg;
+  }
   _sign(type, payload) {
     return signEnvelope(this.identity.privateKey, type, this.pub, payload);
   }
@@ -638,6 +656,21 @@ export class CollabEngine {
     for (const skillName of (pkg.skills || [])) {
       this.store.upsertGroupSkill({ groupId: g.id, skillName, hash: rec.hash, distributedBy: this.pub.machineId, installed: true });
     }
+    // 广播分发通知：成员据此在本机建任务
+    const skillList = pkg.skills || [];
+    const cmdList = pkg.command || [];
+    const agentList = pkg.agent || [];
+    const wfIds = pkg.workflow || [];
+    const wfAll = this.getWorkflows ? this.getWorkflows() : [];
+    const seedRec = this.seedStore?.get?.(rec.id) || null;
+    const count = skillList.length + cmdList.length + agentList.length + wfIds.length;
+    this._broadcastDist(g.id, {
+      name, packageId: rec.id, hash: rec.hash || '', size: buf.length, count,
+      skills: skillList, command: cmdList, agent: agentList,
+      workflow: wfIds.map((id) => ({ id, label: ((wfAll.find((w) => w.id === id) || {}).label) || id })),
+      skillsUpdatedAt: seedRec?.skillsUpdatedAt || 0,
+      workflowUpdatedAt: seedRec?.workflowUpdatedAt || 0,
+    });
     this._emit('synced', {});
     return { code: 'ok', name, size: buf.length };
   }
