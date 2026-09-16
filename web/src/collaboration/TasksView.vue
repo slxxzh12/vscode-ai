@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
+import { groupTasksByStatus, kindKeyOf, taskItemCount, type DistTask } from './distTasks';
 import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi }>();
@@ -20,6 +21,33 @@ function stateOf(id: string): SeedState {
 }
 const localFiles = ref<Set<string>>(new Set());
 const installMsg = ref('');
+
+// ---- 分发任务（本机任务表：群主发布的分发通知落成的待办）----
+const distGroups = ref(groupTasksByStatus([]));
+const taskMsg = ref('');
+const busyTask = ref('');
+const allDist = computed(() => [...distGroups.value.pending, ...distGroups.value.failed, ...distGroups.value.done, ...distGroups.value.ignored]);
+async function loadTasks() {
+  try {
+    const r = await props.collab.listTasks();
+    distGroups.value = groupTasksByStatus(r.tasks || []);
+  } catch { /* 离线时保持空 */ }
+}
+async function acceptTask(task: DistTask) {
+  busyTask.value = task.id; taskMsg.value = '';
+  try {
+    const r = await props.collab.acceptTask(task.id);
+    taskMsg.value = r.code === 'ok' ? t('collab.task.accepted') : t('collab.task.accept_failed', { msg: r.code });
+  } catch (e: any) { taskMsg.value = t('collab.task.accept_failed', { msg: String(e?.message || e) }); }
+  finally { busyTask.value = ''; await loadTasks(); }
+}
+async function ignoreTask(task: DistTask) {
+  busyTask.value = task.id; taskMsg.value = '';
+  try { await props.collab.ignoreTask(task.id); } finally { busyTask.value = ''; await loadTasks(); }
+}
+function groupNameOf(id: string) {
+  return (snap.value.groups || []).find((g) => g.id === id)?.name || id;
+}
 
 async function loadLocal() {
   try { const r = await props.collab.listDownloads(); localFiles.value = new Set((r.manifest.files || []).map((f) => f.name)); } catch { /* ignore */ }
@@ -44,7 +72,7 @@ async function loadAll() {
   await loadLocal();
   for (const h of hubs.value) await loadSeed(h.hubId);
 }
-onMounted(loadAll);
+onMounted(() => { loadTasks(); loadAll(); });
 
 function synced(name: string) { return localFiles.value.has(name); }
 function setAll(id: string, v: boolean) { const s = stateOf(id); for (const f of tasksOf(id)) s.selected[f.name] = v; }
@@ -77,6 +105,24 @@ function fmtSize(n?: number) { if (n == null) return ''; return n > 1024 * 1024 
 
 <template>
   <div class="tk">
+    <div class="disttitle">{{ $t('collab.task.dist_title') }}</div>
+    <div v-if="!allDist.length" class="empty">{{ $t('collab.task.dist_empty') }}</div>
+    <div v-for="dt in allDist" :key="dt.id" class="dtask">
+      <span class="tic">{{ dt.kind === 'workflow' ? '🧩' : '🛠' }}</span>
+      <div class="info">
+        <span class="nm">{{ $t(kindKeyOf(dt.kind)) }} · {{ dt.name }}</span>
+        <span class="meta">{{ $t('collab.task.items', { count: taskItemCount(dt) }) }} · {{ $t('collab.task.from_group', { group: groupNameOf(dt.groupId), hub: dt.hubId || '-' }) }}</span>
+        <a v-if="dt.url" class="addr" :href="dt.url" target="_blank" rel="noopener">{{ $t('collab.task.download_addr') }}: {{ dt.url }}</a>
+        <span v-if="dt.payload?.lastError" class="derr">{{ $t('collab.task.accept_failed', { msg: dt.payload.lastError }) }}</span>
+      </div>
+      <span class="state" :class="{ ok: dt.status === 'done' }">{{ $t(`collab.task.status.${dt.status}`) }}</span>
+      <div class="acts">
+        <button v-if="dt.status === 'pending' || dt.status === 'failed'" :disabled="busyTask === dt.id" @click="acceptTask(dt)">{{ $t('collab.task.accept') }}</button>
+        <button v-if="dt.status === 'pending'" class="ghost" :disabled="busyTask === dt.id" @click="ignoreTask(dt)">{{ $t('collab.task.ignore') }}</button>
+      </div>
+    </div>
+    <div v-if="taskMsg" class="tmsg ok">{{ taskMsg }}</div>
+
     <div class="seedtitle">{{ $t('collab.task.seed_title') }}</div>
     <div v-if="!hubs.length" class="empty">{{ $t('collab.task.no_master') }}</div>
 
@@ -115,6 +161,10 @@ function fmtSize(n?: number) { if (n == null) return ''; return n > 1024 * 1024 
 .tmsg { font-size: 12px; }
 .tmsg.ok { color: var(--ok); }
 .seedtitle { color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 6px 0 8px; }
+.disttitle { color: var(--tx2); text-transform: uppercase; font-size: 11px; margin: 6px 0 8px; }
+.dtask { display: flex; align-items: center; gap: 10px; border: 1px solid var(--bd); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--bg1); }
+.dtask .addr { color: var(--ac2); font-size: 11px; word-break: break-all; text-decoration: none; }
+.dtask .derr { color: var(--err); font-size: 11px; }
 .seedbox { border: 1px solid var(--bd); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; background: var(--bg1); }
 .seedhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .seedhead b { color: var(--tx1); }
