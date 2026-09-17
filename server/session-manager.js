@@ -8,12 +8,13 @@ const shortId = () => 's_' + crypto.randomBytes(4).toString('hex');
 const timeLabel = () => new Date().toLocaleTimeString(getLocale(), { hour12: false });
 
 export class SessionManager extends EventEmitter {
-  constructor({ ptyFactory = createPty, ringMaxBytes = 256 * 1024, logger = console, projectResolver = null } = {}) {
+  constructor({ ptyFactory = createPty, ringMaxBytes = 256 * 1024, logger = console, projectResolver = null, onCreated = null } = {}) {
     super();
     this.ptyFactory = ptyFactory;   // async ({cwd,cols,rows}) => PseudoPty
     this.ringMaxBytes = ringMaxBytes;
     this.log = logger;
     this.projectResolver = projectResolver; // (projectId) => root|null
+    this.onCreated = onCreated;             // (session) => void，用于记录 sessionId → projectId
     this.sessions = new Map();
     this._seq = 0;
   }
@@ -31,6 +32,7 @@ export class SessionManager extends EventEmitter {
     pty.onData((chunk) => this._onData(session, chunk));
     pty.onExit((code) => this._onExit(session, code));
     this.sessions.set(session.id, session);
+    this.onCreated?.(session);
     return session;
   }
   _onData(session, chunk) {

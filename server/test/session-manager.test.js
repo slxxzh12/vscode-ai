@@ -116,3 +116,24 @@ test('projectResolver 决定默认 cwd；缺省回退 process.cwd()', async () =
   const explicit = await sm.create({ projectId: 'devflow', cwd: 'C:\\override' });
   assert.equal(explicit.cwd, 'C:\\override');
 });
+
+test('create 之后调用 onCreated，携带 id/projectId', async () => {
+  const instances = [];
+  const seen = [];
+  const sm = new SessionManager({
+    ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }),
+    onCreated: (s) => seen.push(s),
+  });
+  const s = await sm.create({ projectId: 'p1' });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].id, s.id);
+  assert.equal(seen[0].projectId, 'p1');
+});
+
+test('未传 onCreated 时 create 正常', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const s = await sm.create({});
+  assert.ok(s.id);
+  assert.equal(s.projectId, null);
+});
