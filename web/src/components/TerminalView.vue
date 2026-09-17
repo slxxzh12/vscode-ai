@@ -561,6 +561,10 @@ function compactContext() {
   resetAutoCompact();
   sendToActive('/compact');   // opencode TUI 的上下文压缩命令
 }
+// 取消：给当前会话发 /undo，撤销 Agent 上一步操作
+function undoContext() {
+  sendToActive('/undo');
+}
 
 // —— 自动压缩上下文：默认开启；用户发送超过 30 次后，空闲 10 分钟无接续则自动 /compact ——
 const AUTO_COMPACT_SENDS = 30;
@@ -974,7 +978,10 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="countdown !== null" class="cprog" :style="{ width: ((countdown ?? 0) / 3) * 100 + '%' }" />
           </div>
-          <button v-if="activeIsAgent" class="ccompact" :title="$t('term.compact_hint')" @click="compactContext">{{ $t('term.compact') }}</button>
+          <div v-if="activeIsAgent" class="cagentacts">
+            <button class="cact" :title="$t('term.compact_hint')" @click="compactContext">{{ $t('term.compact') }}</button>
+            <button class="cact" :title="$t('term.undo_hint')" @click="undoContext">{{ $t('common.cancel') }}</button>
+          </div>
           <button class="csend" @click="onSendClick">{{ countdown !== null ? $t('term.send_countdown', { n: countdown }) : $t('common.send') }}</button>
         </div>
       </template>
@@ -1040,8 +1047,9 @@ onBeforeUnmount(() => {
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cinput::placeholder { color: var(--tx3); }
 .csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
-.ccompact { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 10px; padding: 0 14px; cursor: pointer; font-size: 13px; font-weight: 700; flex: none; }
-.ccompact:hover { border-color: var(--ac2); color: var(--ac2); }
+.cagentacts { display: flex; flex-direction: column; gap: 4px; flex: none; min-width: 100px; }
+.cact { flex: 1; min-height: 0; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 10px; padding: 0 14px; cursor: pointer; font-size: 13px; font-weight: 700; }
+.cact:hover { border-color: var(--ac2); color: var(--ac2); }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
 .cfgrow span { width: 62px; flex: none; }

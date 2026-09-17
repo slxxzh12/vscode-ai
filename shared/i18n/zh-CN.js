@@ -604,6 +604,7 @@ export const messages = {
   'term.send_countdown': '发送 ({n})',
   'term.compact': '压缩上下文',
   'term.compact_hint': '向 Agent 发送 /compact 压缩当前会话上下文',
+  'term.undo_hint': '向 Agent 发送 /undo 撤销上一步操作',
   'term.auto_compact': '自动压缩上下文',
   'term.auto_compact_hint': '默认开启：发送超过 30 次且空闲 10 分钟无接续时，自动向 Agent 发送 /compact',
   'tools.title': '小工具',

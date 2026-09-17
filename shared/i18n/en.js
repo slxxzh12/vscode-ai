@@ -604,6 +604,7 @@ export const messages = {
   'term.send_countdown': 'Send ({n})',
   'term.compact': 'Compact',
   'term.compact_hint': 'Send /compact to the agent to compact the session context',
+  'term.undo_hint': 'Send /undo to the agent to undo the last step',
   'term.auto_compact': 'Auto-compact context',
   'term.auto_compact_hint': 'On by default: after 30+ prompts and 10 minutes idle, send /compact to the agent automatically',
   'tools.title': 'Mini tools',
