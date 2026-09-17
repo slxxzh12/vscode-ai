@@ -41,7 +41,7 @@ describe('useRemoteCoder', () => {
   });
 
   it('waitForNewScreen：rev 变化即返回；超时返回 null', async () => {
-    const { fetchFn } = mkFetch((n) => (n <= 1 ? { rev: 'r1' } : { rev: 'r2' }));
+    const { fetchFn } = mkFetch((n: number) => (n <= 1 ? { rev: 'r1' } : { rev: 'r2' }));
     expect(await waitForNewScreen('r1', { fetch: fetchFn as never, timeoutMs: 300, intervalMs: 5 })).toEqual({ rev: 'r2' });
 
     const stuck = mkFetch({ rev: 'r1' });
