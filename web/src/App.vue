@@ -183,7 +183,8 @@ const liveProjectBySession = computed(() => {
 const liveSessionIds = computed(() => terminal.state.sessions.filter((s) => s.state === 'running').map((s) => s.id));
 async function openHistorySession(sid: string) {
   const s = await terminal.restoreSession(sid);
-  if (s && s.restored && s.kind === 'agent' && s.resumed === false) alert(t('hist.tree.fresh_agent'));
+  if (!s) { alert(t('hist.tree.restore_failed', { reason: terminal.state.error || 'restore-failed' })); return; }
+  if (s.restored && s.kind === 'agent' && s.resumed === false) alert(t('hist.tree.fresh_agent'));
 }
 const activeSessionTab = computed(() => sessionOfActiveTab(center.active.value));
 const visibleMessages = computed(() => filterMessages({
