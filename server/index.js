@@ -17,6 +17,9 @@ import { createCodePrefs } from './code-prefs.js';
 import { createComposerPrefs } from './composer-prefs.js';
 import { createSessionProjects } from './session-projects.js';
 import { createWindowState } from './window-state.js';
+import { createSessionLedger } from './session-ledger.js';
+import { restoreSessions } from './session-restore.js';
+import { discoverAgentSessionId } from './agent-resume.js';
 import { CollabStore } from './collaboration/store.js';
 import { loadIdentity, detectHost } from './collaboration/identity.js';
 import { CollabEngine } from './collaboration/engine.js';
@@ -187,11 +190,50 @@ function buildWorkspace({ paths, port }) {
   const composerPrefs = createComposerPrefs({ file: paths.composerPrefsFile, logger: log });
   const sessionProjects = createSessionProjects({ file: paths.sessionProjectsFile, logger: log });
   const windowState = createWindowState({ file: paths.windowStateFile, logger: log });
+  const sessionLedger = createSessionLedger({ file: paths.sessionsFile, logsDir: paths.sessionLogsDir, logger: log });
+  const agentList = () => loadDevflowConfig(configFile).agents.list || [];
+  function scheduleAgentDiscovery(session) {
+    const known = sessionLedger.read().sessions.find((r) => r.id === session.id);
+    if (known && known.agentSessionId) return;
+    for (const delay of [15000, 60000]) {
+      setTimeout(() => {
+        const cur = sessionManager.get(session.id);
+        if (!cur || !cur.alive) return;
+        const already = sessionLedger.read().sessions.find((r) => r.id === session.id);
+        if (already && already.agentSessionId) return;
+        const agent = agentList().find((a) => a.id === session.agentId) || null;
+        discoverAgentSessionId({ agent, cwd: session.cwd, since: session.createdAt })
+          .then((sid) => {
+            if (!sid) return;
+            const row = sessionLedger.read().sessions.find((r) => r.id === session.id);
+            if (row) sessionLedger.upsert({ ...row, agentSessionId: sid, updatedAt: Date.now() });
+          })
+          .catch(() => { /* 发现失败不影响使用 */ });
+      }, delay).unref?.();
+    }
+  }
   const sessionManager = new SessionManager({
     logger: log,
     projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
-    onCreated: (s) => sessionProjects.record(s.id, s.projectId),
+    onCreated: (s) => {
+      sessionProjects.record(s.id, s.projectId);
+      if (s.kind === 'workflow') return;
+      sessionLedger.upsert({
+        id: s.id, name: s.name, projectId: s.projectId, cwd: s.cwd, kind: s.kind,
+        agentId: s.agentId, agentCmd: s.agentCmd, cols: s.cols, rows: s.rows,
+        createdAt: s.createdAt, updatedAt: Date.now(), state: 'running',
+      });
+      if (s.kind === 'agent') scheduleAgentDiscovery(s);
+    },
   });
+  sessionManager.on('data', (s, chunk) => sessionLedger.appendLog(s.id, chunk));
+  sessionManager.on('exit', (s) => {
+    sessionLedger.flushLog(s.id);
+    const row = sessionLedger.read().sessions.find((r) => r.id === s.id);
+    if (row) sessionLedger.upsert({ ...row, state: 'exited', updatedAt: Date.now() });
+  });
+  sessionManager.on('removed', (id) => sessionLedger.remove(id));
+  setInterval(() => sessionLedger.flushAll(), 10000).unref?.();
   const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: log });
 
   const identity = loadIdentity({ file: paths.identityFile, employeeId: detectEmployeeId(), host: HOST, port });
@@ -278,7 +320,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, historyFile: paths.historyFile, paths };
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, sessionLedger, historyFile: paths.historyFile, paths };
 }
 
 // ---- 工作区（端口档案）----
@@ -293,6 +335,14 @@ function initWorkspace(paths, port) {
   if (!gateway) {
     gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log });
   }
+  void restoreSessions({
+    ledger: ws.sessionLedger,
+    sessionManager: ws.sessionManager,
+    agents: loadDevflowConfig(configFile).agents.list || [],
+    logger: log,
+  }).then((r) => {
+    if (r.restored || r.skipped.length) log.info(`session restore: restored=${r.restored} skipped=${r.skipped.length}`);
+  }).catch((e) => log.warn('session restore failed', (e && e.message) || e));
   ws.engine.setAdvertised({ host: HOST, port });
   // 群主换了地址后重新上线：自动签名广播一次，成员据此把群主指到新地址
   Promise.resolve(ws.engine.announceIfMoved?.()).catch((e) => log.warn('announce group move failed', (e && e.message) || e));
