@@ -61,6 +61,9 @@
         <prompt>请整理提交历史，必要时拆分原子提交，push 后发起合并并处理冲突。</prompt>
         <prompt>执行/compact 命令</prompt>
       </stage>
+      <stage id="package" label="打包" group="交付运维">
+        <prompt>根据打包脚本打包release包</prompt>
+      </stage>
       <stage id="deploy" label="环境部署" group="交付运维">
         <prompt>请给出构建/打包/发布步骤并执行，说明环境变量与回滚方案。</prompt>
         <prompt>请检查部署前后健康检查项与回滚触发条件。</prompt>

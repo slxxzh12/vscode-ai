@@ -655,6 +655,8 @@ export const messages = {
   'termwf.test.prompt': '请补齐并运行测试与类型检查，报告结果与风险。',
   'termwf.push.label': 'Push&Merge 代码',
   'termwf.push.prompt': '请提交并 push 当前改动到当前分支，再合并到目标分支，写清提交信息。',
+  'termwf.package.label': '打包',
+  'termwf.package.prompt': '根据打包脚本打包release包',
   'termwf.deploy.label': '环境部署',
   'termwf.deploy.prompt': '请给出构建/打包/发布步骤并执行，说明回滚方案。',
   'termwf.troubleshoot.label': '问题定位',

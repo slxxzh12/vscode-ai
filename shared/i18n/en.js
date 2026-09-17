@@ -655,6 +655,8 @@ export const messages = {
   'termwf.test.prompt': 'Add and run tests and type checks, then report results and risks.',
   'termwf.push.label': 'Push & Merge',
   'termwf.push.prompt': 'Commit and push current changes to the current branch, merge into the target branch, and write a clear commit message.',
+  'termwf.package.label': 'Package',
+  'termwf.package.prompt': 'Build the release package with the packaging scripts',
   'termwf.deploy.label': 'Deployment',
   'termwf.deploy.prompt': 'Provide and execute build/package/release steps, with a rollback plan.',
   'termwf.troubleshoot.label': 'Troubleshoot',

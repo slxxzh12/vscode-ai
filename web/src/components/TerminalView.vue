@@ -393,6 +393,7 @@ function buildFallbackWf(): WfDef[] {
         { id: 'optimize', label: t('termwf.optimize.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.optimize.prompt')] },
         { id: 'test', label: t('termwf.test.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.test.prompt')] },
         { id: 'push-merge', label: t('termwf.push.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.push.prompt')] },
+        { id: 'package', label: t('termwf.package.label'), group: t('termwf.group.ops'), prompts: [t('termwf.package.prompt')] },
         { id: 'deploy', label: t('termwf.deploy.label'), group: t('termwf.group.ops'), prompts: [t('termwf.deploy.prompt')] },
         { id: 'troubleshoot', label: t('termwf.troubleshoot.label'), group: t('termwf.group.ops'), prompts: [t('termwf.troubleshoot.prompt')] },
       ],
