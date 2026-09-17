@@ -18,17 +18,21 @@ export class SessionManager extends EventEmitter {
     this.sessions = new Map();
     this._seq = 0;
   }
-  async create({ projectId = null, cwd = null, name = null, cols = 80, rows = 24 } = {}) {
+  async create({ projectId = null, cwd = null, name = null, cols = 80, rows = 24,
+                 id = null, kind = 'shell', agentId = null, agentCmd = null,
+                 createdAt = null, replay = null } = {}) {
     const projRoot = projectId && this.projectResolver ? (this.projectResolver(projectId) || null) : null;
     const workdir = cwd || projRoot || process.cwd();
     const pty = await this.ptyFactory({ cwd: workdir, cols, rows });
     const session = {
-      id: shortId(), name: name || (projectId ? `${projectId} · ${timeLabel()}` : `${t('session.default')} · ${timeLabel()}`),
+      id: id || shortId(), name: name || (projectId ? `${projectId} · ${timeLabel()}` : `${t('session.default')} · ${timeLabel()}`),
       projectId, cwd: workdir, pty, alive: true,
       ring: new RingBuffer(this.ringMaxBytes), clients: new Set(),
       cols, rows, state: 'running', exitCode: null,
-      createdAt: Date.now(), seq: ++this._seq, ptyExited: false,
+      createdAt: createdAt || Date.now(), seq: ++this._seq, ptyExited: false,
+      kind, agentId, agentCmd, restored: false,
     };
+    if (typeof replay === 'string' && replay) session.ring.push(replay);
     pty.onData((chunk) => this._onData(session, chunk));
     pty.onExit((code) => this._onExit(session, code));
     this.sessions.set(session.id, session);
@@ -55,7 +59,8 @@ export class SessionManager extends EventEmitter {
   }
   summary(s) {
     return { id: s.id, name: s.name, projectId: s.projectId, state: s.state, cwd: s.cwd,
-      cols: s.cols, rows: s.rows, exitCode: s.exitCode };
+      cols: s.cols, rows: s.rows, exitCode: s.exitCode,
+      kind: s.kind || 'shell', agentId: s.agentId || null, restored: !!s.restored };
   }
   write(id, data) {
     const s = this.get(id);
@@ -91,6 +96,11 @@ export class SessionManager extends EventEmitter {
   detachAll(conn) {
     for (const s of this.sessions.values()) s.clients.delete(conn);
     conn.sessionId = null;
+  }
+  markRestored(id) {
+    const s = this.get(id);
+    if (s) s.restored = true;
+    return !!s;
   }
   kill(id) {
     const s = this.get(id);

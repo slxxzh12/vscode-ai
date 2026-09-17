@@ -137,3 +137,38 @@ test('未传 onCreated 时 create 正常', async () => {
   assert.ok(s.id);
   assert.equal(s.projectId, null);
 });
+
+test('create 支持显式 id/createdAt 并保留 kind/agentId', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const s = await sm.create({ id: 's_fixed01', createdAt: 111, kind: 'agent', agentId: 'opencode', agentCmd: 'opencode' });
+  assert.equal(s.id, 's_fixed01');
+  assert.equal(s.createdAt, 111);
+  const sum = sm.summary(s);
+  assert.equal(sum.kind, 'agent');
+  assert.equal(sum.agentId, 'opencode');
+  assert.equal(sum.restored, false);
+});
+
+test('create 用 replay 预填 ring，START 重放能看到', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const s = await sm.create({ replay: 'old-line\n' });
+  assert.equal(s.ring.content, 'old-line\n');
+});
+
+test('list 按 createdAt 降序保持恢复顺序', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  await sm.create({ id: 's_old00001', createdAt: 100 });
+  await sm.create({ id: 's_new00001', createdAt: 200 });
+  assert.deepEqual(sm.list().map((s) => s.id), ['s_new00001', 's_old00001']);
+});
+
+test('markRestored 置 restored=true 并出现在 summary', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const s = await sm.create({});
+  sm.markRestored(s.id);
+  assert.equal(sm.summary(s).restored, true);
+});
