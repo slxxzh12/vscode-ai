@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { toCsv, csvCell, zipStamp } from './csv';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { toCsv, csvCell, zipStamp, downloadZip } from './csv';
 
 describe('csvCell', () => {
   it('普通值原样', () => {
@@ -40,5 +40,40 @@ describe('toCsv', () => {
 describe('zipStamp', () => {
   it('yyyyMMdd-HHmm', () => {
     expect(zipStamp(new Date(2026, 8, 16, 15, 30))).toBe('20260916-1530');
+  });
+});
+
+describe('downloadZip', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('成功：POST /api/export/zip，触发 <a> 下载并延迟回收 URL', async () => {
+    vi.useFakeTimers();
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return { ok: true, blob: async () => new Blob(['x']) };
+    }));
+    const anchor = { href: '', download: '', clicked: false, removed: false, click() { this.clicked = true; }, remove() { this.removed = true; } };
+    const appended: unknown[] = [];
+    vi.stubGlobal('document', { createElement: () => anchor, body: { appendChild: (el: unknown) => appended.push(el) } });
+    const revoked: string[] = [];
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:x', revokeObjectURL: (u: string) => revoked.push(u) });
+
+    await downloadZip('a.zip', [{ name: 'a.csv', content: 'x' }]);
+    expect(calls[0].url).toBe('/api/export/zip');
+    expect(calls[0].init.method).toBe('POST');
+    expect(anchor.download).toBe('a.zip');
+    expect(anchor.clicked).toBe(true);
+    expect(anchor.removed).toBe(true);
+    expect(appended).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(revoked).toEqual(['blob:x']);
+  });
+
+  it('失败：优先取响应体 error，json 解析失败回退 HTTP 状态', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: 'bad-zip' }) })));
+    await expect(downloadZip('a.zip', [])).rejects.toThrow('bad-zip');
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => { throw new Error('x'); } })));
+    await expect(downloadZip('a.zip', [])).rejects.toThrow('HTTP 500');
   });
 });

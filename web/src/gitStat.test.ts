@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { statusLabel, statusClass, defaultRange, sumStats, aggregateByAuthor, type GitCommit } from './gitStat';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { statusLabel, statusClass, defaultRange, sumStats, aggregateByAuthor, fetchGitChanges, type GitCommit } from './gitStat';
 import { parseHugeCommitLimit, DEFAULT_HUGE_COMMIT_ADDED_LIMIT } from '@devflow/shared/git-filter';
 
 describe('statusLabel', () => {
@@ -58,6 +58,42 @@ describe('aggregateByAuthor', () => {
   });
   it('空提交返回空数组', () => {
     expect(aggregateByAuthor([])).toEqual([]);
+  });
+  it('renamed 计入 renamed；缺省增删行按 0', () => {
+    const rows = aggregateByAuthor([
+      commit('Ren', 'r@x', [{ status: 'renamed', path: 'x.js', oldPath: 'y.js' }]),
+    ]);
+    expect(rows[0].renamed).toBe(1);
+    expect(rows[0].linesAdded).toBe(0);
+    expect(rows[0].linesDeleted).toBe(0);
+    expect(rows[0].files).toBe(1);
+  });
+});
+
+describe('fetchGitChanges', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const params = { repo: '/r', since: '2026-09-01', until: '2026-09-10' };
+
+  it('成功返回变更结果', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, json: async () => ({ stats: { commits: 1 } }) };
+    }));
+    const r = await fetchGitChanges(params);
+    expect(r.stats.commits).toBe(1);
+    expect(calls[0].url).toBe('/api/git/changes');
+    expect(calls[0].init.method).toBe('POST');
+  });
+
+  it('失败：拼 error 与 message', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: 'bad repo', message: 'boom' }) })));
+    await expect(fetchGitChanges(params)).rejects.toThrow('bad repo：boom');
+  });
+
+  it('失败：json 解析失败回退 HTTP 状态', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => { throw new Error('x'); } })));
+    await expect(fetchGitChanges(params)).rejects.toThrow('HTTP 500');
   });
 });
 

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { isMarkdownFile, renderMarkdown } from './markdown';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { isMarkdownFile, renderMarkdown, renderRemoteMarkdown, printMarkdown } from './markdown';
 
 const P = { projectId: 'p', fileDir: '' };
 
@@ -66,5 +66,70 @@ describe('renderMarkdown', () => {
     const h = renderMarkdown('[doc](./other.md)', { projectId: 'p', fileDir: 'docs' });
     expect(h).toContain('href="/api/raw?project=p&amp;path=docs%2Fother.md"');
     expect(h).toContain('target="_blank"');
+  });
+
+  it('非法百分号转义不崩（safeDecode 回退原串）', () => {
+    const h = renderMarkdown('![x](bad%zz.png)', { projectId: 'p', fileDir: 'docs' });
+    expect(h).toContain('/api/raw?project=p');
+  });
+});
+
+describe('renderRemoteMarkdown', () => {
+  it('外链加 target/rel，不改写相对资源', () => {
+    const h = renderRemoteMarkdown('[x](https://ex.com/a)');
+    expect(h).toContain('href="https://ex.com/a"');
+    expect(h).toContain('target="_blank"');
+    expect(h).toContain('rel="noopener"');
+  });
+});
+
+describe('printMarkdown', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  function fakeWin(images: unknown[]) {
+    const doc = {
+      opened: false, written: '', closed: false, images,
+      open() { this.opened = true; },
+      write(s: string) { this.written += s; },
+      close() { this.closed = true; },
+    };
+    return { document: doc, focused: 0, printed: 0, focus() { this.focused += 1; }, print() { this.printed += 1; } };
+  }
+
+  it('window.open 返回 null 时静默返回', () => {
+    vi.stubGlobal('window', { open: () => null });
+    expect(() => printMarkdown('<p>x</p>', 'T')).not.toThrow();
+  });
+
+  it('无图片：写入文档并立即打印（标题转义）', () => {
+    const win = fakeWin([]);
+    vi.stubGlobal('window', { open: () => win });
+    printMarkdown('<p>x</p>', '标题<1>');
+    expect(win.document.opened).toBe(true);
+    expect(win.document.written).toContain('标题&lt;1&gt;');
+    expect(win.document.written).toContain('<article class="md-body">');
+    expect(win.document.closed).toBe(true);
+    expect(win.printed).toBe(1);
+  });
+
+  it('图片已完成：立即打印', () => {
+    const win = fakeWin([{ complete: true }]);
+    vi.stubGlobal('window', { open: () => win });
+    printMarkdown('<p>x</p>', 'T');
+    expect(win.printed).toBe(1);
+  });
+
+  it('图片未完成：等 load 后打印；超时兜底不重复打印', () => {
+    vi.useFakeTimers();
+    const handlers: Record<string, () => void> = {};
+    const img = { complete: false, addEventListener: (t: string, cb: () => void) => { handlers[t] = cb; } };
+    const win = fakeWin([img]);
+    vi.stubGlobal('window', { open: () => win });
+    printMarkdown('<p>x</p>', 'T');
+    expect(win.printed).toBe(0);
+    handlers.load();
+    expect(win.printed).toBe(1);
+    vi.advanceTimersByTime(8000);
+    expect(win.printed).toBe(1);
   });
 });
