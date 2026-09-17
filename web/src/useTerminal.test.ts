@@ -48,14 +48,19 @@ describe('useTerminal', () => {
     const fake = { id: 's1', name: 'A', state: 'running' as const, cwd: '', projectId: null, cols: 80, rows: 24, exitCode: null };
     ws.emitMessage({ type: S2C.SESSION_LIST, sessions: [fake] });
     expect(hook.term.state.sessions).toHaveLength(1);
+    const restored = { ...fake, id: 's2', restored: true, kind: 'agent' as const, agentId: 'opencode' };
+    ws.emitMessage({ type: S2C.SESSION_LIST, sessions: [restored] });
+    expect(hook.term.state.sessions[0].restored).toBe(true);
+    expect(hook.term.state.sessions[0].kind).toBe('agent');
   });
 
   it('createSession 发 create，事件驱动解析 session-created 并置为 active', async () => {
     hook.term.connect();
     const ws = hook.sockets[0];
     ws.emitOpen();
-    const p = hook.term.createSession({ projectId: 'p1', cols: 90, rows: 30 });
+    const p = hook.term.createSession({ projectId: 'p1', cols: 90, rows: 30, kind: 'agent', agentId: 'opencode', agentCmd: 'opencode' });
     expect(ws.sent.at(-1)!.type).toBe(C2S.CREATE);
+    expect(ws.sent.at(-1)).toMatchObject({ kind: 'agent', agentId: 'opencode', agentCmd: 'opencode' });
     const created = { id: 'sX', name: 'X', projectId: 'p1', state: 'running' as const, cwd: '', cols: 90, rows: 30, exitCode: null };
     ws.emitMessage({ type: S2C.SESSION_CREATED, session: created });
     await p;
