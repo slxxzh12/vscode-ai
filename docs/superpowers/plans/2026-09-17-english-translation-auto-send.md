@@ -998,7 +998,9 @@ function onSendClick() {
 
 - [ ] **Step 7: 样式**
 
-`<style scoped>` 中 `.cinput.out { padding-right: 14px; }` 那行替换为：
+先改左栏输入框：`<style scoped>` 中 `.cinput { flex: 1; ... padding: 10px 210px 10px 14px; ... }` 那行的 padding 改成 `padding: 30px 210px 10px 14px;`（工具按钮独占第一行，正文从第二行开始，按钮不再压住输入文字）。
+
+再把 `.cinput.out { padding-right: 14px; }` 那行替换为：
 
 ```css
 .cinput.out { padding-right: 14px; padding-top: 30px; }
@@ -1085,4 +1087,4 @@ Start-Process -FilePath "npm.cmd" -ArgumentList "run","dev" -WorkingDirectory "D
 - **Spec 覆盖**：§3.1→Task 1；§3.2→Task 2；§3.3→Task 3（+Task 4 前端）；§4.1→Task 4；§4.2→Task 6/7；§4.3→Task 8；§4.4→Task 5；§5 边界→Task 7 测试用例（空输入 `ok`、倒计时中改左右栏、会话切换、翻译失败）；§6→Task 9。
 - **占位符扫描**：无 TBD/TODO；所有代码步骤均给出完整代码。
 - **类型/命名一致性**：`isAsciiOnly`、`mergeComposerPrefs`、`useEnglishComposer`、`translateNow`、`sendAction`、`onLeftEnter`、`toggleTranslate`、`load`、`autoSend`、`countdown`、`source`、`translated`、`translateMode` 在 Task 6/7/8 中名称一致；`composerPrefsFile` / `createComposerPrefs` / `normalizeComposerPrefs` / `emptyPrefs` 在 Task 1/2 一致；`input(data, sessionId)` 在 Task 3（服务端字段）/Task 4（前端签名）一致。
-- **已知取舍**：不再保留旧的 `lastTranslatedSource` / `lastTranslateResult` 陈旧度状态——新设计用「左栏变化即取消、右栏变化即重启计时」替代，二者语义等价且更简单；CSS 新增 `.cauto` / `.cprog` 会小幅增加右栏顶/底内边距。
+- **已知取舍**：不再保留旧的 `lastTranslatedSource` / `lastTranslateResult` 陈旧度状态——新设计用「左栏变化即取消、右栏变化即重启计时」替代，二者语义等价且更简单；CSS 两侧输入框顶部内边距都改 30px（工具按钮/勾选框独占第一行，正文从第二行开始），并新增 `.cauto` / `.cprog`。
