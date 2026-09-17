@@ -105,6 +105,8 @@ describe('useTerminal', () => {
     hook.term.state.activeSessionId = 's1';
     hook.term.input('ls\r');
     expect(ws.sent.at(-1)).toMatchObject({ type: C2S.INPUT, data: 'ls\r' });
+    hook.term.input('other\r', 's2');
+    expect(ws.sent.at(-1)).toMatchObject({ type: C2S.INPUT, data: 'other\r', sessionId: 's2' });
     hook.term.resize(120, 40);
     expect(ws.sent.at(-1)).toMatchObject({ type: C2S.RESIZE, cols: 120, rows: 40 });
   });

@@ -111,7 +111,7 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
       return () => { s!.delete(h); };
     },
     setOutput(activeSessionId: string | null) { state.activeSessionId = activeSessionId; },
-    input(data: string) { send(C2S.INPUT, { data }); },
+    input(data: string, sessionId: string | null = null) { send(C2S.INPUT, { data, sessionId }); },
     resize(cols: number, rows: number) { send(C2S.RESIZE, { cols, rows }); },
     stop() { send(C2S.STOP); state.activeSessionId = null; },
     killSession(id: string) {
