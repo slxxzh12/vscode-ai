@@ -14,6 +14,7 @@ import { t } from '../i18n';
 import { useVersion } from '../useVersion';
 import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from './portRestart';
 import WorkflowEditor from './WorkflowEditor.vue';
+import { useEnglishComposer } from '../useEnglishComposer';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -100,18 +101,34 @@ function commitRename(tabId: string) {
 }
 function cancelRename() { renamingId.value = null; }
 
-// 页签改名后让 Agent 内的对话名跟着改：opencode 的 /rename 是「打开重命名输入框」，
-// 命令只对当前已附着的会话生效，因此两步走——先 /rename，再把框里预填的旧名清掉换成新名。
+// 页签改名后让 Agent 内的对话名跟着改：opencode 的 session_rename 默认绑定 ctrl+r（\x12），
+// 按下即打开「Rename Session」对话框（预填旧标题、光标在末尾）→ 清空 → 输入新名 → 回车确认。
+// 注意：不能发文本 `/rename`——斜杠命令要靠自动补全列表回车选中才执行，存在自定义命令时
+// 回车会选中列表里的其它项，对话框根本不会打开（实测过）。只有键位 ctrl+r 能可靠打开。
 function syncAgentRename(sid: string, name: string) {
-  if (!agentSids.value.has(sid)) return;                              // 仅 Agent 会话（shell 会话没有该命令）
-  if (props.terminal.state.activeSessionId !== sid) return;
+  if (!agentSids.value.has(sid)) return;               // 仅 Agent 会话（shell 会话没有该命令）
   if (sessionState(sid) !== 'running') return;
-  sendToActive('/rename');
+  const prev = props.terminal.state.activeSessionId;
+  const needSwitch = prev !== sid;                     // input 只作用于活动会话：后台页签先切过去
+  if (needSwitch) props.terminal.switchTo(sid);
+  const at = () => props.terminal.state.activeSessionId === sid;
   setTimeout(() => {
-    if (props.terminal.state.activeSessionId !== sid) return;
-    props.terminal.input('\x7f'.repeat(80));   // 清掉输入框里预填的旧名
-    setTimeout(() => sendToActive(name), 120);
-  }, 700);
+    if (!at()) return;
+    props.terminal.input('\x12');                      // ctrl+r：打开 Rename Session 对话框
+    setTimeout(() => {
+      if (!at()) return;
+      props.terminal.input('\x7f'.repeat(200));        // 清掉预填的旧标题（光标在末尾）
+      setTimeout(() => {
+        if (!at()) return;
+        props.terminal.input(name);
+        setTimeout(() => {
+          if (!at()) return;
+          props.terminal.input('\r');                  // 确认改名
+          if (needSwitch && prev) setTimeout(() => props.terminal.switchTo(prev), 600);
+        }, 500);
+      }, 250);
+    }, 1600);
+  }, needSwitch ? 400 : 0);
 }
 
 // —— 固定 Agent 首标签：交互式 Agent（列表可配置）+ 工作流（跑 opencode 自定义命令）——
@@ -384,7 +401,24 @@ function buildFallbackWf(): WfDef[] {
   ];
 }
 const wfDefs = ref<WfDef[]>(buildFallbackWf());
-const composerText = ref('');
+const {
+  translateMode,
+  source: composerText,
+  translated: translatedText,
+  translating,
+  autoSend,
+  countdown,
+  load: loadComposerPrefs,
+  toggleTranslate,
+  translateNow,
+  sendAction,
+  onLeftEnter,
+} = useEnglishComposer({
+  getActiveSessionId: () => props.terminal.state.activeSessionId,
+  send: (text, sid) => sendPromptTo(text, sid),
+  recordHistory: (text, sid) => { void msgHistory.push(text, sid ? { sessionId: sid, tabName: tabLabel(sid) } : {}); },
+  onSent: () => notePromptSent(),
+});
 function fillPrompt(text: string) { composerText.value = text; }
 
 // —— 输入历史：点击工具栏「历史」→ 打开左侧历史面板的「消息」页签 ——
@@ -413,51 +447,7 @@ async function pickFileForPrompt() {
   } catch (e) { alert(t('sched.pick_failed', { msg: (e as Error).message || String(e) })); }
 }
 
-// —— 英文翻译模式：底部输入框分中/英两栏，发送默认发英文译文 ——
-const translateMode = ref(false);
-const translatedText = ref('');
-const translating = ref(false);
-const lastTranslatedSource = ref('');
-const lastTranslateResult = ref('');
-const TRANSLATE_ERR_KEY: Record<string, string> = {
-  'empty-input': 'et.empty',
-  'too-long': 'et.too_long',
-  'no-provider': 'et.no_provider',
-  'no-key': 'et.no_key',
-  'image-too-large': 'et.image_too_large',
-  'too-many-images': 'et.too_many_images',
-  timeout: 'et.timeout',
-};
-function toggleTranslate() { translateMode.value = !translateMode.value; }
-
-// 返回是否成功；失败时弹提示且不发送
-async function runTranslate(): Promise<boolean> {
-  const text = composerText.value.trim();
-  if (!text) return false;
-  translating.value = true;
-  try {
-    const res = await fetch('/api/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-    const j: any = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const key = TRANSLATE_ERR_KEY[j.error];
-      alert(key ? t(key) : t('et.failed', { msg: j.message || j.error || `HTTP ${res.status}` }));
-      return false;
-    }
-    translatedText.value = j.text || '';
-    lastTranslatedSource.value = text;
-    lastTranslateResult.value = translatedText.value;
-    return true;
-  } catch (e) {
-    alert(t('et.failed', { msg: (e as Error).message || String(e) }));
-    return false;
-  } finally {
-    translating.value = false;
-  }
-}
+// —— 英文翻译模式的翻译/倒计时/自动发送逻辑见 useEnglishComposer ——
 
 // 底部框高度（可上下拖动）+ 最小化
 const COMPOSER_H_KEY = 'devflow-composer-h';
@@ -550,6 +540,12 @@ function sendToActive(text: string) {
     props.terminal.input('\r');
   }, 150);
 }
+// 定向发送：sid 明确时直接写入该会话，不受当前活动标签影响；无 sid 时沿用 sendToActive
+function sendPromptTo(text: string, sid: string | null) {
+  if (!sid) { sendToActive(text); return; }
+  props.terminal.input(text, sid);
+  setTimeout(() => { props.terminal.input('\r', sid); }, 150);
+}
 function compactContext() {
   resetAutoCompact();
   sendToActive('/compact');   // opencode TUI 的上下文压缩命令
@@ -585,21 +581,9 @@ function notePromptSent() {
     compactContext();
   }, AUTO_COMPACT_IDLE_MS);
 }
+// 非翻译模式：回车直接把输入框内容送入当前会话
 async function submitComposer() {
-  let text = composerText.value.trim();
-  if (translateMode.value) {
-    const edited = translatedText.value !== lastTranslateResult.value;
-    const stale = text !== lastTranslatedSource.value;
-    if (!translatedText.value.trim() || (stale && !edited)) {
-      const ok = await runTranslate();
-      if (!ok) return;
-    }
-    text = translatedText.value.trim() || text;
-    translatedText.value = '';
-    lastTranslatedSource.value = '';
-    lastTranslateResult.value = '';
-  }
-  text = text || 'ok';
+  const text = composerText.value.trim() || 'ok';
   composerText.value = '';
   const sid = props.terminal.state.activeSessionId;
   void msgHistory.push(text, sid ? { sessionId: sid, tabName: tabLabel(sid) } : {});
@@ -607,7 +591,19 @@ async function submitComposer() {
   notePromptSent();
 }
 function onComposerKey(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComposer(); }
+  if (e.key !== 'Enter' || e.shiftKey) return;
+  e.preventDefault();
+  if (translateMode.value) void onLeftEnter();
+  else void submitComposer();
+}
+function onOutKey(e: KeyboardEvent) {
+  if (e.key !== 'Enter' || e.shiftKey) return;
+  e.preventDefault();
+  void sendAction();
+}
+function onSendClick() {
+  if (translateMode.value) void sendAction();
+  else void submitComposer();
 }
 async function selectWf(id: string) {
   wfKind.value = id;
@@ -762,6 +758,7 @@ onMounted(async () => {
   agentSidsKey = `devflow-agent-sids-${fp}`;
   tabNamesKey = `devflow-tab-names-${fp}`;
   loadAgentSids();
+  void loadComposerPrefs();
   loadTabNames();
   await loadAgents();
   loadCfg();           // 本地已保存配置优先覆盖 API 默认
@@ -945,7 +942,7 @@ onBeforeUnmount(() => {
             />
             <div class="ctools">
               <button class="cbtn" :title="$t('term.pick_file')" @mousedown.stop @click="pickFileForPrompt">{{ $t('term.pick_file') }}</button>
-              <button v-if="translateMode" class="cbtn" :disabled="translating || !composerText.trim()" :title="$t('term.translate')" @mousedown.stop @click="runTranslate">{{ translating ? $t('term.translating') : $t('term.translate') }}</button>
+              <button v-if="translateMode" class="cbtn" :disabled="translating || !composerText.trim()" :title="$t('term.translate')" @mousedown.stop @click="translateNow">{{ translating ? $t('term.translating') : $t('term.translate') }}</button>
               <button class="cbtn" :class="{ on: translateMode }" :title="$t('term.translate_toggle')" @mousedown.stop @click="toggleTranslate">{{ $t('term.translate_toggle') }}</button>
               <button class="cbtn" :title="$t('term.history')" @mousedown.stop @click="openHistory">{{ $t('term.history') }}</button>
             </div>
@@ -955,11 +952,18 @@ onBeforeUnmount(() => {
               v-model="translatedText"
               class="cinput out"
               :placeholder="$t('term.translated_ph')"
-              @keydown="onComposerKey"
+              @keydown="onOutKey"
             />
+            <div class="cauto">
+              <label :title="$t('term.auto_send_hint')">
+                <input type="checkbox" v-model="autoSend" />{{ $t('term.auto_send') }}
+              </label>
+              <span v-if="countdown !== null" class="cnt">{{ $t('term.auto_send_countdown', { n: countdown }) }}</span>
+            </div>
+            <div v-if="countdown !== null" class="cprog" :style="{ width: ((countdown ?? 0) / 3) * 100 + '%' }" />
           </div>
           <button v-if="activeIsAgent" class="ccompact" :title="$t('term.compact_hint')" @click="compactContext">{{ $t('term.compact') }}</button>
-          <button class="csend" @click="submitComposer">{{ $t('common.send') }}</button>
+          <button class="csend" @click="onSendClick">{{ countdown !== null ? $t('term.send_countdown', { n: countdown }) : $t('common.send') }}</button>
         </div>
       </template>
     </div>
@@ -990,7 +994,12 @@ onBeforeUnmount(() => {
 .cbtn.on { border-color: var(--ac); color: var(--ac2); }
 .cmin { margin-left: auto; background: none; border: 1px solid transparent; color: var(--tx2); border-radius: 4px; width: 28px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; }
 .cmin:hover { background: color-mix(in srgb, var(--tx1) 14%, transparent); color: var(--tx1); }
-.cinput.out { padding-right: 14px; }
+.cinput.out { padding-right: 14px; padding-top: 30px; }
+.cauto { position: absolute; top: 6px; right: 10px; z-index: 2; display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--tx3); }
+.cauto label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.cauto input { margin: 0; cursor: pointer; }
+.cauto .cnt { color: var(--ac2); }
+.cprog { position: absolute; left: 10px; bottom: 4px; height: 2px; background: var(--ac2); border-radius: 2px; transition: width .95s linear; pointer-events: none; }
 .wfbtns { display: flex; gap: 0; flex: none; align-items: stretch; border-bottom: 2px solid transparent; }
 .wfbtn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--tx3); padding: 2px 12px 3px; cursor: pointer; font-size: 11px; }
 .wfbtn:hover { color: var(--tx1); }
@@ -1015,7 +1024,7 @@ onBeforeUnmount(() => {
 .chip.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .cdot { width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
 .chip.on .cdot { background: var(--onac); }
-.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 210px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
+.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 30px 210px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cinput::placeholder { color: var(--tx3); }
 .csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
