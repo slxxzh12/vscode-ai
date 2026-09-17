@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest';
+import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
 import { t } from '../i18n';
 import HistoryList from './HistoryList.vue';
@@ -10,6 +11,7 @@ const entry = (over: Partial<Entry> = {}): Entry => ({ projectId: 'p', path: 'a.
 function mount(over: Record<string, unknown> = {}) {
   return mountC(HistoryList, {
     props: { items: [], tab: 'files', messages: [], ...over },
+    global: { plugins: [ElementPlus] },
   });
 }
 
@@ -51,13 +53,15 @@ describe('HistoryList', () => {
 
   it('页签切换 emit update:tab', async () => {
     const w = mount();
-    await w.findAll('.tabbtn')[0].trigger('click');
+    const items = w.findAll('.el-tabs__item');
+    expect(items).toHaveLength(2);
+    await items[0].trigger('click');
     expect(w.emitted('update:tab')?.[0]).toEqual(['messages']);
-    await w.findAll('.tabbtn')[1].trigger('click');
+    await items[1].trigger('click');
     expect(w.emitted('update:tab')?.[1]).toEqual(['files']);
   });
 
-  it('消息页签：空态、打开/删除/清空', async () => {
+  it('消息页签：空态、打开/删除（无清空按钮）', async () => {
     const w = mount({ tab: 'messages' });
     expect(w.find('.empty').text()).toBeTruthy();
 
@@ -66,12 +70,11 @@ describe('HistoryList', () => {
     await w2.vm.$nextTick();
     expect(w2.findAll('.mrow')).toHaveLength(1);
     expect(w2.find('.mtab').text()).toBe('tab1');
+    expect(w2.find('.clear').exists()).toBe(false);
     await w2.find('.mrow').trigger('click');
     expect(w2.emitted('open-message')?.[0]).toEqual(['hello']);
     await w2.find('.mrow .x').trigger('click');
     expect(w2.emitted('remove-message')?.[0]).toEqual([messages[0]]);
-    await w2.find('.clear').trigger('click');
-    expect(w2.emitted('clear-messages')).toHaveLength(1);
   });
 
   it('超过一页时显示 more，滚动到底部加载下一页', async () => {
@@ -91,20 +94,56 @@ describe('HistoryList', () => {
     expect(w.find('.foot').exists()).toBe(true);
   });
 
-  it('消息页筛选开关：默认开启、点击 emit update:filter、文件页不渲染', async () => {
+  it('消息页筛选：仅当前会话 / 全部会话 两个互斥按钮；文件页不渲染', async () => {
     const w = mount({ tab: 'messages' });
-    const btn = w.find('.filterbtn');
-    expect(btn.exists()).toBe(true);
-    expect(btn.classes()).toContain('on');
-    expect(btn.text()).toBe(t('hist.filter.on'));
-    await btn.trigger('click');
+    const btns = w.findAll('.filterbtn');
+    expect(btns).toHaveLength(2);
+    expect(btns[0].text()).toBe(t('hist.filter.on'));
+    expect(btns[1].text()).toBe(t('hist.filter.off'));
+    expect(btns[0].classes()).toContain('on');
+    expect(btns[1].classes()).not.toContain('on');
+    await btns[1].trigger('click');
     expect(w.emitted('update:filter')?.[0]).toEqual([false]);
+    await btns[0].trigger('click');
+    expect(w.emitted('update:filter')?.[1]).toEqual([true]);
 
     const off = mount({ tab: 'messages', filter: false });
-    expect(off.find('.filterbtn').classes()).not.toContain('on');
-    expect(off.find('.filterbtn').text()).toBe(t('hist.filter.off'));
+    const offBtns = off.findAll('.filterbtn');
+    expect(offBtns[0].classes()).not.toContain('on');
+    expect(offBtns[1].classes()).toContain('on');
 
     const files = mount({ tab: 'files' });
     expect(files.find('.filterbtn').exists()).toBe(false);
+  });
+
+  it('全部会话：渲染会话树，点行展开，打开按钮 emit open-session', async () => {
+    const messages = [
+      { text: 'm1', ts: 100, sessionId: 's1', tabName: 'A' },
+      { text: 'm2', ts: 200, sessionId: 's2', tabName: 'B' },
+    ];
+    const w = mount({ tab: 'messages', filter: false, messages, liveSessionIds: ['s2'] });
+    await w.vm.$nextTick();
+    const nodes = w.findAll('.tnode');
+    expect(nodes).toHaveLength(2);
+    expect(nodes.map((n) => n.find('.tname').text())).toEqual(['B', 'A']);
+    expect(w.findAll('.mrow')).toHaveLength(0);              // 默认折叠
+    await nodes[1].trigger('click');                          // 展开 A
+    expect(w.findAll('.mrow')).toHaveLength(1);
+    await nodes[1].find('.topen').trigger('click');
+    expect(w.emitted('open-session')?.[0]).toEqual(['s1']);
+  });
+
+  it('全部会话：无 sessionId 的组禁用打开', async () => {
+    const w = mount({ tab: 'messages', filter: false, messages: [{ text: 'x', ts: 1, tabName: 'only' }] });
+    await w.vm.$nextTick();
+    expect(w.findAll('.tnode')).toHaveLength(1);
+    expect(w.find('.topen').exists()).toBe(false);
+  });
+
+  it('仅当前会话：仍是平铺消息', async () => {
+    const w = mount({ tab: 'messages', filter: true, messages: [{ text: 'x', ts: 1, tabName: 't' }] });
+    await w.vm.$nextTick();
+    expect(w.findAll('.tnode')).toHaveLength(0);
+    expect(w.findAll('.mrow')).toHaveLength(1);
   });
 });
