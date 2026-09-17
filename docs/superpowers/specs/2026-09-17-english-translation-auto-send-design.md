@@ -27,6 +27,7 @@
 | 6 | 会话切换 | 倒计时**不取消**；发送到「译文填入时处于活动的那个会话」 |
 | 7 | ASCII 判定 | 全部字符都在 ASCII 范围（`A-Za-z0-9`、空白、ASCII 标点）即跳过翻译 |
 | 8 | 目标会话已非当前活动标签 | **静默发送**，不切回视图（给 `C2S.INPUT` 加可选 `sessionId`） |
+| 9 | 空输入发送 | 翻译模式下两栏都空时，发送按钮或左/右栏回车一律直接发送 `ok`（沿用现有 `text \|\| 'ok'` 兜底） |
 
 ## 2. 现状与落点
 
@@ -94,10 +95,12 @@ useEnglishComposer({
 
 动作：
 
-- `translateNow()`：取 `source.trim()`；空则返回 `false`。纯 ASCII → 直接 `translated = text`（不发请求）；否则调用 `translate`，失败走 `onError` 并返回 `false`。成功后置 `lastSource/lastResult`，再 `arm()`。
+- `translateNow()`：取 `source.trim()`；空则返回 `false`（由调用方决定兜底发送 `ok`）。纯 ASCII → 直接 `translated = text`（不发请求）；否则调用 `translate`，失败走 `onError` 并返回 `false`。成功后置 `lastSource/lastResult`，再 `arm()`。
 - `arm()`：`autoSend && translated.trim()` 时记录 `sid = getActiveSessionId()`，启动 3 秒倒计时（1 秒一跳，归零触发发送）。
 - `disarm()`：清定时器并置 `countdown = null`。
-- `sendNow()`：`translated` 为空则不动作；否则取目标会话 `sid = pending?.sid ?? getActiveSessionId()`，清计时器，`send(translated.trim(), sid)`、`recordHistory(source.trim() || translated.trim(), sid)`、清空两栏并复位。
+- `doSend(text)`（内部）：取 `sid = pending?.sid ?? getActiveSessionId()`，`disarm()`，`send(text, sid)`、`recordHistory(source.trim() || text, sid)`、清空两栏并复位。
+- `sendAction()`（发送按钮 / 右栏回车统一入口，async）：右栏有译文 → `doSend(translated.trim())`；否则左栏有内容 → `translateNow()` 成功后 `doSend(translated.trim())`；两栏都空 → `doSend('ok')`。
+- `onLeftEnter()`（左栏回车）：左栏有内容 → `translateNow()`；左栏为空 → `doSend('ok')`。
 - `toggle()` / `setAutoSend(v)`：`setAutoSend(true)` 时若右栏非空则 `arm()`，置 `false` 则 `disarm()`。
 
 监听：
@@ -111,8 +114,8 @@ useEnglishComposer({
 ### 4.3 `web/src/components/TerminalView.vue`
 
 - `composerText` 改由 `useEnglishComposer` 的 `source` 承担（`v-model`、chips/阶段/选文件写入点全部替换）。
-- 左栏 `keydown.enter` → `translateNow()`；右栏 `keydown.enter` → `sendNow()`（两栏分开处理，不再共用 `onComposerKey`）。
-- 「翻译」按钮 → `translateNow()`；「发送」按钮 → 翻译模式且有译文时 `sendNow()`，否则 `translateNow()` 成功后 `sendNow()`。
+- 左栏 `keydown.enter` → `onLeftEnter()`；右栏 `keydown.enter` → `sendAction()`（两栏分开处理，不再共用 `onComposerKey`）。
+- 「翻译」按钮 → `translateNow()`；「发送」按钮 → `sendAction()`（翻译模式；非翻译模式仍走原 `submitComposer()`）。
 - 右栏上方新增勾选框：`<input type="checkbox">` + 文案 `term.auto_send`；倒计时期间同行显示 `term.auto_send_countdown`（`{n}` 秒）；标题提示 `term.auto_send_hint`。
 - 倒计时可视化：右栏底部一条细进度条（`width` 随剩余秒数递减），「发送」按钮文案在倒计时期间显示 `发送 (n)`。
 - 非翻译模式完全不变（回车仍直接发送）。
@@ -128,8 +131,9 @@ useEnglishComposer({
 
 ## 5. 边界情况
 
-- 左栏空 + 回车：不动作（不触发翻译、不发送）。
-- 右栏空：不发送、`disarm()`。
+- 两栏都空时按发送（按钮或任一栏回车）：直接发送 `ok`，不走翻译、不进入倒计时。
+- 右栏空但左栏有内容：发送按钮 / 右栏回车先翻译，成功后立即发送（不等 3 秒）。
+- 译文为空字符串（模型返回空）：按「两栏都空」处理 → 发送 `ok`。
 - 倒计时中手动发送（右栏回车 / 发送按钮）：立即发送并清计时器。
 - 倒计时中左栏被改：取消待发送，右栏保留旧译文，需再次回车重译。
 - 倒计时中右栏被改：保留改动，重新计 3 秒。
@@ -143,7 +147,7 @@ useEnglishComposer({
 - `server/test/composer-prefs.test.js`（新增）：归一化只留 `autoSend`、非 boolean 丢弃、JSON 存取回读。
 - `server/test/http-api.test.js`（扩展）：`GET /api/composer/prefs` 默认空、`POST` 只存已知键。
 - `server/test/ws-gateway.test.js`（扩展）：带 `sessionId` 的 `C2S.INPUT` 写入指定会话而非活动会话；不带的仍写活动会话。
-- `web/src/useEnglishComposer.test.ts`（新增，vitest + fake timers）：ASCII 跳过请求；含中文触发翻译；勾选后倒计时归零发送；编辑左栏取消；编辑右栏重置计时；发送到捕获的 `sid`；手动发送清计时；未勾选不自动发送；发送后清空两栏且历史记录中文原文。
+- `web/src/useEnglishComposer.test.ts`（新增，vitest + fake timers）：ASCII 跳过请求；含中文触发翻译；勾选后倒计时归零发送；编辑左栏取消；编辑右栏重置计时；发送到捕获的 `sid`；手动发送清计时；未勾选不自动发送；发送后清空两栏且历史记录中文原文；两栏都空时发送 `ok`；右栏空但左栏有内容时先翻译再立即发送（不等倒计时）。
 - 命令：`npm.cmd run typecheck`、`npm.cmd test`、`npm.cmd run check:i18n`。
 
 ## 7. 影响面
