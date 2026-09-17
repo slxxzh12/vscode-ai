@@ -52,7 +52,14 @@ export function parseDevflowConfig(xml) {
     while ((m = re.exec(agentsTag[2]))) {
       const id = decode(attr(m[1], 'id'));
       const cmd = decode(attr(m[1], 'cmd'));
-      if (id && cmd) found.push({ id, name: decode(attr(m[1], 'name')) || id, cmd });
+      if (id && cmd) {
+        const agent = { id, name: decode(attr(m[1], 'name')) || id, cmd };
+        const resumeCmd = decode(attr(m[1], 'resumeCmd'));
+        const resumeDiscover = decode(attr(m[1], 'resumeDiscover'));
+        if (resumeCmd) agent.resumeCmd = resumeCmd;
+        if (resumeDiscover) agent.resumeDiscover = resumeDiscover;
+        found.push(agent);
+      }
     }
     if (found.length) list = found;
     const d = decode(attr(agentsTag[1], 'default'));
@@ -69,7 +76,12 @@ export function parseDevflowConfig(xml) {
 
 export function serializeDevflowConfig(cfg) {
   const agents = cfg.agents.list
-    .map((a) => `    <agent id="${escXml(a.id)}" name="${escXml(a.name)}" cmd="${escXml(a.cmd)}" />`)
+    .map((a) => {
+      const attrs = [`id="${escXml(a.id)}"`, `name="${escXml(a.name)}"`, `cmd="${escXml(a.cmd)}"`];
+      if (a.resumeCmd) attrs.push(`resumeCmd="${escXml(a.resumeCmd)}"`);
+      if (a.resumeDiscover) attrs.push(`resumeDiscover="${escXml(a.resumeDiscover)}"`);
+      return `    <agent ${attrs.join(' ')} />`;
+    })
     .join('\n');
   const wfs = cfg.workflows.map(serializeWorkflow).join('\n\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
