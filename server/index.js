@@ -14,6 +14,7 @@ import { createStaticServer } from './static.js';
 import { ensureDefaults, loadProjects, loadWorkflows } from './config.js';
 import { createCodeGroups } from './code-groups.js';
 import { createCodePrefs } from './code-prefs.js';
+import { createComposerPrefs } from './composer-prefs.js';
 import { CollabStore } from './collaboration/store.js';
 import { loadIdentity, detectHost } from './collaboration/identity.js';
 import { CollabEngine } from './collaboration/engine.js';
@@ -181,6 +182,7 @@ function buildWorkspace({ paths, port }) {
   const workflows = loadWorkflows(workflowsFile);
   const codeGroups = createCodeGroups({ file: paths.codeGroupsFile, logger: log });
   const codePrefs = createCodePrefs({ file: paths.codePrefsFile, logger: log });
+  const composerPrefs = createComposerPrefs({ file: paths.composerPrefsFile, logger: log });
   const sessionManager = new SessionManager({
     logger: log,
     projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
@@ -260,7 +262,7 @@ function buildWorkspace({ paths, port }) {
     broadcastSched(type, payload);
   });
 
-  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs });
+  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });

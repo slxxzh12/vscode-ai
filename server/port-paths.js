@@ -30,6 +30,7 @@ export function portPaths(port, { root = dataHome() } = {}) {
     inviteFile: path.join(dir, 'collab', 'invite.json'),
     codeGroupsFile: path.join(dir, 'code-groups.json'),
     codePrefsFile: path.join(dir, 'code-prefs.json'),
+    composerPrefsFile: path.join(dir, 'composer-prefs.json'),
     skillsRoot: path.join(dir, 'skills-opencode'),
   };
 }

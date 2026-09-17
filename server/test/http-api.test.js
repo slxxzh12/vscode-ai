@@ -39,8 +39,21 @@ function post(server, url, obj) {
   });
 }
 
-async function start(projects) {
-  const server = http.createServer(createHttpApi({ projects }));
+function postRaw(server, url, raw) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: server.address().port, path: url, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(raw) } }, (res) => {
+      let body = '';
+      res.on('data', (d) => (body += d));
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', reject);
+    req.end(raw);
+  });
+}
+
+async function start(projects, deps = {}) {
+  const server = http.createServer(createHttpApi({ projects, ...deps }));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   return server;
 }
@@ -442,4 +455,170 @@ test('/api/code/prefs GET 默认空、POST 只存已知键且读回', async (t) 
 
   const again = await request(server, '/api/code/prefs');
   assert.deepEqual(JSON.parse(again.body), { exts: '.js, .xml', excludeTestFiles: false });
+});
+
+test('/api/composer/prefs GET 默认空、POST 只存 autoSend 且读回', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const empty = await request(server, '/api/composer/prefs');
+  assert.equal(empty.status, 200);
+  assert.deepEqual(JSON.parse(empty.body), {});
+
+  const r = await post(server, '/api/composer/prefs', { autoSend: false, nope: 1 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body), { autoSend: false });
+
+  const again = await request(server, '/api/composer/prefs');
+  assert.deepEqual(JSON.parse(again.body), { autoSend: false });
+
+  const bad = await post(server, '/api/composer/prefs', { autoSend: 'yes' });
+  assert.equal(bad.status, 200);
+  assert.deepEqual(JSON.parse(bad.body), {});
+});
+
+test('/api/projects/pick 走注入的目录选择器（成功/取消/错误）', async (t) => {
+  const dir = tmpDir();
+  const pickFolderFn = async () => ({ path: dir });
+  const server = await start(new Projects({ projects: [] }), { pickFolderFn });
+  t.after(() => server.close());
+  const ok = await post(server, '/api/projects/pick', {});
+  assert.equal(ok.status, 200);
+  assert.equal(JSON.parse(ok.body).path, dir);
+
+  const cancelled = await start(new Projects({ projects: [] }), { pickFolderFn: async () => ({ cancelled: true }) });
+  t.after(() => cancelled.close());
+  assert.deepEqual(JSON.parse((await post(cancelled, '/api/projects/pick', {})).body), { cancelled: true });
+
+  const errored = await start(new Projects({ projects: [] }), { pickFolderFn: async () => ({ error: 'unsupported' }) });
+  t.after(() => errored.close());
+  assert.deepEqual(JSON.parse((await post(errored, '/api/projects/pick', {})).body), { error: 'unsupported', message: null });
+});
+
+test('POST /api/projects 新增目录：校验 body/路径/目录/重名，重名 slug 递增生 id', async (t) => {
+  const dir = tmpDir();
+  const a = path.join(dir, 'a', 'My Proj');
+  const b = path.join(dir, 'b', 'My Proj');
+  fs.mkdirSync(a, { recursive: true });
+  fs.mkdirSync(b, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'file.txt'), 'x');
+  let saves = 0;
+  const projects = new Projects({ projects: [] });
+  const server = await start(projects, { saveProjects: () => { saves++; } });
+  t.after(() => server.close());
+
+  assert.equal((await postRaw(server, '/api/projects', '{ nope')).status, 400);
+  assert.equal((await post(server, '/api/projects', { path: '   ' })).status, 400);
+  assert.equal((await post(server, '/api/projects', { path: path.join(dir, 'ghost') })).status, 404);
+  assert.equal((await post(server, '/api/projects', { path: path.join(dir, 'file.txt') })).status, 400);
+
+  const first = await post(server, '/api/projects', { path: a });
+  assert.equal(first.status, 200);
+  const f = JSON.parse(first.body).project;
+  assert.equal(f.id, 'my-proj');
+  assert.equal(f.name, 'My Proj');
+  assert.equal(saves, 1);
+
+  assert.equal((await post(server, '/api/projects', { path: a })).status, 409);
+
+  const second = await post(server, '/api/projects', { path: b });
+  assert.equal(second.status, 200);
+  assert.equal(JSON.parse(second.body).project.id, 'my-proj-2');
+
+  const named = await post(server, '/api/projects', { path: path.join(dir, 'a'), name: 'Custom' });
+  assert.equal(named.status, 200);
+  assert.equal(JSON.parse(named.body).project.name, 'Custom');
+});
+
+test('/api/run-script 注入执行器：ok / 不支持扩展名 / 平台不支持', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.bat'), 'echo hi');
+  fs.writeFileSync(path.join(dir, 'a.sh'), 'echo hi');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'x');
+  const calls = [];
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }), {
+    runScriptFn: (abs, ext) => { calls.push([abs, ext]); return true; },
+  });
+  t.after(() => server.close());
+  const ok = await post(server, '/api/run-script?project=a&path=a.bat', {});
+  assert.equal(ok.status, 200);
+  assert.equal(JSON.parse(ok.body).ok, true);
+  assert.equal(calls[0][1], 'bat');
+  assert.equal((await post(server, '/api/run-script?project=a&path=a.txt', {})).status, 400);
+
+  const noPlatform = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }), { runScriptFn: () => false });
+  t.after(() => noPlatform.close());
+  assert.equal((await post(noPlatform, '/api/run-script?project=a&path=a.sh', {})).status, 501);
+});
+
+test('/api/explorer/reveal 注入定位器：存在→200，不存在→404，平台不支持→501', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'x');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }), { revealInOsFn: () => true });
+  t.after(() => server.close());
+  assert.equal((await post(server, '/api/explorer/reveal?project=a&path=a.txt', {})).status, 200);
+  assert.equal((await post(server, '/api/explorer/reveal?project=a&path=ghost.txt', {})).status, 404);
+
+  const noPlatform = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }), { revealInOsFn: () => false });
+  t.after(() => noPlatform.close());
+  assert.equal((await post(noPlatform, '/api/explorer/reveal?project=a&path=a.txt', {})).status, 501);
+});
+
+test('/api/file/pick 返回文本元数据；二进制标 binary；超 1MB 文本 413；取消/错误', async (t) => {
+  const dir = tmpDir();
+  const text = path.join(dir, 'note.txt');
+  const bin = path.join(dir, 'a.bin');
+  const big = path.join(dir, 'big.txt');
+  fs.writeFileSync(text, 'hello');
+  fs.writeFileSync(bin, Buffer.from([0x41, 0x00, 0x42]));
+  fs.writeFileSync(big, Buffer.alloc(1024 * 1024 + 10, 0x61));
+
+  async function pick(result) {
+    const s = await start(new Projects({ projects: [] }), { pickAnyFileFn: async () => result });
+    t.after(() => s.close());
+    return post(s, '/api/file/pick', {});
+  }
+
+  const r = await pick({ path: text });
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.equal(j.name, 'note.txt');
+  assert.equal(j.content, 'hello');
+  assert.equal(j.binary, false);
+
+  const b = await pick({ path: bin });
+  assert.equal(JSON.parse(b.body).binary, true);
+  assert.equal('content' in JSON.parse(b.body), false);
+
+  assert.equal((await pick({ path: big })).status, 413);
+  assert.deepEqual(JSON.parse((await pick({ cancelled: true })).body), { cancelled: true });
+  assert.deepEqual(JSON.parse((await pick({ error: 'unsupported', message: 'x' })).body), { error: 'unsupported', message: 'x' });
+});
+
+test('/api/file/pick-path 只回路径：成功/取消/错误', async (t) => {
+  const dir = tmpDir();
+  const f = path.join(dir, 'a.txt');
+  const server = await start(new Projects({ projects: [] }), { pickAnyFileFn: async () => ({ path: f }) });
+  t.after(() => server.close());
+  assert.deepEqual(JSON.parse((await post(server, '/api/file/pick-path', {})).body), { path: f });
+
+  const cancelled = await start(new Projects({ projects: [] }), { pickAnyFileFn: async () => ({ cancelled: true }) });
+  t.after(() => cancelled.close());
+  assert.deepEqual(JSON.parse((await post(cancelled, '/api/file/pick-path', {})).body), { cancelled: true });
+
+  const errored = await start(new Projects({ projects: [] }), { pickAnyFileFn: async () => ({ error: 'unsupported' }) });
+  t.after(() => errored.close());
+  assert.deepEqual(JSON.parse((await post(errored, '/api/file/pick-path', {})).body), { error: 'unsupported', message: null });
+});
+
+test('/api/snapshot 注入保存器：200 回执；坏 body 400', async (t) => {
+  const server = await start(new Projects({ projects: [] }), {
+    saveSnapshotFn: async () => ({ file: 'f.png', rel: 'remote_coder/f.png', dir: 'd', uploaded: true, reason: '' }),
+  });
+  t.after(() => server.close());
+  const r = await post(server, '/api/snapshot', { dataUrl: 'data:image/png;base64,AAAA' });
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.equal(j.ok, true);
+  assert.equal(j.uploaded, true);
+  assert.equal((await postRaw(server, '/api/snapshot', '{ nope')).status, 400);
 });

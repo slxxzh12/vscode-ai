@@ -1,41 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { transformSync } from 'esbuild';
 import { collectGitChanges } from './git-log.js';
 import { collectCodeStats } from './code-count.js';
 import { createCodeGroups } from './code-groups.js';
 import { createCodePrefs } from './code-prefs.js';
+import { createComposerPrefs } from './composer-prefs.js';
 import { buildZip, safeZipName } from './collaboration/zip.js';
 import { saveSnapshotToRepo } from './snapshot-store.js';
 import { pickFolder, pickAnyFile } from './native-dialog.js';
 import { revealInOs } from './reveal.js';
+import { runScript, RUNNABLE_EXT } from './run-script.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
-
-const RUNNABLE_EXT = new Set(['bat', 'cmd', 'ps1', 'sh']);
-// 执行脚本（双击效果：独立进程/独立控制台窗口，不阻塞请求）。
-function runScript(abs, ext) {
-  if (process.platform !== 'win32') {
-    if (ext === 'sh') {
-      const p = spawn('bash', [abs], { detached: true, stdio: 'ignore' });
-      p.unref();
-      return true;
-    }
-    return false;
-  }
-  if (ext === 'bat' || ext === 'cmd') {
-    const p = spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process -FilePath ${JSON.stringify(abs)}`], { detached: true, stdio: 'ignore', windowsHide: false });
-    p.unref();
-    return true;
-  }
-  if (ext === 'ps1') {
-    const p = spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',${JSON.stringify(abs)}`], { detached: true, stdio: 'ignore', windowsHide: false });
-    p.unref();
-    return true;
-  }
-  return false;
-}
 
 const RAW_MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -63,7 +40,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}) }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, saveSnapshotFn = saveSnapshotToRepo, revealInOsFn = revealInOs, runScriptFn = runScript }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -99,7 +76,7 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       }
       if (url.pathname === '/api/projects/pick' && req.method === 'POST') {
         logger?.info?.('pick-folder: dialog opened');
-        const r = await pickFolder();
+        const r = await pickFolderFn();
         logger?.info?.('pick-folder:', r.error || (r.path ? 'ok' : 'cancelled'));
         if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
         if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
@@ -144,7 +121,7 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const { abs } = projects.revealTarget(project, rel);
         const ext = path.extname(abs).toLowerCase().replace('.', '');
         if (!RUNNABLE_EXT.has(ext)) return sendJson(res, 400, { error: 'unsupported script type' });
-        if (!runScript(abs, ext)) return sendJson(res, 501, { error: 'platform not supported' });
+        if (!runScriptFn(abs, ext)) return sendJson(res, 501, { error: 'platform not supported' });
         sendJson(res, 200, { ok: true, platform: process.platform });
         return;
       }
@@ -153,7 +130,7 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const rel = url.searchParams.get('path') || '';
         const { abs, isDir } = projects.revealTarget(project, rel);
         if (!fs.existsSync(abs)) return sendJson(res, 404, { error: 'file not found' });
-        if (!revealInOs(abs, isDir)) return sendJson(res, 501, { error: 'platform not supported' });
+        if (!revealInOsFn(abs, isDir)) return sendJson(res, 501, { error: 'platform not supported' });
         sendJson(res, 200, { ok: true, platform: process.platform });
         return;
       }
@@ -181,15 +158,15 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         return;
       }
       if (url.pathname === '/api/file/pick' && req.method === 'POST') {
-        const r = await pickAnyFile();
+        const r = await pickAnyFileFn();
         if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
         if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
         sendJson(res, 200, readAbsText(r.path));
         return;
       }
-      // 只返回所选文件路径（不读内容），供终端输入框插入「文件/图片路径」用
+      // 只返回所选文件路径（不读内容），供终端输入框插入「文�?图片路径」用
       if (url.pathname === '/api/file/pick-path' && req.method === 'POST') {
-        const r = await pickAnyFile();
+        const r = await pickAnyFileFn();
         if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
         if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
         sendJson(res, 200, { path: r.path });
@@ -242,7 +219,7 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       if (url.pathname === '/api/snapshot' && req.method === 'POST') {
         let body;
         try { body = await readJsonBody(req, 32 * 1024 * 1024); } catch { sendJson(res, 400, { error: 'bad body' }); return; }
-        const r = await saveSnapshotToRepo({ repoRoot, dataUrl: body.dataUrl });
+        const r = await saveSnapshotFn({ repoRoot, dataUrl: body.dataUrl });
         logger?.info?.('snapshot:', r.rel, r.uploaded ? '(pushed)' : `(${r.reason || 'local'})`);
         sendJson(res, 200, { ok: true, file: r.file, rel: r.rel, dir: r.dir, uploaded: r.uploaded, reason: r.reason });
         return;
@@ -268,6 +245,15 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       if (url.pathname === '/api/code/prefs' && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, codePrefs.write(body));
+        return;
+      }
+      if (url.pathname === '/api/composer/prefs' && req.method === 'GET') {
+        sendJson(res, 200, composerPrefs.read());
+        return;
+      }
+      if (url.pathname === '/api/composer/prefs' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, composerPrefs.write(body));
         return;
       }
       if (url.pathname === '/api/code/stats' && req.method === 'POST') {
