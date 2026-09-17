@@ -9,6 +9,16 @@
 <devflow>
   <server language="zh-CN" host="0.0.0.0" />
 
+  <!--
+    agents：每个 agent 可选配续会话能力（后端重启或点历史会话「打开」时恢复对话上下文）：
+    - resumeDiscover="命令"：在该会话 cwd 下执行，stdout 去空白即 agent 会话 id；缺省仅 opencode 有内建发现。
+    - resumeCmd="命令模板"：恢复时注入终端；含 {id} 用发现的 id 替换，不含则原样执行（如 xxx --continue）。
+    示例（真值按本机 CLI 填写，勿写密钥）：
+      <agent id="claudecode" name="ClaudeCode" cmd="claudecode" resumeCmd="claudecode --resume {id}" resumeDiscover="<列出最近会话 id 的命令>" />
+      <agent id="nga" name="nga" cmd="nga.cmd" resumeCmd="nga.cmd --continue" />
+    注意：resumeCmd 不含 {id}（如 --continue）时，同目录多会话会都接到「最近一次」，易串台。
+    详见 docs/learn/agent续会话配置.md。
+  -->
   <agents default="opencode">
     <agent id="opencode" name="OpenCode" cmd="opencode" />
     <agent id="claudecode" name="ClaudeCode" cmd="claudecode" />
@@ -61,8 +71,9 @@
         <prompt>请整理提交历史，必要时拆分原子提交，push 后发起合并并处理冲突。</prompt>
         <prompt>执行/compact 命令</prompt>
       </stage>
-      <stage id="package" label="打包" group="交付运维">
-        <prompt>根据打包脚本打包release包</prompt>
+      <stage id="package" label="打包release" group="交付运维">
+        <prompt>根据打包脚本打包release</prompt>
+        <prompt>调用/compact 压缩上下文</prompt>
       </stage>
       <stage id="deploy" label="环境部署" group="交付运维">
         <prompt>请给出构建/打包/发布步骤并执行，说明环境变量与回滚方案。</prompt>
