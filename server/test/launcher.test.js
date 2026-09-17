@@ -45,3 +45,16 @@ test('start.command 只转发到 launch.sh', () => {
   const sc = makeStartCommand();
   assert.match(sc, /exec "\$DIR\/script\/launch\.sh" "\$@"/);
 });
+
+test('launch.ps1 可选注入包内 opencode 到 PATH（不传则维持现状）', () => {
+  const withOc = makeLaunchPs1({ port: 22222, opencodeDir: 'opencode' });
+  assert.match(withOc, /\$ocDir = Join-Path \$root 'opencode'/);
+  assert.match(withOc, /\$env:PATH = \$ocDir \+ ';' \+ \$env:PATH/);
+  assert.ok(
+    withOc.indexOf('$env:PATH') < withOc.indexOf('Start-Process'),
+    'PATH 注入必须出现在启动服务之前',
+  );
+
+  const plain = makeLaunchPs1({ port: 22222 });
+  assert.ok(!plain.includes('$env:PATH'), '不传 opencodeDir 时输出不含 PATH 注入');
+});

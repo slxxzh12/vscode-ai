@@ -3,13 +3,20 @@
 // 端口语义：desired = data/port.txt（期望端口）；running = data/runtime-port.txt（上次实际运行端口）
 // desired != running 且 running 仍在监听 → 结束旧实例并按 desired 重启。
 
-function makeLaunchPs1({ port }) {
+function makeLaunchPs1({ port, opencodeDir = "" }) {
+  const ocLines = opencodeDir
+    ? [
+        "$ocDir = Join-Path $root '" + opencodeDir + "'",
+        "if (Test-Path (Join-Path $ocDir 'opencode.exe')) { $env:PATH = $ocDir + ';' + $env:PATH }",
+      ]
+    : [];
   return [
     "param([switch]$NoBrowser, [switch]$NoShortcut, [switch]$Plan, [switch]$NoPrompt, [string]$Open = '')",
     "$ErrorActionPreference = 'SilentlyContinue'",
     "$scriptDir = $PSScriptRoot",
     "if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }",
     "$root = Split-Path -Parent $scriptDir",
+    ...ocLines,
     "$fallback = " + port,
     "$desired = $fallback",
     "$df = Join-Path $root 'data\\port.txt'",
