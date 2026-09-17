@@ -21,28 +21,31 @@ export function walk(dir, out = []) {
   return out;
 }
 
-function groupKey(rel) {
+export function groupKey(rel) {
   const p = rel.split('/');
   if (p[0] === 'server' && p[1] === 'test') return 'server/test';
   return p.length === 1 ? '(root)' : p[0];
 }
 
-function main() {
-  const files = walk(ROOT).sort((a, b) => a.localeCompare(b));
+export function buildReport(root = ROOT) {
+  const files = walk(root).sort((a, b) => a.localeCompare(b));
   const rows = files.map((full) => {
     const { total, real } = countReal(fs.readFileSync(full, 'utf8'));
-    return { rel: path.relative(ROOT, full).replace(/\\/g, '/'), total, real };
+    return { rel: path.relative(root, full).replace(/\\/g, '/'), total, real };
   });
 
   rows.sort((a, b) => b.real - a.real || a.rel.localeCompare(b.rel));
 
-  console.log('REAL  TOTAL  FILE');
-  for (const r of rows) console.log(`${String(r.real).padStart(5)} ${String(r.total).padStart(6)}  ${r.rel}`);
-
   const groups = {};
   for (const r of rows) (groups[groupKey(r.rel)] ??= []).push(r);
+  return { rows, groups };
+}
 
-  console.log('\nGROUP            REAL   TOTAL  FILES');
+export function formatReport({ rows, groups }) {
+  const lines = ['REAL  TOTAL  FILE'];
+  for (const r of rows) lines.push(`${String(r.real).padStart(5)} ${String(r.total).padStart(6)}  ${r.rel}`);
+
+  lines.push('', 'GROUP            REAL   TOTAL  FILES');
   let allReal = 0;
   let allTotal = 0;
   for (const key of Object.keys(groups).sort()) {
@@ -51,9 +54,14 @@ function main() {
     const total = g.reduce((s, r) => s + r.total, 0);
     allReal += real;
     allTotal += total;
-    console.log(`${key.padEnd(15)} ${String(real).padStart(6)} ${String(total).padStart(6)}  ${g.length}`);
+    lines.push(`${key.padEnd(15)} ${String(real).padStart(6)} ${String(total).padStart(6)}  ${g.length}`);
   }
-  console.log(`${'ALL'.padEnd(15)} ${String(allReal).padStart(6)} ${String(allTotal).padStart(6)}  ${rows.length}`);
+  lines.push(`${'ALL'.padEnd(15)} ${String(allReal).padStart(6)} ${String(allTotal).padStart(6)}  ${rows.length}`);
+  return lines.join('\n');
+}
+
+function main() {
+  console.log(formatReport(buildReport(ROOT)));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
