@@ -50,7 +50,7 @@
 ```js
 export const MAX_SESSIONS = 30;
 export const MAX_LOG_BYTES = 512 * 1024;
-export const KINDS = ['agent', 'shell'];          // 仅这两类入账本（workflow 跳过）
+export const KINDS = ['agent', 'shell', 'workflow'];   // workflow 仅用于识别并跳过恢复/持久化
 
 export function normalizeLedger(input)          // 逐项校验；非法项丢弃；上限 MAX_SESSIONS
 export function createSessionLedger({ file, logsDir, logger })
@@ -143,7 +143,7 @@ export async function restoreSessions({ ledger, sessionManager, agents, logger }
 1. `ledger.read().sessions` 逐条：
    - `cwd` 不存在 → 跳过并记 `reason:'cwd-missing'`（不删记录，用户可能挂载盘后再来）。
    - `sessionManager.create({ id, name, projectId, cwd, kind, agentId, agentCmd, createdAt, cols, rows, replay: ledger.readLog(id) })`。
-2. agent 会话：`buildResumeCommand()` 得命令；非 null 则延迟约 1.5s 后 `sessionManager.write(id, cmd + '\r')`；最后统一 `sessionManager.markRestored(id)`（无论是否续上，都标记为「已恢复」以免前端重复注入）。
+2. agent 会话：取下命令 `cmd = buildResumeCommand() || agent.cmd || rec.agentCmd`（**能续则续，续不上退化为原 agent 命令**，保证 agent 自动起来）；非 null 则延迟约 1.5s 后 `sessionManager.write(id, cmd + '\r')`；最后统一 `sessionManager.markRestored(id)`（无论命令为何，都标记「已恢复」以免前端重复注入）。
 3. 恢复失败逐条 catch，不阻断其它会话与整个启动。
 
 ### 3.5 接线
@@ -188,7 +188,7 @@ export async function restoreSessions({ ledger, sessionManager, agents, logger }
 
 - **cwd 不存在**（盘未挂载/目录被删）：跳过该会话，不删账本；前端该页签不出现，其余正常。
 - **PTY 创建失败**（agent 二进制缺失）：该条跳过并记日志，不阻断启动。
-- **opencode 会话 id 没发现成功**：`resumeCmd` 为空 → 只恢复外壳 + 回滚；用户仍可手动 `opencode --continue`。
+- **opencode 会话 id 没发现成功**：`resumeCmd` 为空 → 用原 agent 命令重开（自动起 agent，但不续上下文），回滚照常；用户可在其中手动 `opencode --continue`。
 - **同一目录多个 agent 会话**：发现按 `created` 与 `since` 最接近匹配，且只回填一次；极端并发下可能错配，可接受（用户可手动重建）。
 - **agent 恢复即续会生成的 opencode 新 session**：`--session <id>` 为继续同一 id（非 fork），不产生分叉；下一次发现回填时以原 id 为准，不覆盖。
 - **用户关掉页签**：`kill` → `ledger.remove`，回滚文件一并删除，永久不再恢复。
