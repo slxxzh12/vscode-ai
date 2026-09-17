@@ -13,6 +13,7 @@ import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
 import { useVersion } from '../useVersion';
 import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from './portRestart';
+import { buildChips } from '../phaseChips';
 import WorkflowEditor from './WorkflowEditor.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
 
@@ -494,7 +495,8 @@ const stageGroups = computed(() => {
 const activeStage = ref('');
 const chips = computed<string[]>(() => {
   const st = curWf.value.stages.find((s) => s.id === activeStage.value) || curWf.value.stages[0];
-  return st ? st.prompts : [];
+  // 阶段提示 + 固定附加项（1/2/3/4/5/ok 常驻，见 phaseChips.ts）
+  return buildChips(st?.prompts);
 });
 function chipText(s: string) {
   const t = s.replace(/\s+/g, ' ').trim();
