@@ -180,6 +180,11 @@ const liveProjectBySession = computed(() => {
   for (const s of terminal.state.sessions) out[s.id] = s.projectId ?? null;
   return out;
 });
+const liveSessionIds = computed(() => terminal.state.sessions.filter((s) => s.state === 'running').map((s) => s.id));
+async function openHistorySession(sid: string) {
+  const s = await terminal.restoreSession(sid);
+  if (s && s.restored && s.kind === 'agent' && s.resumed === false) alert(t('hist.tree.fresh_agent'));
+}
 const activeSessionTab = computed(() => sessionOfActiveTab(center.active.value));
 const visibleMessages = computed(() => filterMessages({
   messages: msgHistory.messages.value,
@@ -582,9 +587,10 @@ onBeforeUnmount(() => {
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
           <HistoryList v-if="rail === 'history'" :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter"
+            :live-session-ids="liveSessionIds"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
             @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
-            @update:filter="msgFilter = $event" />
+            @update:filter="msgFilter = $event" @open-session="openHistorySession" />
           <FileTree v-else :key="currentProject || 'none'" :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
