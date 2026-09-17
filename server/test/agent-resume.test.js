@@ -52,3 +52,15 @@ test('discoverAgentSessionId：无适配器返回 null；run 失败返回 null',
   assert.equal(await discoverAgentSessionId({ agent: { id: 'nga', cmd: 'nga.cmd' }, cwd: 'C:\\p', since: 0, run: async () => '' }), null);
   assert.equal(await discoverAgentSessionId({ agent: { id: 'opencode', cmd: 'opencode' }, cwd: 'C:\\p', since: 0, run: async () => null }), null);
 });
+
+test('pickOpencodeSession 支持 exclude 跳过已认领 id', () => {
+  const items = JSON.parse(ITEMS);
+  assert.equal(pickOpencodeSession(items, { cwd: 'C:\\proj', since: 4800, exclude: ['ses_b'] }), 'ses_a');
+  assert.equal(pickOpencodeSession(items, { cwd: 'C:\\proj', since: 4800, exclude: new Set(['ses_a', 'ses_b']) }), null);
+});
+
+test('discoverAgentSessionId 透传 exclude 给 opencode 发现', async () => {
+  const run = async () => ITEMS;
+  const id = await discoverAgentSessionId({ agent: { id: 'opencode', cmd: 'opencode' }, cwd: 'C:\\proj', since: 5000, run, exclude: ['ses_b'] });
+  assert.equal(id, 'ses_a');
+});

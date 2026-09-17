@@ -26,11 +26,13 @@ export function parseSessionList(text) {
   } catch { return []; }
 }
 
-export function pickOpencodeSession(items, { cwd, since, slackMs = 60000, now = Date.now() } = {}) {
+export function pickOpencodeSession(items, { cwd, since, slackMs = 60000, now = Date.now(), exclude = null } = {}) {
   const dir = normDir(cwd);
+  const skip = exclude instanceof Set ? exclude : new Set(Array.isArray(exclude) ? exclude : []);
   let best = null;
   for (const it of Array.isArray(items) ? items : []) {
     if (!it || typeof it.id !== 'string' || !it.id) continue;
+    if (skip.has(it.id)) continue;
     if (normDir(it.directory) !== dir) continue;
     const created = Number(it.created);
     if (!Number.isFinite(created)) continue;
@@ -51,7 +53,7 @@ function defaultRun(command, { cwd, timeoutMs = DEFAULT_DISCOVER_MS } = {}) {
   });
 }
 
-export async function discoverAgentSessionId({ agent, cwd, since, run = defaultRun } = {}) {
+export async function discoverAgentSessionId({ agent, cwd, since, run = defaultRun, exclude = null } = {}) {
   if (!agent) return null;
   if (typeof agent.resumeDiscover === 'string' && agent.resumeDiscover.trim()) {
     const out = await run(agent.resumeDiscover.trim(), { cwd });
@@ -61,7 +63,7 @@ export async function discoverAgentSessionId({ agent, cwd, since, run = defaultR
   if (agent.id === 'opencode' || agent.cmd === 'opencode') {
     const out = await run('opencode session list --format json -n 30', { cwd });
     if (out == null) return null;
-    return pickOpencodeSession(parseSessionList(out), { cwd, since });
+    return pickOpencodeSession(parseSessionList(out), { cwd, since, exclude });
   }
   return null;
 }
