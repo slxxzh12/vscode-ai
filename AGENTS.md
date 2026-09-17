@@ -13,13 +13,15 @@
 - 本仓库运行时**必须用 Node，不能用 bun**：node-pty 原生插件（已实测 bun 编译成 exe 时 `conpty.node` 无法加载；bun 运行时下 pty 交互流不可用）。
 - Git 远端：Gitee `origin`（`https://gitee.com/wglj/devflow.git`）。默认分支 `master`。
 - **所有敏感信息（令牌、口令/密码、密钥、私钥、任何带凭据的 URL 等）一律只放 `env/` 目录**（如 `env/gitee-release.ini`、`env/github.ini`、`env/git-credentials`）；`env/` 已在 `.gitignore`，**禁止 `git add`/提交**。
-- **代码、脚本、配置模板、README、以及 `docs/` 下的设计/计划文档中，一律禁止出现任何明文敏感信息**；需要引用时只用占位符（如 `https://<user>:<token>@gitee.com/...`），真实值从 `env/` 读取。提交前用 `git grep -n -I -E "https?://[^/]+:[^/]+@|ghp_|github_pat_|glpat-|-----BEGIN [A-Z ]*PRIVATE KEY-----"` 自查。
+- **代码、脚本、配置模板、README、以及 `docs/` 下的设计/计划文档中，一律禁止出现任何明文敏感信息**；需要引用时只用占位符（如 `https://<user>:<token>@gitee.com/...`），真实值从 `env/` 读取。提交前用 `git grep -n -I -E "https?://[^/]+:[^/]+@|ghp_|github_pat_|glpat_|-----BEGIN [A-Z ]*PRIVATE KEY-----"` 自查。
+- **代码中一律禁止写死绝对路径**（如 `D:\...`、`C:/...`、`/Users/...`）或本机用户名/主机名；路径只能来自运行时推导（`__dirname`、`process.cwd()`、数据目录、配置项/环境变量）或写成占位符（如 `<数据目录>/void.db`）。本「环境」节记录本机特异路径属例外。
 
 ## 服务启动规范（严格遵守，违规即返工）
 
 - **所有常驻进程必须异步（非阻塞）启动**，严禁前台阻塞式命令。
 - 统一做法：PowerShell `Start-Process` 后台运行 + `-RedirectStandardOutput`/`-RedirectStandardError` 指向日志文件；启动命令立即返回。
-- 开发：两个终端分别 `npm.cmd run dev:server`（= `set DEVFLOW_PORT=33333&& node --watch server/index.js`，dev 固定端口 **33333**，与 release 的 22222 区分；改后端自动重启）与 `npm.cmd run dev:web`（Vite :5173，代理 `/api`、`/ws` 到 33333）。访问 http://localhost:5173。dev 与绿色包各用各的数据目录（`ports/33333` 与 `ports/22222`），互不干扰。
+- 开发：两个终端分别 `npm.cmd run dev:server`（= `set DEVFLOW_PORT=33333&& node --watch server/index.js`，dev 固定端口 **33333**，与 release 的 22222 区分；改后端自动重启）与 `npm.cmd run dev:web`（Vite :5173，代理 `/api`、`/ws` 到 33333）。访问 http://localhost:5173。dev 与绿色包各用各的数据目录（`ports/33333` 与 `ports/22222`），互不干扰。也可一条命令 `npm.cmd run dev`（= `node scripts/dev.js`）同时起两者，Ctrl-C 一并结束。
+- **dev 日志一律写 `logs\`**（`npm run dev` 固定写 `logs\dev-server.log` / `logs\dev-web.log`；手工重定向也必须指到 `logs\`）；**严禁把日志丢在仓库根目录**（`logs/` 已在 `.gitignore`）。
 - 生产/绿色包：`node server/index.js`（静态托管 `web/dist`，端口取 `data/port.txt`，默认 22222，访问 http://127.0.0.1:22222）。
 - 改 `projects.json` / `workflows.json` 后需重启后端才生效（dev:server 的 `--watch` 不监听 json）。
 
