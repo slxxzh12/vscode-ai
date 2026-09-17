@@ -19,6 +19,9 @@ import MobileView from './components/MobileView.vue';
 import { captureToPngDataUrl, uploadSnapshot } from './snapshot';
 import { useVersion } from './useVersion';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
+import { useSessionProjects } from './sessionProjects';
+import { fetchWindowState, planRestore, saveWindowState, flushWindowState, toSavedTabs, type HistoryTab, type Rail } from './windowState';
+import { filterMessages, sessionOfActiveTab } from './msgFilter';
 
 const appRef = ref<HTMLDivElement | null>(null);
 const snapshotting = ref(false);
@@ -154,6 +157,14 @@ function parseHashSegs(): string[] {
   try { return decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/').filter(Boolean); }
   catch { return []; }
 }
+function hashRailOf(): string | null {
+  const [r] = parseHashSegs();
+  return r && RAILS.includes(r) ? r : null;
+}
+function hashHistoryTabOf(): HistoryTab | null {
+  const [r, sub] = parseHashSegs();
+  return r === 'history' && (sub === 'files' || sub === 'messages') ? sub : null;
+}
 function applyHash() {
   const [r, sub] = parseHashSegs();
   if (!r || !RAILS.includes(r)) return;
@@ -174,6 +185,64 @@ function syncHash() {
 }
 watch([rail, historyTab, collabTab], syncHash);
 const msgHistory = useMessageHistory();
+
+// —— 窗口状态：上次页签/激活页签/左侧栏位/消息筛选 ——
+const msgFilter = ref(true);
+const { map: sessionProjectMap, load: loadSessionProjects } = useSessionProjects();
+let windowRestored = false;             // 闸门：恢复完成前不写盘（避免空状态覆盖存档）
+let deepLinkOpened = false;             // ?open= 深链已打开文件：优先于存档的 activeTab
+const liveProjectBySession = computed(() => {
+  const out: Record<string, string | null> = {};
+  for (const s of terminal.state.sessions) out[s.id] = s.projectId ?? null;
+  return out;
+});
+const activeSessionTab = computed(() => sessionOfActiveTab(center.active.value));
+const visibleMessages = computed(() => filterMessages({
+  messages: msgHistory.messages.value,
+  filterOn: msgFilter.value,
+  sessionId: activeSessionTab.value?.sessionId ?? null,
+  tabName: activeSessionTab.value?.tabName ?? null,
+  projectId: currentProject.value,
+  liveProjectBySession: liveProjectBySession.value,
+  map: sessionProjectMap.value,
+}));
+function currentWindowState() {
+  return {
+    rail: rail.value === 'mobile' ? undefined : (rail.value as Rail),
+    historyTab: historyTab.value as HistoryTab,
+    msgFilter: msgFilter.value,
+    tabs: toSavedTabs(center.tabs.value),
+    activeTab: center.activeId.value,
+  };
+}
+async function restoreWindowState(projectsReady: Promise<void>) {
+  await projectsReady;
+  const ws = await fetchWindowState();
+  const plan = planRestore(ws, {
+    projectIds: projects.value.map((p) => p.id),
+    hashRail: hashRailOf(),
+    hashHistoryTab: hashHistoryTabOf(),
+    deepLinkOpened,
+  });
+  if (plan.rail) rail.value = plan.rail;
+  if (plan.historyTab) historyTab.value = plan.historyTab;
+  if (typeof plan.msgFilter === 'boolean') msgFilter.value = plan.msgFilter;
+  const opened = plan.tabs.map((t) => `f:${t.projectId}|${t.path}`);
+  for (const t of plan.tabs) center.openFile(t.projectId, t.path, t.label);
+  if (deepLinkOpened) {
+    // 深链优先：不动激活项
+  } else if (plan.activeFileTab) {
+    center.setActive(plan.activeFileTab);
+  } else if (opened.includes(center.activeId.value ?? '')) {
+    center.setActive(null);             // 别停在最后一个恢复出来的文件页签，交回会话激活逻辑
+  }
+  windowRestored = true;
+}
+watch(
+  [() => center.tabs.value.map((t) => `${t.id}|${t.label}`).join(','), center.activeId, rail, historyTab, msgFilter],
+  () => { if (windowRestored) saveWindowState(currentWindowState()); },
+);
+function persistWindowState() { if (windowRestored) void flushWindowState(currentWindowState()); }
 // 当天输入超过 3 条消息时，主动展示一次历史消息；当天已展示过则不再主动，仅用户点击才展示
 const AUTO_SHOWN_KEY = 'devflow-history-auto-shown';
 function ymd(ts: number) {
@@ -410,6 +479,7 @@ async function processOpenParam() {
     const r = await projectsApi.openPath(p);
     await loadProjects();
     if (r.project?.id) selectProject(r.project.id);
+    deepLinkOpened = true;
     openFile(r.project.id, r.rel);
     const u = new URL(window.location.href);
     u.searchParams.delete('open');
@@ -440,7 +510,9 @@ onMounted(async () => {
   } catch { /* ignore */ }
   applyHash();
   initFileHistory();
-  loadProjects();
+  const projectsReady = loadProjects();
+  void restoreWindowState(projectsReady);      // 后台恢复：不阻塞终端连接
+  void loadSessionProjects();
   processOpenParam();
   msgHistory.load();
   syncHash();
@@ -448,6 +520,7 @@ onMounted(async () => {
   window.addEventListener('df-open-history', onOpenHistory);
   window.addEventListener('beforeunload', persistFileHistory);
   window.addEventListener('beforeunload', releaseWindowColor);
+  window.addEventListener('beforeunload', persistWindowState);
   terminal.connect();
 });
 onBeforeUnmount(() => {
@@ -458,6 +531,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('df-open-history', onOpenHistory);
   window.removeEventListener('beforeunload', persistFileHistory);
   window.removeEventListener('beforeunload', releaseWindowColor);
+  window.removeEventListener('beforeunload', persistWindowState);
 });
 </script>
 
@@ -522,9 +596,10 @@ onBeforeUnmount(() => {
       </template>
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
-          <HistoryList v-if="rail === 'history'" :items="historyItems" :tab="historyTab" :messages="msgHistory.messages.value"
+          <HistoryList v-if="rail === 'history'" :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
-            @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)" @clear-messages="msgHistory.clear()" />
+            @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)" @clear-messages="msgHistory.clear()"
+            @update:filter="msgFilter = $event" />
           <FileTree v-else :key="currentProject || 'none'" :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
