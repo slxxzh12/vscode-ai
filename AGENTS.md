@@ -50,6 +50,7 @@
 ### Windows
 
 - 一键打包：`node scripts/build.js`（等价 `npm.cmd run build:portable`），产物 `dist-portable/vscode-ai-windows-<arch>-<version>/`（目录）+ `vscode-ai-windows-<arch>-<version>.zip`（`<arch>` 由 `process.arch` 定，x64/arm64；`<version>` 为打包当天 `vYYYYMMDD`）。产物根写入 `version.txt`，服务端启动日志与 `/api/version` 均读取该冻结版本。
+- 内置 opencode 的包（独立一套，仅 Windows x64）：`node scripts/build-opencode.js`（等价 `npm.cmd run build:portable:opencode`）。它先跑 `build.js --no-zip`，再把 `soft/opencode-windows-x64.zip` 的 `opencode.exe` 打进 `opencode/`，重写 `launch.ps1` 把包内目录插到 `PATH` 最前（web 终端/调度器/用量统计/远程执行都命中包内版本），产物 `vscode-ai-windows-x64-<version>-opencode/` + 同名 `.zip`。缺该 zip 会直接报错退出；直启 `runtime\node.exe server\index.js` 不注入 PATH。
 - 绿色包原理：`env/node.exe` 自带运行时 + 拷贝已编译的 node-pty 原生 `.node` → 目标机免装 Node、免编译。**Node 与 node-pty ABI 必须同大版本**；`env/node.exe` 缺失时 build.js 会自动复制当前 node 过去。
 
 ### macOS
