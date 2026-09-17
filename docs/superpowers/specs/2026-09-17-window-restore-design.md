@@ -142,9 +142,24 @@ export interface WindowState {
 }
 export function toSavedTabs(tabs: CenterTab[]): SavedTab[]        // 只取 kind === 'file'，保留顺序
 export function fileTabsOf(state: WindowState): SavedTab[]        // 归一化后的文件页签列表（无则 []）
+export function planRestore(state: WindowState | null, opts: {
+  projectIds: string[];       // 用于过滤失效页签
+  hashRail: string | null;    // applyHash 已从 URL 定下的栏位（null = 无）
+  hashHistoryTab: 'files' | 'messages' | null;
+  deepLinkOpened: boolean;
+}): {
+  tabs: SavedTab[];           // 过滤掉 projectIds 里不存在的项
+  rail?: Rail;                // 仅当 hashRail 为 null 时才有值
+  historyTab?: 'files' | 'messages';
+  msgFilter?: boolean;
+  activeTab?: string;         // 仅当 deepLinkOpened 为 false
+  clearActive: boolean;       // 需要 setActive(null) 的兜底
+}
 export async function fetchWindowState(): Promise<WindowState | null>
 export function useWindowState()   // → { load(), save(state): void, flush(): Promise<void> }
 ```
+
+把"恢复决策"抽成纯函数 `planRestore()`，hash 优先级、失效页签过滤、`activeTab` 兜底都能单测，`App.vue` 只负责把结果应用到 `center`/`rail`/`msgFilter`。
 
 - `save()` 去抖 600ms 合并写；`flush()` 立即写（`beforeunload` 与测试用）；失败静默（窗口状态丢了不影响使用）。
 - 契约：只在"恢复完成"之后才允许 `save()`，由调用方（`App.vue`）持有闸门，避免用空状态覆盖存档。
@@ -189,6 +204,7 @@ const msgFilter = ref(true);
 const { map: sessionProjectMap, load: loadSessionProjects } = useSessionProjects();
 const { load: loadWindowState, save: saveWindowState, flush: flushWindowState } = useWindowState();
 let windowRestored = false;             // 闸门：恢复完成前不保存
+let deepLinkOpened = false;             // ?open= 深链已打开文件：优先于存档的 activeTab
 const liveProjectBySession = computed(() => {
   const out: Record<string, string | null> = {};
   for (const s of terminal.state.sessions) out[s.id] = s.projectId ?? null;
@@ -205,17 +221,39 @@ const visibleMessages = computed(() => filterMessages({
 
 模板：`HistoryList` 传 `:messages="visibleMessages"`（原为 `msgHistory.messages.value`）、`:filter="msgFilter"`、`@update:filter="msgFilter = $event"`。
 
-启动顺序（改写 `onMounted`）：保持现有 `loadVersion/writeRegistry/applyHash/initFileHistory/processOpenParam/syncHash/terminal.connect()` 不动，把恢复插在**项目加载之后、终端连接之前**：
+启动顺序（改写 `onMounted`）：**不阻塞 `terminal.connect()`**——恢复跑在后台异步任务里，WS 仍按原时机连接。
 
-1. `applyHash()`（现有，先按 URL 深链定栏位）
-2. `await loadProjects()`（`projects` 就绪，用于校验页签的 `projectId`）
-3. `void loadSessionProjects()` / `msgHistory.load()`（并行）
-4. `const ws = await fetchWindowState()`
-5. 应用 `rail` / `historyTab` / `msgFilter`——**按字段判断 hash 优先级**：`applyHash()`（步骤 1）已经设过的字段不再覆盖（例如 `#history/messages` 能覆盖 `rail` 且能覆盖 `historyTab`，而 `#explorer` 只覆盖 `rail`、`historyTab` 仍用存档值；无 hash 时两者都用存档值）
-6. 恢复文件页签：`for (const t of fileTabsOf(ws)) if (projects.some(p => p.id === t.projectId)) center.openFile(t.projectId, t.path, t.label)`
-7. 若 `ws.activeTab` 且 `center.tabs` 里存在该 id → `center.setActive(ws.activeTab)`
-8. `windowRestored = true`
-9. `terminal.connect()`
+```ts
+onMounted(async () => {
+  // 现有前段不变：loadVersion / writeRegistry / mobileLanding / applyHash / initFileHistory
+  const projectsReady = loadProjects();     // 原为「不 await 直接调用」，改为保留 promise
+  void restoreWindowState(projectsReady);   // 后台恢复，不 await
+  void loadSessionProjects();
+  msgHistory.load();
+  void processOpenParam();                  // 深链 ?open=（内部超集会在 openFile 前置 deepLinkOpened）
+  syncHash();
+  // 现有事件监听不变
+  terminal.connect();                       // 原时机连接，不被恢复拖慢
+});
+
+async function restoreWindowState(projectsReady: Promise<void>) {
+  await projectsReady;                      // projects 就绪，用于校验页签的 projectId
+  const ws = await fetchWindowState();
+  if (ws) {
+    // 5. 应用 rail / historyTab / msgFilter（按字段：hash 已指定的不覆盖）
+    // 6. 恢复文件页签：for (const t of fileTabsOf(ws)) if (projects.some(p => p.id === t.projectId)) center.openFile(t.projectId, t.path, t.label)
+    // 7. 激活页签（见下）
+  }
+  windowRestored = true;                    // 闸门打开，之后才允许保存
+}
+```
+
+- **hash 优先级按字段**：`applyHash()` 同步先跑，已设过的字段不被存档覆盖（`#history/messages` 同时覆盖 `rail` 与 `historyTab`；`#explorer` 只覆盖 `rail`、`historyTab` 仍用存档值；无 hash 时两者都用存档值）。
+- **第 7 步（激活页签）三种情况**：
+  1. `deepLinkOpened === true` → **跳过**，深链打开的文件保持激活（`?open=` 优先级最高）；
+  2. 否则 `ws.activeTab` 存在且 `center.tabs` 里有该 id → `center.setActive(ws.activeTab)`；
+  3. 否则 → `center.setActive(null)`（**必须显式置空**：恢复文件页签时 `openFile()` 会把激活项留在最后一个文件页签上，启动就直接跳到文件预览；置空后由 `TerminalView` 既有的 `activeSessionId` watcher（`TerminalView.vue:723-726`）接管，回到固定 Agent 会话）。
+- 两条异步链（恢复 vs `processOpenParam`）谁先跑完都不影响结果：判断只看 `deepLinkOpened` 标志，不依赖时序。
 
 保存：新增 `watch`，依赖 `[() => center.tabs.value.map(t => t.id + '|' + t.label), center.activeId, rail, historyTab, msgFilter]`，回调里 `if (!windowRestored) return; saveWindowState({...})`；`beforeunload` 时 `flushWindowState()`。
 
@@ -232,7 +270,9 @@ const visibleMessages = computed(() => filterMessages({
 - 会话在 `record()` 时 `projectId` 为空（shell 会话 / 无项目会话）：跳过，不写盘。
 - `window-state.json` 损坏或被手工改坏：归一化后当空处理，退回默认；不会阻断启动。
 - 同一浏览器多窗口 / 多端同时打开：全局一份，最后写者覆盖（已确认的设计取舍）。
-- 恢复过程中（步骤 4-7）用户立刻操作导致 `tabs` 变化：`windowRestored` 闸门在步骤 8 才打开，恢复结束前不写盘，避免空状态覆盖存档。
+- **URL 深链优先**：`?open=<路径>` 打开的文件页签必须最终可见，不被存档的 `activeTab` 抢走（用 `deepLinkOpened` 标志判定，与异步先后无关）；`#rail/sub` 已指定的栏位不被存档覆盖。
+- 恢复完成前用户已操作（后台任务还没跑完）：`windowRestored` 仍是 `false`，不保存，避免用空状态覆盖存档。
+- 恢复出的 `activeTab` 对不上任何页签（项目被移除、页签被跳过）→ 显式 `center.setActive(null)`，回到固定 Agent 会话，而不是停在最后一个文件页签。
 
 ## 6. 测试与验证
 
@@ -242,7 +282,7 @@ const visibleMessages = computed(() => filterMessages({
 - `server/test/http-api.test.js`（扩展）：`GET /api/session-projects` 默认 `{}`；`GET /api/window-state` 默认 `{}`；`POST /api/window-state` 落盘且返回归一化结果、非法字段被剔除。
 - `server/test/session-manager.test.js`（扩展）：`onCreated` 在 `create()` 后被调用一次，参数含 `id`/`projectId`；未传 `onCreated` 不报错。
 - `web/src/sessionProjects.test.ts`（新增）：GET 成功填 map、失败返回 `{}`、单例复用。
-- `web/src/windowState.test.ts`（新增）：`toSavedTabs` 只取文件页签且保序；`fileTabsOf` 容错；`save()` 去抖合并、`flush()` 立即写；失败静默。
+- `web/src/windowState.test.ts`（新增）：`toSavedTabs` 只取文件页签且保序；`fileTabsOf` 容错；`save()` 去抖合并、`flush()` 立即写；失败静默；`planRestore()` 覆盖——hash 已指定 rail/historyTab 时不返回对应字段、hash 只指定 rail 时 historyTab 仍回填、失效 `projectId` 的页签被过滤、`deepLinkOpened` 为真时不返回 `activeTab`、`activeTab` 对不上任何页签时 `clearActive` 为真、`state` 为 `null` 时全部走兜底。
 - `web/src/msgFilter.test.ts`（新增）：会话匹配（有/无 `sessionId` 两条分支）；`tabName` 回退；关闭筛选按项目过滤；无归属老消息照常显示；`projectId` 为空全量；无当前会话退化为项目过滤；`resolveProject` 活跃会话优先于映射。
 - `web/src/components/HistoryList.test.ts`（扩展）：`filter` prop 控制按钮文案与 `on` 态；点击 emit `update:filter`；仅消息页显示。
 - 命令：`npm.cmd run typecheck`、`npm.cmd test`、`npm.cmd run check:i18n`。
