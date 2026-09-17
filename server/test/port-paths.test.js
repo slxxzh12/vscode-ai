@@ -28,6 +28,8 @@ test('portPaths 全部落在 ports/<端口> 下', () => {
   assert.equal(p.usagePeersFile, path.join(base, 'usage-peers.json'));
   assert.equal(p.usageReportFile, path.join(base, 'usage-report.json'));
   assert.equal(p.inviteFile, path.join(base, 'collab', 'invite.json'));
+  assert.equal(p.codeGroupsFile, path.join(base, 'code-groups.json'));
+  assert.equal(p.codePrefsFile, path.join(base, 'code-prefs.json'));
   assert.equal(p.skillsRoot, path.join(base, 'skills-opencode'));
   assert.equal(portRoot(44444, root), base);
 });

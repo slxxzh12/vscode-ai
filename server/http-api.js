@@ -3,6 +3,10 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { transformSync } from 'esbuild';
 import { collectGitChanges } from './git-log.js';
+import { collectCodeStats } from './code-count.js';
+import { createCodeGroups } from './code-groups.js';
+import { createCodePrefs } from './code-prefs.js';
+import { buildZip, safeZipName } from './collaboration/zip.js';
 import { saveSnapshotToRepo } from './snapshot-store.js';
 import { pickFolder, pickAnyFile } from './native-dialog.js';
 import { revealInOs } from './reveal.js';
@@ -59,7 +63,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd() }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}) }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -240,8 +244,54 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         sendJson(res, 200, await collectGitChanges({ repo: body.repo, since: body.since, until: body.until, filter: body.filter }));
         return;
       }
+      if (url.pathname === '/api/code/groups' && req.method === 'GET') {
+        sendJson(res, 200, codeGroups.read());
+        return;
+      }
+      if (url.pathname === '/api/code/groups' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, codeGroups.write(body));
+        return;
+      }
+      if (url.pathname === '/api/code/prefs' && req.method === 'GET') {
+        sendJson(res, 200, codePrefs.read());
+        return;
+      }
+      if (url.pathname === '/api/code/prefs' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, codePrefs.write(body));
+        return;
+      }
+      if (url.pathname === '/api/code/stats' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, await collectCodeStats({ dir: body.dir, filter: body.filter }));
+        return;
+      }
+      if (url.pathname === '/api/export/zip' && req.method === 'POST') {
+        const body = await readJsonBody(req, 16 * 1024 * 1024);
+        const files = Array.isArray(body.files) ? body.files : [];
+        if (!files.length) return sendJson(res, 400, { error: 'bad-zip', message: 'no files' });
+        if (files.length > 100) return sendJson(res, 413, { error: 'too-many-files' });
+        let total = 0;
+        const entries = [];
+        for (const f of files) {
+          const name = String((f && f.name) || '');
+          if (!safeZipName(name)) return sendJson(res, 400, { error: 'bad-zip', message: name });
+          const content = typeof f.content === 'string' ? f.content : '';
+          total += Buffer.byteLength(content);
+          entries.push({ name, data: Buffer.from(content, 'utf8') });
+        }
+        if (total > 8 * 1024 * 1024) return sendJson(res, 413, { error: 'too-large' });
+        const raw = String(body.zipName || '').replace(/[^A-Za-z0-9._-]/g, '');
+        const zipName = raw.endsWith('.zip') ? raw : `${raw || 'export'}.zip`;
+        const zip = buildZip(entries);
+        res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${zipName}"`, 'Content-Length': zip.length });
+        res.end(zip);
+        return;
+      }
     } catch (err) {
       if (err.code === 'bad-image') return sendJson(res, 400, { error: 'bad image' });
+      if (err.code === 'bad-dir') return sendJson(res, 400, { error: 'bad dir', message: String(err.message) });
       if (err.code === 'not-a-repo') return sendJson(res, 400, { error: 'not a git repo' });      if (err.code === 'bad-repo') return sendJson(res, 400, { error: 'bad repo', message: String(err.message) });
       if (err.code === 'bad-date') return sendJson(res, 400, { error: 'bad date' });
       if (err.code === 'bad-range') return sendJson(res, 400, { error: 'bad range' });

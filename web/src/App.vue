@@ -9,7 +9,7 @@ import SchedulerView from './scheduler/SchedulerView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import FileTree from './components/FileTree.vue';
-import GitStat from './components/GitStat.vue';
+import CodeStats from './components/CodeStats.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
 import { useI18n } from './i18n';
@@ -498,7 +498,7 @@ onBeforeUnmount(() => {
       </template>
       <template v-else-if="rail === 'stat'">
         <section class="center">
-          <GitStat :project-root="currentProjectInfo?.root || ''" />
+          <CodeStats :project-root="currentProjectInfo?.root || ''" />
         </section>
       </template>
       <template v-else-if="rail === 'scheduler'">

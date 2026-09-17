@@ -28,6 +28,8 @@ export function portPaths(port, { root = dataHome() } = {}) {
     usagePeersFile: path.join(dir, 'usage-peers.json'),
     usageReportFile: path.join(dir, 'usage-report.json'),
     inviteFile: path.join(dir, 'collab', 'invite.json'),
+    codeGroupsFile: path.join(dir, 'code-groups.json'),
+    codePrefsFile: path.join(dir, 'code-prefs.json'),
     skillsRoot: path.join(dir, 'skills-opencode'),
   };
 }

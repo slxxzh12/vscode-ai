@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { statusLabel, statusClass, defaultRange, sumStats, aggregateByAuthor, type GitCommit } from './gitStat';
+import { parseHugeCommitLimit, DEFAULT_HUGE_COMMIT_ADDED_LIMIT } from '@devflow/shared/git-filter';
 
 describe('statusLabel', () => {
   it('返回中文标签', () => {
@@ -57,5 +58,23 @@ describe('aggregateByAuthor', () => {
   });
   it('空提交返回空数组', () => {
     expect(aggregateByAuthor([])).toEqual([]);
+  });
+});
+
+describe('parseHugeCommitLimit', () => {
+  it('正整数/数字串原样返回', () => {
+    expect(parseHugeCommitLimit(2000)).toBe(2000);
+    expect(parseHugeCommitLimit('3000')).toBe(3000);
+  });
+  it('0/负数/非法/空 → 0（不过滤）', () => {
+    expect(parseHugeCommitLimit(0)).toBe(0);
+    expect(parseHugeCommitLimit(-5)).toBe(0);
+    expect(parseHugeCommitLimit('abc')).toBe(0);
+    expect(parseHugeCommitLimit('')).toBe(0);
+    expect(parseHugeCommitLimit(null)).toBe(0);
+    expect(parseHugeCommitLimit(undefined)).toBe(0);
+  });
+  it('默认值为 2000', () => {
+    expect(DEFAULT_HUGE_COMMIT_ADDED_LIMIT).toBe(2000);
   });
 });

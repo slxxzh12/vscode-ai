@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import { makeKeepPath } from '@devflow/shared/git-filter';
+import { makeKeepPath, parseHugeCommitLimit } from '@devflow/shared/git-filter';
 
 const STATUS_MAP = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', C: 'modified', T: 'modified' };
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -16,7 +16,7 @@ function err(code, message) {
   return e;
 }
 
-function runGitRaw(args, { timeout = 0 } = {}) {
+export function runGitRaw(args, { timeout = 0 } = {}) {
   return new Promise((resolve, reject) => {
     execFile('git', args, {
       encoding: 'utf8',
@@ -252,10 +252,21 @@ export async function collectGitChanges({ repo, since, until, filter } = {}) {
     const kept = keep
       ? allCommits.filter((c) => { c.files = c.files.filter((fp) => keep(fp.path)); return c.files.length > 0; })
       : allCommits;
-    const commits = kept.slice(0, MAX_COMMITS);
+    // 超大提交过滤：单次提交在路径过滤后剩余代码的新增行数超过阈值 → 整条丢弃
+    const hugeLimit = parseHugeCommitLimit(flt && flt.hugeCommitLimit);
+    let hugeCommits = 0;
+    const selected = [];
+    for (const c of kept) {
+      if (hugeLimit > 0) {
+        const added = c.files.reduce((s, fp) => s + (fp.added || 0), 0);
+        if (added > hugeLimit) { hugeCommits += 1; continue; }
+      }
+      selected.push(c);
+    }
+    const commits = selected.slice(0, MAX_COMMITS);
     const summaryAll = summarize(commits);
     const summary = summaryAll.slice(0, MAX_FILES);
-    const truncated = kept.length > MAX_COMMITS || summaryAll.length > MAX_FILES;
+    const truncated = selected.length > MAX_COMMITS || summaryAll.length > MAX_FILES;
 
     const stats = { commits: commits.length, files: summary.length, added: 0, modified: 0, deleted: 0, renamed: 0 };
     for (const r of summary) stats[r.status] = (stats[r.status] || 0) + 1;
@@ -266,6 +277,7 @@ export async function collectGitChanges({ repo, since, until, filter } = {}) {
       stats,
       summary,
       commits,
+      hugeCommits,
       ...(truncated ? { truncated: true } : {}),
     };
   } finally {

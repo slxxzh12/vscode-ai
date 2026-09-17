@@ -129,3 +129,26 @@ test('collectGitChanges 以 - 开头 → bad-repo（防参数注入）', async (
     (e) => e.code === 'bad-repo',
   );
 });
+
+test('collectGitChanges 单次新增超阈值 → 整条提交被过滤', async () => {
+  const repo = makeRepo();
+  fs.writeFileSync(path.join(repo, 'big.js'), Array.from({ length: 2001 }, (_, i) => `const x${i} = ${i};`).join('\n'));
+  commit(repo, 'big', '2026-09-02T10:00:00');
+  fs.writeFileSync(path.join(repo, 'small.js'), 'const a = 1;\n');
+  commit(repo, 'small', '2026-09-03T10:00:00');
+
+  const all = await collectGitChanges({ repo, ...RANGE, filter: { codeOnly: true } });
+  assert.equal(all.stats.commits, 2);
+  assert.equal(all.hugeCommits, 0);
+  assert.deepEqual(all.summary.map((s) => s.path).sort(), ['big.js', 'small.js']);
+
+  const filtered = await collectGitChanges({ repo, ...RANGE, filter: { codeOnly: true, hugeCommitLimit: 2000 } });
+  assert.equal(filtered.stats.commits, 1);
+  assert.equal(filtered.hugeCommits, 1);
+  assert.deepEqual(filtered.summary.map((s) => s.path), ['small.js']);
+  assert.deepEqual(filtered.commits.map((c) => c.subject), ['small']);
+
+  const custom = await collectGitChanges({ repo, ...RANGE, filter: { codeOnly: true, hugeCommitLimit: 3 } });
+  assert.equal(custom.stats.commits, 1);
+  assert.equal(custom.hugeCommits, 1);
+});

@@ -7,6 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { Projects } from '../projects.js';
 import { createHttpApi } from '../http-api.js';
+import { readZip } from '../collaboration/zip.js';
 import { seedRepo } from './helpers/git-fixture.js';
 
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'dfapi-')); }
@@ -26,9 +27,12 @@ function post(server, url, obj) {
     const data = JSON.stringify(obj);
     const req = http.request({ host: '127.0.0.1', port: server.address().port, path: url, method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => {
-      let body = '';
-      res.on('data', (d) => (body += d));
-      res.on('end', () => resolve({ status: res.statusCode, body }));
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
+      res.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        resolve({ status: res.statusCode, body: buf.toString('utf8'), buf });
+      });
     });
     req.on('error', reject);
     req.end(data);
@@ -366,4 +370,76 @@ test('/api/open-file 不存在返回 404', async (t) => {
   t.after(() => server.close());
   const r = await post(server, '/api/open-file', { path: path.join(dir, 'ghost.md') });
   assert.equal(r.status, 404);
+});
+
+test('/api/code/stats POST 返回实代码统计', async (t) => {
+  const dir = tmpDir();
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'a.js'), '// c\nconst a = 1;\n');
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/code/stats', { dir, filter: { exts: ['.js'] } });
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.deepEqual(j.files, [{ rel: 'src/a.js', real: 1, total: 3 }]);
+  assert.deepEqual(j.totals, { files: 1, real: 1, total: 3 });
+});
+
+test('/api/code/stats POST 坏 dir 400、不存在 404', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const bad = await post(server, '/api/code/stats', { dir: '' });
+  assert.equal(bad.status, 400);
+  const nf = await post(server, '/api/code/stats', { dir: path.join(tmpDir(), 'nope') });
+  assert.equal(nf.status, 404);
+});
+
+test('/api/export/zip 返回可回读的 zip', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/export/zip', { zipName: 'a.zip', files: [{ name: 'a.csv', content: '\uFEFFa,b\r\n' }] });
+  assert.equal(r.status, 200);
+  assert.equal(r.buf.readUInt32LE(0), 0x04034b50);
+  const entries = readZip(r.buf);
+  assert.equal(entries[0].name, 'a.csv');
+  assert.equal(entries[0].data.toString('utf8'), '\uFEFFa,b\r\n');
+});
+
+test('/api/export/zip 空 files 400、非法名 400、超量 413', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  assert.equal((await post(server, '/api/export/zip', { files: [] })).status, 400);
+  assert.equal((await post(server, '/api/export/zip', { files: [{ name: '../x.csv', content: 'x' }] })).status, 400);
+  const many = Array.from({ length: 101 }, (_, i) => ({ name: `f${i}.csv`, content: 'x' }));
+  assert.equal((await post(server, '/api/export/zip', { files: many })).status, 413);
+});
+
+test('/api/code/groups GET 默认空、POST 保存后读回', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const empty = await request(server, '/api/code/groups');
+  assert.equal(empty.status, 200);
+  assert.deepEqual(JSON.parse(empty.body), { groups: [], members: {} });
+
+  const r = await post(server, '/api/code/groups', { groups: ['A组', 'A组', ''], members: { 张三: 'A组', 李四: 'B组' } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body), { groups: ['A组'], members: { 张三: 'A组' } });
+
+  const again = await request(server, '/api/code/groups');
+  assert.deepEqual(JSON.parse(again.body), { groups: ['A组'], members: { 张三: 'A组' } });
+});
+
+test('/api/code/prefs GET 默认空、POST 只存已知键且读回', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const empty = await request(server, '/api/code/prefs');
+  assert.equal(empty.status, 200);
+  assert.deepEqual(JSON.parse(empty.body), {});
+
+  const r = await post(server, '/api/code/prefs', { exts: '.js, .xml', excludeTestFiles: false, nope: 1 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body), { exts: '.js, .xml', excludeTestFiles: false });
+
+  const again = await request(server, '/api/code/prefs');
+  assert.deepEqual(JSON.parse(again.body), { exts: '.js, .xml', excludeTestFiles: false });
 });

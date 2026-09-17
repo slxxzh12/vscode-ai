@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import type { GitAuthorRow } from '../gitStat';
+import { useCodeGroups } from '../codeGroups';
 
 const props = defineProps<{ rows: GitAuthorRow[] }>();
+
+const { groups, groupOf, assign, load } = useCodeGroups();
+onMounted(() => void load());
 
 const totalLines = computed(() => props.rows.reduce((s, r) => s + r.linesAdded, 0));
 function pct(r: GitAuthorRow): number {
@@ -29,6 +33,7 @@ function pctText(r: GitAuthorRow): string {
           <th class="num">{{ $t('gitstat.col.added_lines') }}</th>
           <th class="num">{{ $t('gitstat.col.deleted_lines') }}</th>
           <th class="share">{{ $t('gitstat.col.share') }}</th>
+          <th>{{ $t('codestat.groups.col') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -47,6 +52,12 @@ function pctText(r: GitAuthorRow): string {
               <div class="pbar"><i :style="{ width: pct(r) + '%' }" /></div>
               <span class="ptxt">{{ pctText(r) }}</span>
             </div>
+          </td>
+          <td class="group">
+            <select class="gsel" :value="groupOf(r.author)" @change="(e) => assign(r.author, (e.target as HTMLSelectElement).value)">
+              <option value="">{{ $t('codestat.groups.ungrouped') }}</option>
+              <option v-for="g in groups" :key="g" :value="g">{{ g }}</option>
+            </select>
           </td>
         </tr>
       </tbody>
@@ -70,4 +81,6 @@ function pctText(r: GitAuthorRow): string {
 .pbar { flex: 1; height: 6px; border-radius: 3px; background: var(--bg4); overflow: hidden; }
 .pbar i { display: block; height: 100%; background: var(--ac); }
 .ptxt { flex: none; width: 44px; text-align: right; color: var(--tx3); font-variant-numeric: tabular-nums; }
+.group { white-space: nowrap; }
+.gsel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; }
 </style>

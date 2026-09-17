@@ -6,13 +6,20 @@ export const DEFAULT_CODE_EXTS = [
   '.py', '.java', '.kt', '.go', '.rs',
   '.c', '.h', '.cc', '.cpp', '.hpp',
   '.cs', '.php', '.rb', '.swift', '.scala', '.dart',
-  '.sh', '.bash', '.ps1', '.bat', '.sql', '.lua',
+  '.sh', '.bash', '.ps1', '.bat', '.sql', '.xml', '.lua',
 ];
 
 export const DEFAULT_EXCLUDE_DIRS = [
+  'node_modules',
   'docs', 'doc', 'documentation',
   'test', 'tests', '__tests__', 'spec', 'specs', 'e2e',
 ];
+
+// 清单/锁文件：不是「代码」，即使后缀被加进白名单也一律不算
+export const SKIP_BASENAMES = new Set([
+  'package.json', 'package-lock.json', 'npm-shrinkwrap.json',
+  'yarn.lock', 'pnpm-lock.yaml',
+]);
 
 const DEFAULT_EXT_SET = new Set(DEFAULT_CODE_EXTS);
 
@@ -72,8 +79,19 @@ export function makeKeepPath(filter = {}) {
   return (p) => {
     const segs = dirSegments(p);
     if (dirSet.size && segs.some((s) => dirSet.has(s))) return false;
+    if (SKIP_BASENAMES.has(basename(p).toLowerCase())) return false;
     if (filter.excludeTestFiles && isTestFile(p)) return false;
     if (filter.codeOnly && !extSet.has(extOf(p))) return false;
     return true;
   };
+}
+
+// 超大提交阈值（单次提交新增行数）：超过即整条提交不计入统计
+export const DEFAULT_HUGE_COMMIT_ADDED_LIMIT = 2000;
+
+// 阈值归一：非正整数一律视为 0（不过滤）
+export function parseHugeCommitLimit(input) {
+  const n = typeof input === 'number' ? input : parseInt(String(input ?? '').trim(), 10);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
 }

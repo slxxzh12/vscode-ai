@@ -14,9 +14,10 @@ export interface GitChangesResult {
   stats: GitStats;
   summary: GitSummaryRow[];
   commits: GitCommit[];
+  hugeCommits?: number;
   truncated?: boolean;
 }
-export interface GitFilter { codeOnly: boolean; exts?: string[]; excludeDirs?: string[]; excludeTestFiles: boolean; }
+export interface GitFilter { codeOnly: boolean; exts?: string[]; excludeDirs?: string[]; excludeTestFiles: boolean; hugeCommitLimit?: number; }
 export interface GitChangesParams { repo: string; since: string; until: string; filter?: GitFilter; }
 export interface GitAuthorRow {
   author: string; email: string; commits: number; files: number;
