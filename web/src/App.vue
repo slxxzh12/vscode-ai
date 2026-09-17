@@ -366,6 +366,9 @@ async function loadProjects() {
     const recent = recents.value.slice().sort((a, b) => b.ts - a.ts).find((r) => byId.has(r.id));
     currentProject.value = recent ? recent.id : projects.value[0].id;
     touchRecent(currentProject.value);
+  } else if (!projects.value.length && !noProjectPrompted.value) {
+    noProjectPrompted.value = true;
+    openAddFolder();
   }
 }
 function selectProject(id: string) {
@@ -374,6 +377,7 @@ function selectProject(id: string) {
 }
 const addOpen = ref(false);
 const addPath = ref('');
+const noProjectPrompted = ref(false);
 function openAddFolder() { addPath.value = ''; addOpen.value = true; }
 async function chooseFolder() {
   try {
@@ -533,6 +537,7 @@ onBeforeUnmount(() => {
     <div v-if="addOpen" class="joinmask" @click.self="addOpen = false">
       <div class="addcard">
         <div class="addtitle">{{ $t('top.add_folder') }}</div>
+        <div v-if="!projects.length" class="addhint">{{ $t('top.first_project_hint') }}</div>
         <div class="addrow2">
           <input v-model="addPath" :placeholder="$t('top.folder_path')" @keyup.enter="confirmAddFolder" />
           <button class="addchoose" @click="chooseFolder">{{ $t('top.choose') }}</button>
@@ -584,6 +589,7 @@ body.dragging-side { cursor: col-resize; user-select: none; }
 .joinmask { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .addcard { width: 420px; max-width: 92vw; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; padding: 16px; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
 .addtitle { color: var(--tx1); font-weight: 700; margin-bottom: 10px; }
+.addhint { color: var(--tx5); font-size: 12px; margin: -4px 0 10px; }
 .addrow2 { display: flex; gap: 8px; }
 .addrow2 input { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 6px 8px; box-sizing: border-box; }
 .addchoose { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }

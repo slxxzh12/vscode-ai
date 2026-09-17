@@ -25,9 +25,9 @@ function readConfigFile(dir) {
 
 export function loadOpencodeProviders({ dir = opencodeConfigDir() } = {}) {
   const raw = readConfigFile(dir);
-  if (raw == null) return { providers: [], defaultProvider: null };
+  if (raw == null) return { providers: [], defaultProvider: null, model: '' };
   let json;
-  try { json = JSON.parse(raw); } catch { try { json = JSON.parse(stripJsonc(raw)); } catch { return { providers: [], defaultProvider: null }; } }
+  try { json = JSON.parse(raw); } catch { try { json = JSON.parse(stripJsonc(raw)); } catch { return { providers: [], defaultProvider: null, model: '' }; } }
   const providers = [];
   for (const [id, p] of Object.entries(json.provider || {})) {
     const o = (p && p.options) || {};
@@ -36,7 +36,7 @@ export function loadOpencodeProviders({ dir = opencodeConfigDir() } = {}) {
   }
   const model = typeof json.model === 'string' ? json.model : '';
   const defaultProvider = model.includes('/') ? model.split('/')[0] : (providers[0] ? providers[0].id : null);
-  return { providers, defaultProvider };
+  return { providers, defaultProvider, model };
 }
 
 function jwtSubject(token) {

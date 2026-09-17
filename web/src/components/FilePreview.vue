@@ -34,6 +34,7 @@ import { parseCurlCommands } from '../curl';
 import CurlView from './CurlView.vue';
 import YamlView from './YamlView.vue';
 import { diffText, type DiffRow } from '../diff';
+import { sortText, dedupText, type SortMode } from '../textTools';
 import type { TreeItem } from '@devflow/shared';
 
 const props = defineProps<{ projectId: string; path: string; name: string; detailToken?: number; detailPath?: string }>();
@@ -340,7 +341,6 @@ async function minifyOneLine() {
 }
 
 // —— 文本排序 ——
-type SortMode = 'asc' | 'desc' | 'asc-ci' | 'desc-ci' | 'num-asc' | 'num-desc';
 const SORT_ITEMS = computed<Array<{ mode: SortMode; label: string }>>(() => [
   { mode: 'asc', label: t('fp.sort.asc') },
   { mode: 'desc', label: t('fp.sort.desc') },
@@ -353,33 +353,9 @@ const SORT_KEY: Record<SortMode, string> = {
   asc: 'fp.sort.short.asc', desc: 'fp.sort.short.desc', 'asc-ci': 'fp.sort.short.asc_ci', 'desc-ci': 'fp.sort.short.desc_ci',
   'num-asc': 'fp.sort.short.num_asc', 'num-desc': 'fp.sort.short.num_desc',
 };
-function leadingNumber(s: string): number | null {
-  const m = s.trim().match(/^-?\d+(\.\d+)?/);
-  return m ? Number(m[0]) : null;
-}
-function numVal(s: string): number {
-  const v = leadingNumber(s);
-  return v ?? Number.MAX_SAFE_INTEGER;   // 非数字排最后
-}
 function sortLines(mode: SortMode): string {
   if (!view) return '';
-  let text = view.state.doc.toString();
-  const endsNL = text.endsWith('\n');
-  let lines = text.split('\n');
-  if (endsNL) lines.pop();
-  const asc = (a: string, b: string) => { const an = a.toLowerCase(), bn = b.toLowerCase(); return an < bn ? -1 : an > bn ? 1 : 0; };
-  const raw = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  switch (mode) {
-    case 'asc': lines.sort(raw); break;
-    case 'desc': lines.sort((a, b) => raw(b, a)); break;
-    case 'asc-ci': lines.sort(asc); break;
-    case 'desc-ci': lines.sort((a, b) => asc(b, a)); break;
-    case 'num-asc': lines.sort((a, b) => numVal(a) - numVal(b)); break;
-    case 'num-desc': lines.sort((a, b) => numVal(b) - numVal(a)); break;
-  }
-  let out = lines.join('\n');
-  if (endsNL) out += '\n';
-  return out;
+  return sortText(view.state.doc.toString(), mode);
 }
 function applySort(mode: SortMode) {
   if (!view) return;
@@ -394,22 +370,7 @@ function applySort(mode: SortMode) {
 // —— 文本去重（忽略首尾空白，去重后升序排列）——
 function dedupLines(): string {
   if (!view) return '';
-  const text = view.state.doc.toString();
-  const endsNL = text.endsWith('\n');
-  let lines = text.split('\n');
-  if (endsNL) lines.pop();
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const line of lines) {
-    const key = line.trim();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(key);
-  }
-  out.sort((a, b) => { const an = a.toLowerCase(), bn = b.toLowerCase(); return an < bn ? -1 : an > bn ? 1 : 0; });
-  let result = out.join('\n');
-  if (endsNL) result += '\n';
-  return result;
+  return dedupText(view.state.doc.toString());
 }
 function applyDedup() {
   if (!view) return;

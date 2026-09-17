@@ -27,6 +27,7 @@ import { mergeWorkflowList } from './collaboration/workflow-merge.js';
 import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
 import { createUsageMount } from './usage-mount.js';
+import { createTranslator, createTranslateMount, defaultCatalog, defaultProviderResolver } from './translate.js';
 import { loadInvite, saveInvite, clearInvite, isInviteActive } from './remote-invite.js';
 import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
@@ -263,7 +264,14 @@ function buildWorkspace({ paths, port }) {
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, llmVault, usageStore, taskStore, historyFile: paths.historyFile, paths };
+  const translateMount = createTranslateMount({
+    translator: createTranslator({ provider: defaultProviderResolver() }),
+    catalog: defaultCatalog(),
+    logger: log,
+    isLocal: isLocalReq,
+    projectRoots: () => projects.listProjects().map((p) => p.root),
+  });
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, historyFile: paths.historyFile, paths };
 }
 
 // ---- 工作区（端口档案）----
@@ -609,6 +617,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname.startsWith('/api/llm')) { await ws.llmMount(req, res, url); return; }
+  if (url.pathname.startsWith('/api/translate')) { await ws.translateMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/usage/')) { await ws.usageMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/scheduler')) { await ws.scheduler.mount(req, res); return; }

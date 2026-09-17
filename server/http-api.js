@@ -187,6 +187,14 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         sendJson(res, 200, readAbsText(r.path));
         return;
       }
+      // 只返回所选文件路径（不读内容），供终端输入框插入「文件/图片路径」用
+      if (url.pathname === '/api/file/pick-path' && req.method === 'POST') {
+        const r = await pickAnyFile();
+        if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
+        if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
+        sendJson(res, 200, { path: r.path });
+        return;
+      }
       if (url.pathname === '/api/file/meta' && req.method === 'GET') {
         const project = url.searchParams.get('project');
         const rel = url.searchParams.get('path') || '';

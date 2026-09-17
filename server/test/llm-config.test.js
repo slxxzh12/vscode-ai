@@ -74,7 +74,14 @@ test('jsonc 去注释 + 缺文件降级', () => {
   const { providers } = loadOpencodeProviders({ dir });
   assert.equal(providers[0].id, 'a');
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
-  assert.deepEqual(loadOpencodeProviders({ dir: empty }), { providers: [], defaultProvider: null });
+  assert.deepEqual(loadOpencodeProviders({ dir: empty }), { providers: [], defaultProvider: null, model: '' });
+});
+
+test('loadOpencodeProviders 返回原始 model（供默认模型）', () => {
+  const dir = dirWith({ model: 'corp/gpt-4o', provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' } } } });
+  const r = loadOpencodeProviders({ dir });
+  assert.equal(r.model, 'corp/gpt-4o');
+  assert.equal(r.defaultProvider, 'corp');
 });
 
 test('buildOpencodeConfig 生成 opencode.json 结构', () => {

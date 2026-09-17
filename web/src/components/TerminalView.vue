@@ -96,8 +96,23 @@ function commitRename(tabId: string) {
   persistTabNames();
   props.center.ensureSession(sid, tabLabel(sid), sessionState(sid));
   msgHistory.renameTab(sid, tabLabel(sid));   // 同步更新历史消息里记录的页签名
+  if (name) syncAgentRename(sid, name);       // 同步改 Agent 内的对话名（opencode /rename）
 }
 function cancelRename() { renamingId.value = null; }
+
+// 页签改名后让 Agent 内的对话名跟着改：opencode 的 /rename 是「打开重命名输入框」，
+// 命令只对当前已附着的会话生效，因此两步走——先 /rename，再把框里预填的旧名清掉换成新名。
+function syncAgentRename(sid: string, name: string) {
+  if (!agentSids.value.has(sid)) return;                              // 仅 Agent 会话（shell 会话没有该命令）
+  if (props.terminal.state.activeSessionId !== sid) return;
+  if (sessionState(sid) !== 'running') return;
+  sendToActive('/rename');
+  setTimeout(() => {
+    if (props.terminal.state.activeSessionId !== sid) return;
+    props.terminal.input('\x7f'.repeat(80));   // 清掉输入框里预填的旧名
+    setTimeout(() => sendToActive(name), 120);
+  }, 700);
+}
 
 // —— 固定 Agent 首标签：交互式 Agent（列表可配置）+ 工作流（跑 opencode 自定义命令）——
 interface AgentDef { id: string; name: string; cmd: string; }
@@ -382,6 +397,68 @@ function onFillComposer(e: Event) {
   if (typeof t === 'string') composerText.value = t;
 }
 
+// 选文件：把路径（带引号）插到输入框，由所用 Agent 自行读取/识别
+function insertComposerPath(p: string) {
+  const s = `"${p}"`;
+  const cur = composerText.value;
+  composerText.value = cur ? (/\s$/.test(cur) ? cur + s : `${cur} ${s}`) : s;
+}
+async function pickFileForPrompt() {
+  try {
+    const res = await fetch('/api/file/pick-path', { method: 'POST' });
+    const j: any = await res.json().catch(() => ({}));
+    if (j.error) { alert(j.error === 'unsupported' ? t('sched.pick_unsupported') : t('sched.pick_failed', { msg: j.message || j.error })); return; }
+    if (j.cancelled || !j.path) return;
+    insertComposerPath(j.path);
+  } catch (e) { alert(t('sched.pick_failed', { msg: (e as Error).message || String(e) })); }
+}
+
+// —— 英文翻译模式：底部输入框分中/英两栏，发送默认发英文译文 ——
+const translateMode = ref(false);
+const translatedText = ref('');
+const translating = ref(false);
+const lastTranslatedSource = ref('');
+const lastTranslateResult = ref('');
+const TRANSLATE_ERR_KEY: Record<string, string> = {
+  'empty-input': 'et.empty',
+  'too-long': 'et.too_long',
+  'no-provider': 'et.no_provider',
+  'no-key': 'et.no_key',
+  'image-too-large': 'et.image_too_large',
+  'too-many-images': 'et.too_many_images',
+  timeout: 'et.timeout',
+};
+function toggleTranslate() { translateMode.value = !translateMode.value; }
+
+// 返回是否成功；失败时弹提示且不发送
+async function runTranslate(): Promise<boolean> {
+  const text = composerText.value.trim();
+  if (!text) return false;
+  translating.value = true;
+  try {
+    const res = await fetch('/api/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const j: any = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const key = TRANSLATE_ERR_KEY[j.error];
+      alert(key ? t(key) : t('et.failed', { msg: j.message || j.error || `HTTP ${res.status}` }));
+      return false;
+    }
+    translatedText.value = j.text || '';
+    lastTranslatedSource.value = text;
+    lastTranslateResult.value = translatedText.value;
+    return true;
+  } catch (e) {
+    alert(t('et.failed', { msg: (e as Error).message || String(e) }));
+    return false;
+  } finally {
+    translating.value = false;
+  }
+}
+
 // 底部框高度（可上下拖动）+ 最小化
 const COMPOSER_H_KEY = 'devflow-composer-h';
 const composerH = ref(240);
@@ -473,12 +550,61 @@ function sendToActive(text: string) {
     props.terminal.input('\r');
   }, 150);
 }
-function submitComposer() {
-  const text = composerText.value.trim() || 'ok';
+function compactContext() {
+  resetAutoCompact();
+  sendToActive('/compact');   // opencode TUI 的上下文压缩命令
+}
+
+// —— 自动压缩上下文：默认开启；用户发送超过 30 次后，空闲 10 分钟无接续则自动 /compact ——
+const AUTO_COMPACT_SENDS = 30;
+const AUTO_COMPACT_IDLE_MS = 10 * 60 * 1000;
+const AUTO_COMPACT_KEY = 'devflow-auto-compact';
+const sendCount = ref(0);
+let autoCompactTimer: ReturnType<typeof setTimeout> | null = null;
+function loadAutoCompact(): boolean {
+  try { return localStorage.getItem(AUTO_COMPACT_KEY) !== '0'; } catch { return true; }
+}
+const autoCompactOn = ref(loadAutoCompact());
+function setAutoCompact(v: boolean) {
+  autoCompactOn.value = v;
+  try { localStorage.setItem(AUTO_COMPACT_KEY, v ? '1' : '0'); } catch { /* ignore */ }
+  if (!v) resetAutoCompact();
+}
+function resetAutoCompact() {
+  sendCount.value = 0;
+  if (autoCompactTimer) { clearTimeout(autoCompactTimer); autoCompactTimer = null; }
+}
+function notePromptSent() {
+  if (!autoCompactOn.value) return;
+  sendCount.value += 1;
+  if (autoCompactTimer) clearTimeout(autoCompactTimer);
+  autoCompactTimer = setTimeout(() => {
+    autoCompactTimer = null;
+    if (!autoCompactOn.value || !activeIsAgent.value) return;
+    if (sendCount.value <= AUTO_COMPACT_SENDS) return;
+    compactContext();
+  }, AUTO_COMPACT_IDLE_MS);
+}
+async function submitComposer() {
+  let text = composerText.value.trim();
+  if (translateMode.value) {
+    const edited = translatedText.value !== lastTranslateResult.value;
+    const stale = text !== lastTranslatedSource.value;
+    if (!translatedText.value.trim() || (stale && !edited)) {
+      const ok = await runTranslate();
+      if (!ok) return;
+    }
+    text = translatedText.value.trim() || text;
+    translatedText.value = '';
+    lastTranslatedSource.value = '';
+    lastTranslateResult.value = '';
+  }
+  text = text || 'ok';
   composerText.value = '';
   const sid = props.terminal.state.activeSessionId;
   void msgHistory.push(text, sid ? { sessionId: sid, tabName: tabLabel(sid) } : {});
   sendToActive(text);
+  notePromptSent();
 }
 function onComposerKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComposer(); }
@@ -579,6 +705,7 @@ watch(tabNames, () => {
 
 // 激活会话变化 → 中心激活对应会话页签（新建/切换时回到终端视图）
 watch(() => props.terminal.state.activeSessionId, (id) => {
+  resetAutoCompact();
   if (id) props.center.activateSession(id);
 });
 // 从文件视图切回终端时重排尺寸
@@ -648,6 +775,7 @@ onBeforeUnmount(() => {
   resizeObserver = null;
   window.removeEventListener('df-open-agent-settings', onOpenSettings);
   window.removeEventListener('df-fill-composer', onFillComposer);
+  if (autoCompactTimer) { clearTimeout(autoCompactTimer); autoCompactTimer = null; }
   unsubList?.();
   unsubCfg?.();
   stopNewTimer();
@@ -703,6 +831,13 @@ onBeforeUnmount(() => {
             <div v-if="restartMsg" class="cfghint warn">{{ restartMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>
+          <div class="setsec">
+            <div class="settitle">{{ $t('term.auto_compact') }}</div>
+            <label class="chkrow">
+              <input type="checkbox" :checked="autoCompactOn" @change="setAutoCompact(($event.target as HTMLInputElement).checked)" />
+              <span>{{ $t('term.auto_compact_hint') }}</span>
+            </label>
+          </div>
           </template>
           <template v-else>
             <div class="setsec">
@@ -732,6 +867,7 @@ onBeforeUnmount(() => {
               <div class="settitle">{{ $t('term.about.license') }}</div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.repo') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai" target="_blank" rel="noopener">https://gitee.com/slxxzh12/vscode-ai</a></div>
               <div class="aboutrow"><span class="aboutk"></span><a class="aboutv link" href="https://github.com/slxxzh12/vscode-ai" target="_blank" rel="noopener">https://github.com/slxxzh12/vscode-ai</a></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.feedback') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai/issues" target="_blank" rel="noopener">https://gitee.com/slxxzh12/vscode-ai/issues</a></div>
               <pre class="license">{{ $t('term.about.mit') }}</pre>
               <div class="licnote">{{ $t('term.about.note') }}</div>
             </div>
@@ -807,8 +943,22 @@ onBeforeUnmount(() => {
               :placeholder="$t('term.composer_placeholder')"
               @keydown="onComposerKey"
             />
-            <button class="chist" :title="$t('term.history')" @mousedown.stop @click="openHistory">{{ $t('term.history') }}</button>
+            <div class="ctools">
+              <button class="cbtn" :title="$t('term.pick_file')" @mousedown.stop @click="pickFileForPrompt">{{ $t('term.pick_file') }}</button>
+              <button v-if="translateMode" class="cbtn" :disabled="translating || !composerText.trim()" :title="$t('term.translate')" @mousedown.stop @click="runTranslate">{{ translating ? $t('term.translating') : $t('term.translate') }}</button>
+              <button class="cbtn" :class="{ on: translateMode }" :title="$t('term.translate_toggle')" @mousedown.stop @click="toggleTranslate">{{ $t('term.translate_toggle') }}</button>
+              <button class="cbtn" :title="$t('term.history')" @mousedown.stop @click="openHistory">{{ $t('term.history') }}</button>
+            </div>
           </div>
+          <div v-if="translateMode" class="cinputwrap">
+            <textarea
+              v-model="translatedText"
+              class="cinput out"
+              :placeholder="$t('term.translated_ph')"
+              @keydown="onComposerKey"
+            />
+          </div>
+          <button v-if="activeIsAgent" class="ccompact" :title="$t('term.compact_hint')" @click="compactContext">{{ $t('term.compact') }}</button>
           <button class="csend" @click="submitComposer">{{ $t('common.send') }}</button>
         </div>
       </template>
@@ -833,10 +983,14 @@ onBeforeUnmount(() => {
 .cstart { padding: 2px 14px; }
 .cbar .gear { margin-left: 4px; }
 .cbar .asel { height: 20px; padding: 0 6px; }
-.chist { position: absolute; top: 6px; right: 8px; z-index: 2; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx3); border-radius: 6px; padding: 1px 8px; line-height: 18px; cursor: pointer; font-size: 11px; }
-.chist:hover { border-color: var(--ac2); color: var(--ac2); }
+.ctools { position: absolute; top: 6px; right: 8px; z-index: 2; display: flex; gap: 6px; }
+.cbtn { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx3); border-radius: 6px; padding: 1px 8px; line-height: 18px; cursor: pointer; font-size: 11px; }
+.cbtn:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
+.cbtn:disabled { opacity: .55; cursor: default; }
+.cbtn.on { border-color: var(--ac); color: var(--ac2); }
 .cmin { margin-left: auto; background: none; border: 1px solid transparent; color: var(--tx2); border-radius: 4px; width: 28px; height: 20px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; }
 .cmin:hover { background: color-mix(in srgb, var(--tx1) 14%, transparent); color: var(--tx1); }
+.cinput.out { padding-right: 14px; }
 .wfbtns { display: flex; gap: 0; flex: none; align-items: stretch; border-bottom: 2px solid transparent; }
 .wfbtn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--tx3); padding: 2px 12px 3px; cursor: pointer; font-size: 11px; }
 .wfbtn:hover { color: var(--tx1); }
@@ -861,10 +1015,12 @@ onBeforeUnmount(() => {
 .chip.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .cdot { width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
 .chip.on .cdot { background: var(--onac); }
-.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 86px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
+.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 10px 210px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cinput::placeholder { color: var(--tx3); }
 .csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
+.ccompact { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 10px; padding: 0 14px; cursor: pointer; font-size: 13px; font-weight: 700; flex: none; }
+.ccompact:hover { border-color: var(--ac2); color: var(--ac2); }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
 .cfgrow span { width: 62px; flex: none; }
@@ -874,6 +1030,8 @@ onBeforeUnmount(() => {
 .ghostcfg:disabled { opacity: .6; cursor: default; }
 .ghostcfg.on:disabled { opacity: 1; background: var(--ac); color: var(--onac); border-color: var(--ac); }
 .closecfg { color: var(--tx3); font-size: 12px; cursor: pointer; }
+.chkrow { display: flex; align-items: flex-start; gap: 8px; color: var(--tx2); font-size: 12px; line-height: 1.6; }
+.chkrow input { margin-top: 2px; cursor: pointer; }
 .cfghint { color: var(--tx6); font-size: 11px; }
 .cfghint.warn { color: var(--warn2); }
 .acfg.gear { flex: none; }
