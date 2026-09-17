@@ -103,6 +103,27 @@ describe('useTerminal', () => {
     expect(hook.sockets.length).toBe(1);
   });
 
+  it('restoreSession 发 restore，收 session-created 解析并带 resumed', async () => {
+    hook.term.connect();
+    const ws = hook.sockets[0];
+    ws.emitOpen();
+    const p = hook.term.restoreSession('s_old');
+    expect(ws.sent.at(-1)).toMatchObject({ type: C2S.RESTORE, sessionId: 's_old' });
+    ws.emitMessage({ type: S2C.SESSION_CREATED, session: { id: 's_old', name: 'A', projectId: null, state: 'running', cwd: '', cols: 80, rows: 24, exitCode: null, restored: true, kind: 'agent', resumed: false } });
+    const s = await p;
+    expect(s?.resumed).toBe(false);
+    expect(hook.term.state.activeSessionId).toBe('s_old');
+  });
+
+  it('restoreSession 收 restore-failed 返回 null', async () => {
+    hook.term.connect();
+    const ws = hook.sockets[0];
+    ws.emitOpen();
+    const p = hook.term.restoreSession('ghost');
+    ws.emitMessage({ type: S2C.ERROR, code: 'restore-failed', message: 'not-found' });
+    expect(await p).toBe(null);
+  });
+
   it('input/resize 转发到当前连接', () => {
     hook.term.connect();
     const ws = hook.sockets[0];

@@ -2,7 +2,7 @@ import { reactive } from 'vue';
 import { C2S, S2C } from '@devflow/shared';
 
 export type ConnStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
-export interface SessionSummary { id: string; name: string; projectId: string | null; state: 'running' | 'exited'; cwd: string; cols: number; rows: number; exitCode: number | null; kind?: 'agent' | 'shell' | 'workflow'; agentId?: string | null; restored?: boolean; }
+export interface SessionSummary { id: string; name: string; projectId: string | null; state: 'running' | 'exited'; cwd: string; cols: number; rows: number; exitCode: number | null; kind?: 'agent' | 'shell' | 'workflow'; agentId?: string | null; restored?: boolean; resumed?: boolean; }
 export type Handler = (msg: any) => void;
 
 export interface UseTerminalOptions {
@@ -35,6 +35,7 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
   const handlers = new Map<string, Set<Handler>>();
   let listResolve: ((s: SessionSummary[]) => void) | null = null;
   let createdResolve: ((s: SessionSummary) => void) | null = null;
+  let restoreResolve: ((s: SessionSummary | null) => void) | null = null;
   let onOutputCb: ((data: string) => void) | null = null;
   let onReplayCb: ((data: string) => void) | null = null;
 
@@ -74,6 +75,7 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
         state.sessions = state.sessions.filter((s) => s.id !== msg.session.id).concat([msg.session]);
         state.activeSessionId = msg.session.id;
         createdResolve?.(msg.session); createdResolve = null;
+        restoreResolve?.(msg.session); restoreResolve = null;
         emit(S2C.SESSION_CREATED, msg); break;
       }
       case S2C.SESSION_EXITED: {
@@ -83,7 +85,10 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
       }
       case S2C.OUTPUT: if (msg.sessionId === state.activeSessionId) { onOutputCb?.(msg.data); emit(S2C.OUTPUT, msg); } break;
       case S2C.REPLAY: if (msg.sessionId === state.activeSessionId) { onReplayCb?.(msg.data); emit(S2C.REPLAY, msg); } break;
-      case S2C.ERROR: state.error = `${msg.code}: ${msg.message}`; emit(S2C.ERROR, msg); break;
+      case S2C.ERROR:
+        state.error = `${msg.code}: ${msg.message}`;
+        if (msg.code === 'restore-failed') { restoreResolve?.(null); restoreResolve = null; }
+        emit(S2C.ERROR, msg); break;
       default: emit(msg.type, msg); break;
     }
   }
@@ -120,6 +125,10 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
       if (state.activeSessionId === id) state.activeSessionId = null;
     },
     switchTo(id: string) { state.activeSessionId = id; send(C2S.START, { sessionId: id }); },
+    restoreSession(id: string) {
+      send(C2S.RESTORE, { sessionId: id });
+      return new Promise<SessionSummary | null>((resolve) => { restoreResolve = resolve; });
+    },
     createSession(input: { projectId?: string | null; cols?: number; rows?: number; kind?: 'agent' | 'shell'; agentId?: string | null; agentCmd?: string | null }) {
       send(C2S.CREATE, { ...input });
       return new Promise<SessionSummary>((resolve) => { createdResolve = resolve; });
