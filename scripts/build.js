@@ -85,6 +85,23 @@ check(
   fs.existsSync(path.join(ROOT, "web", "dist", "index.html")),
   "run npm run build:web first",
 );
+// 前端产物必须比 web/src 与 shared（含 i18n）都新：否则会把旧 bundle 配新词条，
+// 界面出现 gitstat.title 这类「找不到词条、直接显示 key」的问题（已踩过）。
+function newestMtime(dir) {
+  let newest = 0;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    const m = e.isDirectory() ? newestMtime(p) : fs.statSync(p).mtimeMs;
+    if (m > newest) newest = m;
+  }
+  return newest;
+}
+const distMtime = fs.statSync(path.join(ROOT, "web", "dist", "index.html")).mtimeMs;
+const srcMtime = Math.max(newestMtime(path.join(ROOT, "web", "src")), newestMtime(path.join(ROOT, "shared")));
+check(
+  distMtime >= srcMtime,
+  "web/dist is stale (web/src or shared changed after the last build) — run `npm run build:web` again",
+);
 check(
   fs.existsSync(path.join(ROOT, "shared", "index.js")),
   "missing shared/index.js",
