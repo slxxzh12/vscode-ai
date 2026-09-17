@@ -27,6 +27,8 @@ export function portPaths(port, { root = dataHome() } = {}) {
     historyFile: path.join(dir, 'message-history.jsonc'),
     sessionProjectsFile: path.join(dir, 'session-projects.json'),
     windowStateFile: path.join(dir, 'window-state.json'),
+    sessionsFile: path.join(dir, 'sessions.json'),
+    sessionLogsDir: path.join(dir, 'session-logs'),
     usagePeersFile: path.join(dir, 'usage-peers.json'),
     usageReportFile: path.join(dir, 'usage-report.json'),
     inviteFile: path.join(dir, 'collab', 'invite.json'),
@@ -38,7 +40,7 @@ export function portPaths(port, { root = dataHome() } = {}) {
 }
 
 export function ensurePortDirs(paths) {
-  for (const d of [paths.dir, paths.schedulerDir, paths.collabDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.skillsRoot]) {
+  for (const d of [paths.dir, paths.schedulerDir, paths.collabDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.skillsRoot, paths.sessionLogsDir]) {
     fs.mkdirSync(d, { recursive: true });
   }
   return paths;

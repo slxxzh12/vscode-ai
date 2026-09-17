@@ -27,6 +27,8 @@ test('portPaths 全部落在 ports/<端口> 下', () => {
   assert.equal(p.historyFile, path.join(base, 'message-history.jsonc'));
   assert.equal(p.sessionProjectsFile, path.join(base, 'session-projects.json'));
   assert.equal(p.windowStateFile, path.join(base, 'window-state.json'));
+  assert.equal(p.sessionsFile, path.join(base, 'sessions.json'));
+  assert.equal(p.sessionLogsDir, path.join(base, 'session-logs'));
   assert.equal(p.usagePeersFile, path.join(base, 'usage-peers.json'));
   assert.equal(p.usageReportFile, path.join(base, 'usage-report.json'));
   assert.equal(p.inviteFile, path.join(base, 'collab', 'invite.json'));
@@ -46,7 +48,7 @@ test('同端口推导稳定，不同端口互不重叠', () => {
 test('ensurePortDirs 幂等创建必需子目录', () => {
   const root = tmpRoot();
   const p = ensurePortDirs(portPaths(22222, { root }));
-  for (const d of [p.dir, p.schedulerDir, p.collabDir, p.uploadDir, p.downloadDir, p.downloadsDir, p.skillsRoot]) {
+  for (const d of [p.dir, p.schedulerDir, p.collabDir, p.uploadDir, p.downloadDir, p.downloadsDir, p.skillsRoot, p.sessionLogsDir]) {
     assert.ok(fs.existsSync(d), d + ' 应存在');
   }
   ensurePortDirs(p);   // 第二次不抛
