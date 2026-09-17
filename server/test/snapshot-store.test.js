@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { snapshotName, decodePng, saveSnapshotToRepo, SNAPSHOT_DIR } from '../snapshot-store.js';
 
 function tmp() {
@@ -80,4 +81,22 @@ test('saveSnapshotToRepo git 失败时不抛错，标记 uploaded:false', async 
   assert.equal(r.reason, 'git-failed');
   assert.ok(fs.existsSync(path.join(repo, SNAPSHOT_DIR, r.file)));
   fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test('saveSnapshotToRepo 默认 git 实现：真实仓库走 add/commit，push 无远端标 git-failed', async () => {
+  try { execFileSync('git', ['--version'], { stdio: 'ignore' }); } catch { return; }
+  const repo = tmp();
+  try {
+    execFileSync('git', ['init'], { cwd: repo, stdio: 'ignore' });
+    execFileSync('git', ['-c', 'user.email=t@e.com', '-c', 'user.name=t', 'commit', '--allow-empty', '-m', 'init'], { cwd: repo, stdio: 'ignore' });
+    const dataUrl = `data:image/png;base64,${Buffer.from('PNGDATA').toString('base64')}`;
+    const r = await saveSnapshotToRepo({ repoRoot: repo, dataUrl, date: new Date(2026, 8, 12, 9, 30, 5) });
+    assert.equal(r.uploaded, false);
+    assert.equal(r.reason, 'git-failed');
+    assert.ok(fs.existsSync(path.join(repo, SNAPSHOT_DIR, r.file)));
+    const staged = execFileSync('git', ['-C', repo, 'log', '--oneline'], { encoding: 'utf8' });
+    assert.ok(staged.includes('snapshot:'));
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
 });
