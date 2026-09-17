@@ -52,6 +52,24 @@ function rm(target) {
   if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
 }
 
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Windows 上刚跑过 opencode.exe（或杀软扫描新解压的 exe）会短暂锁住目录，
+// rename 会偶发 EPERM，这里退避重试。
+function renameWithRetry(from, to, attempts = 10) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (e) {
+      if (i === attempts) throw e;
+      sleepSync(300 * i);
+    }
+  }
+}
+
 function psQuote(s) {
   return "'" + String(s).replace(/'/g, "''") + "'";
 }
@@ -139,7 +157,7 @@ fs.appendFileSync(
 );
 rm(FINAL);
 rm(ZIP);
-fs.renameSync(APP, FINAL);
+renameWithRetry(APP, FINAL);
 
 console.log("[build-opencode] 5/5 verify output");
 const finalExe = path.join(FINAL, "opencode", ZIP_ENTRY);
