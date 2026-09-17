@@ -182,7 +182,7 @@ export async function restoreSessions({ ledger, sessionManager, agents, logger }
 
 ### 4.3 提示文案
 
-- 恢复完成后（`SESSION_LIST` 首帧且存在 `restored` 会话）可选弹一条状态提示「已恢复 N 个会话」；词条走 i18n（中英同步补齐）。
+- v1 **不新增用户可见文案**：恢复后的页签（原名）与服务端回滚已足够表达「会话已被恢复」，不再弹提示，因此无需新增 i18n 词条。
 
 ## 5. 边界情况
 
@@ -214,8 +214,8 @@ export async function restoreSessions({ ledger, sessionManager, agents, logger }
 
 ## 7. 影响面
 
-- 新增：`server/session-ledger.js`、`server/agent-resume.js`、`server/session-restore.js`、4 份新测试、本设计文档。
-- 修改：`server/port-paths.js`、`server/session-manager.js`、`server/ws-gateway.js`、`server/index.js`、`server/devflow-config.js`、`web/src/useTerminal.ts`、`web/src/components/TerminalView.vue`、`shared/`（summary 类型/常量，如涉及）、`shared/i18n/zh-CN.js`、`shared/i18n/en.js`。
+- 新增：`server/session-ledger.js`、`server/agent-resume.js`、`server/session-restore.js`、5 份新测试（server 4 + web 1）、本设计文档。
+- 修改：`server/port-paths.js`、`server/session-manager.js`、`server/ws-gateway.js`、`server/index.js`、`server/devflow-config.js`、`web/src/useTerminal.ts`、`web/src/components/TerminalView.vue`、`shared/index.d.ts`（`SessionSummary` 类型）。
 - 新增运行时数据（不入库）：`<数据目录>/ports/<端口>/sessions.json`、`session-logs/<id>.log`。
 - 修订既有文档：`docs/superpowers/specs/2026-09-17-window-restore-design.md` 的第 12 条与 §8（改为：会话续接由本设计承担，window-state 仍只管文件页签）。
 - 不改：`void.db` 结构、`session-projects.json` 格式、协作子系统、scheduler 存储、打包脚本（无新增运行时依赖）。
