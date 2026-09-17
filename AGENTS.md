@@ -44,7 +44,9 @@
 
 ## 打包顺序（先构建前端，再打绿色包）
 
-- 打绿色包前必须先 `npm.cmd run build:web`（产物 `web/dist`）。
+- **默认「几个版本一起打」**：`node scripts/build-all.js`（等价 `npm.cmd run build:portable:all`，支持 `--no-zip`）。它先跑 `build:web`，再按平台出全套——Windows 出「内置 opencode 包 + 标准包」，macOS 一次出 arm64 + x64；只有明确只要某个变体时才用下面的分项脚本。
+- Windows 下 build-all 先打 opencode 变体再打标准包：`build-opencode.js` 会重建基础目录并改名为 `-opencode`，顺序反过来会吞掉标准包目录。缺 `soft/opencode-windows-x64.zip` 时只告警跳过 opencode 变体，标准包照出。
+- 单独打绿色包前必须先 `npm.cmd run build:web`（产物 `web/dist`）。
 - Windows / macOS **各用各的脚本，互不交叉**：node-pty 原生模块与 Node 运行时都按平台/架构绑定，禁止交叉组装。
 
 ### Windows
