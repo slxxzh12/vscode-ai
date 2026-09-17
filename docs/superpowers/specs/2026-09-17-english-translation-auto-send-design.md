@@ -91,7 +91,7 @@ useEnglishComposer({
 
 状态：`on`（= 原 `translateMode`）、`source`（左栏）、`translated`（右栏）、`translating`、`autoSend`、`countdown`（`number | null`）。
 
-内部：`lastSource` / `lastResult`（判是否手动编辑过）、`pending`（`{ text, sid, timer, tick }` 或 `null`）、`settingTranslated` 标志（区分程序赋值与用户编辑）。
+内部：`pendingSid`（倒计时锁定的目标会话，跨「编辑右栏重启计时」保持不变）、`timer`（倒计时句柄）、`settingTranslated` 标志（区分程序赋值与用户编辑）。
 
 动作：
 
