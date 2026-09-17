@@ -51,7 +51,10 @@ export function useCenter() {
   }
   function activateSession(sessionId: string) {
     const id = sid(sessionId);
-    upsert({ id, kind: 'session', label: sessionId, sub: 'running' });
+    // 已存在的页签只激活，不改写 label/state（否则会覆盖用户双击重命名的页签名）
+    if (!tabs.value.some((t) => t.id === id)) {
+      tabs.value.push({ id, kind: 'session', label: sessionId, sub: 'running' });
+    }
     setActive(id);
   }
   function activateFileTab(id: string) { setActive(id); }
