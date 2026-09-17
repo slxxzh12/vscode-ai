@@ -784,6 +784,7 @@ export function useEnglishComposer(deps: EnglishComposerDeps = {}) {
     try {
       const out = isAsciiOnly(text) ? text : await translate(text);
       setTranslated(out);
+      await nextTick();                      // 先让左栏 watcher 的 disarm 落地，再 arm，避免被它取消
       arm();
       return true;
     } catch (e) {
