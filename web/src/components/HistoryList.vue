@@ -3,9 +3,12 @@ import { computed, ref, watch } from 'vue';
 import type { HistoryMessage } from '../useMessageHistory';
 
 export interface HistoryEntry { projectId: string; path: string; name: string; projName: string; ts: number; }
-const props = defineProps<{ items: HistoryEntry[]; tab: 'files' | 'messages'; messages: HistoryMessage[] }>();
+const props = withDefaults(defineProps<{ items: HistoryEntry[]; tab: 'files' | 'messages'; messages: HistoryMessage[]; filter?: boolean }>(), {
+  filter: true,
+});
 const emit = defineEmits<{
   (e: 'update:tab', tab: 'files' | 'messages'): void;
+  (e: 'update:filter', v: boolean): void;
   (e: 'open', it: HistoryEntry): void;
   (e: 'remove', projectId: string, path: string): void;
   (e: 'clear'): void;
@@ -112,6 +115,8 @@ const fileGroups = computed(() => grouped.value.map((g) => ({ proj: g.proj, rows
         <button class="tabbtn" :class="{ on: tab === 'messages' }" @click="emit('update:tab', 'messages')">{{ $t('hist.tab.messages') }}</button>
         <button class="tabbtn" :class="{ on: tab === 'files' }" @click="emit('update:tab', 'files')">{{ $t('hist.tab.files') }}</button>
       </div>
+      <button v-if="tab === 'messages'" class="filterbtn" :class="{ on: filter }" :title="$t('hist.filter.title')"
+        @click="emit('update:filter', !filter)">{{ filter ? $t('hist.filter.on') : $t('hist.filter.off') }}</button>
       <button v-if="tab === 'files' && items.length" class="clear" :title="$t('hist.clear_files')" @click="emit('clear')">{{ $t('hist.clear') }}</button>
       <button v-else-if="tab === 'messages' && messages.length" class="clear" :title="$t('hist.clear_messages')" @click="emit('clear-messages')">{{ $t('hist.clear') }}</button>
     </header>
@@ -173,6 +178,9 @@ const fileGroups = computed(() => grouped.value.map((g) => ({ proj: g.proj, rows
 .tabbtn:hover { color: var(--tx1); }
 .tabbtn.on { color: var(--ac2); border-bottom-color: var(--ac2); font-weight: 700; }
 .clear { background: none; border: 1px solid var(--bd); color: var(--tx3); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
+.filterbtn { background: none; border: 1px solid var(--bd); color: var(--tx5); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.filterbtn:hover { border-color: var(--ac2); color: var(--ac2); }
+.filterbtn.on { color: var(--ac2); border-color: var(--ac2); }
 .searchbar { flex: none; padding: 6px 10px; border-bottom: 1px solid var(--bd2); }
 .searchinput { width: 100%; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; font-size: 12px; font-family: inherit; }
 .searchinput:focus { outline: none; border-color: var(--ac2); }
