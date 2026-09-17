@@ -1,6 +1,6 @@
 export declare const C2S: Readonly<{
   LIST: 'list'; CREATE: 'create'; START: 'start'; INPUT: 'input';
-  RESIZE: 'resize'; STOP: 'stop'; KILL: 'kill'; PING: 'ping';
+  RESIZE: 'resize'; STOP: 'stop'; KILL: 'kill'; PING: 'ping'; RESTORE: 'restore';
   WF_LIST: 'wf-list'; WF_RUN: 'wf-run'; WF_NEXT: 'wf-next'; WF_ABORT: 'wf-abort';
 }>;
 export declare const S2C: Readonly<{
@@ -14,7 +14,7 @@ export declare const S2C: Readonly<{
 export declare type WfAdvance = 'auto' | 'manual';
 export declare type StepStatus = 'waiting' | 'running' | 'manual' | 'done' | 'error';
 export declare type RunStatus = 'running' | 'paused' | 'done' | 'aborted';
-export interface SessionSummary { id: string; name: string; projectId: string | null; state: 'running' | 'exited'; cwd: string; cols: number; rows: number; exitCode: number | null; kind?: 'agent' | 'shell' | 'workflow'; agentId?: string | null; restored?: boolean; }
+export interface SessionSummary { id: string; name: string; projectId: string | null; state: 'running' | 'exited'; cwd: string; cols: number; rows: number; exitCode: number | null; kind?: 'agent' | 'shell' | 'workflow'; agentId?: string | null; restored?: boolean; resumed?: boolean; }
 export interface ProjectInfo { id: string; name: string; root: string; temp?: boolean; }
 export interface TreeItem { name: string; type: 'file' | 'dir'; }
 export interface WorkflowStep { id: string; cmd: string; advance: WfAdvance; hint?: string; }

@@ -152,6 +152,52 @@ test('create 透传 kind/agentId/agentCmd 并出现在 summary', async () => {
   await t.stop();
 });
 
+test('restore：成功 → SESSION_CREATED + REPLAY，summary 带 resumed', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const session = await sm.create({ id: 's_hist01', name: 'hist', kind: 'agent', agentId: 'opencode' });
+  session.resumed = true;
+  session.ring.push('old-line\n');
+  const t = await startTestServer({ sessionManager: sm, restoreSessionById: async (id) => (id === 's_hist01' ? { ok: true, session } : { ok: false, reason: 'not-found' }) });
+  try {
+    const c = await t.connect();
+    c.send(C2S.RESTORE, { sessionId: 's_hist01' });
+    const created = await c.wait((m) => m.type === S2C.SESSION_CREATED);
+    assert.equal(created.session.id, 's_hist01');
+    assert.equal(created.session.resumed, true);
+    const replay = await c.wait((m) => m.type === S2C.REPLAY && m.sessionId === 's_hist01');
+    assert.ok(replay.data.includes('old-line'));
+  } finally {
+    await t.stop();
+  }
+});
+
+test('restore：not-found → ERROR restore-failed', async () => {
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory([])({ cwd: process.cwd() }) });
+  const t = await startTestServer({ sessionManager: sm, restoreSessionById: async () => ({ ok: false, reason: 'not-found' }) });
+  try {
+    const c = await t.connect();
+    c.send(C2S.RESTORE, { sessionId: 'ghost' });
+    const err = await c.wait((m) => m.type === S2C.ERROR);
+    assert.equal(err.code, 'restore-failed');
+    assert.equal(err.message, 'not-found');
+  } finally {
+    await t.stop();
+  }
+});
+
+test('restore：未注入 restoreSessionById 时回 error', async () => {
+  const { t } = await makeHarness();
+  try {
+    const c = await t.connect();
+    c.send(C2S.RESTORE, { sessionId: 'x' });
+    const err = await c.wait((m) => m.type === S2C.ERROR);
+    assert.equal(err.code, 'restore-failed');
+  } finally {
+    await t.stop();
+  }
+});
+
 test('三次防崩溃：pty 写抛异常被吞、服务存活新连接正常', async () => {
   const instances = [];
   const sm = new SessionManager({ ptyFactory: async () => {

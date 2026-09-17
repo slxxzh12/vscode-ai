@@ -21,7 +21,7 @@ class Conn {
   close() { this.alive = false; try { this.ws.close(); } catch { /* noop */ } }
 }
 
-export function createGateway({ httpServer, sessionManager, workflowRunner = null, requireAuthWs = null, log = console }) {
+export function createGateway({ httpServer, sessionManager, workflowRunner = null, requireAuthWs = null, restoreSessionById = null, log = console }) {
   const wss = new WebSocketServer({ noServer: true });
   const conns = new Set();
 
@@ -52,7 +52,7 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
     ws.on('message', (raw) => {
       let msg;
       try { msg = JSON.parse(String(raw)); } catch { return; }
-      handleMessage(conn, msg);
+      Promise.resolve(handleMessage(conn, msg)).catch((e) => log.error('ws message failed', e));
     });
     ws.on('close', () => {
       sessionManager.detachAll(conn);
@@ -68,7 +68,7 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
     conn.send({ type: S2C.REPLAY, sessionId: session.id, data: REPLAY_RESET + session.ring.content });
   }
 
-  function handleMessage(conn, msg) {
+  async function handleMessage(conn, msg) {
     switch (msg.type) {
       case C2S.LIST:
         conn.send({ type: S2C.SESSION_LIST, sessions: sessionManager.list() });
@@ -109,6 +109,14 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
       case C2S.KILL:
         if (sessionManager.kill(msg.sessionId) && conn.sessionId === msg.sessionId) conn.sessionId = null;
         break;
+      case C2S.RESTORE: {
+        const r = restoreSessionById ? await restoreSessionById(msg.sessionId) : null;
+        if (!r || !r.ok) { conn.send({ type: S2C.ERROR, code: 'restore-failed', message: (r && r.reason) || 'not-found' }); break; }
+        sessionManager.setActive(r.session.id, conn);
+        conn.send({ type: S2C.SESSION_CREATED, session: sessionManager.summary(r.session) });
+        replay(conn, r.session);
+        break;
+      }
       case C2S.PING:
         conn.send({ type: S2C.PONG });
         break;

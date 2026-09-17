@@ -2,9 +2,9 @@ import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createGateway } from '../../ws-gateway.js';
 
-export async function startTestServer({ sessionManager, workflowRunner = null }) {
+export async function startTestServer({ sessionManager, workflowRunner = null, restoreSessionById = null }) {
   const server = http.createServer((req, res) => { res.writeHead(404); res.end(); });
-  const gateway = createGateway({ httpServer: server, sessionManager, workflowRunner });
+  const gateway = createGateway({ httpServer: server, sessionManager, workflowRunner, restoreSessionById });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
   return {
