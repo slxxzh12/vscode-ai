@@ -13,7 +13,7 @@ import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
 import { useVersion } from '../useVersion';
 import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from './portRestart';
-import { buildChips } from '../phaseChips';
+import { buildChips, appendText, type Chip } from '../phaseChips';
 import WorkflowEditor from './WorkflowEditor.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
 
@@ -435,9 +435,7 @@ function onFillComposer(e: Event) {
 
 // 选文件：把路径（带引号）插到输入框，由所用 Agent 自行读取/识别
 function insertComposerPath(p: string) {
-  const s = `"${p}"`;
-  const cur = composerText.value;
-  composerText.value = cur ? (/\s$/.test(cur) ? cur + s : `${cur} ${s}`) : s;
+  composerText.value = appendText(composerText.value, `"${p}"`);
 }
 async function pickFileForPrompt() {
   try {
@@ -493,11 +491,15 @@ const stageGroups = computed(() => {
   return out;
 });
 const activeStage = ref('');
-const chips = computed<string[]>(() => {
+const chips = computed<Chip[]>(() => {
   const st = curWf.value.stages.find((s) => s.id === activeStage.value) || curWf.value.stages[0];
-  // 阶段提示 + 固定附加项（1/2/3/4/5/ok 常驻，见 phaseChips.ts）
+  // 阶段提示（替换型）+ 固定附加项 1/2/3/4/5/ok（追加型），见 phaseChips.ts
   return buildChips(st?.prompts);
 });
+// 替换型 chip 整段填入；追加型 chip 追加到末尾（彼此不互斥，可连点多个）
+function onChipClick(c: Chip) {
+  composerText.value = c.append ? appendText(composerText.value, c.text) : c.text;
+}
 function chipText(s: string) {
   const t = s.replace(/\s+/g, ' ').trim();
   return t.length > 40 ? t.slice(0, 40) + '…' : t;
@@ -932,13 +934,13 @@ onBeforeUnmount(() => {
         <div v-if="activeIsAgent && chips.length" class="chipbar" :title="$t('term.phase_hints')">
           <span class="chips-label">{{ $t('term.common') }}</span>
           <button
-            v-for="(p, i) in chips"
+            v-for="(c, i) in chips"
             :key="i"
             class="chip"
-            :class="{ on: composerText === p }"
-            :title="p"
-            @click="composerText = p"
-          ><span class="cdot" />{{ chipText(p) }}</button>
+            :class="{ on: !c.append && composerText === c.text }"
+            :title="c.text"
+            @click="onChipClick(c)"
+          ><span class="cdot" />{{ chipText(c.text) }}</button>
         </div>
         <div class="cwrap">
           <div class="cinputwrap">
