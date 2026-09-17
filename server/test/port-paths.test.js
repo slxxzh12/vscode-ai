@@ -25,6 +25,8 @@ test('portPaths 全部落在 ports/<端口> 下', () => {
   assert.equal(p.downloadsDir, path.join(base, 'downloads'));
   assert.equal(p.relayPluginsDir, path.join(base, 'downloads', 'relay-plugins'));
   assert.equal(p.historyFile, path.join(base, 'message-history.jsonc'));
+  assert.equal(p.sessionProjectsFile, path.join(base, 'session-projects.json'));
+  assert.equal(p.windowStateFile, path.join(base, 'window-state.json'));
   assert.equal(p.usagePeersFile, path.join(base, 'usage-peers.json'));
   assert.equal(p.usageReportFile, path.join(base, 'usage-report.json'));
   assert.equal(p.inviteFile, path.join(base, 'collab', 'invite.json'));
