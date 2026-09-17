@@ -17,6 +17,7 @@ import { buildChips, appendText, type Chip } from '../phaseChips';
 import WorkflowEditor from './WorkflowEditor.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
 import { captureToPngDataUrl } from '../snapshot';
+import { pickRestoredAgent, restoredAgentIds } from '../sessionRestore';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -256,7 +257,10 @@ async function createNew(id: string) {
   stopNewTimer();
   newOpen.value = false;
   const c = newChoices.value.find((x) => x.id === id) || newChoices.value[0];
-  const s = await props.terminal.createSession({ projectId: props.projectId, cols: 80, rows: 24 });
+  const s = await props.terminal.createSession({
+    projectId: props.projectId, cols: 80, rows: 24,
+    kind: c.cmd ? 'agent' : 'shell', agentId: c.cmd ? c.id : null, agentCmd: c.cmd || null,
+  });
   if (c.cmd) markAgent(s.id);
   props.center.ensureSession(s.id, c.cmd ? `◈ ${c.label}` : c.label, s.state || 'running');
   props.terminal.switchTo(s.id);
@@ -322,7 +326,10 @@ async function startAgent() {
   }
   const gen = ++agentGen;
   const pid = props.projectId;
-  const s = await props.terminal.createSession({ projectId: pid, cols: 80, rows: 24 });
+  const s = await props.terminal.createSession({
+    projectId: pid, cols: 80, rows: 24,
+    kind: 'agent', agentId: agentId.value, agentCmd: agentCmd.value,
+  });
   if (gen !== agentGen) return;   // 期间已再次切换项目/重建：丢弃本次结果
   agentSid.value = s.id;
   agentProjectId.value = pid;
@@ -713,6 +720,17 @@ function init() {
   unsubList = props.terminal.on(S2C.SESSION_LIST, () => {
     if (autoTried || props.terminal.state.activeSessionId) return;
     autoTried = true;
+    const adopted = pickRestoredAgent(props.terminal.state.sessions);
+    if (adopted) {
+      for (const id of restoredAgentIds(props.terminal.state.sessions)) markAgent(id);
+      agentSid.value = adopted.id;
+      agentProjectId.value = adopted.projectId ?? null;
+      agentAtStart.value = adopted.agentId || agentId.value;
+      agentStarted.value = true;
+      agentCliReady.value = true;                 // 服务端已注入续会话命令，不再重复注入
+      props.terminal.switchTo(adopted.id);
+      return;
+    }
     const existing = props.terminal.state.sessions.find((s) => agentSids.value.has(s.id));
     if (existing) {
       agentSid.value = existing.id;                       // 重新挂载后绑定回固定 Agent 会话
