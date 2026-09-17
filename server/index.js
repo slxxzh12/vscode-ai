@@ -18,8 +18,9 @@ import { createComposerPrefs } from './composer-prefs.js';
 import { createSessionProjects } from './session-projects.js';
 import { createWindowState } from './window-state.js';
 import { createSessionLedger } from './session-ledger.js';
-import { restoreSessions } from './session-restore.js';
+import { restoreSessions, restoreRecord } from './session-restore.js';
 import { discoverAgentSessionId } from './agent-resume.js';
+import { claimedAgentSessionIds, findClaimOwner } from './session-claims.js';
 import { CollabStore } from './collaboration/store.js';
 import { loadIdentity, detectHost } from './collaboration/identity.js';
 import { CollabEngine } from './collaboration/engine.js';
@@ -192,24 +193,30 @@ function buildWorkspace({ paths, port }) {
   const windowState = createWindowState({ file: paths.windowStateFile, logger: log });
   const sessionLedger = createSessionLedger({ file: paths.sessionsFile, logsDir: paths.sessionLogsDir, logger: log });
   const agentList = () => loadDevflowConfig(configFile).agents.list || [];
+  let discoveryQueue = Promise.resolve();
+  function runDiscovery(session) {
+    // 串行化：避免同批会话并发读到同一份旧「已认领」集合而错配
+    discoveryQueue = discoveryQueue.then(async () => {
+      const cur = sessionManager.get(session.id);
+      if (!cur || !cur.alive) return;
+      const rows = sessionLedger.read().sessions;
+      const already = rows.find((r) => r.id === session.id);
+      if (already && already.agentSessionId) return;
+      const agent = agentList().find((a) => a.id === session.agentId) || null;
+      const exclude = claimedAgentSessionIds(rows, session.id);
+      const sid = await discoverAgentSessionId({ agent, cwd: session.cwd, since: session.createdAt, exclude });
+      if (!sid) return;
+      const fresh = sessionLedger.read().sessions;
+      if (claimedAgentSessionIds(fresh, session.id).has(sid)) return;   // 竞态兜底：已被别会话认领
+      const row = fresh.find((r) => r.id === session.id);
+      if (row) sessionLedger.upsert({ ...row, agentSessionId: sid, updatedAt: Date.now() });
+    }).catch(() => { /* 发现失败不影响使用 */ });
+  }
   function scheduleAgentDiscovery(session) {
     const known = sessionLedger.read().sessions.find((r) => r.id === session.id);
     if (known && known.agentSessionId) return;
     for (const delay of [15000, 60000]) {
-      setTimeout(() => {
-        const cur = sessionManager.get(session.id);
-        if (!cur || !cur.alive) return;
-        const already = sessionLedger.read().sessions.find((r) => r.id === session.id);
-        if (already && already.agentSessionId) return;
-        const agent = agentList().find((a) => a.id === session.agentId) || null;
-        discoverAgentSessionId({ agent, cwd: session.cwd, since: session.createdAt })
-          .then((sid) => {
-            if (!sid) return;
-            const row = sessionLedger.read().sessions.find((r) => r.id === session.id);
-            if (row) sessionLedger.upsert({ ...row, agentSessionId: sid, updatedAt: Date.now() });
-          })
-          .catch(() => { /* 发现失败不影响使用 */ });
-      }, delay).unref?.();
+      setTimeout(() => { void runDiscovery(session); }, delay).unref?.();
     }
   }
   const sessionManager = new SessionManager({
@@ -233,6 +240,31 @@ function buildWorkspace({ paths, port }) {
     if (row) sessionLedger.upsert({ ...row, state: 'exited', updatedAt: Date.now() });
   });
   sessionManager.on('removed', (id) => sessionLedger.remove(id));
+  function findLiveByAgentSessionId(agentSessionId, exceptDevflowId) {
+    return findClaimOwner(sessionManager.live(), sessionLedger.read().sessions, agentSessionId, exceptDevflowId);
+  }
+  function isAgentSessionIdTaken(agentSessionId, exceptDevflowId) {
+    return !!findLiveByAgentSessionId(agentSessionId, exceptDevflowId);
+  }
+  async function restoreSessionById(id) {
+    const live = sessionManager.get(id);
+    if (live && live.state === 'running') return { ok: true, session: live, redirected: false };
+    const rec = sessionLedger.read().sessions.find((r) => r.id === id);
+    if (!rec) return { ok: false, reason: 'not-found' };
+    if (rec.agentSessionId) {
+      const owner = findLiveByAgentSessionId(rec.agentSessionId, id);
+      if (owner) return { ok: true, session: owner, redirected: true };
+    }
+    try {
+      const { session } = await restoreRecord({
+        ledger: sessionLedger, sessionManager, agents: agentList(), logger: log, rec,
+        isAgentSessionIdTaken,
+      });
+      return { ok: true, session, redirected: false };
+    } catch (e) {
+      return { ok: false, reason: (e && e.message) || 'restore-failed' };
+    }
+  }
   setInterval(() => sessionLedger.flushAll(), 10000).unref?.();
   const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: log });
 
@@ -320,7 +352,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, sessionLedger, historyFile: paths.historyFile, paths };
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById };
 }
 
 // ---- 工作区（端口档案）----
@@ -333,7 +365,7 @@ function initWorkspace(paths, port) {
   // 远程访问令牌校验注入：slave 入群时校对本机活跃邀请
   ws.engine.verifyAccessToken = (tk) => { const inv = activeInvite(); return !!inv && safeEqual(tk, inv.token); };
   if (!gateway) {
-    gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log });
+    gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log, restoreSessionById: ws.restoreSessionById });
   }
   void restoreSessions({
     ledger: ws.sessionLedger,
