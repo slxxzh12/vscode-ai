@@ -94,9 +94,11 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
         replay(conn, session);
         break;
       }
-      case C2S.INPUT:
-        if (conn.sessionId) sessionManager.write(conn.sessionId, msg.data);
+      case C2S.INPUT: {
+        const sid = msg.sessionId || conn.sessionId;
+        if (sid) sessionManager.write(sid, msg.data);
         break;
+      }
       case C2S.RESIZE:
         if (conn.sessionId) sessionManager.resize(conn.sessionId, msg.cols, msg.rows);
         break;

@@ -54,6 +54,28 @@ test('input 转发到绑定会话 pty', async () => {
   await t.stop();
 });
 
+test('input 带 sessionId 时写入指定会话而非当前活动会话', async () => {
+  const { t, instances } = await makeHarness();
+  try {
+    const c = await t.connect();
+    c.send(C2S.CREATE, {});
+    const a = await c.wait((m) => m.type === S2C.SESSION_CREATED);
+    c.send(C2S.CREATE, {});
+    await c.wait((m) => m.type === S2C.SESSION_CREATED && m.session.id !== a.session.id);
+    const ptyA = instances[0].pty;
+    const ptyB = instances[1].pty;
+    ptyA.writes.length = 0;
+    ptyB.writes.length = 0;
+    // 当前活动会话是 b（后建的），但仍定向写入 a
+    c.send(C2S.INPUT, { data: 'to-a\r', sessionId: a.session.id });
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(ptyA.writes, ['to-a\r']);
+    assert.deepEqual(ptyB.writes, []);
+  } finally {
+    await t.stop();
+  }
+});
+
 test('start 切换会话：旧会话收不到新输出', async () => {
   const { t, instances } = await makeHarness();
   const c = await t.connect();
