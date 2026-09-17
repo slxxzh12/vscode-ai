@@ -82,7 +82,7 @@
 - **改端口后如何生效**：绿色包在设置面板保存端口后点「重启后端」即可；或关闭服务窗口后重新双击 `start.bat`（启动器比对 `data/port.txt`（期望端口）与 `data/runtime-port.txt`（上次运行端口），不一致时结束旧实例并按新端口启动）。dev 环境端口由 `DEVFLOW_PORT=33333` 固定，界面改端口无效、重启按钮禁用。
 - **数据目录按端口隔离**：`<dataHome>/ports/<端口>/`（Windows：`%USERPROFILE%\.local\share\void\ports\<端口>\`），内含 `projects.json`、`workflows.json`、`scheduler/`、`collab/`、`upload/`、`download/`、`downloads/devflow.xml` + `relay-plugins/`、`message-history.jsonc`、`skills-opencode/`、`void.db`（单一 SQLite 五张表：`usage`/`seed`/`member`/`member_command`/`message`；其中 `usage` 一表两粒度——`agent='*'` 是该机器当天合计，其余为 agent 明细）、`llm.vault.json`。**一个端口一份档案，端口之间零共享；换端口 = 换一份数据。**
 - 活动配置文件：`<dataHome>/ports/<端口>/downloads/devflow.xml`（只含 `<server language host>` + `<agents>` + `<workflows>`）；首次启动从仓库模板 `config/devflow.xml` 复制生成，**已存在则不覆盖**。
-- 语言可在 UI 设置面板修改，服务端就改写该文件的 `<server language>`；Agent 列表与工作流提示语直接编辑该文件。改后需**重启后端**（dev:server 的 `--watch` 不监听 xml）；仓库 `config/devflow.xml` 仅作首次 seed 模板。
+- 语言可在 UI 设置面板修改，服务端就改写该文件的 `<server language>`；**Agent 列表与工作流提示语直接编辑该文件，改完刷新页面即生效**（`/api/agents`、`/api/workflows-xml`、`/api/settings` 每次请求都重新 `loadDevflowConfig`，服务端不缓存 xml）。**例外——语言**：服务端语言是启动时读进内存的（`server/i18n.js` 的 `currentLocale`），手改 xml 的 `<server language>` 需**重启后端**才生效；走 UI 设置面板改则即时生效（`POST /api/settings/language` 会同时 `setLocale`）。仓库 `config/devflow.xml` 仅作首次 seed 模板，**改它不影响既有实例，需同步改活动配置**。
 - 运行时端口记录写 `<应用目录>/data/runtime-port.txt`（供启动器打开浏览器用）。
 - **不做自动迁移**：旧 `%USERPROFILE%\.local\share\devflow` 的数据不会被读取；需要时手动把 `...\devflow\ports\22222\` 内容复制到 `...\void\ports\<新端口>\`。
 - `config/server.json`、`config/workflow.xml` 已废弃。
