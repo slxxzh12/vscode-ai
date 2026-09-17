@@ -13,6 +13,7 @@
     "dev:web": "set DEVFLOW_PORT=33333&& npm --prefix web run dev",
     "build:web": "npm --prefix web run build",
     "build:portable": "node scripts/build.js",
+    "build:portable:opencode": "node scripts/build-opencode.js",
     "build:portable:mac": "node scripts/build-mac.js",
     "test:server": "node --test \"server/test/*.test.js\"",
     "test:web": "npm --prefix web run test",
