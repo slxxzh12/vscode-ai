@@ -77,6 +77,7 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
         sessionManager.create({
           projectId: msg.projectId || null, cwd: msg.cwd || null,
           cols: msg.cols || 80, rows: msg.rows || 24,
+          kind: msg.kind || 'shell', agentId: msg.agentId || null, agentCmd: msg.agentCmd || null,
         }).then((session) => {
           sessionManager.setActive(session.id, conn);
           conn.send({ type: S2C.SESSION_CREATED, session: sessionManager.summary(session) });

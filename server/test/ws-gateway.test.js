@@ -141,6 +141,17 @@ test('未知会话 start 回 error', async () => {
   await t.stop();
 });
 
+test('create 透传 kind/agentId/agentCmd 并出现在 summary', async () => {
+  const { t } = await makeHarness();
+  const c = await t.connect();
+  c.send(C2S.CREATE, { kind: 'agent', agentId: 'opencode', agentCmd: 'opencode' });
+  const created = await c.wait((m) => m.type === S2C.SESSION_CREATED);
+  assert.equal(created.session.kind, 'agent');
+  assert.equal(created.session.agentId, 'opencode');
+  assert.equal(created.session.restored, false);
+  await t.stop();
+});
+
 test('三次防崩溃：pty 写抛异常被吞、服务存活新连接正常', async () => {
   const instances = [];
   const sm = new SessionManager({ ptyFactory: async () => {
