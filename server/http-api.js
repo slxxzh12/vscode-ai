@@ -6,6 +6,8 @@ import { collectCodeStats } from './code-count.js';
 import { createCodeGroups } from './code-groups.js';
 import { createCodePrefs } from './code-prefs.js';
 import { createComposerPrefs } from './composer-prefs.js';
+import { createSessionProjects } from './session-projects.js';
+import { createWindowState } from './window-state.js';
 import { buildZip, safeZipName } from './collaboration/zip.js';
 import { saveSnapshotToRepo } from './snapshot-store.js';
 import { pickFolder, pickAnyFile } from './native-dialog.js';
@@ -40,7 +42,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, saveSnapshotFn = saveSnapshotToRepo, revealInOsFn = revealInOs, runScriptFn = runScript }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, saveSnapshotFn = saveSnapshotToRepo, revealInOsFn = revealInOs, runScriptFn = runScript }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -254,6 +256,19 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       if (url.pathname === '/api/composer/prefs' && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, composerPrefs.write(body));
+        return;
+      }
+      if (url.pathname === '/api/session-projects' && req.method === 'GET') {
+        sendJson(res, 200, sessionProjects.read());
+        return;
+      }
+      if (url.pathname === '/api/window-state' && req.method === 'GET') {
+        sendJson(res, 200, windowState.read());
+        return;
+      }
+      if (url.pathname === '/api/window-state' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, windowState.write(body));
         return;
       }
       if (url.pathname === '/api/code/stats' && req.method === 'POST') {

@@ -622,3 +622,44 @@ test('/api/snapshot 注入保存器：200 回执；坏 body 400', async (t) => {
   assert.equal(j.uploaded, true);
   assert.equal((await postRaw(server, '/api/snapshot', '{ nope')).status, 400);
 });
+
+test('GET /api/session-projects 默认空对象', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/session-projects');
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body), {});
+});
+
+test('GET /api/window-state 默认空对象；POST 归一化后落盘', async (t) => {
+  const { createWindowState } = await import('../window-state.js');
+  const windowState = createWindowState({ file: path.join(tmpDir(), 'window-state.json') });
+  const server = await start(new Projects({ projects: [] }), { windowState });
+  t.after(() => server.close());
+
+  const empty = await request(server, '/api/window-state');
+  assert.equal(empty.status, 200);
+  assert.deepEqual(JSON.parse(empty.body), {});
+
+  const saved = await post(server, '/api/window-state', {
+    rail: 'history', historyTab: 'messages', msgFilter: false,
+    tabs: [{ projectId: 'p1', path: 'a.ts', label: 'a.ts' }, { projectId: 'p1' }, 'nope'],
+    activeTab: 'f:p1|a.ts', junk: true,
+  });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(JSON.parse(saved.body), {
+    rail: 'history', historyTab: 'messages', msgFilter: false,
+    tabs: [{ projectId: 'p1', path: 'a.ts', label: 'a.ts' }], activeTab: 'f:p1|a.ts',
+  });
+
+  const back = await request(server, '/api/window-state');
+  assert.deepEqual(JSON.parse(back.body), JSON.parse(saved.body));
+});
+
+test('POST /api/window-state 非法字段被剔除（rail=mobile 不持久化）', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/window-state', { rail: 'mobile', msgFilter: 'x', tabs: 'nope' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body), {});
+});
