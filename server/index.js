@@ -15,6 +15,8 @@ import { ensureDefaults, loadProjects, loadWorkflows } from './config.js';
 import { createCodeGroups } from './code-groups.js';
 import { createCodePrefs } from './code-prefs.js';
 import { createComposerPrefs } from './composer-prefs.js';
+import { createSessionProjects } from './session-projects.js';
+import { createWindowState } from './window-state.js';
 import { CollabStore } from './collaboration/store.js';
 import { loadIdentity, detectHost } from './collaboration/identity.js';
 import { CollabEngine } from './collaboration/engine.js';
@@ -183,9 +185,12 @@ function buildWorkspace({ paths, port }) {
   const codeGroups = createCodeGroups({ file: paths.codeGroupsFile, logger: log });
   const codePrefs = createCodePrefs({ file: paths.codePrefsFile, logger: log });
   const composerPrefs = createComposerPrefs({ file: paths.composerPrefsFile, logger: log });
+  const sessionProjects = createSessionProjects({ file: paths.sessionProjectsFile, logger: log });
+  const windowState = createWindowState({ file: paths.windowStateFile, logger: log });
   const sessionManager = new SessionManager({
     logger: log,
     projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
+    onCreated: (s) => sessionProjects.record(s.id, s.projectId),
   });
   const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: log });
 
@@ -262,7 +267,7 @@ function buildWorkspace({ paths, port }) {
     broadcastSched(type, payload);
   });
 
-  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs });
+  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
