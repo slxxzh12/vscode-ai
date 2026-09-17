@@ -9,7 +9,7 @@ import { createComposerPrefs } from './composer-prefs.js';
 import { createSessionProjects } from './session-projects.js';
 import { createWindowState } from './window-state.js';
 import { buildZip, safeZipName } from './collaboration/zip.js';
-import { saveSnapshotToRepo } from './snapshot-store.js';
+import { createRemoteCoder } from './remote-coder-mount.js';
 import { pickFolder, pickAnyFile } from './native-dialog.js';
 import { revealInOs } from './reveal.js';
 import { runScript, RUNNABLE_EXT } from './run-script.js';
@@ -42,7 +42,8 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, saveSnapshotFn = saveSnapshotToRepo, revealInOsFn = revealInOs, runScriptFn = runScript }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript }) {
+  const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -218,14 +219,6 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         fs.createReadStream(file).pipe(res);
         return;
       }
-      if (url.pathname === '/api/snapshot' && req.method === 'POST') {
-        let body;
-        try { body = await readJsonBody(req, 32 * 1024 * 1024); } catch { sendJson(res, 400, { error: 'bad body' }); return; }
-        const r = await saveSnapshotFn({ repoRoot, dataUrl: body.dataUrl });
-        logger?.info?.('snapshot:', r.rel, r.uploaded ? '(pushed)' : `(${r.reason || 'local'})`);
-        sendJson(res, 200, { ok: true, file: r.file, rel: r.rel, dir: r.dir, uploaded: r.uploaded, reason: r.reason });
-        return;
-      }
       if (url.pathname === '/api/git/changes' && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, await collectGitChanges({ repo: body.repo, since: body.since, until: body.until, filter: body.filter }));
@@ -298,6 +291,7 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         res.end(zip);
         return;
       }
+      if (await remoteCoderFn({ pathname: url.pathname, req, res, sendJson, readJsonBody })) return;
     } catch (err) {
       if (err.code === 'bad-image') return sendJson(res, 400, { error: 'bad image' });
       if (err.code === 'bad-dir') return sendJson(res, 400, { error: 'bad dir', message: String(err.message) });

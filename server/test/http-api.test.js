@@ -610,19 +610,6 @@ test('/api/file/pick-path 只回路径：成功/取消/错误', async (t) => {
   assert.deepEqual(JSON.parse((await post(errored, '/api/file/pick-path', {})).body), { error: 'unsupported', message: null });
 });
 
-test('/api/snapshot 注入保存器：200 回执；坏 body 400', async (t) => {
-  const server = await start(new Projects({ projects: [] }), {
-    saveSnapshotFn: async () => ({ file: 'f.png', rel: 'remote_coder/f.png', dir: 'd', uploaded: true, reason: '' }),
-  });
-  t.after(() => server.close());
-  const r = await post(server, '/api/snapshot', { dataUrl: 'data:image/png;base64,AAAA' });
-  assert.equal(r.status, 200);
-  const j = JSON.parse(r.body);
-  assert.equal(j.ok, true);
-  assert.equal(j.uploaded, true);
-  assert.equal((await postRaw(server, '/api/snapshot', '{ nope')).status, 400);
-});
-
 test('GET /api/session-projects 默认空对象', async (t) => {
   const server = await start(new Projects({ projects: [] }));
   t.after(() => server.close());
