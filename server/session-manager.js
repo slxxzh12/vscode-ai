@@ -60,8 +60,10 @@ export class SessionManager extends EventEmitter {
   summary(s) {
     return { id: s.id, name: s.name, projectId: s.projectId, state: s.state, cwd: s.cwd,
       cols: s.cols, rows: s.rows, exitCode: s.exitCode,
-      kind: s.kind || 'shell', agentId: s.agentId || null, restored: !!s.restored };
+      kind: s.kind || 'shell', agentId: s.agentId || null, restored: !!s.restored,
+      resumed: s.resumed === true ? true : undefined };
   }
+  live() { return [...this.sessions.values()]; }
   write(id, data) {
     const s = this.get(id);
     if (!s || !s.alive || !s.pty || s.ptyExited) return false;

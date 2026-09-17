@@ -172,3 +172,19 @@ test('markRestored 置 restored=true 并出现在 summary', async () => {
   sm.markRestored(s.id);
   assert.equal(sm.summary(s).restored, true);
 });
+
+test('summary 带 resumed（仅恢复时置 true）', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const s = await sm.create({});
+  assert.equal(sm.summary(s).resumed, undefined);
+  s.resumed = true;
+  assert.equal(sm.summary(s).resumed, true);
+});
+
+test('live 返回全部会话对象', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  await sm.create({});
+  assert.equal(sm.live().length, 1);
+});

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SessionManager } from '../session-manager.js';
 import { makeFakePtyFactory } from './helpers/fake-pty.js';
-import { restoreSessions } from '../session-restore.js';
+import { restoreSessions, restoreRecord } from '../session-restore.js';
 
 function makeLedger(sessions, logs = {}) {
   return { read: () => ({ sessions }), readLog: (id) => logs[id] ?? null };
@@ -49,4 +49,27 @@ test('恢复：单条失败不阻断其它', async () => {
   const res = await restoreSessions({ ledger, sessionManager: sm, agents: [], resumeDelayMs: 0, exists: () => true });
   assert.equal(res.restored, 1);
   assert.deepEqual(res.skipped, [{ id: 's_1', reason: 'boom' }]);
+});
+
+test('restoreRecord：可续会话注入续命令且 resumed=true', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const ledger = makeLedger([rec('s_a')]);
+  const out = await restoreRecord({ ledger, sessionManager: sm, agents: [{ id: 'opencode', cmd: 'opencode' }], rec: rec('s_a'), resumeDelayMs: 0 });
+  assert.equal(out.resumed, true);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(instances[0].pty.writes.includes('opencode --session ses_1\r'), true);
+});
+
+test('restoreRecord：agentSessionId 被占用时退化为原命令且 resumed=false', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const ledger = makeLedger([rec('s_a')]);
+  const out = await restoreRecord({
+    ledger, sessionManager: sm, agents: [{ id: 'opencode', cmd: 'opencode' }],
+    rec: rec('s_a'), resumeDelayMs: 0, isAgentSessionIdTaken: () => true,
+  });
+  assert.equal(out.resumed, false);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(instances[0].pty.writes.includes('opencode\r'), true);
 });
