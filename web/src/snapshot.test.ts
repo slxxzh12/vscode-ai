@@ -4,7 +4,6 @@ import {
   snapshotFilter,
   snapshotOptions,
   captureToPngDataUrl,
-  uploadSnapshot,
 } from './snapshot';
 
 type FakeStyle = { getPropertyValue(name: string): string };
@@ -77,34 +76,5 @@ describe('captureToPngDataUrl', () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-});
-
-describe('uploadSnapshot', () => {
-  it('POST /api/snapshot 并返回 file/rel/dir/uploaded', async () => {
-    const seen: { url?: string; init?: { method: string; body: string } } = {};
-    const r = await uploadSnapshot('data:image/png;base64,AAA', {
-      fetch: async (url, init) => {
-        seen.url = url;
-        seen.init = init;
-        return { ok: true, status: 200, json: async () => ({ ok: true, file: 'a.png', rel: 'remote_coder/a.png', dir: 'D:/repo/remote_coder', uploaded: false }) };
-      },
-    });
-    expect(seen.url).toBe('/api/snapshot');
-    expect(seen.init?.method).toBe('POST');
-    expect(JSON.parse(seen.init!.body).dataUrl).toBe('data:image/png;base64,AAA');
-    expect(r).toEqual({ file: 'a.png', rel: 'remote_coder/a.png', dir: 'D:/repo/remote_coder', uploaded: false, reason: '' });
-  });
-
-  it('失败时抛出服务端 message', async () => {
-    await expect(uploadSnapshot('x', {
-      fetch: async () => ({ ok: false, status: 500, json: async () => ({ error: 'git-failed', message: 'push rejected' }) }),
-    })).rejects.toThrow('push rejected');
-  });
-
-  it('非 2xx 且无 message 时回退 HTTP 状态', async () => {
-    await expect(uploadSnapshot('x', {
-      fetch: async () => ({ ok: false, status: 502, json: async () => ({}) }),
-    })).rejects.toThrow('HTTP 502');
   });
 });

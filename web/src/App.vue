@@ -16,7 +16,7 @@ import { useI18n } from './i18n';
 import { parseOpenParam } from './deeplink';
 import ProxyView from './components/ProxyView.vue';
 import MobileView from './components/MobileView.vue';
-import { captureToPngDataUrl, uploadSnapshot } from './snapshot';
+import { startDesktopRemoteCoder } from './remote-coder/useDesktopRemoteCoder';
 import { useVersion } from './useVersion';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
 import { useSessionProjects } from './sessionProjects';
@@ -24,33 +24,17 @@ import { fetchWindowState, planRestore, saveWindowState, flushWindowState, toSav
 import { filterMessages, sessionOfActiveTab } from './msgFilter';
 
 const appRef = ref<HTMLDivElement | null>(null);
-const snapshotting = ref(false);
-const snapshotMsg = ref('');
-let snapshotMsgTimer: ReturnType<typeof setTimeout> | null = null;
-function showSnapshotMsg(text: string) {
-  snapshotMsg.value = text;
-  if (snapshotMsgTimer) clearTimeout(snapshotMsgTimer);
-  snapshotMsgTimer = setTimeout(() => { snapshotMsg.value = ''; snapshotMsgTimer = null; }, 4000);
-}
-async function onSnapshot() {
-  if (snapshotting.value) return;
-  const el = appRef.value;
-  if (!el) return;
-  snapshotting.value = true;
-  try {
-    await nextTick();
-    await new Promise<void>((r) => requestAnimationFrame(() => r()));
-    const dataUrl = await captureToPngDataUrl(el);
-    const r = await uploadSnapshot(dataUrl);
-    const key = r.uploaded
-      ? 'top.snapshot.saved'
-      : (r.reason === 'not-a-repo' ? 'top.snapshot.savedLocal' : 'top.snapshot.savedGitFailed');
-    showSnapshotMsg(t(key, { path: r.dir || r.rel }));
-  } catch {
-    alert(t('top.snapshot.failed'));
-  } finally {
-    snapshotting.value = false;
-  }
+
+// 顶栏手机按钮：新标签页打开手机页（带上当前 access 参数，远端/手机可直接访问）
+let stopRemoteCoder: (() => void) | null = null;
+function onPhone() {
+  const url = new URL(location.href);
+  url.search = '';
+  url.hash = '';
+  const access = new URLSearchParams(location.search).get('access');
+  if (access) url.searchParams.set('access', access);
+  url.searchParams.set('phone', '1');
+  window.open(url.toString(), '_blank', 'noopener');
 }
 
 const terminal = useTerminal({});
@@ -522,10 +506,12 @@ onMounted(async () => {
   window.addEventListener('beforeunload', releaseWindowColor);
   window.addEventListener('beforeunload', persistWindowState);
   terminal.connect();
+  stopRemoteCoder = startDesktopRemoteCoder();
 });
 onBeforeUnmount(() => {
   if (colorHeartbeat) { clearInterval(colorHeartbeat); colorHeartbeat = null; }
-  if (snapshotMsgTimer) { clearTimeout(snapshotMsgTimer); snapshotMsgTimer = null; }
+  stopRemoteCoder?.();
+  stopRemoteCoder = null;
   releaseWindowColor();
   window.removeEventListener('hashchange', applyHash);
   window.removeEventListener('df-open-history', onOpenHistory);
@@ -549,12 +535,11 @@ onBeforeUnmount(() => {
       <span v-if="displayPath" class="projpath" :title="displayPath">{{ displayPath }}</span>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
-      <span v-if="snapshotMsg" class="snap-msg" :title="snapshotMsg">{{ snapshotMsg }}</span>
       <select v-model="windowColorId" class="color-sel" :title="$t('top.color.title')" @change="onColorChange">
         <option v-for="c in colorOptions" :key="c.id" :value="c.id">{{ $t(c.key) }}</option>
       </select>
       <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
-      <button class="snap-btn" :disabled="snapshotting" :class="{ 'snap-hidden': snapshotting }" :title="$t('top.snapshot')" @click="onSnapshot">📷</button>
+      <button class="snap-btn" :title="$t('top.remote')" @click="onPhone">📱</button>
       <button class="theme-btn" :title="theme === 'dark' ? $t('app.theme.to_light') : $t('app.theme.to_dark')" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
     </header>
 
@@ -598,7 +583,7 @@ onBeforeUnmount(() => {
         <aside class="side" :style="{ width: sideW + 'px' }">
           <HistoryList v-if="rail === 'history'" :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
-            @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)" @clear-messages="msgHistory.clear()"
+            @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
             @update:filter="msgFilter = $event" />
           <FileTree v-else :key="currentProject || 'none'" :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
@@ -640,13 +625,10 @@ onBeforeUnmount(() => {
 .theme-btn:hover { border-color: var(--ac2); }
 .snap-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .snap-btn:hover { border-color: var(--ac2); }
-.snap-btn:disabled { opacity: .6; cursor: default; }
-.snap-hidden { visibility: hidden; }
-.snap-msg { color: var(--ac2); font-size: 12px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lang-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
 .lang-btn:hover { border-color: var(--ac2); }
 .color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
-.top.colored .logo, .top.colored .projpath, .top.colored .net, .top.colored .snap-msg, .top.colored .app-ver { color: #fff; }
+.top.colored .logo, .top.colored .projpath, .top.colored .net, .top.colored .app-ver { color: #fff; }
 .top.colored .lang-btn, .top.colored .theme-btn, .top.colored .snap-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel, .top.colored .proj-sel { background: var(--bg1); color: var(--tx); border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel option, .top.colored .proj-sel option { color: #111; background: #fff; }

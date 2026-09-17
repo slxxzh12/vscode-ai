@@ -16,6 +16,7 @@ import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from '
 import { buildChips, appendText, type Chip } from '../phaseChips';
 import WorkflowEditor from './WorkflowEditor.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
+import { captureToPngDataUrl } from '../snapshot';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -98,16 +99,14 @@ function commitRename(tabId: string) {
   persistTabNames();
   props.center.ensureSession(sid, tabLabel(sid), sessionState(sid));
   msgHistory.renameTab(sid, tabLabel(sid));   // 同步更新历史消息里记录的页签名
-  if (name) syncAgentRename(sid, name);       // 同步改 Agent 内的对话名（opencode /rename）
+  if (name) syncAgentRename(sid, name);       // 同步改 Agent 内的对话名
 }
 function cancelRename() { renamingId.value = null; }
 
-// 页签改名后让 Agent 内的对话名跟着改：opencode 的 session_rename 默认绑定 ctrl+r（\x12），
-// 按下即打开「Rename Session」对话框（预填旧标题、光标在末尾）→ 清空 → 输入新名 → 回车确认。
-// 注意：不能发文本 `/rename`——斜杠命令要靠自动补全列表回车选中才执行，存在自定义命令时
-// 回车会选中列表里的其它项，对话框根本不会打开（实测过）。只有键位 ctrl+r 能可靠打开。
+// 页签改名后让 Agent 内的对话名跟着改：向 Agent 发 `/rename`（斜杠命令需回车从补全列表选中执行）
+// → 清掉预填的旧标题 → 输入新名 → 回车确认。仅 Agent 会话有该命令（shell 会话跳过）。
 function syncAgentRename(sid: string, name: string) {
-  if (!agentSids.value.has(sid)) return;               // 仅 Agent 会话（shell 会话没有该命令）
+  if (!agentSids.value.has(sid)) return;               // 仅 Agent 会话
   if (sessionState(sid) !== 'running') return;
   const prev = props.terminal.state.activeSessionId;
   const needSwitch = prev !== sid;                     // input 只作用于活动会话：后台页签先切过去
@@ -115,20 +114,24 @@ function syncAgentRename(sid: string, name: string) {
   const at = () => props.terminal.state.activeSessionId === sid;
   setTimeout(() => {
     if (!at()) return;
-    props.terminal.input('\x12');                      // ctrl+r：打开 Rename Session 对话框
+    props.terminal.input('/rename');                   // 输入斜杠命令
     setTimeout(() => {
       if (!at()) return;
-      props.terminal.input('\x7f'.repeat(200));        // 清掉预填的旧标题（光标在末尾）
+      props.terminal.input('\r');                      // 回车从补全列表执行命令，打开改名输入
       setTimeout(() => {
         if (!at()) return;
-        props.terminal.input(name);
+        props.terminal.input('\x7f'.repeat(200));      // 清掉预填的旧标题
         setTimeout(() => {
           if (!at()) return;
-          props.terminal.input('\r');                  // 确认改名
-          if (needSwitch && prev) setTimeout(() => props.terminal.switchTo(prev), 600);
-        }, 500);
-      }, 250);
-    }, 1600);
+          props.terminal.input(name);                  // 输入新名
+          setTimeout(() => {
+            if (!at()) return;
+            props.terminal.input('\r');                // 回车确认
+            if (needSwitch && prev) setTimeout(() => props.terminal.switchTo(prev), 600);
+          }, 400);
+        }, 250);
+      }, 1200);
+    }, 300);
   }, needSwitch ? 400 : 0);
 }
 
@@ -392,8 +395,8 @@ function buildFallbackWf(): WfDef[] {
         { id: 'code', label: t('termwf.code.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.code.prompt')] },
         { id: 'optimize', label: t('termwf.optimize.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.optimize.prompt')] },
         { id: 'test', label: t('termwf.test.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.test.prompt')] },
-        { id: 'push-merge', label: t('termwf.push.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.push.prompt')] },
-        { id: 'package', label: t('termwf.package.label'), group: t('termwf.group.ops'), prompts: [t('termwf.package.prompt')] },
+        { id: 'push-merge', label: t('termwf.push.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.push.prompt'), t('termwf.push.compact')] },
+        { id: 'package', label: t('termwf.package.label'), group: t('termwf.group.ops'), prompts: [t('termwf.package.prompt'), t('termwf.package.compact')] },
         { id: 'deploy', label: t('termwf.deploy.label'), group: t('termwf.group.ops'), prompts: [t('termwf.deploy.prompt')] },
         { id: 'troubleshoot', label: t('termwf.troubleshoot.label'), group: t('termwf.group.ops'), prompts: [t('termwf.troubleshoot.prompt')] },
       ],
@@ -432,6 +435,34 @@ function openHistory() {
 function onFillComposer(e: Event) {
   const t = (e as CustomEvent).detail?.text;
   if (typeof t === 'string') composerText.value = t;
+}
+
+// —— remote_coder：手机端发起发消息/截图 ——
+function onRemoteSend(e: Event) {
+  const text = (e as CustomEvent).detail?.text;
+  if (typeof text === 'string' && text.trim()) sendToActive(text);
+}
+async function onRemoteScreen() {
+  const el = hostRef.value;
+  if (!el) return;
+  try {
+    // 隐藏/最小化标签页 rAF 不触发：用定时器兜底 + 整体超时，避免无限等待
+    await new Promise<void>((r) => setTimeout(r, 50));
+    const dataUrl = await Promise.race([
+      captureToPngDataUrl(el),
+      new Promise<string>((_, rej) => setTimeout(() => rej(new Error('capture-timeout')), 10000)),
+    ]);
+    const res = await fetch('/api/remote-coder/screen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json().catch(() => ({}));
+    if (data.reason) console.warn('remote-coder commit failed:', data.reason);
+  } catch (e) {
+    console.warn('remote-coder capture failed:', (e as Error).message);
+  }
 }
 
 // 选文件：把路径（带引号）插到输入框，由所用 Agent 自行读取/识别
@@ -497,6 +528,8 @@ const chips = computed<Chip[]>(() => {
   // 阶段提示（替换型）+ 固定附加项 1/2/3/4/5/ok（追加型），见 phaseChips.ts
   return buildChips(st?.prompts);
 });
+const stageChips = computed(() => chips.value.filter((c) => !c.append));   // 工作流阶段提示（左侧，可被挤/滚动）
+const extraChips = computed(() => chips.value.filter((c) => c.append));    // 固定附加项 1/2/3/4/5/ok（右侧，固定位置）
 // 替换型 chip 整段填入；追加型 chip 追加到末尾（彼此不互斥，可连点多个）
 function onChipClick(c: Chip) {
   composerText.value = c.append ? appendText(composerText.value, c.text) : c.text;
@@ -768,6 +801,8 @@ onMounted(async () => {
   window.addEventListener('resize', onResize);
   window.addEventListener('df-open-agent-settings', onOpenSettings);
   window.addEventListener('df-fill-composer', onFillComposer);
+  window.addEventListener('df-remote-send', onRemoteSend);
+  window.addEventListener('df-remote-screen', onRemoteScreen);
   const fp = await nodeFp();
   cfgKey = `devflow-agent-cfg-${fp}`;
   agentSidsKey = `devflow-agent-sids-${fp}`;
@@ -787,6 +822,8 @@ onBeforeUnmount(() => {
   resizeObserver = null;
   window.removeEventListener('df-open-agent-settings', onOpenSettings);
   window.removeEventListener('df-fill-composer', onFillComposer);
+  window.removeEventListener('df-remote-send', onRemoteSend);
+  window.removeEventListener('df-remote-screen', onRemoteScreen);
   if (autoCompactTimer) { clearTimeout(autoCompactTimer); autoCompactTimer = null; }
   unsubList?.();
   unsubCfg?.();
@@ -938,14 +975,25 @@ onBeforeUnmount(() => {
         </div>
         <div v-if="activeIsAgent && chips.length" class="chipbar" :title="$t('term.phase_hints')">
           <span class="chips-label">{{ $t('term.common') }}</span>
-          <button
-            v-for="(c, i) in chips"
-            :key="i"
-            class="chip"
-            :class="{ on: !c.append && composerText === c.text }"
-            :title="c.text"
-            @click="onChipClick(c)"
-          ><span class="cdot" />{{ chipText(c.text) }}</button>
+          <div class="chipstage">
+            <button
+              v-for="(c, i) in stageChips"
+              :key="i"
+              class="chip"
+              :class="{ on: composerText === c.text }"
+              :title="c.text"
+              @click="onChipClick(c)"
+            ><span class="cdot" />{{ chipText(c.text) }}</button>
+          </div>
+          <div class="chipextra">
+            <button
+              v-for="(c, i) in extraChips"
+              :key="i"
+              class="chip"
+              :title="c.text"
+              @click="onChipClick(c)"
+            ><span class="cdot" />{{ chipText(c.text) }}</button>
+          </div>
         </div>
         <div class="cwrap">
           <div class="cinputwrap">
@@ -978,11 +1026,11 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="countdown !== null" class="cprog" :style="{ width: ((countdown ?? 0) / 3) * 100 + '%' }" />
           </div>
-          <div v-if="activeIsAgent" class="cagentacts">
-            <button class="cact" :title="$t('term.compact_hint')" @click="compactContext">{{ $t('term.compact') }}</button>
-            <button class="cact" :title="$t('term.undo_hint')" @click="undoContext">{{ $t('common.cancel') }}</button>
-          </div>
           <button class="csend" @click="onSendClick">{{ countdown !== null ? $t('term.send_countdown', { n: countdown }) : $t('common.send') }}</button>
+          <div v-if="activeIsAgent" class="cagentacts">
+            <button class="cact compact" :title="$t('term.compact_hint')" @click="compactContext">{{ $t('term.compact') }}</button>
+            <button class="cact cancel" :title="$t('term.undo_hint')" @click="undoContext">{{ $t('common.cancel') }}</button>
+          </div>
         </div>
       </template>
     </div>
@@ -1036,7 +1084,10 @@ onBeforeUnmount(() => {
 .flowline { flex: 1; height: 2px; min-width: 10px; background: linear-gradient(90deg, var(--ac2), var(--bd3)); margin: 0 4px; border-radius: 2px; }
 .cwrap { position: relative; display: flex; align-items: stretch; gap: 8px; flex: 1; min-height: 0; }
 .cinputwrap { position: relative; flex: 1; min-width: 0; display: flex; }
-.chipbar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: none; max-height: 84px; overflow-y: auto; }
+.chipbar { display: flex; align-items: flex-start; gap: 6px; flex: none; }
+.chipstage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: 1; min-width: 0; max-height: 84px; overflow-y: auto; }
+.chipextra { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: none; }
+.chipextra .chip { padding: 2px 9px; gap: 4px; }
 .chips-label { color: var(--tx3); font-size: 11px; flex: none; margin-right: 2px; line-height: 20px; }
 .chip { display: inline-flex; align-items: flex-start; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; text-align: left; white-space: normal; max-width: 100%; }
 .chip:hover { border-color: var(--ac2); color: var(--ac2); }
@@ -1046,10 +1097,13 @@ onBeforeUnmount(() => {
 .cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 30px 210px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cinput::placeholder { color: var(--tx3); }
-.csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; min-width: 100px; }
-.cagentacts { display: flex; flex-direction: column; gap: 4px; flex: none; min-width: 100px; }
-.cact { flex: 1; min-height: 0; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 10px; padding: 0 14px; cursor: pointer; font-size: 13px; font-weight: 700; }
-.cact:hover { border-color: var(--ac2); color: var(--ac2); }
+.csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 16px; font-weight: 700; flex: none; min-width: 156px; }
+.cagentacts { display: flex; flex-direction: column; gap: 6px; flex: none; min-width: 84px; }
+.cact { flex: 1; min-height: 0; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 10px; padding: 0 10px; cursor: pointer; font-size: 12px; font-weight: 700; }
+.cact.compact { flex: 65; border-color: var(--ok); color: var(--ok); }
+.cact.compact:hover { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.cact.cancel { flex: 35; border-color: var(--err); color: var(--err); }
+.cact.cancel:hover { background: color-mix(in srgb, var(--err) 18%, transparent); }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
 .cfgrow span { width: 62px; flex: none; }
