@@ -59,6 +59,7 @@
       <stage id="push-merge" label="Push&amp;Merge 代码" group="开发交付">
         <prompt>请把当前改动提交并 push 到当前分支，然后合并（Merge）到目标分支，写清提交信息并跑测试与类型检查。</prompt>
         <prompt>请整理提交历史，必要时拆分原子提交，push 后发起合并并处理冲突。</prompt>
+        <prompt>执行/compact 命令</prompt>
       </stage>
       <stage id="deploy" label="环境部署" group="交付运维">
         <prompt>请给出构建/打包/发布步骤并执行，说明环境变量与回滚方案。</prompt>
