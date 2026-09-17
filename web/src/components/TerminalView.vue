@@ -413,6 +413,7 @@ const {
   translateNow,
   sendAction,
   onLeftEnter,
+  clear,
 } = useEnglishComposer({
   getActiveSessionId: () => props.terminal.state.activeSessionId,
   send: (text, sid) => sendPromptTo(text, sid),
@@ -502,6 +503,11 @@ function chipText(s: string) {
 function pickStage(s: StageDef) {
   activeStage.value = s.id;
   if (s.prompts.length) composerText.value = s.prompts[0];   // 阶段首句填入输入框
+}
+// 清空提示词：两栏一起清、取消倒计时，并去掉阶段高亮
+function clearPrompt() {
+  clear();
+  activeStage.value = '';
 }
 async function loadWorkflows() {
   try {
@@ -942,6 +948,7 @@ onBeforeUnmount(() => {
             />
             <div class="ctools">
               <button class="cbtn" :title="$t('term.pick_file')" @mousedown.stop @click="pickFileForPrompt">{{ $t('term.pick_file') }}</button>
+              <button class="cbtn" :disabled="!composerText && !translatedText && !activeStage" :title="$t('term.clear_prompt')" @mousedown.stop @click="clearPrompt">{{ $t('term.clear_prompt') }}</button>
               <button v-if="translateMode" class="cbtn" :disabled="translating || !composerText.trim()" :title="$t('term.translate')" @mousedown.stop @click="translateNow">{{ translating ? $t('term.translating') : $t('term.translate') }}</button>
               <button class="cbtn" :class="{ on: translateMode }" :title="$t('term.translate_toggle')" @mousedown.stop @click="toggleTranslate">{{ $t('term.translate_toggle') }}</button>
               <button class="cbtn" :title="$t('term.history')" @mousedown.stop @click="openHistory">{{ $t('term.history') }}</button>

@@ -112,6 +112,13 @@ export function useEnglishComposer(deps: EnglishComposerDeps = {}) {
     onSent();
   }
 
+  // 清空按钮：两栏一起清，并立刻取消倒计时（不等 watcher）
+  function clear() {
+    source.value = '';
+    setTranslated('');
+    disarm();
+  }
+
   function firePending() {
     const sid = pendingSid;
     const text = translated.value.trim();
@@ -190,6 +197,6 @@ export function useEnglishComposer(deps: EnglishComposerDeps = {}) {
 
   return {
     translateMode, source, translated, translating, autoSend, countdown,
-    load, toggleTranslate, translateNow, sendAction, onLeftEnter,
+    load, toggleTranslate, translateNow, sendAction, onLeftEnter, clear,
   };
 }
