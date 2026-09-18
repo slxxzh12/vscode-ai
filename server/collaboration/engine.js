@@ -13,7 +13,7 @@ import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
 import { installBundleZip } from './bundle-installer.js';
-import { distKindsOf, distTypeOf, distUrl, shouldProcess } from './dist-task.js';
+import { distKindsOf, distTypeOf, distUrl, shouldProcess, downloadAddrOf } from './dist-task.js';
 import { buildZip } from './zip.js';
 import { createOpenCodeRunner } from './remote-runner.js';
 import { nextVersion } from './sync-seed.js';
@@ -435,6 +435,7 @@ export class CollabEngine {
       case CollabPeer.PULL_DOWNLOADS: return this._inPullDownloads(env);
       case CollabPeer.UPDATE_CHECK: return this._inUpdateCheck(env);
       case CollabPeer.LIST_DOWNLOADS: return this._inListDownloads(env);
+      case CollabPeer.PKG_UPLOAD: return this._inPkgUpload(env);
       default: return { ok: false, error: 'unknown-type' };
     }
   }
@@ -701,12 +702,13 @@ export class CollabEngine {
     if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
     return { ok: true, data: { manifest: this.readManifest(), update: this.readUpdate() } };
   }
-  pullDownloads(names = null, masterId = null) {
+  pullDownloads(names = null, masterId = null, addr = null) {
     const hit = this._hubFor(masterId);
-    if (!hit) return Promise.resolve({ code: 'no-master' });
-    const { hub } = hit;
+    const host = addr && addr.host ? addr.host : (hit && hit.hub.host);
+    const port = addr && addr.port ? addr.port : (hit && hit.hub.port);
+    if (!host || !port) return Promise.resolve({ code: 'no-master' });
     const payload = Array.isArray(names) && names.length ? { names } : {};
-    return this._post(hub.host, hub.port, this._sign(CollabPeer.PULL_DOWNLOADS, payload)).then((res) => {
+    return this._post(host, port, this._sign(CollabPeer.PULL_DOWNLOADS, payload)).then((res) => {
       if (!res.ok) return { code: 'unreachable', error: res.error };
       const data = res.data || {};
       for (const f of data.files || []) {
@@ -774,6 +776,91 @@ export class CollabEngine {
     this._emit('synced', {});
     return { code: 'ok', name, size: buf.length, version };
   }
+  // 成员把已打包的 zip 上传给群主，并在群里发一条审核通知
+  async uploadPackageToMaster(packageId, groupId) {
+    const g = this.store.findGroup(groupId);
+    if (!g) return { code: 'no-group' };
+    if (g.hubId === this.pub.machineId) return { code: 'is-master' };
+    if (!g.members.find((m) => m.machineId === this.pub.machineId)) return { code: 'not-member' };
+    const rec = this.store.listOutbox().find((r) => r.id === packageId);
+    if (!rec || !rec.storedFile || !this.uploadDir) return { code: 'not-found' };
+    const abs = path.join(this.uploadDir, path.basename(rec.storedFile));
+    if (!fs.existsSync(abs)) return { code: 'file-missing' };
+    const buf = fs.readFileSync(abs);
+    const hub = g.members.find((m) => m.machineId === g.hubId);
+    if (!hub) return { code: 'no-master' };
+    const pkg = rec.package || {};
+    const env = this._sign(CollabPeer.PKG_UPLOAD, {
+      groupId, name: rec.fileName, hash: rec.hash, size: buf.length,
+      b64: buf.toString('base64'), package: pkg,
+    });
+    const res = await this._post(hub.host, hub.port, env);
+    if (!res.ok) return { code: 'unreachable', error: res.error };
+    const masterPackageId = (res.data && res.data.packageId) || '';
+    this._sendPkgUploadNotice(g, rec, pkg, masterPackageId);
+    return { code: 'ok', packageId: masterPackageId };
+  }
+  // 群内通知群主：我上传了一个待审核的包（kind:'pkg-upload'）
+  _sendPkgUploadNotice(g, rec, pkg, masterPackageId) {
+    const count = (pkg.skills || []).length + (pkg.command || []).length + (pkg.agent || []).length + (pkg.workflow || []).length;
+    const master = g.members.find((m) => m.machineId === g.hubId);
+    const text = t('collab.dist.upload_notice', { name: rec.fileName || '', count, master: master ? profileLabel(master) : '' });
+    const msg = {
+      id: crypto.randomUUID(), groupId: g.id, kind: 'pkg-upload', fromId: this.pub.machineId,
+      text, toId: g.hubId, ts: Date.now(), seq: this.store.nextChatSeq(),
+      meta: { type: distTypeOf(pkg), name: rec.fileName || '', hash: rec.hash || '', size: Number(rec.size) || 0, count, packageId: masterPackageId, ...pkg },
+    };
+    this.store.addChatMessage(msg);
+    this._broadcastChat(g.id, msg);
+    this._emit('chat', { groupId: g.id, msg });
+    return msg;
+  }
+  // 群主收到上传通知消息：给自己建审核任务（对称于 ingestDist）
+  ingestUploadRequest(msg) {
+    if (!msg || msg.kind !== 'pkg-upload' || !msg.groupId || !msg.meta) return { code: 'skip' };
+    const g = this.store.findGroup(msg.groupId);
+    if (!g) return { code: 'no-group' };
+    if (g.hubId !== this.pub.machineId) return { code: 'not-master' };
+    if (msg.fromId === this.pub.machineId) return { code: 'self' };
+    if (!g.members.find((m) => m.machineId === msg.fromId)) return { code: 'not-member' };
+    const meta = msg.meta;
+    if (!meta.hash || !meta.packageId) return { code: 'bad-meta' };
+    const payload = {
+      skills: meta.skills || [], command: meta.command || [], agent: meta.agent || [], workflow: meta.workflow || [],
+      count: Number(meta.count) || 0, size: Number(meta.size) || 0,
+      packageId: String(meta.packageId), submittedBy: msg.fromId,
+    };
+    const r = this.taskStore?.upsert?.({
+      id: crypto.randomUUID(), groupId: msg.groupId, hubId: g.hubId, kind: 'upload',
+      hash: String(meta.hash), name: String(meta.name || ''), url: String(meta.url || ''),
+      payload, status: 'pending', messageId: msg.id, createdAt: Date.now(), updatedAt: Date.now(),
+    });
+    this._emit('tasks', { groupId: msg.groupId, created: r?.created ? ['upload'] : [], msgId: msg.id });
+    return { code: 'ok' };
+  }
+  // 群主接收成员上传的包：落 upload/ 目录 + outbox 记录（供接受时 publishPackage）
+  async _inPkgUpload(env) {
+    const p = env.from;
+    const { groupId, name, hash, size, b64, package: pkg = {} } = env.payload || {};
+    if (!groupId || !name || !hash || typeof b64 !== 'string') return { ok: false, error: 'bad-payload' };
+    const g = this.store.findGroup(groupId);
+    if (!g || !g.members.find((m) => m.machineId === p.machineId)) return { ok: false, error: 'not-member' };
+    if (g.hubId !== this.pub.machineId) return { ok: false, error: 'not-hub' };
+    const data = Buffer.from(b64, 'base64');
+    if (data.length === 0 || (size != null && size !== data.length)) return { ok: false, error: 'size-mismatch' };
+    if (crypto.createHash('sha256').update(data).digest('hex') !== hash) return { ok: false, error: 'hash-mismatch' };
+    if (!this.uploadDir) return { ok: false, error: 'no-upload-dir' };
+    fs.mkdirSync(this.uploadDir, { recursive: true });
+    const label = `assets-${String(p.machineId).slice(0, 8)}-${Date.now().toString(36)}.zip`;
+    fs.writeFileSync(path.join(this.uploadDir, label), data);
+    const rec = this.store.addOutbox({
+      id: crypto.randomUUID(), kind: 'file', groupId, skillName: null, fileName: name,
+      storedFile: label, size: data.length, hash, createdAt: Date.now(),
+      package: { sent: false, skills: pkg.skills || [], command: pkg.command || [], agent: pkg.agent || [], workflow: pkg.workflow || [] },
+    });
+    this._emit('synced', {});
+    return { ok: true, data: { packageId: rec.id } };
+  }
   // slave 从本地 downloads 缓存安装捆绑包
   installDownload(name) {
     if (!name || name.includes('..') || name.includes('\\')) return { code: 'bad-name' };
@@ -789,6 +876,7 @@ export class CollabEngine {
   async acceptTask(id) {
     const task = this.taskStore?.get?.(id);
     if (!task) return { code: 'not-found' };
+    if (task.kind === 'upload') return this._acceptUploadTask(task);
     if (task.status !== 'pending' && task.status !== 'failed') return { code: 'not-pending' };
     if (!task.name || task.name.includes('..') || task.name.includes('\\')) {
       this.taskStore.setStatus(id, 'failed', { payload: { ...task.payload, lastError: 'bad-name' } });
@@ -797,6 +885,13 @@ export class CollabEngine {
     const abs = path.join(this.downloadsDir, task.name);
     if (!fs.existsSync(abs)) {
       try { await this.pullDownloads([task.name], task.hubId); } catch (e) { this.log?.warn?.('task pull failed', (e && e.message) || e); }
+    }
+    // 群记录里的 hub 地址可能过期（群主换网/IP）：用分发通知里的下载地址主机再试一次
+    if (!fs.existsSync(abs)) {
+      const addr = downloadAddrOf(task.url);
+      if (addr) {
+        try { await this.pullDownloads([task.name], task.hubId, addr); } catch (e) { this.log?.warn?.('task pull by url failed', (e && e.message) || e); }
+      }
     }
     if (!fs.existsSync(abs)) {
       this.taskStore.setStatus(id, 'failed', { payload: { ...task.payload, lastError: 'file-missing' } });
@@ -812,9 +907,30 @@ export class CollabEngine {
     this._emit('tasks', { groupId: task.groupId, created: [], accepted: id });
     return { code: 'ok', counts: r.counts };
   }
+  // 群主接受成员上传：发布到群（写共享下载 + 生成升级种子 + 广播）
+  _acceptUploadTask(task) {
+    if (task.status !== 'pending' && task.status !== 'failed') return { code: 'not-pending' };
+    const r = this.publishPackage(task.payload && task.payload.packageId);
+    if (r.code !== 'ok') {
+      this.taskStore.setStatus(task.id, 'failed', { payload: { ...task.payload, lastError: r.code } });
+      return { code: r.code };
+    }
+    this.taskStore.setStatus(task.id, 'done');
+    this._addSystemMessage(task.groupId, t('collab.sys.upload_accepted', { name: task.name || '' }));
+    this._emit('tasks', { groupId: task.groupId, created: [], accepted: task.id });
+    return { code: 'ok', version: r.version };
+  }
   ignoreTask(id) {
     const task = this.taskStore?.get?.(id);
     if (!task) return { code: 'not-found' };
+    if (task.kind === 'upload') {
+      const packageId = task.payload && task.payload.packageId;
+      if (packageId) this.removeOutbox(packageId);
+      this.taskStore.setStatus(id, 'ignored');
+      this._addSystemMessage(task.groupId, t('collab.sys.upload_rejected', { name: task.name || '' }));
+      this._emit('tasks', { groupId: task.groupId, created: [], ignored: id });
+      return { code: 'ignored' };
+    }
     this.taskStore.setStatus(id, 'ignored');
     this._emit('tasks', { groupId: task.groupId, created: [], ignored: id });
     return { code: 'ignored' };
@@ -1080,6 +1196,7 @@ export function _extendChat(engine) {
     if (r.code !== 'ok') return { ok: false, error: 'not-member' };
     this.store.addChatMessage({ ...msg, seq: this.store.nextChatSeq(), ts: msg.ts ?? Date.now() });
     if (msg.kind === 'dist') this.ingestDist(msg);
+    else if (msg.kind === 'pkg-upload') this.ingestUploadRequest(msg);
     this._advanceCursor(msg.groupId, msg);
     if (this._isHub(msg.groupId)) this._logMessage({ groupId: msg.groupId, id: msg.id, src: p.machineId, target: msg.toId, message: msg.text, ts: msg.ts });
     this._emit('chat', { groupId: msg.groupId, msg });
@@ -1171,6 +1288,7 @@ export function _extendChat(engine) {
       if (existing.has(m.id)) continue;
       this.store.addChatMessage({ ...m, seq: this.store.nextChatSeq(), ts: m.ts ?? Date.now() });
       if (m.kind === 'dist' && shouldProcess(this.taskStore?.getCursor?.(groupId), m)) this.ingestDist(m);
+      if (m.kind === 'pkg-upload') this.ingestUploadRequest(m);
       this._advanceCursor(groupId, m);
     }
     this._emit('chat', { groupId, msg: null });

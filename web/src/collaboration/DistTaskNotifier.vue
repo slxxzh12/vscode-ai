@@ -40,14 +40,17 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
 const total = computed(() => pending.value.reduce((n, x) => n + taskItemCount(x), 0));
+const onlyUpload = computed(() => pending.value.length > 0 && pending.value.every((t) => t.kind === 'upload'));
+const titleKey = computed(() => (onlyUpload.value ? 'collab.dist.task_popup.title_upload' : 'collab.dist.task_popup.title'));
+const hintKey = computed(() => (onlyUpload.value ? 'collab.dist.task_popup.hint_upload' : 'collab.dist.task_popup.hint'));
 </script>
 
 <template>
   <transition name="fade">
     <div v-if="open" class="mask">
       <div class="box" role="dialog" aria-modal="true">
-        <div class="title">{{ $t('collab.dist.task_popup.title') }}</div>
-        <div class="meta">{{ $t('collab.dist.task_popup.hint') }}</div>
+        <div class="title">{{ $t(titleKey) }}</div>
+        <div class="meta">{{ $t(hintKey) }}</div>
         <div class="list">
           <div v-for="task in pending" :key="task.id" class="row">
             <span class="ic">{{ task.kind === 'workflow' ? '🧩' : '🛠' }}</span>
@@ -56,7 +59,7 @@ const total = computed(() => pending.value.reduce((n, x) => n + taskItemCount(x)
               <span class="sub">{{ $t('collab.task.items', { count: taskItemCount(task) }) }}</span>
             </div>
             <button class="btn" :disabled="busy === task.id" @click="reject(task)">{{ $t('collab.dist.task_popup.reject') }}</button>
-            <button class="btn primary" :disabled="busy === task.id" @click="accept(task)">{{ $t('collab.dist.task_popup.accept') }}</button>
+            <button class="btn primary" :disabled="busy === task.id" @click="accept(task)">{{ task.kind === 'upload' ? $t('collab.dist.task_popup.accept_upload') : $t('collab.dist.task_popup.accept') }}</button>
           </div>
         </div>
         <div v-if="msg" class="ok">{{ msg }}</div>

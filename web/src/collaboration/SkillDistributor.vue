@@ -96,25 +96,24 @@ function toggleAll(on: boolean) {
   checked.value = map;
 }
 function reset() { pkg.value = null; sent.value = false; msg.value = ''; }
-async function doPack() {
+async function doSubmit() {
   if (!selectedCount.value) { msg.value = t('collab.dist.select_first'); return; }
   msg.value = ''; msgErr.value = ''; working.value = true;
   try {
     const r = await props.collab.buildPackage(selected.value);
     pkg.value = r.package;
-    msg.value = t('collab.dist.packed');
-  } catch (e: any) { msgErr.value = String(e?.message || e); }
-  finally { working.value = false; }
-}
-async function doPublish() {
-  if (!pkg.value) return;
-  msg.value = ''; msgErr.value = ''; working.value = true;
-  try {
-    const r = await props.collab.publishPackage(pkg.value.id);
-    if (r.code !== 'ok') { msgErr.value = t('common.send_failed', { msg: r.code }); return; }
-    sent.value = true;
-    publishedVersion.value = r.version || '';
-    msg.value = t('collab.dist.published', { version: r.version || '—' });
+    if (isMaster.value) {
+      const pub = await props.collab.publishPackage(pkg.value.id);
+      if (pub.code !== 'ok') { msgErr.value = t('common.send_failed', { msg: pub.code }); return; }
+      sent.value = true;
+      publishedVersion.value = pub.version || '';
+      msg.value = t('collab.dist.published', { version: pub.version || '—' });
+    } else {
+      const up = await props.collab.uploadPackage(pkg.value.id, props.groupId);
+      if (up.code !== 'ok') { msgErr.value = t('common.send_failed', { msg: up.code }); return; }
+      sent.value = true;
+      msg.value = t('collab.dist.uploaded');
+    }
   } catch (e: any) { msgErr.value = String(e?.message || e); }
   finally { working.value = false; }
 }
@@ -192,11 +191,11 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
 
     <div class="acts">
       <template v-if="!pkg">
-        <button class="go" :disabled="working || !selectedCount" @click="doPack">{{ working ? $t('common.packing') : $t('collab.dist.pack', { count: selectedCount }) }}</button>
+        <button class="go" :disabled="working || !selectedCount" @click="doSubmit">
+          {{ working ? $t('common.sending') : (isMaster ? $t('collab.dist.pack_publish', { count: selectedCount }) : $t('collab.dist.pack_upload', { count: selectedCount })) }}
+        </button>
       </template>
       <template v-else>
-        <button v-if="isMaster" class="go" :disabled="working || sent" @click="doPublish">{{ working ? $t('common.sending') : sent ? $t('collab.dist.published') : $t('collab.dist.publish') }}</button>
-        <span v-else class="pkgname">{{ $t('collab.dist.master_only') }}</span>
         <button class="ghostgo" :disabled="working" @click="downloadPkg">{{ $t('collab.dist.download') }}</button>
         <button class="ghostgo" :disabled="working" @click="reset">{{ $t('collab.dist.repack') }}</button>
       </template>

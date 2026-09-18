@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import { filterMentions, parseComposer, splitAtCommand, highlightMentions } from './chat-parser';
-import { distCardOf, type DistCard } from './distTasks';
+import { distCardOf, showAccept, type DistCard } from './distTasks';
 import type { CollabChatMessage } from './types';
 import SkillDistributor from './SkillDistributor.vue';
 import { t } from '../i18n';
@@ -135,8 +135,8 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
           <div class="dhead">📦 {{ $t(cardTypeKey(distCards[m.id].type)) }}</div>
           <div class="dname">{{ distCards[m.id].name }}</div>
           <div class="dmeta">{{ $t('collab.task.items', { count: distCards[m.id].count }) }}</div>
-          <a class="dlink" :href="distCards[m.id].url" target="_blank" rel="noopener">{{ $t('collab.task.download_addr') }}: {{ distCards[m.id].url }}</a>
-          <button class="dtasks" @click="openTasks">{{ $t('collab.task.goto_tasks') }}</button>
+          <a v-if="distCards[m.id].url" class="dlink" :href="distCards[m.id].url" target="_blank" rel="noopener">{{ $t('collab.task.download_addr') }}: {{ distCards[m.id].url }}</a>
+          <button v-if="showAccept(m, me)" class="dtasks" @click="openTasks">{{ $t('collab.task.goto_tasks') }}</button>
         </div>
         <div v-else class="bubble">
           <span v-for="(seg, i) in highlightMentions(m.text, nameById)" :key="i" :class="{ at: seg.mention }">{{ seg.text }}</span>

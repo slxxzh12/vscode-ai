@@ -128,6 +128,11 @@ export function createCollabMount({ engine, logger = console }) {
       if (seg[0] === 'packages' && seg.length === 3 && seg[2] === 'publish' && m === 'POST') {
         return ok(res, engine.publishPackage(seg[1]));
       }
+      if (seg[0] === 'packages' && seg.length === 3 && seg[2] === 'upload' && m === 'POST') {
+        const r = await engine.uploadPackageToMaster(seg[1], body.groupId);
+        if (r.code !== 'ok') return sendJson(res, 400, { error: r.code });
+        return ok(res, r);
+      }
       // 我发出的文件（upload 目录留档）下载
       if (seg[0] === 'outfile' && seg.length === 2 && m === 'GET') {
         const rec = engine.store.listOutbox().find((r) => r.id === seg[1]);

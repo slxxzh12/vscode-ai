@@ -28,6 +28,7 @@ function mockCollab() {
     getWorkflowSeed: vi.fn(async () => ({ version: 1, workflows: [] })),
     buildPackage: vi.fn(),
     publishPackage: vi.fn(),
+    uploadPackage: vi.fn(),
   };
 }
 
@@ -63,5 +64,42 @@ describe('SkillDistributor agent selector', () => {
     await flushPromises();
     expect(collab.setTool).toHaveBeenCalledWith('claudecode', null);
     expect(collab.getAssets).toHaveBeenCalledTimes(2);
+  });
+
+  it('群主一步打包并生成种子', async () => {
+    const collab: any = mockCollab();
+    collab.state.value = {
+      ...EMPTY_SNAPSHOT,
+      identity: { ...EMPTY_SNAPSHOT.identity, machineId: 'me' },
+      groups: [{ id: 'g1', hubId: 'me', name: 'G', createdAt: 0, members: [] }],
+    };
+    collab.buildPackage.mockResolvedValue({ package: { id: 'p1', fileName: 'a.zip', size: 1 } });
+    collab.publishPackage.mockResolvedValue({ code: 'ok', version: 'v1' });
+    const w = mount(collab);
+    await flushPromises();
+    await w.find('input[type="checkbox"]').setValue(true);
+    await w.find('button.go').trigger('click');
+    await flushPromises();
+    expect(collab.buildPackage).toHaveBeenCalled();
+    expect(collab.publishPackage).toHaveBeenCalledWith('p1');
+    expect(collab.uploadPackage).not.toHaveBeenCalled();
+  });
+
+  it('非群主一步打包并上传给群主', async () => {
+    const collab: any = mockCollab();
+    collab.state.value = {
+      ...EMPTY_SNAPSHOT,
+      identity: { ...EMPTY_SNAPSHOT.identity, machineId: 'me' },
+      groups: [{ id: 'g1', hubId: 'other', name: 'G', createdAt: 0, members: [] }],
+    };
+    collab.buildPackage.mockResolvedValue({ package: { id: 'p1', fileName: 'a.zip', size: 1 } });
+    collab.uploadPackage.mockResolvedValue({ code: 'ok', packageId: 'mp1' });
+    const w = mount(collab);
+    await flushPromises();
+    await w.find('input[type="checkbox"]').setValue(true);
+    await w.find('button.go').trigger('click');
+    await flushPromises();
+    expect(collab.uploadPackage).toHaveBeenCalledWith('p1', 'g1');
+    expect(collab.publishPackage).not.toHaveBeenCalled();
   });
 });

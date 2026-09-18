@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { distKindsOf, distTypeOf, distUrl, shouldProcess } from '../collaboration/dist-task.js';
+import { distKindsOf, distTypeOf, distUrl, shouldProcess, downloadAddrOf } from '../collaboration/dist-task.js';
 
 test('distKindsOf：技能类资产任一非空 → skills；workflow 非空 → workflow', () => {
   assert.deepEqual(distKindsOf({ skills: ['a'] }), ['skills']);
@@ -33,4 +33,16 @@ test('shouldProcess：大于游标 ts 处理；小于跳过；同 ts 只有同 i
   assert.equal(shouldProcess(cur, { ts: 100, id: 'm2' }), false);
   assert.equal(shouldProcess(cur, { ts: 99, id: 'm0' }), false);
   assert.equal(shouldProcess(null, { ts: 1, id: 'a' }), true);
+});
+
+test('downloadAddrOf：解析 http(s) 主机端口；默认端口；非法返回 null', () => {
+  assert.deepEqual(
+    downloadAddrOf('http://192.168.16.142:22222/api/collab/downloads/file/skills%2Fa.zip'),
+    { host: '192.168.16.142', port: 22222 },
+  );
+  assert.deepEqual(downloadAddrOf('https://hub.local/x'), { host: 'hub.local', port: 443 });
+  assert.deepEqual(downloadAddrOf('http://hub.local/x'), { host: 'hub.local', port: 80 });
+  for (const bad of ['', null, 'ftp://h/x', 'not a url', 'file:///x']) {
+    assert.equal(downloadAddrOf(bad), null, `expected null for ${bad}`);
+  }
 });

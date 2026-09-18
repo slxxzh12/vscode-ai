@@ -23,6 +23,19 @@ export function distUrl(host, port, name) {
   return `http://${host}:${port}/api/collab/downloads/file/${encodeURIComponent(String(name || ''))}`;
 }
 
+// 从下载地址解析出 hub 的 { host, port }，用于群记录里 hub 地址过期时回退拉取；非法/非 http(s) 返回 null
+export function downloadAddrOf(url) {
+  try {
+    const u = new URL(String(url));
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    if (!u.hostname) return null;
+    const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+    return { host: u.hostname, port };
+  } catch {
+    return null;
+  }
+}
+
 // 游标过滤：只增不减，同 ts 用 id 去重（重复扫描无副作用，游标只是省事）
 export function shouldProcess(cursor, msg) {
   const ts = Number((msg && msg.ts) || 0);

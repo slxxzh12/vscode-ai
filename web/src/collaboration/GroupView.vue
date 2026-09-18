@@ -246,14 +246,6 @@ onMounted(async () => {
             {{ remoteState.enabled ? '⏹ ' + $t('collab.remote.disable') : '▶ ' + $t('collab.remote.enable') }}
           </button>
         </div>
-        <div v-if="remoteState.enabled" class="sec">
-          <h4>{{ $t('collab.groups.title') }}</h4>
-          <div v-if="!groups.length" class="empty">{{ $t('collab.groups.empty') }}</div>
-          <button v-for="g in groups" :key="g.id" class="gitem" :class="{ on: group?.id === g.id }" @click="activeId = g.id">
-            {{ g.name }}
-          </button>
-        </div>
-
         <template v-if="remoteState.enabled && (remotePassword || remoteLink)">
           <div class="invitecard">
             <div class="cfghint">{{ $t('remote.invite_hint') }}</div>
@@ -274,31 +266,6 @@ onMounted(async () => {
         </div>
         <div v-if="remoteMsg" class="cfghint">{{ remoteMsg }}</div>
 
-        <div v-if="isMaster && remoteState.enabled" class="sec">
-          <h4>{{ $t('collab.downloads.title') }}</h4>
-          <div class="cfghint">{{ $t('collab.update.version', { version: seed.version || '—' }) }}</div>
-          <div class="addrow">
-            <button @click="seedOpen = true">{{ $t('collab.downloads.title') }}</button>
-          </div>
-          <div v-if="seedMsg" class="cfghint">{{ seedMsg }}</div>
-          <div v-if="installMsg" class="cfghint">{{ installMsg }}</div>
-        </div>
-        <div v-else-if="group && !isMaster" class="sec">
-          <h4>{{ $t('collab.update.pull_title') }}</h4>
-          <div class="cfghint">{{ $t('collab.update.version', { version: remoteVer || '—' }) }}</div>
-          <div class="addrow">
-            <button class="ghost" @click="loadRemoteFiles">{{ $t('collab.update.check') }}</button>
-            <button class="ghost" @click="setAllRemote(true)">{{ $t('collab.update.select_all') }}</button>
-            <button @click="pullSelected">{{ $t('collab.update.pull_selected') }}</button>
-          </div>
-          <div v-if="pullMsg" class="cfghint">{{ pullMsg }}</div>
-          <div v-if="!remote || remote.manifest.files.length === 0" class="empty">{{ $t('collab.update.no_remote') }}</div>
-          <div v-for="f in (remote?.manifest.files || [])" :key="f.name" class="rowline">
-            <input type="checkbox" v-model="remoteSel[f.name]" />
-            <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}</a>
-            <span v-if="isSeedFile(f.name)" class="tag">{{ $t('collab.update.seed_badge') }}</span>
-          </div>
-        </div>
       </div>
 
       <div class="sec">

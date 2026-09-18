@@ -49,6 +49,49 @@ test('acceptTask：本地无包 → peer 拉取 → 装 skills 到 skillRoot、w
   } finally { await h.stop(); }
 });
 
+test('acceptTask：群记录 hub 地址过期 → 回退用 task.url 主机拉取 → done', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const dir = tmpDir('df-accept-addr-');
+    B.taskStore = createTaskStore({ file: path.join(dir, 'void.db'), logger: { warn() {} } });
+    A.verifyAccessToken = (tk) => tk === 'good';
+    A.ensureGroup();
+    const r = await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'good' });
+    const group = r.group;
+
+    const zip = buildZip([{ name: 'skills/demo/SKILL.md', data: Buffer.from('# demo') }]);
+    const name = 'skills/pkg-addr.zip';
+    A.writeDownload(name, zip, 'skill');
+
+    // 群记录里 hub 的地址过期（模拟群主换网/IP）
+    const g = B.store.findGroup(group.id);
+    g.members.find((m) => m.machineId === A.pub.machineId).host = '192.168.126.142';
+    B.store.upsertGroup(g);
+
+    // peer 通道：旧地址不可达；其余转发到 A（直连）
+    B.peer = { post: async (host, port, env) => {
+      if (host === '192.168.126.142') return { ok: false, error: 'unreachable' };
+      const res = await A.handleIncoming(JSON.parse(JSON.stringify(env)));
+      return res.ok ? { ok: true, data: res.data } : { ok: false, error: res.error };
+    } };
+
+    B.skillRoot = () => path.join(dir, 'skills-opencode');
+    B.configRoot = () => path.join(dir, 'config');
+    B.mergeWorkflows = (list) => list;
+    B.taskStore.upsert({
+      id: 'task-addr', groupId: group.id, hubId: A.pub.machineId, kind: 'skills', hash: 'h1',
+      name, url: `http://127.0.0.1:39991/api/collab/downloads/file/${encodeURIComponent(name)}`,
+      payload: { skills: ['demo'] }, status: 'pending', messageId: 'm', createdAt: 1, updatedAt: 1,
+    });
+
+    const res = await B.acceptTask('task-addr');
+    assert.equal(res.code, 'ok');
+    assert.ok(fs.existsSync(path.join(dir, 'skills-opencode', 'demo', 'SKILL.md')), '回退拉取后装到本机技能目录');
+    assert.equal(B.taskStore.get('task-addr').status, 'done');
+  } finally { await h.stop(); }
+});
+
 test('acceptTask：拉不到包 → failed + lastError；已 done/ignored → not-pending', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {

@@ -44,7 +44,9 @@ export function groupTasksByStatus(list: DistTask[]): DistTaskGroups {
 }
 
 export function kindKeyOf(kind: string): string {
-  return kind === 'workflow' ? 'collab.task.workflow' : 'collab.task.skills';
+  if (kind === 'workflow') return 'collab.task.workflow';
+  if (kind === 'upload') return 'collab.task.upload';
+  return 'collab.task.skills';
 }
 
 export function taskItemCount(task: DistTask): number {
@@ -55,8 +57,18 @@ export function taskItemCount(task: DistTask): number {
 
 export interface DistCard { type: string; name: string; url: string; count: number }
 
+// 分发通知（群主广播 kind:'dist'）与上传通知（成员上传 kind:'pkg-upload'）都渲染为卡片
 export function distCardOf(msg: { kind?: string; meta?: unknown } | null | undefined): DistCard | null {
-  if (!msg || msg.kind !== 'dist' || !msg.meta || typeof msg.meta !== 'object') return null;
+  if (!msg || (msg.kind !== 'dist' && msg.kind !== 'pkg-upload') || !msg.meta || typeof msg.meta !== 'object') return null;
   const meta = msg.meta as { type?: string; name?: string; url?: string; count?: number };
   return { type: meta.type || 'skills', name: meta.name || '', url: meta.url || '', count: Number(meta.count) || 0 };
+}
+
+// 「去任务页接受」按钮是否展示：自己发的消息一律不展示；
+// 群主广播（dist，面向全体）除发送者外都展示；成员上传（pkg-upload）只对群主（toId === me）展示。
+export function showAccept(msg: { kind?: string; fromId?: string; toId?: string | null } | null | undefined, meId: string): boolean {
+  if (!msg || !msg.kind || !meId || msg.fromId === meId) return false;
+  if (msg.kind === 'dist') return true;
+  if (msg.kind === 'pkg-upload') return msg.toId === meId;
+  return false;
 }
