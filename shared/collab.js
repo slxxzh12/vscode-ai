@@ -4,6 +4,7 @@ export const CollabS2C = Object.freeze({
   COLLAB_SYNCED: 'collab-synced',
   COLLAB_CHAT: 'collab-chat',
   COLLAB_CMD_PENDING: 'collab-cmd-pending',
+  COLLAB_TASKS: 'collab-tasks',
   COLLAB_HEARTBEAT: 'collab-heartbeat',
 });
 export const CollabPeer = Object.freeze({

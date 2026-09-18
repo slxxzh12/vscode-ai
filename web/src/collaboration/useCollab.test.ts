@@ -135,12 +135,14 @@ describe('useCollab chat', () => {
     await c.ignoreInbox('i1');
     await c.removeInbox('i1');
     await c.removeOutTask('o1');
+    await c.pollTasks();
     await c.loadPendingCmds();
     const urls = calls.map((x) => x.url);
     expect(urls).toContain('/api/collab/downloads/remote?masterId=m1');
     expect(urls).toContain('/api/collab/downloads/remote');
     expect(urls).toContain('/api/collab/tasks?status=pending');
     expect(urls).toContain('/api/collab/tasks');
+    expect(urls).toContain('/api/collab/tasks/poll');
     expect(urls).toContain('/api/collab/inbox/i1');
     expect(urls).toContain('/api/collab/outbox/o1');
     expect(calls.find((x) => x.url === '/api/collab/inbox/i1')?.init?.method).toBe('DELETE');

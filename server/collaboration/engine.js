@@ -196,12 +196,20 @@ export class CollabEngine {
     })();
     let workflowUpdatedAt = Date.now();
     try { const v = Number(this.getWorkflowsUpdatedAt?.()); if (v > 0) workflowUpdatedAt = v; } catch { /* 取不到就用打包时间 */ }
-    const detail = {
-      skills: sSel.map((n) => ({
+    const skillDetails = [];
+    for (const n of sSel) {
+      let size = null; let hash = null;
+      try { const p = await packSkill(path.join(this.skillRoot(), n)); size = p.zip.length; hash = p.hash; } catch { /* 目录异常时留空 */ }
+      skillDetails.push({
         name: n,
         files: files.filter((f) => f.rel.startsWith(`skills/${n}/`)).length,
         updatedAt: skillStat(n) || null,
-      })),
+        size,
+        hash,
+      });
+    }
+    const detail = {
+      skills: skillDetails,
       workflow: pickedWorkflows.map((w) => ({ id: w.id, label: w.label, stages: (w.stages || []).length })),
     };
     const zip = buildZip(files.map((f) => ({ name: f.rel, data: f.data })));
@@ -356,6 +364,20 @@ export class CollabEngine {
       } catch (e) { this.log?.warn?.('dist backfill failed', (e && e.message) || e); }
     }
     return { code: 'ok', groups: groups.length, distMessages: scanned, pending };
+  }
+  // 定时轮询：补分发任务 + 取各 master 最新升级 version（失败忽略，不阻塞）
+  async pollDistTasks() {
+    const groups = this.store.listGroups()
+      .filter((g) => g.hubId !== this.pub.machineId && g.members.find((m) => m.machineId === this.pub.machineId));
+    try { await this.backfillDistTasks(); } catch (e) { this.log?.warn?.('poll backfill failed', (e && e.message) || e); }
+    const updates = [];
+    for (const g of groups) {
+      try {
+        const c = await this.checkUpdate(g.hubId);
+        if (c.code === 'ok' && c.newer && c.update) updates.push({ groupId: g.id, masterId: c.masterId, version: c.update.version });
+      } catch { /* 单个 master 失败忽略 */ }
+    }
+    return { code: 'ok', groups: groups.length, tasks: this.listTasks({ status: 'pending' }).length, updates };
   }
   _sign(type, payload) {
     return signEnvelope(this.identity.privateKey, type, this.pub, payload);
@@ -728,6 +750,8 @@ export class CollabEngine {
     const buf = fs.readFileSync(abs);
     const name = `skills/${crypto.randomUUID()}-${path.basename(rec.fileName || 'assets.zip')}`;
     this.writeDownload(name, buf, 'skill');
+    const up = this.publishUpdate([name]);
+    const version = up.code === 'ok' ? up.update.version : '';
     const pkg = rec.package || {};
     for (const skillName of (pkg.skills || [])) {
       this.store.upsertGroupSkill({ groupId: g.id, skillName, hash: rec.hash, distributedBy: this.pub.machineId, installed: true });
@@ -741,14 +765,14 @@ export class CollabEngine {
     const seedRec = this.seedStore?.get?.(rec.id) || null;
     const count = skillList.length + cmdList.length + agentList.length + wfIds.length;
     this._broadcastDist(g.id, {
-      name, packageId: rec.id, hash: rec.hash || '', size: buf.length, count,
+      name, packageId: rec.id, hash: rec.hash || '', size: buf.length, count, version,
       skills: skillList, command: cmdList, agent: agentList,
       workflow: wfIds.map((id) => ({ id, label: ((wfAll.find((w) => w.id === id) || {}).label) || id })),
       skillsUpdatedAt: seedRec?.skillsUpdatedAt || 0,
       workflowUpdatedAt: seedRec?.workflowUpdatedAt || 0,
     });
     this._emit('synced', {});
-    return { code: 'ok', name, size: buf.length };
+    return { code: 'ok', name, size: buf.length, version };
   }
   // slave 从本地 downloads 缓存安装捆绑包
   installDownload(name) {

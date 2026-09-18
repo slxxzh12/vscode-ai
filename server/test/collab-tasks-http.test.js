@@ -19,6 +19,7 @@ function fakeEngine() {
     listTasks: (f) => taskStore.list(f),
     acceptTask: async (id) => { calls.push(['accept', id]); return { code: 'ok' }; },
     ignoreTask: (id) => { calls.push(['ignore', id]); return { code: 'ignored' }; },
+    pollDistTasks: async () => ({ code: 'ok', groups: 0, tasks: taskStore.list({ status: 'pending' }).length, updates: [] }),
   };
   return { engine, calls };
 }
@@ -83,4 +84,13 @@ test('POST /api/collab/packages 把 workflow 一并传给 buildPackage', async (
   const r = await call(mount, 'POST', '/api/collab/packages', { skills: ['s1'], workflow: ['dev'] });
   assert.equal(r.status, 200);
   assert.deepEqual(seen.at(-1), { skills: ['s1'], command: [], agent: [], workflow: ['dev'] });
+});
+
+test('POST /api/collab/tasks/poll 触发轮询并返回统计', async () => {
+  const { engine } = fakeEngine();
+  const mount = createCollabMount({ engine, logger: { warn() {}, error() {} } });
+  const r = await call(mount, 'POST', '/api/collab/tasks/poll');
+  assert.equal(r.status, 200);
+  assert.equal(r.json.code, 'ok');
+  assert.equal(r.json.tasks, 1);
 });

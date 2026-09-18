@@ -238,6 +238,9 @@ export function createCollabMount({ engine, logger = console }) {
         return;
       }
       // 分发任务（本机任务表）
+      if (seg[0] === 'tasks' && seg.length === 2 && seg[1] === 'poll' && m === 'POST') {
+        return ok(res, await engine.pollDistTasks());
+      }
       if (seg[0] === 'tasks' && seg.length === 1 && m === 'GET') {
         return ok(res, { tasks: engine.listTasks({ status: url.searchParams.get('status') || null }) });
       }

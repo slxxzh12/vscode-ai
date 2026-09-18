@@ -66,6 +66,7 @@ const visible = computed(() => (focus.value === 'workflow'
     : assets.value));
 const pkg = ref<{ id: string; fileName: string; size: number } | null>(null);
 const sent = ref(false);
+const publishedVersion = ref('');
 
 onMounted(async () => {
   props.collab.getTool().then((info) => applyToolInfo(info)).catch(() => {});
@@ -112,7 +113,8 @@ async function doPublish() {
     const r = await props.collab.publishPackage(pkg.value.id);
     if (r.code !== 'ok') { msgErr.value = t('common.send_failed', { msg: r.code }); return; }
     sent.value = true;
-    msg.value = t('collab.dist.published');
+    publishedVersion.value = r.version || '';
+    msg.value = t('collab.dist.published', { version: r.version || '—' });
   } catch (e: any) { msgErr.value = String(e?.message || e); }
   finally { working.value = false; }
 }

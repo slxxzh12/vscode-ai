@@ -362,6 +362,7 @@ function buildWorkspace({ paths, port }) {
   eventBus.on('chat', (payload) => broadcastCollab(CollabS2C.COLLAB_CHAT, { groupId: payload.groupId, msg: payload.msg }));
   eventBus.on('cmd-pending', (payload) => broadcastCollab(CollabS2C.COLLAB_CMD_PENDING, payload));
   eventBus.on('heartbeat', () => broadcastCollab(CollabS2C.COLLAB_HEARTBEAT, {}));
+  eventBus.on('tasks', (payload) => broadcastCollab(CollabS2C.COLLAB_TASKS, payload));
 
   const scheduler = createScheduler({
     dir: paths.schedulerDir,
@@ -417,6 +418,10 @@ function initWorkspace(paths, port) {
   Promise.resolve(ws.engine.registerSelfAssets?.()).then((r) => { if (r) log.info(`assets registered: groups=${r.groups} commands=${r.commands}`); }).catch((e) => log.warn('register assets failed', (e && e.message) || e));
   // 启动补扫：把离线期间错过的分发通知补成本机任务（拉不到就等下次）
   Promise.resolve(ws.engine.backfillDistTasks?.()).then((r) => { if (r) log.info(`dist backfill: groups=${r.groups} dist=${r.distMessages} pending=${r.pending}`); }).catch((e) => log.warn('dist backfill failed', (e && e.message) || e));
+  // 分发任务定时轮询：补 master 下发的任务（非阻塞，默认 60s，可 DEVFLOW_DIST_POLL_MS 覆盖）
+  const distPollMs = Number(process.env.DEVFLOW_DIST_POLL_MS) || 60000;
+  const distPollTimer = setInterval(() => { ws.engine.pollDistTasks?.().catch(() => { /* 单次失败忽略 */ }); }, distPollMs);
+  distPollTimer.unref?.();
   remoteInvite = loadInvite(paths.inviteFile);   // 令牌落盘：重启后仍有效（expiresAt=0 为长期）
   // 用量上报：启动即报一次，之后 60–90 分钟随机再报
   if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }

@@ -85,3 +85,17 @@ test('只有技能 → type=skills；只有工作流 → type=workflow', async (
     assert.equal(m2.meta.type, 'workflow');
   } finally { await h.stop(); }
 });
+
+test('publishPackage 生成升级 version 并写入广播 meta 与返回', async () => {
+  const { h, A } = await setupMaster();
+  try {
+    A.getWorkflows = () => [];
+    fakePackage(A, { skills: ['demo'], id: 'pkg-ver' });
+    const r = A.publishPackage('pkg-ver');
+    assert.equal(r.code, 'ok');
+    assert.ok(r.version, '返回 version');
+    assert.equal(A.readUpdate().version, r.version, 'sync 表记录同一 version');
+    const msg = A.store.listChatMessages(A.store.getGroup().id).filter((m) => m.kind === 'dist').pop();
+    assert.equal(msg.meta.version, r.version, 'dist meta 带 version');
+  } finally { await h.stop(); }
+});

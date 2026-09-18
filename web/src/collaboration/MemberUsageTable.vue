@@ -4,11 +4,13 @@ import { t } from '../i18n';
 import { fmtNum, isOnline, machineLabel, mergeMachines } from './usagePeers';
 import type { CollabApi } from './useCollab';
 import { EMPTY_SNAPSHOT } from './types';
-import type { CollabUsage } from './types';
+import type { CollabUsage, CollabGroup } from './types';
 
-const props = defineProps<{ collab: CollabApi; peers: Record<string, CollabUsage> }>();
+const props = defineProps<{ collab: CollabApi; peers: Record<string, CollabUsage>; group?: CollabGroup | null }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
-const rows = computed(() => mergeMachines(props.peers, snap.value.group?.members || []));
+const activeGroup = computed(() => props.group ?? snap.value.group);
+const rows = computed(() => mergeMachines(props.peers, activeGroup.value?.members || []));
+const hubId = computed(() => activeGroup.value?.hubId || '');
 
 const num = (v?: number) => fmtNum(v);
 </script>
@@ -27,6 +29,7 @@ const num = (v?: number) => fmtNum(v);
           <span class="dot" :class="{ on: isOnline(row.receivedAt) }" />
           <span class="mname" :title="machineLabel(row)">{{ machineLabel(row) }}</span>
           <span class="host">@{{ row.host || '-' }}:{{ row.port || '-' }}</span>
+          <span v-if="row.machineId === hubId" class="crown">👑 {{ $t('collab.member.master') }}</span>
           <span v-if="!row.inGroup" class="tag">{{ $t('usage.not_in_group') }}</span>
         </div>
       </template>
@@ -50,6 +53,7 @@ const num = (v?: number) => fmtNum(v);
 .mname { color: var(--tx1); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .host { flex: none; color: var(--tx6); margin-left: 6px; font-size: 11px; white-space: nowrap; }
 .tag { flex: none; margin-left: 8px; padding: 0 6px; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx6); font-size: 11px; white-space: nowrap; }
+.crown { flex: none; margin-left: 6px; color: var(--warn); font-size: 11px; white-space: nowrap; }
 .utable { width: 100%; }
 .utable :deep(.cell) { white-space: nowrap; word-break: normal; }
 </style>

@@ -17,4 +17,5 @@ test('collab 常量可 import 且冻结', () => {
   assert.equal(CollabPeer.LIST_DOWNLOADS, 'list-downloads');
   assert.equal(CollabS2C.COLLAB_CHAT, 'collab-chat');
   assert.equal(CollabS2C.COLLAB_HEARTBEAT, 'collab-heartbeat');
+  assert.equal(CollabS2C.COLLAB_TASKS, 'collab-tasks');
 });

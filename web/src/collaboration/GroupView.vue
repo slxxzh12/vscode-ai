@@ -255,15 +255,17 @@ onMounted(async () => {
         </div>
 
         <template v-if="remoteState.enabled && (remotePassword || remoteLink)">
-          <div class="cfghint">{{ $t('remote.invite_hint') }}</div>
-          <div v-if="remoteLink" class="linkrow">
-            <input :value="remoteLink" readonly @focus="($event.target as HTMLInputElement).select()" />
-            <button @click="copy(remoteLink)">{{ $t('remote.copy_invite') }}</button>
-          </div>
-          <div v-if="remotePassword" class="cfghint">{{ $t('remote.password_hint') }}</div>
-          <div v-if="remotePassword" class="linkrow">
-            <input :value="remotePassword" readonly />
-            <button @click="copy(remotePassword)">{{ $t('remote.copy_password') }}</button>
+          <div class="invitecard">
+            <div class="cfghint">{{ $t('remote.invite_hint') }}</div>
+            <div v-if="remoteLink" class="linkrow big">
+              <input :value="remoteLink" readonly @focus="($event.target as HTMLInputElement).select()" />
+              <button class="copybtn" @click="copy(remoteLink)">{{ $t('remote.copy_invite') }}</button>
+            </div>
+            <div v-if="remotePassword" class="cfghint">{{ $t('remote.password_hint') }}</div>
+            <div v-if="remotePassword" class="linkrow big">
+              <input :value="remotePassword" readonly />
+              <button class="copybtn" @click="copy(remotePassword)">{{ $t('remote.copy_password') }}</button>
+            </div>
           </div>
         </template>
         <div v-if="remoteState.needRestart" class="err">
@@ -348,7 +350,7 @@ onMounted(async () => {
           <button :class="{ on: mtab === 'trend' }" @click="mtab = 'trend'">{{ $t('usage.trend') }}</button>
         </nav>
         <div class="mbody">
-          <MemberUsageTable v-if="mtab === 'members'" class="mtable" :collab="collab" :peers="peers" />
+          <MemberUsageTable v-if="mtab === 'members'" class="mtable" :collab="collab" :peers="peers" :group="group" />
           <UsageTrendChart v-else :collab="collab" :peers="peers" />
         </div>
       </aside>
@@ -415,6 +417,11 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .linkrow { display: flex; gap: 6px; margin: 4px 0; }
 .linkrow input { flex: 1; min-width: 0; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 4px 6px; font-size: 11px; box-sizing: border-box; }
 .linkrow button { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+.invitecard { border: 1px solid var(--ac); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: color-mix(in srgb, var(--ac) 8%, var(--bg2)); }
+.linkrow.big { gap: 8px; margin: 6px 0; }
+.linkrow.big input { padding: 9px 12px; font-size: 14px; border-color: var(--ac2); }
+.linkrow.big button.copybtn { background: var(--ac); color: var(--onac); border: none; border-radius: 6px; padding: 9px 18px; font-size: 14px; font-weight: 700; min-width: 116px; cursor: pointer; }
+.linkrow.big button.copybtn:hover { filter: brightness(1.08); }
 .dl { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; text-decoration: none; }
 .placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--tx6); }
 .gitem { text-align: left; background: none; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx2); padding: 5px 8px; font-size: 12px; cursor: pointer; font-family: inherit; margin-bottom: 4px; width: 100%; }

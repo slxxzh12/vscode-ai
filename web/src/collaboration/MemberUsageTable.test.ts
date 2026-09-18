@@ -8,10 +8,11 @@ import MemberUsageTable from './MemberUsageTable.vue';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import type { CollabUsage } from './types';
+import { t } from '../i18n';
 
 function mount(peers: Record<string, CollabUsage>, group: unknown = null) {
   const collab = { state: ref({ ...EMPTY_SNAPSHOT, group: group as never }) } as unknown as CollabApi;
-  return mountC(MemberUsageTable, { props: { collab, peers }, global: { plugins: [ElementPlus], stubs: { teleport: true } } });
+  return mountC(MemberUsageTable, { props: { collab, peers, group: group as never }, global: { plugins: [ElementPlus], stubs: { teleport: true } } });
 }
 
 describe('MemberUsageTable', () => {
@@ -34,5 +35,15 @@ describe('MemberUsageTable', () => {
     );
     await flushPromises();
     expect(w.text()).toContain('bob');
+  });
+
+  it('群主行显示群主徽标', async () => {
+    const now = Date.now();
+    const w = mount(
+      { m1: { agent: '*', days: 1, machineId: 'm1', username: 'alice', host: 'h', port: 1, messages: 1, receivedAt: now } },
+      { id: 'g', name: 'G', hubId: 'm1', createdAt: 1, members: [{ machineId: 'm1' }, { machineId: 'm2' }] },
+    );
+    await flushPromises();
+    expect(w.text()).toContain(t('collab.member.master'));
   });
 });

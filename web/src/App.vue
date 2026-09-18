@@ -5,6 +5,7 @@ import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
 import { useMessageHistory } from './useMessageHistory';
 import CollaborationView from './collaboration/CollaborationView.vue';
+import DistTaskNotifier from './collaboration/DistTaskNotifier.vue';
 import SchedulerView from './scheduler/SchedulerView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
@@ -593,8 +594,8 @@ onBeforeUnmount(() => {
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'history' }" :title="$t('nav.history')" @click="rail = 'history'">🕘</button>
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
-        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🏪</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
+        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🏪</button>
         <button class="a-btn" :class="{ on: rail === 'proxy' }" :title="$t('nav.proxy')" @click="rail = 'proxy'">🔀</button>
         <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
         <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings">⚙</button>
@@ -654,6 +655,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+    <DistTaskNotifier :terminal="terminal" />
   </div>
 </template>
 
