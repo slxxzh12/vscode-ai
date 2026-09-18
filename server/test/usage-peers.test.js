@@ -36,6 +36,28 @@ test('upsert 落盘并按 machineId 只留最新一份', () => {
   assert.equal(again.get('m2').receivedAt, 3000);
 });
 
+test('采集失败不覆盖已有指标：保留上次好数据，也不写空合计行', () => {
+  const file = tmpFile();
+  const s = new UsagePeersStore({ file });
+  const day = Date.UTC(2026, 8, 17, 3, 0, 0);
+  s.upsert({ machineId: 'm1', sessions: 9, messages: 12, input: 100, output: 5 }, day);
+  // 同一天采集失败：只有 agent/days/error，没有任何指标
+  const rec = s.upsert({ machineId: 'm1', agent: 'opencode', days: 7, error: 'spawn opencode ENOENT' }, day + 3600_000);
+  assert.equal(rec.sessions, 9, '快照保留上次指标');
+  assert.equal(rec.error, 'spawn opencode ENOENT');
+  assert.equal(rec.receivedAt, day + 3600_000, '在线时间照常更新');
+  const daily = s.listDaily('m1');
+  assert.equal(daily['2026-09-17'].messages, 12, '当天合计不被覆盖成空');
+  assert.equal(daily['2026-09-17'].input, 100);
+});
+
+test('无任何指标的上报不落当天合计行', () => {
+  const s = new UsagePeersStore({ file: tmpFile() });
+  s.upsert({ machineId: 'm2', agent: 'opencode', days: 7, error: 'ENOENT' }, Date.UTC(2026, 8, 17, 3, 0, 0));
+  assert.deepEqual(s.listDaily('m2'), {});
+  assert.equal(s.get('m2').error, 'ENOENT');
+});
+
 test('缺 machineId 不落库，返回 null', () => {
   const s = new UsagePeersStore({ file: tmpFile() });
   assert.equal(s.upsert({ sessions: 1 }, 1000), null);
@@ -94,7 +116,7 @@ test('daily�����̺����¶�ȡ����', () => {
   assert.ok(daily['2026-09-16'].at > 0);
 });
 
-test('daily���� JSON ���ÿ�������һ����Ǩ�ƽ� SQLite��JSON ���ٱ��� daily', () => {
+test('daily���� JSON ���ÿ�������һ����Ǩ�ƽ� SQLite��JSON ���ٱ��� daily', () => {
   const file = tmpFile();
   fs.writeFileSync(file, JSON.stringify({ updatedAt: 1, peers: {}, daily: { m1: { '2026-09-10': { sessions: 1, messages: 2, at: 123 } } } }), 'utf8');
   const s = new UsagePeersStore({ file, logger: { warn() {}, info() {} } });

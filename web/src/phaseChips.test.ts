@@ -3,16 +3,16 @@ import { EXTRA_CHIPS, buildChips, appendText } from './phaseChips';
 
 describe('phaseChips', () => {
   it('固定附加项内容与顺序', () => {
-    expect(EXTRA_CHIPS).toEqual(['1', '2', '3', '4', '5', 'ok']);
+    expect(EXTRA_CHIPS).toEqual(['1', '2', '3', '4', '5']);
   });
 
   it('阶段提示为替换型(append:false)、固定附加项为追加型(append:true)', () => {
     expect(buildChips([])).toEqual([
       { text: '1', append: true }, { text: '2', append: true }, { text: '3', append: true },
-      { text: '4', append: true }, { text: '5', append: true }, { text: 'ok', append: true },
+      { text: '4', append: true }, { text: '5', append: true },
     ]);
     expect(buildChips(undefined).every((c) => c.append)).toBe(true);
-    expect(buildChips(null)).toHaveLength(6);
+    expect(buildChips(null)).toHaveLength(5);
   });
 
   it('阶段提示在前、附加项在后', () => {
@@ -20,7 +20,7 @@ describe('phaseChips', () => {
       { text: '执行/compact 命令', append: false },
       { text: '合并到 master', append: false },
       { text: '1', append: true }, { text: '2', append: true }, { text: '3', append: true },
-      { text: '4', append: true }, { text: '5', append: true }, { text: 'ok', append: true },
+      { text: '4', append: true }, { text: '5', append: true },
     ]);
   });
 

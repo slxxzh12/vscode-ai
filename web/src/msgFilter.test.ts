@@ -52,7 +52,7 @@ describe('filterMessages', () => {
     expect(out.map((m) => m.text)).toEqual(['p1', 'unknown']);
   });
 
-  it('关闭筛选：按项目过滤，无法归属的老消息照常显示', () => {
+  it('全部会话：不过滤，跨项目全量返回', () => {
     const messages = [
       msg({ text: 'p1', sessionId: 's_1' }),
       msg({ text: 'p2', sessionId: 's_2' }),
@@ -63,11 +63,6 @@ describe('filterMessages', () => {
       ...base, messages, filterOn: false, projectId: 'p1',
       liveProjectBySession: {}, map: { s_1: 'p1', s_2: 'p2' },
     });
-    expect(out.map((m) => m.text)).toEqual(['p1', 'unknown', 'no-sid']);
-  });
-
-  it('没有选中项目时全量返回', () => {
-    const messages = [msg({ sessionId: 's_1' }), msg({ sessionId: 's_2' })];
-    expect(filterMessages({ ...base, messages, filterOn: false, projectId: null }).map((m) => m.text)).toEqual(['x', 'x']);
+    expect(out.map((m) => m.text)).toEqual(['p1', 'p2', 'unknown', 'no-sid']);
   });
 });

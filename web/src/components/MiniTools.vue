@@ -1,18 +1,16 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { t } from '../i18n';
 import { parseYamlDoc, serializeYamlDoc } from '../yaml';
 import { sortText, dedupText, type SortMode } from '../textTools';
 
-type ToolId = 'translate' | 'yaml' | 'js' | 'sort' | 'pick' | 'compact';
+type ToolId = 'translate' | 'yaml' | 'js' | 'sort';
 
 const TOOLS: Array<{ id: ToolId; icon: string; label: string; disabled?: boolean; hint?: string }> = [
   { id: 'translate', icon: '🌐', label: 'tools.translate' },
   { id: 'yaml', icon: '🧾', label: 'tools.yaml' },
   { id: 'js', icon: '⚙', label: 'tools.js' },
   { id: 'sort', icon: '↕', label: 'tools.sort' },
-  { id: 'pick', icon: '📎', label: 'tools.pick_file' },
-  { id: 'compact', icon: '🗜', label: 'tools.compact', disabled: true, hint: 'tools.compact_need' },
 ];
 const SORT_BTNS: Array<{ mode: SortMode; key: string }> = [
   { mode: 'asc', key: 'fp.sort.short.asc' },
@@ -24,6 +22,7 @@ const SORT_BTNS: Array<{ mode: SortMode; key: string }> = [
 ];
 
 const open = ref<ToolId | null>(null);
+const dlgOpen = computed({ get: () => open.value !== null, set: (v: boolean) => { if (!v) open.value = null; } });
 const input = ref('');
 const output = ref('');
 const busy = ref(false);
@@ -39,7 +38,6 @@ function openTool(id: ToolId) {
   msg.value = '';
   copied.value = false;
 }
-function closeTool() { open.value = null; }
 function titleOf(id: ToolId) { return t(TOOLS.find((x) => x.id === id)?.label || 'tools.title'); }
 
 function fail(e: unknown) {
@@ -85,22 +83,6 @@ async function runJs() {
   } catch (e) { fail(e); } finally { busy.value = false; }
 }
 
-async function runPick() {
-  if (busy.value) return;
-  busy.value = true; msg.value = '';
-  try {
-    const res = await fetch('/api/file/pick-path', { method: 'POST' });
-    const j: any = await res.json().catch(() => ({}));
-    if (j.error) {
-      msg.value = j.error === 'unsupported' ? t('sched.pick_unsupported') : t('tools.failed', { msg: j.message || j.error });
-      return;
-    }
-    if (j.cancelled || !j.path) return;
-    output.value = j.path;
-    msg.value = t('tools.pick_ok');
-  } catch (e) { fail(e); } finally { busy.value = false; }
-}
-
 function runSort(mode: SortMode) { output.value = sortText(input.value, mode); msg.value = ''; }
 function runDedup() { output.value = dedupText(input.value); msg.value = ''; }
 
@@ -137,13 +119,8 @@ async function copyOut() {
       </button>
     </div>
 
-    <div v-if="open" class="mtmask" @click.self="closeTool">
-      <div class="mtcard">
-        <header class="mthead">
-          <span>{{ titleOf(open) }}</span>
-          <button class="mtx" @click="closeTool">×</button>
-        </header>
-
+    <el-dialog v-model="dlgOpen" :title="open ? titleOf(open) : ''" fullscreen append-to-body class="mtdlg">
+      <div class="mtbody">
         <div class="mtacts">
           <template v-if="open === 'translate'">
             <button class="mtbtn primary" :disabled="busy" @click="runTranslate">{{ busy ? $t('term.translating') : $t('tools.run') }}</button>
@@ -154,9 +131,6 @@ async function copyOut() {
           </template>
           <template v-else-if="open === 'js'">
             <button class="mtbtn primary" :disabled="busy" @click="runJs">{{ $t('tools.js_min') }}</button>
-          </template>
-          <template v-else-if="open === 'pick'">
-            <button class="mtbtn primary" :disabled="busy" @click="runPick">{{ $t('tools.pick_run') }}</button>
           </template>
           <template v-else>
             <button v-for="b in SORT_BTNS" :key="b.mode" class="mtbtn" @click="runSort(b.mode)">{{ $t(b.key) }}</button>
@@ -176,34 +150,33 @@ async function copyOut() {
           </div>
         </div>
       </div>
-    </div>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .mt { margin: 0 0 16px; }
-.mtrow { display: flex; flex-wrap: wrap; gap: 8px; }
-.mticon { display: inline-flex; align-items: center; gap: 6px; background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+.mtrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px; }
+.mticon { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 16px; padding: 22px 12px; cursor: pointer; font-size: 15px; }
 .mticon:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
 .mticon.on { border-color: var(--ac); color: var(--ac2); }
 .mticon:disabled { opacity: .5; cursor: default; }
-.mtglyph { font-size: 15px; line-height: 1; }
+.mtglyph { font-size: 40px; line-height: 1; }
+.mtname { text-align: center; line-height: 1.3; }
 
-.mtmask { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 120; }
-.mtcard { width: 640px; max-width: 94vw; max-height: 86vh; display: flex; flex-direction: column; gap: 8px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; padding: 14px; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
-.mthead { display: flex; align-items: center; justify-content: space-between; color: var(--tx1); font-weight: 700; }
-.mtx { background: none; border: none; color: var(--tx3); font-size: 18px; cursor: pointer; line-height: 1; }
-.mtacts { display: flex; flex-wrap: wrap; gap: 6px; }
-.mtbtn { background: var(--bg4); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+.mtbody { display: flex; flex-direction: column; gap: 10px; height: calc(100vh - 150px); }
+.mtacts { display: flex; flex-wrap: wrap; gap: 8px; }
+.mtbtn { background: var(--bg4); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
 .mtbtn:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
 .mtbtn.primary { background: var(--ac); border-color: var(--ac); color: var(--onac); font-weight: 600; }
 .mtbtn:disabled { opacity: .55; cursor: default; }
 .mtmsg { color: var(--tx3); font-size: 12px; }
-.mtarea { flex: 1; min-height: 96px; resize: vertical; background: var(--bg2); color: var(--tx); border: 1px solid var(--bd); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.6; font-family: ui-monospace, Consolas, monospace; box-sizing: border-box; }
+.mtarea { flex: 1; min-height: 140px; resize: none; background: var(--bg2); color: var(--tx); border: 1px solid var(--bd); border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.6; font-family: ui-monospace, Consolas, monospace; box-sizing: border-box; }
 .mtarea:focus { outline: none; border-color: var(--ac2); }
-.mtout { display: flex; flex-direction: column; gap: 6px; }
-.mtoutacts { display: flex; gap: 6px; justify-content: flex-end; }
-.mtmini { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+.mtout { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.mtout .mtarea { min-height: 120px; }
+.mtoutacts { display: flex; gap: 8px; justify-content: flex-end; }
+.mtmini { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
 .mtmini:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
 .mtmini:disabled { opacity: .5; cursor: default; }
 </style>

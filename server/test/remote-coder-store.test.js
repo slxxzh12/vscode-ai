@@ -7,6 +7,7 @@ import {
   REMOTE_DIR, SCREEN_FILE, MESSAGES_FILE, dirOf, decodePng, parseJsonc,
   readMessages, writeMessages, newId, makeEntry, appendMessage, inbox, markHandled,
   saveScreen, screenRev, commitScreen,
+  artifactsDir, listArtifacts, resolveArtifact,
 } from '../remote-coder-store.js';
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'df-rc-')); }

@@ -9,6 +9,13 @@ export function emptyPeers() {
   return { updatedAt: 0, peers: {} };
 }
 
+// 采集失败（opencode 缺失等）时上报体只有 agent/days/error，没有这些指标 → 用它判断这份上报是否可用
+const METRIC_KEYS = ['sessions', 'messages', 'input', 'output', 'totalCost', 'cacheRead', 'cacheWrite'];
+
+export function hasMetrics(u) {
+  return METRIC_KEYS.some((k) => Number.isFinite(u && u[k]));
+}
+
 // 本地日期键 YYYY-MM-DD（按上报方的机器本地时间「每天」归档）
 export function dayKey(ts = Date.now()) {
   const d = new Date(ts);
@@ -76,10 +83,16 @@ export class UsagePeersStore {
   upsert(usage, now = Date.now()) {
     const machineId = String((usage && usage.machineId) || '');
     if (!machineId) return null;
-    const rec = { ...usage, machineId, receivedAt: now };
+    const prev = this.data.peers[machineId];
+    // 新上报缺指标时保留上次好数据，避免采集失败把已有数字覆盖成空
+    const merged = { ...prev, ...usage };
+    for (const k of METRIC_KEYS) {
+      if (!Number.isFinite(usage && usage[k]) && Number.isFinite(prev && prev[k])) merged[k] = prev[k];
+    }
+    const rec = { ...merged, machineId, receivedAt: now };
     this.data.peers[machineId] = rec;
-    // 合计行与 agent 明细同表（usage），不再单独维护 peer_daily
-    this.store?.upsertDaily?.(machineId, dayKey(now), usage, now);
+    // 合计行与 agent 明细同表（usage），不再单独维护 peer_daily；没指标不写，保护当天已有行
+    if (hasMetrics(merged)) this.store?.upsertDaily?.(machineId, dayKey(now), merged, now);
     this.data.updatedAt = now;
     this.save();
     return rec;

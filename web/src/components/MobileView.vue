@@ -97,8 +97,8 @@ watch(locale, loadNotice);
 
 <style scoped>
 .mobile { padding: 14px; overflow: auto; height: 100%; box-sizing: border-box; color: var(--tx); display: flex; gap: 16px; align-items: flex-start; }
-.col-main { flex: 1 1 auto; min-width: 0; }
-.col-tools { flex: 0 0 220px; min-width: 0; }
+.col-main { flex: 0 0 34%; max-width: 560px; min-width: 0; }
+.col-tools { flex: 1 1 auto; min-width: 0; }
 .hero { max-width: 560px; }
 .title { margin: 0 0 4px; color: var(--tx1); font-size: 18px; }
 .desc { margin: 0; color: var(--tx3); font-size: 13px; line-height: 1.5; }
@@ -112,7 +112,7 @@ watch(locale, loadNotice);
 .ftitle { margin: 0 0 4px; color: var(--tx1); font-size: 12px; }
 .fhint { margin: 0 0 6px; color: var(--tx3); font-size: 11px; line-height: 1.6; }
 .footlink { margin-top: 6px; color: var(--tx3); font-size: 12px; }
-.cards { display: flex; flex-wrap: wrap; gap: 10px; }.card { width: 200px; border: 1px solid var(--bd); border-radius: 8px; padding: 12px; background: var(--bg2); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.cards { display: flex; flex-wrap: wrap; gap: 10px; }.card { flex: 1 1 160px; min-width: 0; box-sizing: border-box; border: 1px solid var(--bd); border-radius: 8px; padding: 12px; background: var(--bg2); display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .ctitle { font-weight: 700; color: var(--tx1); font-size: 12px; }
 .qr { background: #fff; border-radius: 6px; padding: 6px; box-sizing: content-box; }
 .hint { color: var(--tx4); font-size: 11px; }
@@ -143,7 +143,7 @@ watch(locale, loadNotice);
 .nbody :deep(th), .nbody :deep(td) { border: 1px solid var(--bd); padding: 3px 8px; }
 
 @media (max-width: 760px) {
-  .mobile { flex-direction: column; }
-  .col-tools { flex: none; width: 100%; }
+  .mobile { gap: 10px; padding: 10px; }
+  .col-main { flex: 0 0 30%; }
 }
 </style>

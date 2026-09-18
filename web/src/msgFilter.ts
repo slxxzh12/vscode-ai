@@ -2,9 +2,10 @@ import type { HistoryMessage } from './useMessageHistory';
 import type { CenterTab } from './useCenter';
 import type { SessionProjectMap } from './sessionProjects';
 
-// 左侧「消息」页的筛选：默认只看当前会话；关掉看当前项目。
-// 项目归属优先查活跃会话，服务端重启后查 session-projects.json 映射；
-// 两者都查不到的（升级前的老消息）视为「无法归属」——关闭筛选时照常显示，避免看起来像被清空。
+// 左侧「消息」页的筛选：仅当前会话 / 全部会话，二者互斥。
+// 「仅当前会话」按 sessionId 匹配；没有活跃会话时退化为当前项目（项目归属优先查活跃会话，
+// 服务端重启后查 session-projects.json 映射，查不到的老消息照常显示）。
+// 「全部会话」不过滤，显示所有消息。
 export interface FilterInput {
   messages: HistoryMessage[];
   filterOn: boolean;
@@ -36,7 +37,8 @@ export function resolveProject(
 
 export function filterMessages(input: FilterInput): HistoryMessage[] {
   const { messages, filterOn, sessionId, tabName, projectId, liveProjectBySession, map } = input;
-  if (filterOn && sessionId) {
+  if (!filterOn) return messages;   // 全部会话：不过滤
+  if (sessionId) {
     return messages.filter((m) => (m.sessionId ? m.sessionId === sessionId : !!tabName && m.tabName === tabName));
   }
   if (!projectId) return messages;

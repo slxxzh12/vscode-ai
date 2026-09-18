@@ -5,6 +5,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { pathToFileURL } = require("url");
 const { spawn, spawnSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -56,6 +57,21 @@ function shutdown(code = 0) {
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
-console.log(`[dev] DEVFLOW_PORT=${PORT}; 后端 http://127.0.0.1:${PORT}；前端 http://localhost:5173`);
-start("server", process.execPath, ["--watch", "server/index.js"], "dev-server.log");
-start("web", NPM, ["--prefix", "web", "run", "dev"], "dev-web.log");
+// 让子进程（后端采集/终端）能找到 opencode：显式配置(DEVFLOW_OPENCODE) → PATH → 仓库 opencode/、env/
+async function ensureOpencode() {
+  try {
+    const mod = await import(pathToFileURL(path.join(ROOT, "server", "collaboration", "agent-stats.js")).href);
+    const bin = mod.ensureAgentOnPath("opencode", { env: process.env, appRoot: ROOT });
+    if (bin) { console.log(`[dev] opencode: ${bin}`); return; }
+  } catch { /* 探测失败不阻塞 dev */ }
+  console.warn("[dev] 未找到 opencode，机器用量采集会失败；请把它加入 PATH，或设 DEVFLOW_OPENCODE=<opencode 可执行文件路径>");
+}
+
+async function main() {
+  await ensureOpencode();
+  console.log(`[dev] DEVFLOW_PORT=${PORT}; 后端 http://127.0.0.1:${PORT}；前端 http://localhost:5173`);
+  start("server", process.execPath, ["--watch", "server/index.js"], "dev-server.log");
+  start("web", NPM, ["--prefix", "web", "run", "dev"], "dev-web.log");
+}
+
+main();

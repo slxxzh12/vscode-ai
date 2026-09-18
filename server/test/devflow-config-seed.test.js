@@ -28,6 +28,6 @@ test('seed 配置：交付运维组含「打包」阶段（package），排在�
   assert.ok(dev, '缺少 dev 工作流');
   const ops = dev.stages.filter((s) => s.group === '交付运维');
   assert.deepEqual(ops.map((s) => s.id), ['package', 'deploy', 'troubleshoot']);
-  assert.equal(ops[0].label, '打包');
-  assert.deepEqual(ops[0].prompts, ['根据打包脚本打包release包']);
+  assert.equal(ops[0].label, '打包release');
+  assert.deepEqual(ops[0].prompts, ['根据打包脚本打包release', '调用/compact 压缩上下文']);
 });

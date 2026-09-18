@@ -34,6 +34,7 @@ import { mergeWorkflowList } from './collaboration/workflow-merge.js';
 import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
 import { createUsageMount } from './usage-mount.js';
+import { ensureAgentOnPath } from './collaboration/agent-stats.js';
 import { createTranslator, createTranslateMount, defaultCatalog, defaultProviderResolver } from './translate.js';
 import { loadInvite, saveInvite, clearInvite, isInviteActive } from './remote-invite.js';
 import { CollabS2C } from '@devflow/shared/collab';
@@ -71,6 +72,12 @@ const PORT = resolvePort();
 const PORT_SOURCE = validPort(process.env.DEVFLOW_PORT) ? 'env' : (readPortFile() ? 'file' : 'default');
 setLocale(BOOT_CFG.server.language);
 const NODE = instanceName();
+
+// 默认 agent 的启动命令（终端、用量采集共用一份）
+function defaultAgentCmd() {
+  const a = (BOOT_CFG.agents.list || []).find((x) => x.id === BOOT_CFG.agents.default) || {};
+  return a.cmd || 'opencode';
+}
 
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
 process.on('unhandledRejection', (err) => log.error('unhandledRejection', err));
@@ -298,12 +305,18 @@ function buildWorkspace({ paths, port }) {
     engine.writeDownload?.('usage.json', Buffer.from(JSON.stringify(usagePeers.snapshot(), null, 2)), 'usage');
     broadcastCollab(CollabS2C.COLLAB_HEARTBEAT, {});
   };
+  // agent 可执行文件解析：显式配置(DEVFLOW_OPENCODE) → PATH → 包内 opencode/、env/；命中后把目录插到 PATH
+  // 这样用量采集（execFile）与 pty 终端命中同一份，绿色包直启也不会因 PATH 缺失而 ENOENT
+  const agentCmd = defaultAgentCmd();
+  const agentBin = ensureAgentOnPath(agentCmd);
+  if (agentBin) log.info(`agent bin resolved: ${agentBin}`);
+  else log.warn(`agent "${agentCmd}" not found on PATH; usage collection will fail (set DEVFLOW_OPENCODE to override)`);
   const usageReporter = createUsageReporter({
     file: paths.usageReportFile,
     identity: () => ({ ...engine.pub }),
     peers: usagePeers,
     onLocal: syncUsageSnapshot,
-    cmd: ((BOOT_CFG.agents.list || []).find((a) => a.id === BOOT_CFG.agents.default) || {}).cmd || 'opencode',
+    cmd: agentCmd,
     logger: log,
   });
   const usageMount = createUsageMount({

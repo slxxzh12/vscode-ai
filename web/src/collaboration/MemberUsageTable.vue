@@ -23,10 +23,12 @@ const num = (v?: number) => fmtNum(v);
   >
     <el-table-column :label="$t('usage.machine')" sortable :sort-by="(r: any) => machineLabel(r)" min-width="130">
       <template #default="{ row }">
-        <span class="dot" :class="{ on: isOnline(row.receivedAt) }" />
-        <span class="mname">{{ machineLabel(row) }}</span>
-        <span class="host">@{{ row.host || '-' }}:{{ row.port || '-' }}</span>
-        <span v-if="!row.inGroup" class="tag">{{ $t('usage.not_in_group') }}</span>
+        <div class="mcell">
+          <span class="dot" :class="{ on: isOnline(row.receivedAt) }" />
+          <span class="mname" :title="machineLabel(row)">{{ machineLabel(row) }}</span>
+          <span class="host">@{{ row.host || '-' }}:{{ row.port || '-' }}</span>
+          <span v-if="!row.inGroup" class="tag">{{ $t('usage.not_in_group') }}</span>
+        </div>
       </template>
     </el-table-column>
     <el-table-column prop="messages" :label="$t('usage.messages')" sortable width="80" align="right">
@@ -42,10 +44,12 @@ const num = (v?: number) => fmtNum(v);
 </template>
 
 <style scoped>
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tx6); margin-right: 6px; vertical-align: middle; }
+.mcell { display: flex; align-items: center; min-width: 0; }
+.dot { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tx6); margin-right: 6px; }
 .dot.on { background: #4caf50; }
-.mname { color: var(--tx1); }
-.host { color: var(--tx6); margin-left: 6px; font-size: 11px; }
-.tag { margin-left: 8px; padding: 0 6px; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx6); font-size: 11px; }
+.mname { color: var(--tx1); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.host { flex: none; color: var(--tx6); margin-left: 6px; font-size: 11px; white-space: nowrap; }
+.tag { flex: none; margin-left: 8px; padding: 0 6px; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx6); font-size: 11px; white-space: nowrap; }
 .utable { width: 100%; }
+.utable :deep(.cell) { white-space: nowrap; word-break: normal; }
 </style>

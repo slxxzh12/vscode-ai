@@ -2,9 +2,9 @@
 //
 // 两类 chip：
 // - 阶段提示（来自 config/devflow.xml 的阶段 prompts）：**替换型**，点击把整句填入输入框；
-// - 固定附加项 EXTRA_CHIPS：**追加型**，回答 Agent 的编号/确认菜单时高频使用，
-//   彼此不互斥，点击按 appendText 的规则追加到输入框末尾。
-export const EXTRA_CHIPS = ['1', '2', '3', '4', '5', 'ok'];
+// - 固定附加项 EXTRA_CHIPS：**追加型**，回答 Agent 的编号菜单时高频使用，
+//   点击即直接发送（见 TerminalView 的 onChipClick）。
+export const EXTRA_CHIPS = ['1', '2', '3', '4', '5'];
 
 export interface Chip {
   text: string;

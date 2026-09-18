@@ -11,6 +11,7 @@
 - Windows + PowerShell 5.1；**无 bash**；`npm.ps1` 受执行策略拦截 → 一律用 `npm.cmd`。
 - Node v24.18.0（`D:\soft\node-v24.18.0-win-x64\node.exe`）；bun 1.3.14 仅作参考（勿用于本项目运行）。
 - 本仓库运行时**必须用 Node，不能用 bun**：node-pty 原生插件（已实测 bun 编译成 exe 时 `conpty.node` 无法加载；bun 运行时下 pty 交互流不可用）。
+- **opencode 可执行文件**：本机为绿色包 `D:\soft\vscode-ai-windows-x64-<日期>-opencode\opencode\opencode.exe`（`soft/` 出包时打进包内 `opencode/`）。它**不在用户/系统 PATH**，只有 opencode 会话进程的 PATH 才有。dev 下若启动 `npm run dev` 的终端没有它，用量采集会 `spawn opencode ENOENT`、机器用量显示为空。解析顺序（`server/collaboration/agent-stats.js` 的 `resolveAgentBin`）：`DEVFLOW_OPENCODE` 环境变量 → PATH → 应用根下 `opencode/`、`env/`；命中后 `ensureAgentOnPath` 把其目录插到 PATH 最前（终端与采集共用）。所以要 dev 下能看到本机用量：用带 opencode 的终端起 dev，或设 `DEVFLOW_OPENCODE=<opencode 可执行文件路径>`（`scripts/dev.js` 启动时会探测并提示）。
 - Git 远端：Gitee `origin`（`https://gitee.com/wglj/devflow.git`）。默认分支 `master`。
 - **所有敏感信息（令牌、口令/密码、密钥、私钥、任何带凭据的 URL 等）一律只放 `env/` 目录**（如 `env/gitee-release.ini`、`env/github.ini`、`env/git-credentials`）；`env/` 已在 `.gitignore`，**禁止 `git add`/提交**。
 - **代码、脚本、配置模板、README、以及 `docs/` 下的设计/计划文档中，一律禁止出现任何明文敏感信息**；需要引用时只用占位符（如 `https://<user>:<token>@gitee.com/...`），真实值从 `env/` 读取。提交前用 `git grep -n -I -E "https?://[^/]+:[^/]+@|ghp_|github_pat_|glpat_|-----BEGIN [A-Z ]*PRIVATE KEY-----"` 自查。
