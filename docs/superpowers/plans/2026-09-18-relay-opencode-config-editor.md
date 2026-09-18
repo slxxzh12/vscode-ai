@@ -1,5 +1,7 @@
 # LLM 中转站内展示并编辑 opencode 配置 Implementation Plan
 
+> 已被 `docs/superpowers/plans/2026-09-18-relay-opencode-simple-config.md` 取代（保留历史）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在「LLM 中转站」面板展示本机 opencode 配置文件全文，并对 provider / 默认 model 做完整的增删改，保存到 `~/.config/opencode/opencode.json`（原 `.jsonc` 备份）。

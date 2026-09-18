@@ -3,6 +3,7 @@
 日期：2026-09-18
 分支：master
 状态：待实现
+取代：已被 `docs/superpowers/specs/2026-09-18-relay-opencode-simple-config-design.md` 取代（复杂行式编辑器改为极简配置卡）。
 
 ## 1. 需求
 
