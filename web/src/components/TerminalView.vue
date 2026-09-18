@@ -143,11 +143,37 @@ function onTabDialogConfirm(payload: { name: string; description: string }) {
   persistTabDescs();
 }
 
-// composer 上当前会话的详细描述（只读提示）
+// composer 上当前会话的详细描述（双击可就地编辑，保存后随会话持久化）
 const activeTabDesc = computed(() => {
   const sid = props.terminal.state.activeSessionId;
   return sid ? (tabDescs.value[sid] || '') : '';
 });
+
+const editingDesc = ref(false);
+const descDraft = ref('');
+const descInputEl = ref<HTMLInputElement | null>(null);
+let descEditSid: string | null = null;   // 编辑期间锁定会话，避免切换会话后写错对象
+function startEditDesc() {
+  const sid = props.terminal.state.activeSessionId;
+  if (!sid) return;
+  descEditSid = sid;
+  descDraft.value = tabDescs.value[sid] || '';
+  editingDesc.value = true;
+  void nextTick(() => { descInputEl.value?.focus(); descInputEl.value?.select(); });
+}
+function commitDesc() {
+  if (!editingDesc.value) return;
+  const sid = descEditSid;
+  editingDesc.value = false;
+  descEditSid = null;
+  if (!sid) return;
+  tabDescs.value = setTabDescription(tabDescs.value, sid, descDraft.value);
+  persistTabDescs();
+}
+function cancelDesc() {
+  editingDesc.value = false;
+  descEditSid = null;
+}
 
 // 页签改名后让 Agent 内的对话名跟着改：向 Agent 发 `/rename`（斜杠命令需回车从补全列表选中执行）
 // → 清掉预填的旧标题 → 输入新名 → 回车确认。仅 Agent 会话有该命令（shell 会话跳过）。
@@ -702,6 +728,11 @@ function compactContext() {
 function undoContext() {
   sendToActive('/undo');
 }
+// 结束当前任务：给当前会话发 /clear（opencode 里是 /new 的别名，结束当前会话并开始新会话）
+function endTask() {
+  resetAutoCompact();
+  sendToActive('/clear');
+}
 
 // —— 自动压缩上下文：默认开启；用户发送超过 30 次后，空闲 10 分钟无接续则自动 /compact ——
 const AUTO_COMPACT_SENDS = 30;
@@ -897,7 +928,7 @@ function onTabClose(id: string, ev: Event) {
   if (!tab) return;
   if (tab.kind === 'session' && tab.id.startsWith('s:')) {
     const sid = tab.id.slice(2);
-    if (confirm(t('term.kill_confirm'))) { props.terminal.killSession(sid); }
+    props.terminal.killSession(sid);   // 点击即关闭，不弹确认框
   } else {
     props.center.closeById(id);
   }
@@ -1137,7 +1168,11 @@ onBeforeUnmount(() => {
               @keydown="onComposerKey"
             />
             <div class="ctools">
-              <span v-if="activeTabDesc" class="cdsc" :title="activeTabDesc">{{ activeTabDesc }}</span>
+              <input v-if="editingDesc" ref="descInputEl" v-model="descDraft" class="cdsc cdsc-edit"
+                :placeholder="$t('term.tab_dialog_desc_ph')" @keydown.enter.prevent="commitDesc"
+                @keydown.esc.prevent="cancelDesc" @blur="commitDesc" @mousedown.stop />
+              <span v-else-if="activeTabDesc" class="cdsc" :title="activeTabDesc + ' — ' + $t('term.tab_desc_edit')"
+                @dblclick.stop="startEditDesc" @mousedown.stop>{{ activeTabDesc }}</span>
               <button class="cbtn" :title="$t('term.pick_file')" @mousedown.stop @click="pickFileForPrompt">{{ $t('term.pick_file') }}</button>
               <button class="cbtn" :disabled="!composerText && !translatedText && !activeStage" :title="$t('term.clear_prompt')" @mousedown.stop @click="clearPrompt">{{ $t('term.clear_prompt') }}</button>
               <button v-if="translateMode" class="cbtn" :disabled="translating || !composerText.trim()" :title="$t('term.translate')" @mousedown.stop @click="translateNow">{{ translating ? $t('term.translating') : $t('term.translate') }}</button>
@@ -1163,6 +1198,7 @@ onBeforeUnmount(() => {
           <div v-if="activeIsAgent" class="cagentacts">
             <button class="cact compact" :title="$t('term.compact_hint')" @click="compactContext">{{ $t('term.compact') }}</button>
             <button class="cact cancel" :title="$t('term.undo_hint')" @click="undoContext">{{ $t('term.cancel_exec') }}</button>
+            <button class="cact endtask" :title="$t('term.end_task_hint')" @click="endTask">{{ $t('term.end_task') }}</button>
           </div>
           <button class="csend" @click="onSendClick">{{ countdown !== null ? $t('term.send_countdown', { n: countdown }) : $t('common.send') }}</button>
         </div>
@@ -1189,7 +1225,9 @@ onBeforeUnmount(() => {
 .cbar .gear { margin-left: 4px; }
 .cbar .asel { height: 20px; padding: 0 6px; }
 .ctools { position: absolute; top: 6px; right: 8px; z-index: 2; display: flex; gap: 6px; }
-.ctools .cdsc { flex: 0 1 auto; min-width: 0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: color-mix(in srgb, var(--warn2) 16%, transparent); border: 1px solid color-mix(in srgb, var(--warn2) 60%, transparent); color: var(--warn2); border-radius: 6px; padding: 1px 8px; line-height: 18px; font-size: 11px; }
+.ctools .cdsc { flex: 0 1 auto; min-width: 0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: color-mix(in srgb, var(--warn2) 16%, transparent); border: 1px solid color-mix(in srgb, var(--warn2) 60%, transparent); color: var(--warn2); border-radius: 6px; padding: 1px 8px; line-height: 18px; font-size: 11px; cursor: text; }
+.ctools .cdsc-edit { width: 220px; max-width: 40vw; outline: none; }
+.ctools .cdsc-edit:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cbtn { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx3); border-radius: 6px; padding: 1px 8px; line-height: 18px; cursor: pointer; font-size: 11px; }
 .cbtn:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
 .cbtn:disabled { opacity: .55; cursor: default; }
@@ -1236,10 +1274,12 @@ onBeforeUnmount(() => {
 .csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 16px; font-weight: 700; flex: none; min-width: 156px; }
 .cagentacts { display: flex; flex-direction: column; gap: 6px; flex: none; min-width: 84px; }
 .cact { flex: 1; min-height: 0; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 10px; padding: 0 10px; cursor: pointer; font-size: 12px; font-weight: 700; }
-.cact.compact { flex: 65; border-color: var(--ok); color: var(--ok); }
+.cact.compact { flex: 30; border-color: var(--ok); color: var(--ok); }
 .cact.compact:hover { background: color-mix(in srgb, var(--ok) 18%, transparent); }
 .cact.cancel { flex: 35; border-color: var(--err); color: var(--err); }
 .cact.cancel:hover { background: color-mix(in srgb, var(--err) 18%, transparent); }
+.cact.endtask { flex: 35; }
+.cact.endtask:hover { background: color-mix(in srgb, var(--tx1) 12%, transparent); }
 /* 手机页：工作流/提示条改为单行横向滚动，保证输入框与发送按钮始终有高度、不被挤出 */
 .composer.phone { padding: 0 8px 8px; gap: 4px; }
 .composer.phone:not(.min) { min-height: 148px; }
