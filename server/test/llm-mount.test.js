@@ -314,3 +314,48 @@ test('test-example 返回流式/非流式 curl；test-script 写 bat', async (t)
   assert.equal((await jget(server, '/api/llm-admin/test-example?token=nope&pid=corp&model=a')).status, 404);
   assert.equal((await jget(server, `/api/llm-admin/test-example?token=${tok.id}&pid=nope&model=a`)).status, 404);
 });
+
+test('opencode 配置 GET/POST：无需解锁，写盘且保留其余顶层键', async (t) => {
+  const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
+  fs.writeFileSync(path.join(oc, 'opencode.json'), JSON.stringify({
+    agent: { a: {} },
+    provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { m1: {} } } },
+    model: 'corp/m1',
+  }));
+  const vault = tmpVault();
+  vault.init('pw');
+  vault.lock();
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234, opencodeDir: oc });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+
+  const g = await jget(server, '/api/llm-admin/opencode');
+  assert.equal(g.status, 200);
+  const gj = JSON.parse(g.body);
+  assert.equal(gj.config.provider.corp.options.apiKey, 'K');
+  assert.match(gj.raw, /corp/);
+
+  const r = await jpost(server, '/api/llm-admin/opencode', {
+    provider: { glm: { options: { baseURL: 'https://glm/v1', apiKey: 'G' }, models: { g1: {} } } },
+    model: 'glm/g1',
+  });
+  assert.equal(r.status, 200);
+  const saved = JSON.parse(fs.readFileSync(path.join(oc, 'opencode.json'), 'utf8'));
+  assert.deepEqual(Object.keys(saved.provider), ['glm']);
+  assert.equal(saved.model, 'glm/g1');
+  assert.deepEqual(saved.agent, { a: {} });
+});
+
+test('opencode 配置 POST 非法体 400、坏文件 400', async (t) => {
+  const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
+  fs.writeFileSync(path.join(oc, 'opencode.json'), '{ broken');
+  const vault = tmpVault();
+  vault.init('pw');
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234, opencodeDir: oc });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+  assert.equal((await jpost(server, '/api/llm-admin/opencode', { provider: 'x', model: '' })).status, 400);
+  assert.equal((await jpost(server, '/api/llm-admin/opencode', { provider: {}, model: '' })).status, 400);
+});

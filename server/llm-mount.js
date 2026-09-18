@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { signJwt } from './llm-jwt.js';
-import { listProviders, getProvider, buildOpencodeConfigMulti } from './llm-config.js';
+import { listProviders, getProvider, buildOpencodeConfigMulti, opencodeConfigDir } from './llm-config.js';
+import { readActiveConfig, mergeAndWrite } from './llm-opencode-config.js';
 import { createProxyHandler } from './llm-proxy.js';
 import { createCache } from './llm-cache.js';
 import { loadPlugins, EXAMPLE_PLUGIN, writeExamplePlugin } from './relay-plugins.js';
@@ -100,7 +101,7 @@ function buildTestBat({ host, port, pid, baseURL, jwt, model, stream }) {
   ].join('\r\n');
 }
 
-export function createLlmMount({ vault, host, port, logger = console, pluginsDir = null, relayTestsDir = null, cache = createCache(), reveal = revealInOs } = {}) {
+export function createLlmMount({ vault, host, port, logger = console, pluginsDir = null, relayTestsDir = null, opencodeDir = opencodeConfigDir(), cache = createCache(), reveal = revealInOs } = {}) {
   let plugins = [];
   let entries = [];
   const proxy = createProxyHandler({
@@ -149,6 +150,18 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
       if (seg[0] === 'vault' && seg[1] === 'lock' && method === 'POST') { vault.lock(); return sendJson(res, 200, { ok: true, vault: vault.status() }); }
       if (seg[0] === 'vault' && seg[1] === 'passphrase' && method === 'POST') { const b = await readJson(req); vault.changePassphrase(String(b.old || ''), String(b.new || '')); return sendJson(res, 200, { ok: true }); }
       if (seg[0] === 'vault' && seg[1] === 'reset' && method === 'POST') { return sendJson(res, 200, { ok: true, vault: vault.reset() }); }
+      if (seg[0] === 'opencode' && !seg[1] && method === 'GET') {
+        return sendJson(res, 200, readActiveConfig({ dir: opencodeDir }));
+      }
+      if (seg[0] === 'opencode' && !seg[1] && method === 'POST') {
+        const b = await readJson(req);
+        const saved = mergeAndWrite({
+          dir: opencodeDir,
+          provider: b.provider || {},
+          model: typeof b.model === 'string' ? b.model : '',
+        });
+        return sendJson(res, 200, { ok: true, path: saved.path, backups: saved.backups, config: saved.config });
+      }
       if (locked()) return sendJson(res, 423, { error: 'locked' });
       if (seg[0] === 'plugins' && seg[1] === 'reload' && method === 'POST') return sendJson(res, 200, { entries: await reloadPlugins() });
       if (seg[0] === 'plugins' && seg[1] === 'example' && method === 'POST') {
@@ -256,6 +269,8 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
       if (e.code === 'bad-passphrase') return sendJson(res, 400, { error: 'bad-passphrase' });
       if (e.code === 'exists') return sendJson(res, 409, { error: 'exists' });
       if (e.code === 'not-init') return sendJson(res, 400, { error: 'not-init' });
+      if (e.code === 'bad-config') return sendJson(res, 400, { error: 'bad-config' });
+      if (e.code === 'bad-existing') return sendJson(res, 400, { error: 'bad-existing' });
       logger?.warn?.('llm mount error', e && e.message);
       return sendJson(res, 500, { error: 'internal', message: String((e && e.message) || e) });
     }
