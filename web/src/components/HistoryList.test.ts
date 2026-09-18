@@ -141,6 +141,8 @@ describe('HistoryList', () => {
     expect(w.findAll('.mrow')).toHaveLength(1);
     await nodes[1].find('.topen').trigger('click');
     expect(w.emitted('open-session')?.[0]).toEqual(['s1', 'A']);
+    await nodes[1].find('.tedit').trigger('click');
+    expect(w.emitted('edit-session')?.[0]).toEqual(['s1', 'A']);
   });
 
   it('全部会话：账本/运行中的空会话也展示且可打开', async () => {
@@ -158,6 +160,7 @@ describe('HistoryList', () => {
     await w.vm.$nextTick();
     expect(w.findAll('.tnode')).toHaveLength(1);
     expect(w.find('.topen').exists()).toBe(false);
+    expect(w.find('.tedit').exists()).toBe(false);
   });
 
   it('仅当前会话：仍是平铺消息', async () => {

@@ -53,13 +53,18 @@ export function planRestore(state: WindowState | null, opts: {
   hashRail: string | null;
   hashHistoryTab: HistoryTab | null;
   deepLinkOpened: boolean;
+  newWindow?: boolean;                                       // 新窗口（非刷新）：不继承其它窗口存下的子页
 }): RestorePlan {
   const known = new Set(opts.projectIds);
   const tabs = fileTabsOf(state).filter((t) => known.has(t.projectId));
   const plan: RestorePlan = { tabs };
+  // 新窗口默认落在「消息」子页；URL hash 显式指定子页时以 hash 为准；刷新（非新窗口）仍恢复存档
+  if (!opts.hashHistoryTab) {
+    if (opts.newWindow) plan.historyTab = 'messages';
+    else if (state?.historyTab) plan.historyTab = state.historyTab;
+  }
   if (!state) return plan;                                   // 无存档：不覆盖任何默认值
   if (!opts.hashRail && state.rail) plan.rail = state.rail;
-  if (!opts.hashHistoryTab && state.historyTab) plan.historyTab = state.historyTab;
   if (typeof state.msgFilter === 'boolean') plan.msgFilter = state.msgFilter;
   if (opts.deepLinkOpened) return plan;                       // ?open= 深链优先于存档的激活项
   const active = state.activeTab;

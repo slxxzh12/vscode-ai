@@ -1418,7 +1418,7 @@ onBeforeUnmount(() => {
 .term-layer { flex: 1; padding: 2px 6px; overflow: hidden; min-height: 0; }
 .copyfloat { position: absolute; top: 8px; right: 14px; z-index: 3; background: color-mix(in srgb, var(--bg4) 85%, transparent); border: 1px solid var(--bd); color: var(--tx3); border-radius: 6px; padding: 2px 8px; line-height: 18px; font-size: 11px; cursor: pointer; }
 .copyfloat:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
-.copyfloat:disabled { opacity: .4; cursor: default; }
+.copyfloat:disabled { opacity: .4; cursor: default; pointer-events: none; }
 .file-layer { flex: 1; min-height: 0; overflow: hidden; }
 .phone-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px; text-align: center; color: var(--tx4); font-size: 13px; background: var(--bg3); z-index: 2; }
 </style>

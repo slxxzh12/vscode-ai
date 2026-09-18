@@ -27,6 +27,7 @@ const emit = defineEmits<{
   (e: 'open-message', text: string): void;
   (e: 'remove-message', msg: HistoryMessage): void;
   (e: 'open-session', sessionId: string, name: string): void;
+  (e: 'edit-session', sessionId: string, name: string): void;
   (e: 'open-file', projectId: string, path: string, name: string): void;
   (e: 'detail-file', projectId: string, path: string, name: string): void;
 }>();
@@ -163,6 +164,7 @@ const treeShown = computed<SessionNode[]>(() => {
 });
 function nodeRows(n: SessionNode) { return withDaySeps(n.messages, (m) => m.ts); }
 function openNode(n: SessionNode) { if (n.sessionId) emit('open-session', n.sessionId, n.label); }
+function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sessionId, n.label); }
 </script>
 
 <template>
@@ -173,7 +175,6 @@ function openNode(n: SessionNode) { if (n.sessionId) emit('open-session', n.sess
         <el-tab-pane :label="$t('hist.tab.files')" name="files" />
         <el-tab-pane :label="$t('hist.tab.tree')" name="tree" />
       </el-tabs>
-      <button v-if="tab === 'files' && items.length" class="clear" :title="$t('hist.clear_files')" @click="emit('clear')">{{ $t('hist.clear') }}</button>
     </header>
     <FileTree v-if="tab === 'tree'" class="hltree" :key="projectId || 'none'" :project-id="projectId" :active-path="activePath"
       @open-file="(pid, p, name) => emit('open-file', pid, p, name)"
@@ -185,6 +186,7 @@ function openNode(n: SessionNode) { if (n.sessionId) emit('open-session', n.sess
     </div>
     <div class="searchbar">
       <input v-model="query" class="searchinput" type="search" :placeholder="$t('hist.search')" spellcheck="false" />
+      <button v-if="tab === 'files' && items.length" class="clear" :title="$t('hist.clear_files')" @click="emit('clear')">{{ $t('hist.clear') }}</button>
     </div>
 
     <div class="list" @scroll.passive="onScroll">
@@ -220,6 +222,7 @@ function openNode(n: SessionNode) { if (n.sessionId) emit('open-session', n.sess
                 <span class="tname">{{ n.label }}</span>
                 <span v-if="n.messages.length" class="tcount">{{ $t('hist.tree.count', { n: n.messages.length }) }}</span>
                 <span v-if="n.sessionId" class="topen" :title="$t('hist.tree.open_title')" @click.stop="openNode(n)">{{ $t('hist.tree.open') }}</span>
+                <span v-if="n.sessionId" class="tedit" :title="$t('hist.tree.edit_title')" @click.stop="editNode(n)">{{ $t('hist.tree.edit') }}</span>
               </button>
               <template v-if="expanded.has(n.key)">
                 <template v-for="(row, i) in nodeRows(n)" :key="i">
@@ -275,13 +278,13 @@ function openNode(n: SessionNode) { if (n.sessionId) emit('open-session', n.sess
 .hltabs :deep(.el-tabs__item.is-active) { color: var(--ac2); font-weight: 700; }
 .hltabs :deep(.el-tabs__active-bar) { height: 2px; background-color: var(--ac2); }
 .hltabs :deep(.el-tabs__content) { display: none; }
-.clear { background: none; border: 1px solid var(--bd); color: var(--tx3); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
+.clear { flex: none; background: none; border: 1px solid var(--bd); color: var(--tx3); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
 .filterbar { display: flex; gap: 6px; padding: 6px 10px 0; flex: none; }
 .filterbtn { background: none; border: 1px solid var(--bd); color: var(--tx5); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
 .filterbtn:hover { border-color: var(--ac2); color: var(--ac2); }
 .filterbtn.on { color: var(--ac2); border-color: var(--ac2); }
-.searchbar { flex: none; padding: 6px 10px; border-bottom: 1px solid var(--bd2); }
-.searchinput { width: 100%; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; font-size: 12px; font-family: inherit; }
+.searchbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--bd2); }
+.searchinput { flex: 1 1 auto; min-width: 0; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; font-size: 12px; font-family: inherit; }
 .searchinput:focus { outline: none; border-color: var(--ac2); }
 .list { flex: 1; min-height: 0; overflow-y: auto; }
 .grp { flex: none; }
@@ -318,6 +321,6 @@ function openNode(n: SessionNode) { if (n.sessionId) emit('open-session', n.sess
 .tdot.live { background: var(--ac2); }
 .tname { flex: 1; min-width: 0; color: var(--tx1); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcount { color: var(--tx6); font-size: 10px; flex: none; }
-.topen { flex: none; color: var(--tx5); border: 1px solid var(--bd); border-radius: 4px; padding: 0 8px; font-size: 11px; line-height: 16px; }
-.topen:hover { color: var(--ac2); border-color: var(--ac2); }
+.topen, .tedit { flex: none; color: var(--tx5); border: 1px solid var(--bd); border-radius: 4px; padding: 0 8px; font-size: 11px; line-height: 16px; }
+.topen:hover, .tedit:hover { color: var(--ac2); border-color: var(--ac2); }
 </style>

@@ -28,6 +28,7 @@ import type { SessionExtra } from './sessionTree';
 import { allowedRestoreIds, loadRecentTabs, loadRestoreTabs, pushRecentTab, saveRecentTabs } from './restorePrefs';
 
 const appRef = ref<HTMLDivElement | null>(null);
+const termViewRef = ref<InstanceType<typeof TerminalView> | null>(null);
 
 // 顶栏手机按钮：新标签页打开手机页（带上当前 access 参数，远端/手机可直接访问）
 let stopRemoteCoder: (() => void) | null = null;
@@ -136,7 +137,16 @@ let colorHeartbeat: ReturnType<typeof setInterval> | null = null;
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
-const historyTab = ref<'files' | 'messages' | 'tree'>('tree');
+// 新窗口（新标签/新浏览器窗口）与刷新的区分：sessionStorage 每标签独立，刷新保留、新开为空 → 左侧默认「消息」子页
+const NEW_WINDOW = (() => {
+  try {
+    const k = 'devflow-window-booted';
+    if (sessionStorage.getItem(k)) return false;
+    sessionStorage.setItem(k, '1');
+    return true;
+  } catch { return false; }
+})();
+const historyTab = ref<'files' | 'messages' | 'tree'>(NEW_WINDOW ? 'messages' : 'tree');
 const collabTab = ref<'group' | 'tasks'>('group');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
@@ -206,7 +216,7 @@ const liveProjectBySession = computed(() => {
 });
 const liveSessionIds = computed(() => terminal.state.sessions.filter((s) => s.state === 'running').map((s) => s.id));
 async function openHistorySession(sid: string, name?: string) {
-  await openRestoredSession(sid, {
+  return openRestoredSession(sid, {
     restore: (id) => terminal.restoreSession(id, { name }),
     activate: (id) => center.activateSession(id),
     error: () => terminal.state.error,
@@ -214,6 +224,13 @@ async function openHistorySession(sid: string, name?: string) {
     onFreshAgent: () => alert(t('hist.tree.fresh_agent')),
     onRecreated: () => alert(t('hist.tree.recreated')),
   });
+}
+// 左侧「全部会话」编辑：先恢复/打开该会话，成功后再复用 TerminalView 的页签改名弹框，
+// 这样页签名与 Agent 内对话名能一起改（未打开的会话无法向 Agent 同步 /rename）。
+async function editHistorySession(sid: string) {
+  const opened = await openHistorySession(sid);
+  if (!opened) return;                                  // 恢复失败已提示，不再打开编辑
+  termViewRef.value?.editSession(opened.id);
 }
 // 会话集合变化（新建/退出/关闭）后刷新账本，保证「全部会话」能列出已关闭会话
 watch(() => terminal.state.sessions.map((s) => s.id).join(','), () => { void loadLedgerSessions(true); });
@@ -244,6 +261,7 @@ async function restoreWindowState(projectsReady: Promise<void>) {
     hashRail: hashRailOf(),
     hashHistoryTab: hashHistoryTabOf(),
     deepLinkOpened,
+    newWindow: NEW_WINDOW,
   });
   if (plan.rail && RAILS.includes(plan.rail)) rail.value = plan.rail;
   if (plan.historyTab) historyTab.value = plan.historyTab;
@@ -468,7 +486,7 @@ async function loadProjects() {
     const recent = recents.value.slice().sort((a, b) => b.ts - a.ts).find((r) => byId.has(r.id));
     currentProject.value = recent ? recent.id : projects.value[0].id;
     touchRecent(currentProject.value);
-  } else if (!projects.value.length && !noProjectPrompted.value) {
+  } else if (!projects.value.length && !noProjectPrompted.value && !pendingAgentChoice.value) {
     noProjectPrompted.value = true;
     openAddFolder();
   }
@@ -480,6 +498,20 @@ function selectProject(id: string) {
 const addOpen = ref(false);
 const addPath = ref('');
 const noProjectPrompted = ref(false);
+const pendingAgentChoice = ref(false);
+async function checkFirstRunAgentChoice() {
+  try {
+    const r = await fetch('/api/agents').then((x) => x.json());
+    const list = Array.isArray(r?.agents) ? r.agents : [];
+    if (!r?.chosen && list.length >= 2) pendingAgentChoice.value = true;
+  } catch { /* 引导失败不阻塞 */ }
+}
+function onSettingsClosed() {
+  if (pendingAgentChoice.value && !projects.value.length && !noProjectPrompted.value) {
+    noProjectPrompted.value = true;
+    openAddFolder();
+  }
+}
 function openAddFolder() { addPath.value = ''; addOpen.value = true; }
 async function chooseFolder() {
   try {
@@ -521,10 +553,10 @@ async function processOpenParam() {
     alert(t('open.failed', { msg: (e as Error)?.message || String(e) }));
   }
 }
-function openAgentSettings() {
+function openAgentSettings(firstRun = false) {
   // 设置弹窗在 TerminalView 内，仅在「目录/历史」视图挂载；其他页（通讯录/统计/定时任务）需先切回目录
   if (rail.value !== 'explorer') { rail.value = 'explorer'; }
-  setTimeout(() => window.dispatchEvent(new Event('df-open-agent-settings')), 120);
+  setTimeout(() => window.dispatchEvent(new CustomEvent('df-open-agent-settings', { detail: { firstRun } })), 120);
 }
 function releaseWindowColor() {
   try {
@@ -543,8 +575,8 @@ onMounted(async () => {
   } catch { /* ignore */ }
   applyHash();
   initFileHistory();
-  const projectsReady = loadProjects();
-  void restoreWindowState(projectsReady);      // 后台恢复：不阻塞终端连接
+  const projectsReady = (async () => { await checkFirstRunAgentChoice(); await loadProjects(); })();
+  void restoreWindowState(projectsReady).finally(() => { if (pendingAgentChoice.value) openAgentSettings(true); });
   void loadSessionProjects();
   void loadLedgerSessions();
   processOpenParam();
@@ -552,6 +584,7 @@ onMounted(async () => {
   syncHash();
   window.addEventListener('hashchange', applyHash);
   window.addEventListener('df-open-history', onOpenHistory);
+  window.addEventListener('df-settings-closed', onSettingsClosed);
   window.addEventListener('beforeunload', persistFileHistory);
   window.addEventListener('beforeunload', releaseWindowColor);
   window.addEventListener('beforeunload', persistWindowState);
@@ -565,6 +598,7 @@ onBeforeUnmount(() => {
   releaseWindowColor();
   window.removeEventListener('hashchange', applyHash);
   window.removeEventListener('df-open-history', onOpenHistory);
+  window.removeEventListener('df-settings-closed', onSettingsClosed);
   window.removeEventListener('beforeunload', persistFileHistory);
   window.removeEventListener('beforeunload', releaseWindowColor);
   window.removeEventListener('beforeunload', persistWindowState);
@@ -601,7 +635,7 @@ onBeforeUnmount(() => {
         <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🏪</button>
         <button class="a-btn" :class="{ on: rail === 'proxy' }" :title="$t('nav.proxy')" @click="rail = 'proxy'">🔀</button>
         <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
-        <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings">⚙</button>
+        <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings()">⚙</button>
       </aside>
       <template v-if="rail === 'contacts'">
         <section class="center">
@@ -634,12 +668,12 @@ onBeforeUnmount(() => {
             :live-session-ids="liveSessionIds" :sessions="sessionExtras" :project-id="currentProject" :active-path="activeFilePath"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
             @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
-            @update:filter="msgFilter = $event" @open-session="openHistorySession"
+            @update:filter="msgFilter = $event" @open-session="openHistorySession" @edit-session="editHistorySession"
             @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
         <section class="center">
-          <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" />
+          <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" />
         </section>
       </template>
     </div>

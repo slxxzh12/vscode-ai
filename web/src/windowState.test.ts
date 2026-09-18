@@ -76,6 +76,19 @@ describe('planRestore', () => {
     const plan = planRestore(null, { projectIds: ['p1'], hashRail: null, hashHistoryTab: null, deepLinkOpened: false });
     expect(plan).toEqual({ tabs: [] });
   });
+
+  it('新窗口默认落在 messages，不继承存档子页', () => {
+    const st = { rail: 'explorer' as const, historyTab: 'files' as const };
+    const plan = planRestore(st, { projectIds: [], hashRail: null, hashHistoryTab: null, deepLinkOpened: false, newWindow: true });
+    expect(plan.historyTab).toBe('messages');
+    expect(plan.rail).toBe('explorer');
+  });
+
+  it('新窗口无存档时也给 messages；hash 指定子页时以 hash 为准', () => {
+    expect(planRestore(null, { projectIds: [], hashRail: null, hashHistoryTab: null, deepLinkOpened: false, newWindow: true }).historyTab).toBe('messages');
+    const plan = planRestore({ historyTab: 'files' }, { projectIds: [], hashRail: null, hashHistoryTab: 'tree', deepLinkOpened: false, newWindow: true });
+    expect(plan.historyTab).toBeUndefined();
+  });
 });
 
 describe('saveWindowState / flushWindowState', () => {
