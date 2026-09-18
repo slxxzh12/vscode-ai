@@ -1283,7 +1283,7 @@ onBeforeUnmount(() => {
 /* 手机页：工作流/提示条改为单行横向滚动，保证输入框与发送按钮始终有高度、不被挤出 */
 .composer.phone { padding: 0 8px 8px; gap: 4px; }
 .composer.phone:not(.min) { min-height: 148px; }
-.composer.phone .cbar { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.composer.phone .cbar { height: 30px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .composer.phone .cbar::-webkit-scrollbar { display: none; }
 .composer.phone .flowbar,
 .composer.phone .chipbar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
@@ -1292,10 +1292,14 @@ onBeforeUnmount(() => {
 .composer.phone .fgroup { flex: none; }
 .composer.phone .chipstage { flex: none; flex-wrap: nowrap; max-height: none; overflow: visible; }
 .composer.phone .chipextra { flex-wrap: nowrap; }
+.composer.phone .stage { font-size: 13px; padding: 4px 14px; }
+.composer.phone .chip { font-size: 12px; padding: 3px 12px; }
 .composer.phone .cwrap { min-height: 46px; }
-.composer.phone .cinput { padding: 30px 12px 8px 12px; }
-.composer.phone .csend { min-width: 0; padding: 0 16px; font-size: 14px; }
-.composer.phone .cagentacts { min-width: 60px; }
+.composer.phone .cinput { padding: 30px 12px 8px 12px; font-size: 15px; }
+.composer.phone .cbtn { font-size: 13px; padding: 3px 10px; line-height: 20px; }
+.composer.phone .csend { min-width: 0; padding: 0 20px; font-size: 17px; }
+.composer.phone .cact { font-size: 14px; }
+.composer.phone .cagentacts { min-width: 72px; }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
 .cfgrow span { width: 62px; flex: none; }
