@@ -6,7 +6,7 @@ export function opencodeConfigDir() {
   return process.env.DEVFLOW_OPENCODE_CONFIG || path.join(os.homedir(), '.config', 'opencode');
 }
 
-function stripJsonc(text) {
+export function stripJsonc(text) {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
