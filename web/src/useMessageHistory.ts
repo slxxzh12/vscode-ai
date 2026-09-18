@@ -7,6 +7,9 @@ export interface HistoryMessage { text: string; ts: number; sessionId?: string; 
 
 const MAX = 200;
 const messages = ref<HistoryMessage[]>([]);
+// 会话自定义页签名（sessionId → 名）：改名时同步记录，供左侧「全部会话」树展示。
+// 不参与刷盘；持久化由 TerminalView 的 localStorage 负责，挂载时用 setNames 回灌。
+const names = ref<Record<string, string>>({});
 let loadPromise: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -71,7 +74,17 @@ export function useMessageHistory() {
     scheduleFlush();
   }
   function clear() { messages.value = []; scheduleFlush(); }
-  // 页签改名后，把该会话下所有历史消息的页签名一并更新
+  // 批量回灌会话自定义名（过滤非法项）
+  function setNames(map: Record<string, string>) {
+    const next: Record<string, string> = {};
+    if (map && typeof map === 'object') {
+      for (const [id, name] of Object.entries(map)) {
+        if (id && typeof name === 'string' && name.trim()) next[id] = name;
+      }
+    }
+    names.value = next;
+  }
+  // 页签改名后，把该会话下所有历史消息的页签名一并更新，并记录会话自定义名
   function renameTab(sessionId: string, tabName: string) {
     let changed = false;
     messages.value = messages.value.map((m) => {
@@ -79,6 +92,7 @@ export function useMessageHistory() {
       return m;
     });
     if (changed) scheduleFlush();
+    if (sessionId && tabName.trim()) names.value = { ...names.value, [sessionId]: tabName };
   }
-  return { messages, load, push, remove, clear, flush, renameTab };
+  return { messages, names, load, push, remove, clear, flush, renameTab, setNames };
 }

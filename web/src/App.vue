@@ -200,6 +200,8 @@ const sessionExtras = computed<SessionExtra[]>(() => {
   for (const s of terminal.state.sessions) if (!byId.has(s.id)) byId.set(s.id, { id: s.id, name: s.name });
   return [...byId.values()];
 });
+// 会话自定义页签名（由 TerminalView 改名时写入）：覆盖「全部会话」树的节点标签
+const sessionNames = computed(() => msgHistory.names.value);
 let windowRestored = false;             // 闸门：恢复完成前不写盘（避免空状态覆盖存档）
 let deepLinkOpened = false;             // ?open= 深链已打开文件：优先于存档的 activeTab
 // —— 刷新后只恢复最近点击的 N 个页签（会话+文件合计，默认 5，可在设置面板改）——
@@ -665,7 +667,7 @@ onBeforeUnmount(() => {
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
           <HistoryList :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter"
-            :live-session-ids="liveSessionIds" :sessions="sessionExtras" :project-id="currentProject" :active-path="activeFilePath"
+            :live-session-ids="liveSessionIds" :sessions="sessionExtras" :session-names="sessionNames" :project-id="currentProject" :active-path="activeFilePath"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
             @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
             @update:filter="msgFilter = $event" @open-session="openHistorySession" @edit-session="editHistorySession"

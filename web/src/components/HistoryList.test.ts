@@ -163,6 +163,18 @@ describe('HistoryList', () => {
     expect(w.find('.tedit').exists()).toBe(false);
   });
 
+  it('全部会话：自定义页签名覆盖节点标签（含账本空会话）', async () => {
+    const messages = [{ text: 'm1', ts: 100, sessionId: 's1', tabName: '旧名' }];
+    const w = mount({
+      tab: 'messages', filter: false, messages,
+      sessions: [{ id: 's1', name: '服务端旧名' }, { id: 's2', name: '服务端B' }],
+      sessionNames: { s1: '自定义A', s2: '自定义B' },
+    });
+    await w.vm.$nextTick();
+    const names = w.findAll('.tname').map((n) => n.text());
+    expect(names).toEqual(['自定义A', '自定义B']);
+  });
+
   it('仅当前会话：仍是平铺消息', async () => {
     const w = mount({ tab: 'messages', filter: true, messages: [{ text: 'x', ts: 1, tabName: 't' }] });
     await w.vm.$nextTick();

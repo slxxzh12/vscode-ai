@@ -11,6 +11,7 @@ describe('useMessageHistory', () => {
       return { json: async () => ({ messages: [] }) } as any;
     }));
     hook.clear();
+    hook.setNames({});
   });
 
   afterEach(() => {
@@ -30,5 +31,13 @@ describe('useMessageHistory', () => {
     hook.renameTab('s1', 'renamed');
     const byText = Object.fromEntries(hook.messages.value.map((m) => [m.text, m.tabName]));
     expect(byText).toEqual({ a: 'renamed', b: 'renamed', c: 'bar' });
+  });
+
+  it('renameTab 记录会话自定义名，setNames 批量写入', async () => {
+    await hook.push('x', { sessionId: 's1', tabName: 'foo' });
+    hook.renameTab('s1', '新名');
+    expect(hook.names.value.s1).toBe('新名');
+    hook.setNames({ s9: '九' });
+    expect(hook.names.value).toEqual({ s9: '九' });
   });
 });

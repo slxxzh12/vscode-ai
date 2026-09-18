@@ -990,6 +990,7 @@ onMounted(async () => {
   loadAgentSids();
   void loadComposerPrefs();
   loadTabNames();
+  msgHistory.setNames(tabNames.value);   // 回灌会话自定义名，供左侧「全部会话」树展示
   loadTabDescs();
   await loadAgents();
   loadCfg();           // 本地已保存配置优先覆盖 API 默认

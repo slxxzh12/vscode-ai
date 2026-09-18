@@ -11,12 +11,14 @@ const props = withDefaults(defineProps<{
   items: HistoryEntry[]; tab: SideTab; messages: HistoryMessage[];
   filter?: boolean; liveSessionIds?: string[]; sessions?: SessionExtra[];
   projectId?: string | null; activePath?: string | null;
+  sessionNames?: Record<string, string>;
 }>(), {
   filter: true,
   liveSessionIds: () => [],
   sessions: () => [],
   projectId: null,
   activePath: null,
+  sessionNames: () => ({}),
 });
 const emit = defineEmits<{
   (e: 'update:tab', tab: SideTab): void;
@@ -140,7 +142,12 @@ function toggleNode(key: string) {
 }
 const treeNodes = computed<SessionNode[]>(() => {
   const q = query.value.trim().toLowerCase();
-  const all = buildSessionTree(props.messages, t('hist.tree.unknown'), props.sessions);
+  const names = props.sessionNames || {};
+  const all = buildSessionTree(props.messages, t('hist.tree.unknown'), props.sessions)
+    .map((n) => {
+      const custom = n.sessionId ? String(names[n.sessionId] || '').trim() : '';
+      return custom ? { ...n, label: custom } : n;
+    });
   if (!q) return all;
   const out: SessionNode[] = [];
   for (const n of all) {
