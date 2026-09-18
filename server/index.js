@@ -30,6 +30,8 @@ import { createEventBus } from './collaboration/event-bus.js';
 import { UsagePeersStore } from './usage-peers.js';
 import { createSeedStore } from './seed-store.js';
 import { createTaskStore } from './task-store.js';
+import { createDownloadStore } from './download-store.js';
+import { createSyncStore } from './sync-store.js';
 import { mergeWorkflowList } from './collaboration/workflow-merge.js';
 import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
@@ -42,7 +44,7 @@ import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows } from './devflow-config.js';
-import { readSeed, updateSeed } from './workflow-seed.js';
+import { createWorkflowSeedStore } from './workflow-seed.js';
 import { setLocale, t } from './i18n.js';
 import { isPeerRequest, matchAccessToken, resolveInviteDaysAllowForever, resolveBindHost, hostRestartNeeded } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
@@ -73,10 +75,10 @@ const PORT_SOURCE = validPort(process.env.DEVFLOW_PORT) ? 'env' : (readPortFile(
 setLocale(BOOT_CFG.server.language);
 const NODE = instanceName();
 
-// 默认 agent 的启动命令（终端、用量采集共用一份）
-function defaultAgentCmd() {
+// 默认 agent 配置（终端启动命令 + 用量采集命令 statsCmd 共用同一份）
+function defaultAgent() {
   const a = (BOOT_CFG.agents.list || []).find((x) => x.id === BOOT_CFG.agents.default) || {};
-  return a.cmd || 'opencode';
+  return { id: a.id || '', cmd: a.cmd || 'opencode', statsCmd: a.statsCmd || '' };
 }
 
 process.on('uncaughtException', (err) => log.error('uncaughtException', err));   // 三层兜底 #3
@@ -184,6 +186,10 @@ function buildWorkspace({ paths, port }) {
   // usage 表既是 agent 明细，也存每台每天的合计行（agent='*'，原 peer_daily），故先建 store 供各方共用
   const usageStore = createUsageStore({ file: usageDbFile, logger: log });
   const taskStore = createTaskStore({ file: usageDbFile, logger: log });
+  // 协作元数据（下载索引/同步种子/工作流种子）一律进 void.db，不再落 json 文件
+  const downloadStore = createDownloadStore({ file: usageDbFile, logger: log });
+  const syncStore = createSyncStore({ file: usageDbFile, logger: log });
+  const workflowSeedStore = createWorkflowSeedStore({ file: usageDbFile, logger: log });
   const projectsFile = process.env.DEVFLOW_PROJECTS || paths.projectsFile;
   const workflowsFile = process.env.DEVFLOW_WORKFLOWS || paths.workflowsFile;
   ensureDefaults(projectsFile, workflowsFile);
@@ -201,11 +207,13 @@ function buildWorkspace({ paths, port }) {
   const sessionLedger = createSessionLedger({ file: paths.sessionsFile, logsDir: paths.sessionLogsDir, logger: log });
   const agentList = () => loadDevflowConfig(configFile).agents.list || [];
   let discoveryQueue = Promise.resolve();
-  function runDiscovery(session) {
+  function runDiscovery(session, { requireAlive = true } = {}) {
     // 串行化：避免同批会话并发读到同一份旧「已认领」集合而错配
     discoveryQueue = discoveryQueue.then(async () => {
-      const cur = sessionManager.get(session.id);
-      if (!cur || !cur.alive) return;
+      if (requireAlive) {
+        const cur = sessionManager.get(session.id);
+        if (!cur || !cur.alive) return;
+      }
       const rows = sessionLedger.read().sessions;
       const already = rows.find((r) => r.id === session.id);
       if (already && already.agentSessionId) return;
@@ -245,19 +253,30 @@ function buildWorkspace({ paths, port }) {
     sessionLedger.flushLog(s.id);
     const row = sessionLedger.read().sessions.find((r) => r.id === s.id);
     if (row) sessionLedger.upsert({ ...row, state: 'exited', updatedAt: Date.now() });
+    // 退出/关闭时补一次 agent 会话发现：避免在 15s/60s 定时发现前就关闭而丢失 agentSessionId，
+    // 导致下次恢复只能重开 agent、不能续回原对话。
+    if (s.kind === 'agent') runDiscovery(s, { requireAlive: false });
   });
-  sessionManager.on('removed', (id) => sessionLedger.remove(id));
+  sessionManager.on('removed', (id) => {
+    sessionLedger.close(id);
+    const row = sessionLedger.read().sessions.find((r) => r.id === id);
+    if (row) sessionLedger.upsert({ ...row, state: 'exited', updatedAt: Date.now() });
+  });
   function findLiveByAgentSessionId(agentSessionId, exceptDevflowId) {
     return findClaimOwner(sessionManager.live(), sessionLedger.read().sessions, agentSessionId, exceptDevflowId);
   }
   function isAgentSessionIdTaken(agentSessionId, exceptDevflowId) {
     return !!findLiveByAgentSessionId(agentSessionId, exceptDevflowId);
   }
-  async function restoreSessionById(id) {
+  async function restoreSessionById(id, { name } = {}) {
     const live = sessionManager.get(id);
     if (live && live.state === 'running') return { ok: true, session: live, redirected: false };
     const rec = sessionLedger.read().sessions.find((r) => r.id === id);
-    if (!rec) return { ok: false, reason: 'not-found' };
+    if (!rec) {
+      const projectId = sessionProjects.read()[id] || null;
+      const session = await sessionManager.create({ id, name: name || id, projectId, kind: 'shell' });
+      return { ok: true, session, recreated: true };
+    }
     if (rec.agentSessionId) {
       const owner = findLiveByAgentSessionId(rec.agentSessionId, id);
       if (owner) return { ok: true, session: owner, redirected: true };
@@ -284,39 +303,41 @@ function buildWorkspace({ paths, port }) {
     seedStore: createSeedStore({ file: usageDbFile, logger: log }),
     collabDb: createCollabDb({ file: usageDbFile, logger: log }),
     taskStore,
+    downloadStore,
+    syncStore,
     getWorkflowsUpdatedAt: () => { try { return fs.statSync(configFile).mtimeMs; } catch { return 0; } },
     skillsRoot: paths.skillsRoot,
     uploadDir: paths.uploadDir,
     downloadDir: paths.downloadDir,
     downloadsDir: paths.downloadsDir,
-    syncDir: path.join(paths.dir, 'sync'),
     events: eventBus,
     logger: log,
     getWorkflows: () => loadDevflowConfig(configFile).workflows,
     mergeWorkflows: (incoming) => {
       const merged = mergeWorkflowList(loadDevflowConfig(configFile).workflows, incoming);
-      return updateWorkflows(configFile, merged);
+      return updateWorkflows(configFile, merged, workflowSeedStore);
     },
   });
   engine.peer = makePeerClient();
   const collabMount = createCollabMount({ engine, logger: log });
   const usagePeers = engine.peers;
+  // 用量快照随心跳广播；成员拉取时由 _inPullDownloads 一并带回，不再落 usage.json 文件
   const syncUsageSnapshot = () => {
-    engine.writeDownload?.('usage.json', Buffer.from(JSON.stringify(usagePeers.snapshot(), null, 2)), 'usage');
     broadcastCollab(CollabS2C.COLLAB_HEARTBEAT, {});
   };
   // agent 可执行文件解析：显式配置(DEVFLOW_OPENCODE) → PATH → 包内 opencode/、env/；命中后把目录插到 PATH
   // 这样用量采集（execFile）与 pty 终端命中同一份，绿色包直启也不会因 PATH 缺失而 ENOENT
-  const agentCmd = defaultAgentCmd();
-  const agentBin = ensureAgentOnPath(agentCmd);
+  const agent = defaultAgent();
+  const agentBin = ensureAgentOnPath(agent.cmd);
   if (agentBin) log.info(`agent bin resolved: ${agentBin}`);
-  else log.warn(`agent "${agentCmd}" not found on PATH; usage collection will fail (set DEVFLOW_OPENCODE to override)`);
+  else log.warn(`agent "${agent.cmd}" not found on PATH; usage collection will fail (set DEVFLOW_OPENCODE to override)`);
   const usageReporter = createUsageReporter({
     file: paths.usageReportFile,
     identity: () => ({ ...engine.pub }),
     peers: usagePeers,
     onLocal: syncUsageSnapshot,
-    cmd: agentCmd,
+    cmd: agent.cmd,
+    statsCmd: agent.statsCmd,
     logger: log,
   });
   const usageMount = createUsageMount({
@@ -354,7 +375,7 @@ function buildWorkspace({ paths, port }) {
     broadcastSched(type, payload);
   });
 
-  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState });
+  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
@@ -633,7 +654,7 @@ const server = http.createServer(async (req, res) => {
       }
       const parsed = parseDevflowConfig(xml);
       fs.writeFileSync(configFile, xml, 'utf8');
-      try { updateSeed(configFile, loadDevflowConfig(configFile).workflows); } catch { /* ignore */ }
+      try { workflowSeedStore.update(loadDevflowConfig(configFile).workflows); } catch { /* ignore */ }
       setLocale(parsed.server.language);
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -643,7 +664,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/workflows-seed' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(readSeed(configFile)));
+    res.end(JSON.stringify(workflowSeedStore.read()));
     return;
   }
   if (url.pathname === '/api/workflows' && req.method === 'POST') {
@@ -653,7 +674,7 @@ const server = http.createServer(async (req, res) => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       let saved;
-      try { saved = updateWorkflows(configFile, body.workflows); }
+      try { saved = updateWorkflows(configFile, body.workflows, workflowSeedStore); }
       catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid workflows', message: String(e && e.message || e) })); return; }
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });

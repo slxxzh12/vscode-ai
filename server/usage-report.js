@@ -52,7 +52,7 @@ export function saveReportConfig(file, cfg) {
 
 // slave 侧上报器：启动即报一次（先本地落库自己这份，再发给 master），之后 60–90 分钟随机再报
 export function createUsageReporter({
-  file, identity, peers = null, onLocal = null, cmd = 'opencode', collect = collectAgentStats,
+  file, identity, peers = null, onLocal = null, cmd = 'opencode', statsCmd = '', collect = collectAgentStats,
   fetchFn = fetch, logger = console, random = Math.random,
   now = () => Date.now(), scheduleFn = (fn, ms) => setTimeout(fn, ms),
 } = {}) {
@@ -66,7 +66,7 @@ export function createUsageReporter({
   async function reportNow() {
     const cfg = config();
     let usage;
-    try { usage = await collect({ cmd, days: cfg.days }); }
+    try { usage = await collect({ cmd, statsCmd, days: cfg.days }); }
     catch (e) { usage = { agent: cmd, days: cfg.days, error: String((e && e.message) || e) }; }
     const me = (typeof identity === 'function' ? identity() : identity) || {};
     const self = {

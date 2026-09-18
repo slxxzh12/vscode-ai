@@ -43,7 +43,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -261,6 +261,10 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       if (url.pathname === '/api/composer/prefs' && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, composerPrefs.write(body));
+        return;
+      }
+      if (url.pathname === '/api/sessions' && req.method === 'GET') {
+        sendJson(res, 200, { sessions: sessionLedger ? sessionLedger.read().sessions : [] });
         return;
       }
       if (url.pathname === '/api/session-projects' && req.method === 'GET') {

@@ -90,7 +90,7 @@ test('æœ¬åœ°åŽ†å² cap æ¯ç¾¤ 500', () => {
   assert.equal(msgs[0].id, 'm2'); // æœ€æ—§ä¸¤æ¡è¢«è£
 });
 
-test('ÁÄÌìÁô´æ£ºÈºÖ÷£¨hub£©±£ÁôÈ«Á¿£¬³ÉÔ±Ö»Áô±¾µØ»º´æ 500', () => {
+test('ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½æ£ºÈºï¿½ï¿½ï¿½ï¿½hubï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô±Ö»ï¿½ï¿½ï¿½ï¿½ï¿½Ø»ï¿½ï¿½ï¿½ 500', () => {
   const s = new CollabStore({ file: tmpFile() });
   s.data.identity = { machineId: 'me' };
   s.upsertGroup({ id: 'mine', name: 'h', hubId: 'me', members: [{ machineId: 'me' }] });
@@ -99,7 +99,29 @@ test('ÁÄÌìÁô´æ£ºÈºÖ÷£¨hub£©±£ÁôÈ«Á¿£¬³ÉÔ±Ö»Áô±¾µØ»º´æ 500', () => {
     s.addChatMessage({ id: `a${i}`, groupId: 'mine', kind: 'text', fromId: 'me', text: String(i), toId: null, ts: i });
     s.addChatMessage({ id: `b${i}`, groupId: 'other', kind: 'text', fromId: 'me', text: String(i), toId: null, ts: i });
   }
-  assert.equal(s.listChatMessages('mine', { limit: 9999 }).length, 620, 'ÈºÖ÷±£ÁôÈ«Á¿');
-  assert.equal(s.listChatMessages('other', { limit: 9999 }).length, 500, '³ÉÔ±Ö»Áô 500');
-  assert.equal(s.listChatMessages('other')[0].id, 'b120', '³ÉÔ±²Ãµô×î¾É');
+  assert.equal(s.listChatMessages('mine', { limit: 9999 }).length, 620, 'Èºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½');
+  assert.equal(s.listChatMessages('other', { limit: 9999 }).length, 500, 'ï¿½ï¿½Ô±Ö»ï¿½ï¿½ 500');
+  assert.equal(s.listChatMessages('other')[0].id, 'b120', 'ï¿½ï¿½Ô±ï¿½Ãµï¿½ï¿½ï¿½ï¿½');
+});
+
+test('tool è¿ç§»ï¼šæ—§ kind â†’ agentIdï¼Œcustom ä¿ç•™ customRoot', () => {
+  const f = tmpFile();
+  fs.writeFileSync(f, JSON.stringify({ tool: { kind: 'claudecode', customRoot: null } }));
+  const s = new CollabStore({ file: f });
+  assert.deepEqual(s.getTool(), { agentId: 'claudecode', customRoot: null });
+  assert.equal(s.data.tool.kind, undefined);
+
+  const f2 = tmpFile();
+  fs.writeFileSync(f2, JSON.stringify({ tool: { kind: 'custom', customRoot: '/x/y' } }));
+  const s2 = new CollabStore({ file: f2 });
+  assert.deepEqual(s2.getTool(), { agentId: 'custom', customRoot: '/x/y' });
+});
+
+test('ç©ºæ–‡ä»¶ tool é»˜è®¤ä¸º nullï¼ŒsetTool è½ç›˜å¯å›žè¯»', () => {
+  const f = tmpFile();
+  const s = new CollabStore({ file: f });
+  assert.equal(s.getTool(), null);
+  s.setTool({ agentId: 'opencode', customRoot: null });
+  const s2 = new CollabStore({ file: f });
+  assert.deepEqual(s2.getTool(), { agentId: 'opencode', customRoot: null });
 });

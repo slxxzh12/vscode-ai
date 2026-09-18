@@ -83,6 +83,18 @@ test('remove 删记录与回滚文件', () => {
   assert.equal(ledger.readLog('s1'), null);
 });
 
+test('close 落盘回滚并丢内存缓冲，但保留记录与日志文件', () => {
+  const dir = tmpDir();
+  const ledger = createSessionLedger({ file: path.join(dir, 'sessions.json'), logsDir: path.join(dir, 'session-logs') });
+  ledger.upsert(entry('s1'));
+  ledger.appendLog('s1', 'hello\n');
+  ledger.close('s1');
+  assert.equal(ledger.read().sessions.length, 1);
+  assert.equal(fs.readFileSync(path.join(dir, 'session-logs', 's1.log'), 'utf8'), 'hello\n');
+  const fresh = createSessionLedger({ file: path.join(dir, 'sessions.json'), logsDir: path.join(dir, 'session-logs') });
+  assert.equal(fresh.readLog('s1'), 'hello\n');
+});
+
 test('文件损坏回退空账本', () => {
   const dir = tmpDir();
   const file = path.join(dir, 'sessions.json');

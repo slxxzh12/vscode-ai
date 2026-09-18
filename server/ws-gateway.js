@@ -110,10 +110,12 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
         if (sessionManager.kill(msg.sessionId) && conn.sessionId === msg.sessionId) conn.sessionId = null;
         break;
       case C2S.RESTORE: {
-        const r = restoreSessionById ? await restoreSessionById(msg.sessionId) : null;
+        const r = restoreSessionById ? await restoreSessionById(msg.sessionId, { name: msg.name }) : null;
         if (!r || !r.ok) { conn.send({ type: S2C.ERROR, code: 'restore-failed', message: (r && r.reason) || 'not-found' }); break; }
         sessionManager.setActive(r.session.id, conn);
-        conn.send({ type: S2C.SESSION_CREATED, session: sessionManager.summary(r.session) });
+        const summary = sessionManager.summary(r.session);
+        if (r.recreated) summary.recreated = true;
+        conn.send({ type: S2C.SESSION_CREATED, session: summary });
         replay(conn, r.session);
         break;
       }

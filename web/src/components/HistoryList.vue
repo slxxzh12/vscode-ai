@@ -2,15 +2,16 @@
 import { computed, ref, watch } from 'vue';
 import type { HistoryMessage } from '../useMessageHistory';
 import { t } from '../i18n';
-import { buildSessionTree, type SessionNode } from '../sessionTree';
+import { buildSessionTree, type SessionNode, type SessionExtra } from '../sessionTree';
 
 export interface HistoryEntry { projectId: string; path: string; name: string; projName: string; ts: number; }
 const props = withDefaults(defineProps<{
   items: HistoryEntry[]; tab: 'files' | 'messages'; messages: HistoryMessage[];
-  filter?: boolean; liveSessionIds?: string[];
+  filter?: boolean; liveSessionIds?: string[]; sessions?: SessionExtra[];
 }>(), {
   filter: true,
   liveSessionIds: () => [],
+  sessions: () => [],
 });
 const emit = defineEmits<{
   (e: 'update:tab', tab: 'files' | 'messages'): void;
@@ -20,7 +21,7 @@ const emit = defineEmits<{
   (e: 'clear'): void;
   (e: 'open-message', text: string): void;
   (e: 'remove-message', msg: HistoryMessage): void;
-  (e: 'open-session', sessionId: string): void;
+  (e: 'open-session', sessionId: string, name: string): void;
 }>();
 
 // 页签交给 Element Plus 的 el-tabs 渲染，切页签仍由父组件持有的 tab 决定
@@ -62,7 +63,7 @@ const noMatch = computed(() => {
   if (props.tab === 'files') return props.items.length > 0 && filteredItems.value.length === 0;
   return props.filter
     ? (props.messages.length > 0 && filteredMessages.value.length === 0)
-    : (props.messages.length > 0 && treeTotal.value === 0);
+    : ((props.messages.length > 0 || props.sessions.length > 0) && treeNodes.value.length === 0);
 });
 
 const grouped = computed(() => {
@@ -131,7 +132,7 @@ function toggleNode(key: string) {
 }
 const treeNodes = computed<SessionNode[]>(() => {
   const q = query.value.trim().toLowerCase();
-  const all = buildSessionTree(props.messages, t('hist.tree.unknown'));
+  const all = buildSessionTree(props.messages, t('hist.tree.unknown'), props.sessions);
   if (!q) return all;
   const out: SessionNode[] = [];
   for (const n of all) {
@@ -154,7 +155,7 @@ const treeShown = computed<SessionNode[]>(() => {
   return out;
 });
 function nodeRows(n: SessionNode) { return withDaySeps(n.messages, (m) => m.ts); }
-function openNode(sid: string | null) { if (sid) emit('open-session', sid); }
+function openNode(n: SessionNode) { if (n.sessionId) emit('open-session', n.sessionId, n.label); }
 </script>
 
 <template>
@@ -196,33 +197,37 @@ function openNode(sid: string | null) { if (sid) emit('open-session', sid); }
       </template>
 
       <template v-else>
-        <div v-if="messages.length === 0" class="empty">{{ $t('hist.empty_messages') }}</div>
-        <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
-        <template v-else-if="!filter">
-          <div v-for="n in treeShown" :key="n.key" class="tgroup">
-            <button class="tnode" @click="toggleNode(n.key)">
-              <span class="tcaret">{{ expanded.has(n.key) ? '▾' : '▸' }}</span>
-              <span class="tdot" :class="{ live: !!n.sessionId && liveSet.has(n.sessionId) }" />
-              <span class="tname">{{ n.label }}</span>
-              <span class="tcount">{{ $t('hist.tree.count', { n: n.messages.length }) }}</span>
-              <span v-if="n.sessionId" class="topen" :title="$t('hist.tree.open_title')" @click.stop="openNode(n.sessionId)">{{ $t('hist.tree.open') }}</span>
-            </button>
-            <template v-if="expanded.has(n.key)">
-              <template v-for="(row, i) in nodeRows(n)" :key="i">
-                <div v-if="'sep' in row" class="daysep">{{ row.sep }}</div>
-                <button v-else class="mrow" :class="dayClass(row.item.ts)" :title="row.item.text" @click="emit('open-message', row.item.text)">
-                  <span class="ic">💬</span>
-                  <span class="mbody">
-                    <span class="mtext">{{ row.item.text }}</span>
-                    <span class="mmeta"><span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span></span>
-                  </span>
-                  <span class="x" :title="$t('hist.remove_message')" @click.stop="emit('remove-message', row.item)">×</span>
-                </button>
+        <template v-if="!filter">
+          <div v-if="treeNodes.length === 0" class="empty">{{ $t('hist.empty_messages') }}</div>
+          <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
+          <template v-else>
+            <div v-for="n in treeShown" :key="n.key" class="tgroup">
+              <button class="tnode" @click="toggleNode(n.key)">
+                <span class="tcaret">{{ n.messages.length ? (expanded.has(n.key) ? '▾' : '▸') : '' }}</span>
+                <span class="tdot" :class="{ live: !!n.sessionId && liveSet.has(n.sessionId) }" />
+                <span class="tname">{{ n.label }}</span>
+                <span v-if="n.messages.length" class="tcount">{{ $t('hist.tree.count', { n: n.messages.length }) }}</span>
+                <span v-if="n.sessionId" class="topen" :title="$t('hist.tree.open_title')" @click.stop="openNode(n)">{{ $t('hist.tree.open') }}</span>
+              </button>
+              <template v-if="expanded.has(n.key)">
+                <template v-for="(row, i) in nodeRows(n)" :key="i">
+                  <div v-if="'sep' in row" class="daysep">{{ row.sep }}</div>
+                  <button v-else class="mrow" :class="dayClass(row.item.ts)" :title="row.item.text" @click="emit('open-message', row.item.text)">
+                    <span class="ic">💬</span>
+                    <span class="mbody">
+                      <span class="mtext">{{ row.item.text }}</span>
+                      <span class="mmeta"><span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span></span>
+                    </span>
+                    <span class="x" :title="$t('hist.remove_message')" @click.stop="emit('remove-message', row.item)">×</span>
+                  </button>
+                </template>
               </template>
-            </template>
-          </div>
+            </div>
+          </template>
         </template>
         <template v-else>
+          <div v-if="messages.length === 0" class="empty">{{ $t('hist.empty_messages') }}</div>
+          <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
           <template v-for="(row, i) in msgRows" :key="i">
             <div v-if="'sep' in row" class="daysep">{{ row.sep }}</div>
             <button v-else class="mrow" :class="dayClass(row.item.ts)" :title="row.item.text" @click="emit('open-message', row.item.text)">
@@ -241,7 +246,7 @@ function openNode(sid: string | null) { if (sid) emit('open-session', sid); }
       </template>
 
       <div v-if="hasMore" class="more">{{ $t('hist.more') }}</div>
-      <div v-else-if="(tab === 'files' ? filteredItems.length : filteredMessages.length) > 0" class="foot">{{ $t('hist.foot') }}</div>
+      <div v-else-if="(tab === 'files' ? filteredItems.length : (filter ? filteredMessages.length : treeTotal)) > 0" class="foot">{{ $t('hist.foot') }}</div>
     </div>
   </div>
 </template>

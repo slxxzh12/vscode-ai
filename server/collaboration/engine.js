@@ -16,7 +16,9 @@ import { installBundleZip } from './bundle-installer.js';
 import { distKindsOf, distTypeOf, distUrl, shouldProcess } from './dist-task.js';
 import { buildZip } from './zip.js';
 import { createOpenCodeRunner } from './remote-runner.js';
-import * as seed from './sync-seed.js';
+import { nextVersion } from './sync-seed.js';
+import { createDownloadStore } from '../download-store.js';
+import { createSyncStore } from '../sync-store.js';
 import { t } from '../i18n.js';
 
 // 递归收集目录内文件（跳过隐藏/.git）
@@ -45,7 +47,7 @@ export function profileLabel(p) {
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, peers = null, seedStore = null, collabDb = null, taskStore = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, syncDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
+  constructor({ store, identity, events = null, peer = null, peers = null, seedStore = null, collabDb = null, taskStore = null, downloadStore = null, syncStore = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.peers = peers;            // 用量上报库（master 侧），见 server/usage-peers.js
@@ -58,7 +60,8 @@ export class CollabEngine {
     this.uploadDir = uploadDir;           // 发出的 zip 落盘目录
     this.downloadDir = downloadDir || inboxDir;   // 收到的 zip 落盘目录（下载页目录）
     this.downloadsDir = downloadsDir || path.join(os.tmpdir(), `devflow-downloads-${identity?.machineId || 'x'}`);
-    this.syncDir = syncDir || path.join(os.tmpdir(), `devflow-sync-${identity?.machineId || 'x'}`);
+    this.downloadStore = downloadStore || createDownloadStore({ file: ':memory:', logger });   // 下载索引（SQLite）
+    this.syncStore = syncStore || createSyncStore({ file: ':memory:', logger });               // 同步种子/记录（SQLite）
     this.runner = runner || createOpenCodeRunner();
     this.getWorkflows = typeof getWorkflows === 'function' ? getWorkflows : null;
     this.mergeWorkflows = typeof mergeWorkflows === 'function' ? mergeWorkflows : null;
@@ -184,13 +187,10 @@ export class CollabEngine {
         fs.writeFileSync(path.join(this.downloadDir, label), zip);
       } catch { /* download 目录不可写时忽略 */ }
     }
-    // 再落一份到共享 downloads 目录（分发产物对外可见）
-    if (this.downloadsDir) {
-      try {
-        fs.mkdirSync(this.downloadsDir, { recursive: true });
-        fs.writeFileSync(path.join(this.downloadsDir, label), zip);
-      } catch { /* downloads 目录不可写时忽略 */ }
-    }
+    // 再落一份到共享 downloads 目录并登记索引（打包产物在应用市场可见）
+    try {
+      this.writeDownload(label, zip, 'skill');
+    } catch { /* downloads 目录不可写时忽略 */ }
     const rec = this.store.addOutbox({
       id: crypto.randomUUID(), kind: 'file', groupId: null, skillName: null, fileName: label,
       storedFile: label, size: zip.length, hash, createdAt: Date.now(),
@@ -561,26 +561,17 @@ export class CollabEngine {
     this._emit('synced', {});
     return { ok: true };
   }
-  // ---- downloads（master 共享目录）与心跳 ----
-  _manifestPath() { return path.join(this.downloadsDir, 'manifest.json'); }
-  readManifest() {
-    try { return JSON.parse(fs.readFileSync(this._manifestPath(), 'utf8')); } catch { return { version: 1, updatedAt: 0, files: [] }; }
-  }
-  _writeManifest(m) {
-    fs.mkdirSync(this.downloadsDir, { recursive: true });
-    fs.writeFileSync(this._manifestPath(), JSON.stringify(m, null, 2));
-  }
+  // ---- downloads（master 共享目录）与心跳：索引进 SQLite，文件只留打包产物 ----
+  readManifest() { return this.downloadStore.readManifest(); }
+  _writeManifest(m) { this.downloadStore.replaceAll(m && m.files); }
   writeDownload(name, buf, kind) {
     if (typeof name !== 'string' || name.includes('..') || name.includes('\\')) throw new Error('unsafe name');
     const abs = path.join(this.downloadsDir, name);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, buf);
     const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
-    const m = this.readManifest();
-    m.version = 1; m.updatedAt = Date.now();
-    m.files = m.files.filter((f) => f.name !== name);
-    m.files.push({ name, kind, size: buf.length, sha256, updatedAt: Date.now() });
-    this._writeManifest(m);
+    const updatedAt = Date.now();
+    this.downloadStore.upsert({ name, kind, size: buf.length, sha256, updatedAt });
     return { name, sha256, size: buf.length };
   }
   // ---- 同步种子（update.json）----
@@ -602,19 +593,19 @@ export class CollabEngine {
       .filter((f) => wanted.has(f.name))
       .map((f) => ({ name: f.name, kind: f.kind, size: f.size, sha256: f.sha256 }));
     const prev = this.readUpdate();
-    const update = { version: seed.nextVersion(prev.version, new Date()), updatedAt: Date.now(), files };
-    seed.writeUpdate(this.downloadsDir, update);
+    const update = { version: nextVersion(prev.version, new Date()), updatedAt: Date.now(), files };
+    this.syncStore.writeUpdate(update);
     this._emit('synced', {});
     return { code: 'ok', update };
   }
-  readUpdate() { return seed.readUpdate(this.downloadsDir); }
+  readUpdate() { return this.syncStore.readUpdate(); }
   async checkUpdate(masterId) {
     const hit = this._hubFor(masterId);
     if (!hit) return { code: 'no-master' };
     const res = await this._post(hit.hub.host, hit.hub.port, this._sign(CollabPeer.UPDATE_CHECK, {}));
     if (!res.ok) return { code: 'unreachable', error: res.error };
     const update = (res.data && res.data.update) || null;
-    const local = seed.readRecord(this.syncDir, hit.hub.machineId);
+    const local = this.syncStore.readRecord(hit.hub.machineId);
     const newer = !!(update && update.version && update.version > ((local && local.version) || ''));
     return { code: 'ok', masterId: hit.hub.machineId, masterLabel: profileLabel(hit.hub), update, local, newer };
   }
@@ -640,7 +631,7 @@ export class CollabEngine {
       if (r.code !== 'ok') return { code: r.code, error: r.error };
       files = r.files || [];
     }
-    seed.writeRecord(this.syncDir, check.masterId, {
+    this.syncStore.writeRecord(check.masterId, {
       masterId: check.masterId, version: check.update.version,
       action: reject ? 'reject' : 'accept', checkedAt: Date.now(), update: check.update,
     });
@@ -650,12 +641,12 @@ export class CollabEngine {
   _inUpdateCheck(env) {
     const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();
     if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
-    return { ok: true, data: { update: seed.readUpdate(this.downloadsDir) } };
+    return { ok: true, data: { update: this.readUpdate() } };
   }
   _inListDownloads(env) {
     const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();
     if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
-    return { ok: true, data: { manifest: this.readManifest(), update: seed.readUpdate(this.downloadsDir) } };
+    return { ok: true, data: { manifest: this.readManifest(), update: this.readUpdate() } };
   }
   pullDownloads(names = null, masterId = null) {
     const hit = this._hubFor(masterId);

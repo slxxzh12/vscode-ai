@@ -71,6 +71,19 @@ test('未配置 master 时：仍采集并本地落库自己那份，但不 POST'
   assert.equal(local[0].input, 500);
 });
 
+test('reportNow：把 agent 的 statsCmd 原样传给采集器', async () => {
+  const file = tmpFile();
+  let seenArgs = null;
+  const r = createUsageReporter({
+    file, identity: () => ({ machineId: 'm1' }),
+    cmd: 'nga.cmd', statsCmd: 'nga.cmd stats --days {days}',
+    collect: async (args) => { seenArgs = args; return { sessions: 1 }; },
+  });
+  await r.reportNow();
+  assert.equal(seenArgs.cmd, 'nga.cmd');
+  assert.equal(seenArgs.statsCmd, 'nga.cmd stats --days {days}');
+});
+
 test('onLocal：本地落库后回调（供写快照/广播）', async () => {
   const file = tmpFile();
   const seen = [];

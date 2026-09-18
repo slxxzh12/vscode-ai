@@ -115,6 +115,17 @@ describe('useTerminal', () => {
     expect(hook.term.state.activeSessionId).toBe('s_old');
   });
 
+  it('restoreSession 透传 name，recreated 标记透传', async () => {
+    hook.term.connect();
+    const ws = hook.sockets[0];
+    ws.emitOpen();
+    const p = hook.term.restoreSession('s_gone', { name: '旧会话' });
+    expect(ws.sent.at(-1)).toMatchObject({ type: C2S.RESTORE, sessionId: 's_gone', name: '旧会话' });
+    ws.emitMessage({ type: S2C.SESSION_CREATED, session: { id: 's_gone', name: '旧会话', projectId: null, state: 'running', cwd: '', cols: 80, rows: 24, exitCode: null, recreated: true } });
+    const s = await p;
+    expect(s?.recreated).toBe(true);
+  });
+
   it('restoreSession 收 restore-failed 返回 null', async () => {
     hook.term.connect();
     const ws = hook.sockets[0];

@@ -183,8 +183,6 @@ const agentStarted = ref(false);
 const agentCliReady = ref(false);   // agent CLI 是否已在固定会话里启动
 let agentLaunching = false;         // 启动命令注入中，避免重复注入
 let agentGen = 0;                   // 启动代际：切换项目重建会话后，作废旧会话遗留的延时注入
-// 工作流 → opencode 自定义命令（可配置，按节点公钥指纹持久化）
-const wfCmds = ref<Record<string, string>>({ dev: '/dev', test: '/test', doc: '/doc' });
 const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent id
 const settingsOpen = ref(false);
 const editorOpen = ref(false);
@@ -304,18 +302,16 @@ function loadCfg() {
     if (typeof c.agentId === 'string' && agents.value.some((a) => a.id === c.agentId)) agentId.value = c.agentId;
     else if (c.engine === 'opencode' || c.engine === 'claudecode') agentId.value = c.engine;   // 兼容旧配置
     if (typeof c.wf === 'string') wfKind.value = c.wf;
-    if (c.cmds) for (const k of ['dev', 'test', 'doc'] as const) if (typeof c.cmds[k] === 'string') wfCmds.value[k] = c.cmds[k];
   } catch { /* ignore */ }
 }
 function saveCfg() {
   if (!cfgLoaded) return;   // 避免加载前用默认值覆盖
-  try { localStorage.setItem(cfgKey, JSON.stringify({ agentId: agentId.value, agents: agents.value, wf: wfKind.value, cmds: wfCmds.value })); } catch { /* ignore */ }
+  try { localStorage.setItem(cfgKey, JSON.stringify({ agentId: agentId.value, agents: agents.value, wf: wfKind.value })); } catch { /* ignore */ }
 }
 function resetCfg() {
   agents.value = defaultAgents.value.map((a) => ({ ...a }));
   agentId.value = defaultAgentId.value;
   wfKind.value = 'dev';
-  wfCmds.value = { dev: '/dev', test: '/test', doc: '/doc' };
 }
 function addAgent() {
   agents.value.push({ id: `agent-${Date.now().toString(36)}`, name: t('term.new_agent_name'), cmd: '' });
@@ -691,39 +687,10 @@ function onSendClick() {
   if (translateMode.value) void sendAction();
   else void submitComposer();
 }
-async function selectWf(id: string) {
+function selectWf(id: string) {
   wfKind.value = id;
-  await onWfChange();
-}
-async function onWfChange() {
   const first = curWf.value.stages[0];
-  if (first) pickStage(first);
-  runWorkflow();   // 切换工作流后仍自动起 agent 并执行对应命令
-}
-async function runWorkflow() {
-  const cmd = wfCmds.value[wfKind.value] || '';
-  if (!cmd) return;
-  if (props.phone && !(agentSid.value && agentActive())) return;   // 手机模式只往已选会话发，不新建
-  // Agent 变更时先重启固定会话（手机模式不重启主机会话）
-  if (!props.phone && agentSid.value && agentActive() && agentAtStart.value !== agentId.value) {
-    props.terminal.killSession(agentSid.value);
-    agentSid.value = null;
-    agentCliReady.value = false;
-    await new Promise((r) => setTimeout(r, 400));
-  }
-  if (agentSid.value && agentActive()) {
-    props.terminal.switchTo(agentSid.value);
-    if (!agentCliReady.value) {
-      // 会话在但 agent 尚未启动：先自动输入对应 agent，再送工作流命令
-      launchAgentCmd();
-      setTimeout(() => sendAgentText(cmd), 3600);
-    } else {
-      setTimeout(() => sendAgentText(cmd), 600);
-    }
-    return;
-  }
-  await startAgent();
-  setTimeout(() => sendAgentText(cmd), 4400);
+  if (first) pickStage(first);   // 仅切换工作流并更新下方提示词，不触发 Agent
 }
 
 function init() {
@@ -866,7 +833,7 @@ function onTabClose(id: string, ev: Event) {
   }
 }
 
-watch([agentId, agents, wfKind, wfCmds], saveCfg, { deep: true });
+watch([agentId, agents, wfKind], saveCfg, { deep: true });
 
 onMounted(async () => {
   init();
@@ -1044,7 +1011,7 @@ onBeforeUnmount(() => {
         <div v-if="activeIsAgent" class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
         </div>
-        <button v-if="wfDefs.length" class="wfbtn edit" :title="$t('wfe.title')" @mousedown.stop @click="editorOpen = true"><svg class="ico" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>{{ $t('wfe.open') }}</button>
+        <button v-if="activeIsAgent && wfDefs.length" class="wfbtn edit" :title="$t('wfe.title')" @mousedown.stop @click="editorOpen = true"><svg class="ico" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>{{ $t('wfe.open') }}</button>
         <button class="cmin" :title="composerCollapsed ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerCollapsed ? '❐' : '—' }}</button>
       </div>
       <template v-if="!composerCollapsed">
@@ -1174,7 +1141,8 @@ onBeforeUnmount(() => {
 .chipbar { display: flex; align-items: flex-start; gap: 6px; flex: none; }
 .chipstage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: 1; min-width: 0; max-height: 84px; overflow-y: auto; }
 .chipextra { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: none; }
-.chipextra .chip { padding: 2px 19px; gap: 4px; min-width: 44px; justify-content: center; }
+.chipextra .chip { padding: 1px 9px; gap: 3px; min-width: 28px; font-size: 10px; line-height: 14px; justify-content: center; }
+.chipextra .cdot { width: 4px; height: 4px; margin-top: 4px; }
 .chips-label { color: var(--tx3); font-size: 11px; flex: none; margin-right: 2px; line-height: 20px; }
 .chip { display: inline-flex; align-items: flex-start; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; text-align: left; white-space: normal; max-width: 100%; }
 .chip:hover { border-color: var(--ac2); color: var(--ac2); }

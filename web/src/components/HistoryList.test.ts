@@ -130,7 +130,17 @@ describe('HistoryList', () => {
     await nodes[1].trigger('click');                          // 展开 A
     expect(w.findAll('.mrow')).toHaveLength(1);
     await nodes[1].find('.topen').trigger('click');
-    expect(w.emitted('open-session')?.[0]).toEqual(['s1']);
+    expect(w.emitted('open-session')?.[0]).toEqual(['s1', 'A']);
+  });
+
+  it('全部会话：账本/运行中的空会话也展示且可打开', async () => {
+    const w = mount({ tab: 'messages', filter: false, messages: [], sessions: [{ id: 's9', name: '空会话' }] });
+    await w.vm.$nextTick();
+    expect(w.findAll('.tnode')).toHaveLength(1);
+    expect(w.find('.tname').text()).toBe('空会话');
+    expect(w.find('.tcount').exists()).toBe(false);
+    await w.find('.topen').trigger('click');
+    expect(w.emitted('open-session')?.[0]).toEqual(['s9', '空会话']);
   });
 
   it('全部会话：无 sessionId 的组禁用打开', async () => {

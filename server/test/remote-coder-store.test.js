@@ -10,6 +10,7 @@ import {
   artifactsDir, listArtifacts, resolveArtifact,
 } from '../remote-coder-store.js';
 
+
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'df-rc-')); }
 const png = (s) => `data:image/png;base64,${Buffer.from(s).toString('base64')}`;
 
@@ -112,4 +113,35 @@ test('deliver 条目：无 text、id 前缀 d-', () => {
   assert.equal(newId('deliver', 1, () => 0), 'd-1-0000');
   assert.equal(newId('message', 1, () => 0), 'm-1-0000');
   assert.equal(newId('screenshot', 1, () => 0), 'c-1-0000');
+});
+
+test('listArtifacts：按 mtime 倒序、忽略子目录、目录不存在返回 []', async () => {
+  const root = tmp();
+  const dir = artifactsDir(root);
+  assert.equal(dir, path.join(root, 'dist-portable'));
+  assert.deepEqual(listArtifacts(dir), []);
+  fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'a.zip'), 'aa');
+  await new Promise((r) => setTimeout(r, 12));
+  fs.writeFileSync(path.join(dir, 'b.zip'), 'bbb');
+  const items = listArtifacts(dir);
+  assert.deepEqual(items.map((x) => x.name), ['b.zip', 'a.zip']);
+  assert.equal(items[0].size, 3);
+  assert.ok(items[0].mtime > items[1].mtime);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('resolveArtifact：返回绝对路径；拒绝穿越/分隔符名；不存在抛 not-found', () => {
+  const root = tmp();
+  const dir = artifactsDir(root);
+  fs.mkdirSync(dir, { recursive: true });
+  const f = path.join(dir, 'a.zip');
+  fs.writeFileSync(f, 'x');
+  assert.equal(resolveArtifact(dir, 'a.zip'), f);
+  for (const bad of ['../a.zip', '..', 'a/b.zip', '..\\a.zip', 'sub/../a.zip', '', null]) {
+    assert.throws(() => resolveArtifact(dir, bad), (e) => e.code === 'bad-name', `expected bad-name for ${bad}`);
+  }
+  assert.throws(() => resolveArtifact(dir, 'nope.zip'), (e) => e.code === 'not-found');
+  assert.throws(() => resolveArtifact(dir, 'sub'), (e) => e.code === 'not-found');
+  fs.rmSync(root, { recursive: true, force: true });
 });

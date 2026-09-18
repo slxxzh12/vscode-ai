@@ -50,6 +50,7 @@ export async function restoreSessions({
   };
   for (const rec of records) {
     if (!rec || !rec.id || rec.kind === 'workflow') continue;
+    if (rec.state === 'exited') continue;   // 关闭的会话只留在账本供按需恢复，不随启动自动拉起
     if (rec.cwd && !exists(rec.cwd)) { result.skipped.push({ id: rec.id, reason: 'cwd-missing' }); continue; }
     try {
       await restoreRecord({ ledger, sessionManager, agents, logger, rec, resumeDelayMs, exists, isAgentSessionIdTaken });

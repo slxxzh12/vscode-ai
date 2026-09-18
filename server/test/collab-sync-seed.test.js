@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { formatVersion, nextVersion, readUpdate, writeUpdate, recordPath, readRecord, writeRecord } from '../collaboration/sync-seed.js';
+import { formatVersion, nextVersion } from '../collaboration/sync-seed.js';
+import { createSyncStore } from '../sync-store.js';
 
-function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'collab-seed-')); }
+function tmpDb() { return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'collab-seed-')), 'void.db'); }
+const logger = { warn() {} };
 
 test('formatVersion 定长 YYYY-MM-DD HH:mm:ss', () => {
   const v = formatVersion(new Date(2026, 8, 15, 10, 30, 5));
@@ -23,17 +25,18 @@ test('nextVersion 同秒 +1s，且严格大于上一次', () => {
 });
 
 test('writeUpdate/readUpdate 往返；缺失返回空', () => {
-  const dir = tmp();
-  assert.deepEqual(readUpdate(dir), { version: '', updatedAt: 0, files: [] });
-  writeUpdate(dir, { version: '2026-09-15 10:30:05', updatedAt: 1, files: [{ name: 'a.json', kind: 'group', size: 2, sha256: 'x' }] });
-  assert.equal(readUpdate(dir).files[0].name, 'a.json');
+  const store = createSyncStore({ file: tmpDb(), logger });
+  assert.deepEqual(store.readUpdate(), { version: '', updatedAt: 0, files: [] });
+  store.writeUpdate({ version: '2026-09-15 10:30:05', updatedAt: 1, files: [{ name: 'a.json', kind: 'group', size: 2, sha256: 'x' }] });
+  assert.equal(store.readUpdate().files[0].name, 'a.json');
+  store.close();
 });
 
-test('writeRecord/readRecord 按 masterId 分文件且安全命名', () => {
-  const dir = tmp();
-  assert.equal(readRecord(dir, 'm1'), null);
-  writeRecord(dir, 'a/b', { masterId: 'a/b', version: 'v', action: 'reject', checkedAt: 1, update: null });
-  assert.equal(readRecord(dir, 'a/b').action, 'reject');
-  assert.ok(fs.existsSync(recordPath(dir, 'a/b')));
-  assert.ok(!recordPath(dir, 'a/b').includes(path.sep + 'a' + path.sep), '路径分隔符被替换为下划线');
+test('writeRecord/readRecord 按 masterId 隔离', () => {
+  const store = createSyncStore({ file: tmpDb(), logger });
+  assert.equal(store.readRecord('m1'), null);
+  store.writeRecord('a/b', { masterId: 'a/b', version: 'v', action: 'reject', checkedAt: 1, update: null });
+  assert.equal(store.readRecord('a/b').action, 'reject');
+  assert.equal(store.readRecord('other'), null);
+  store.close();
 });

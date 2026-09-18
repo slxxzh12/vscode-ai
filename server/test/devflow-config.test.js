@@ -8,9 +8,10 @@ import {
   loadDevflowConfig, ensureConfigFile, updateServerAttrs, buildDefaultConfig,
   validateWorkflows, updateWorkflows, resolveActiveConfigFile,
 } from '../devflow-config.js';
-import { readSeed } from '../workflow-seed.js';
+import { createWorkflowSeedStore } from '../workflow-seed.js';
 
 function tmpFile() { return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-')), 'devflow.xml'); }
+function tmpSeedStore() { return createWorkflowSeedStore({ file: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-')), 'void.db'), logger: { warn() {} } }); }
 
 const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
 <!-- keep me -->
@@ -158,11 +159,32 @@ test('resolveActiveConfigFile 目录不可创建时抛错', () => {
 
 test('updateWorkflows 刷新工作流种子并在内容变化时递增 version', () => {
   const f = tmpFile();
+  const seed = tmpSeedStore();
   ensureConfigFile(f);
-  updateWorkflows(f, [{ id: 'w1', label: 'W1', stages: [{ id: 's', label: 'S', prompts: ['p'] }] }]);
-  const s1 = readSeed(f);
+  updateWorkflows(f, [{ id: 'w1', label: 'W1', stages: [{ id: 's', label: 'S', prompts: ['p'] }] }], seed);
+  const s1 = seed.read();
   assert.equal(s1.version, 1);
   assert.ok(s1.workflows.some((w) => w.id === 'w1'));
-  updateWorkflows(f, [{ id: 'w1', label: 'W1x', stages: [{ id: 's', label: 'S', prompts: ['p'] }] }]);
-  assert.equal(readSeed(f).version, 2);
+  updateWorkflows(f, [{ id: 'w1', label: 'W1x', stages: [{ id: 's', label: 'S', prompts: ['p'] }] }], seed);
+  assert.equal(seed.read().version, 2);
+  seed.close();
+});
+
+test('parse/serialize 支持 agent skillsDir 属性', () => {
+  const xml = `<devflow>
+  <agents default="nga">
+    <agent id="nga" name="nga" cmd="nga.cmd" skillsDir="/opt/nga/skills" />
+  </agents>
+</devflow>`;
+  const c = parseDevflowConfig(xml);
+  assert.equal(c.agents.list[0].skillsDir, '/opt/nga/skills');
+  const out = serializeDevflowConfig({ ...buildDefaultConfig(), agents: c.agents });
+  assert.match(out, /skillsDir="\/opt\/nga\/skills"/);
+  const back = parseDevflowConfig(out);
+  assert.equal(back.agents.list[0].skillsDir, '/opt/nga/skills');
+});
+
+test('serialize 未配置 skillsDir 时不输出该属性', () => {
+  const out = serializeDevflowConfig(buildDefaultConfig());
+  assert.doesNotMatch(out, /skillsDir=/);
 });

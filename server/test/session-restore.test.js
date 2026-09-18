@@ -51,6 +51,17 @@ test('恢复：单条失败不阻断其它', async () => {
   assert.deepEqual(res.skipped, [{ id: 's_1', reason: 'boom' }]);
 });
 
+test('恢复：state=exited 的记录跳过（关闭的会话不随启动自动拉起）', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const ledger = makeLedger([rec('s_live'), rec('s_closed', { state: 'exited' })]);
+  const res = await restoreSessions({ ledger, sessionManager: sm, agents: [], resumeDelayMs: 0 });
+  assert.equal(res.restored, 1);
+  assert.equal(sm.list().length, 1);
+  assert.equal(sm.get('s_live') !== null, true);
+  assert.equal(sm.get('s_closed'), null);
+});
+
 test('restoreRecord：可续会话注入续命令且 resumed=true', async () => {
   const instances = [];
   const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });

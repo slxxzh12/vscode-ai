@@ -74,14 +74,14 @@ watch(locale, loadNotice);
 
 <template>
   <div class="market">
-    <div class="col col-left">
+    <div class="col col-side">
       <section class="notice">
         <h3 class="ntitle">📢 {{ $t('market.notice') }}</h3>
         <div v-if="noticeHtml" class="nbody" v-html="noticeHtml"></div>
         <div v-else class="hint">{{ noticeEmpty || $t('market.notice_empty') }}</div>
       </section>
 
-      <section class="block">
+      <section class="panel">
         <h3 class="btitle">🧩 {{ $t('market.clients') }}</h3>
         <div v-for="g in clientGroups" :key="g.key" class="cgroup">
           <h4 class="gtitle">{{ $t(`market.client.${g.key}`) }}</h4>
@@ -110,8 +110,8 @@ watch(locale, loadNotice);
       </footer>
     </div>
 
-    <div class="col col-right">
-      <section class="block">
+    <div class="col col-main">
+      <section class="block tools-block">
         <h3 class="btitle">🧰 {{ $t('market.tools') }}</h3>
         <MiniTools />
       </section>
@@ -140,7 +140,7 @@ watch(locale, loadNotice);
 </template>
 
 <style scoped>
-.market { padding: 14px; height: 100%; box-sizing: border-box; color: var(--tx); display: grid; grid-template-columns: 1fr 2fr; gap: 16px; overflow: hidden; }
+.market { padding: 14px; height: 100%; box-sizing: border-box; color: var(--tx); display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 16px; overflow: hidden; }
 .col { display: flex; flex-direction: column; gap: 18px; min-height: 0; overflow: auto; }
 .block { margin: 0; }
 .btitle { margin: 0 0 10px; color: var(--tx1); font-size: 14px; }
@@ -190,6 +190,13 @@ watch(locale, loadNotice);
 .foot .link { color: var(--ac2); text-decoration: none; word-break: break-all; }
 .foot .link:hover { text-decoration: underline; }
 .foot .sep { color: var(--tx5); }
+/* 主栏（小工具 / 扩展）在左，侧栏（消息 / 下载客户端）在右 */
+.col-main { order: 1; }
+.col-side { order: 2; gap: 12px; }
+.panel { border: 1px solid var(--bd); border-radius: 10px; padding: 12px; background: var(--bg2); }
+/* 小工具：加边框底色与更大标题，作为应用市场的主入口 */
+.tools-block { border: 1px solid var(--ac2); border-radius: 14px; padding: 14px 16px; background: color-mix(in srgb, var(--ac2) 7%, var(--bg2)); }
+.tools-block .btitle { font-size: 17px; margin-bottom: 14px; }
 @media (max-width: 760px) {
   .market { grid-template-columns: 1fr; overflow: auto; }
   .col { overflow: visible; }

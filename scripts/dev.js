@@ -20,7 +20,11 @@ let exiting = false;
 
 function start(name, bin, args, logName) {
   const out = fs.createWriteStream(path.join(LOG_DIR, logName), { flags: "a" });
-  const child = spawn(bin, args, {
+  // Node 24 禁止直接 spawn .cmd/.bat（CVE-2024-27980，会 EINVAL），Windows 上套一层 cmd.exe
+  const viaShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(bin);
+  const spawnBin = viaShell ? (process.env.ComSpec || "cmd.exe") : bin;
+  const spawnArgs = viaShell ? ["/d", "/s", "/c", bin, ...args] : args;
+  const child = spawn(spawnBin, spawnArgs, {
     cwd: ROOT,
     env: { ...process.env, DEVFLOW_PORT: PORT },
     stdio: ["ignore", "pipe", "pipe"],
@@ -57,18 +61,31 @@ function shutdown(code = 0) {
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
-// 让子进程（后端采集/终端）能找到 opencode：显式配置(DEVFLOW_OPENCODE) → PATH → 仓库 opencode/、env/
-async function ensureOpencode() {
+// 默认 agent 从活动配置读取（用户选过就用用户的，没选才回退 opencode）；让子进程（后端采集/终端）
+// 能找到它：显式覆盖(DEVFLOW_OPENCODE) → PATH → 仓库 opencode/、env/
+async function resolveDefaultAgentCmd() {
+  try {
+    const cfg = await import(pathToFileURL(path.join(ROOT, "server", "devflow-config.js")).href);
+    const boot = cfg.loadDevflowConfig(cfg.resolveActiveConfigFile(ROOT, PORT));
+    const a = (boot.agents.list || []).find((x) => x.id === boot.agents.default) || {};
+    return String(a.cmd || "").trim() || cfg.DEFAULT_AGENT;
+  } catch {
+    return "opencode";
+  }
+}
+
+async function ensureAgent() {
+  const cmd = await resolveDefaultAgentCmd();
   try {
     const mod = await import(pathToFileURL(path.join(ROOT, "server", "collaboration", "agent-stats.js")).href);
-    const bin = mod.ensureAgentOnPath("opencode", { env: process.env, appRoot: ROOT });
-    if (bin) { console.log(`[dev] opencode: ${bin}`); return; }
+    const bin = mod.ensureAgentOnPath(cmd, { env: process.env, appRoot: ROOT });
+    if (bin) { console.log(`[dev] agent: ${bin}`); return; }
   } catch { /* 探测失败不阻塞 dev */ }
-  console.warn("[dev] 未找到 opencode，机器用量采集会失败；请把它加入 PATH，或设 DEVFLOW_OPENCODE=<opencode 可执行文件路径>");
+  console.warn(`[dev] 未找到 agent "${cmd}"，机器用量采集会失败；请把它加入 PATH（opencode 可用 DEVFLOW_OPENCODE 覆盖）`);
 }
 
 async function main() {
-  await ensureOpencode();
+  await ensureAgent();
   console.log(`[dev] DEVFLOW_PORT=${PORT}; 后端 http://127.0.0.1:${PORT}；前端 http://localhost:5173`);
   start("server", process.execPath, ["--watch", "server/index.js"], "dev-server.log");
   start("web", NPM, ["--prefix", "web", "run", "dev"], "dev-web.log");

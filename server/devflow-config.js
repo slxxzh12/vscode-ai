@@ -4,13 +4,12 @@ import { normalizeLocale, DEFAULT_LOCALE } from '@devflow/shared/i18n';
 import { parseWorkflowXml, fallbackWorkflows } from './workflow-xml.js';
 import { serializeWorkflow, decode } from '@devflow/shared/workflow-xml';
 import { downloadsDir } from './data-home.js';
-import { updateSeed } from './workflow-seed.js';
 
 export const DEFAULT_AGENT = 'opencode';
 export const DEFAULT_AGENTS = [
-  { id: 'opencode', name: 'OpenCode', cmd: 'opencode' },
+  { id: 'opencode', name: 'OpenCode', cmd: 'opencode', statsCmd: 'opencode stats --days {days}' },
   { id: 'claudecode', name: 'ClaudeCode', cmd: 'claudecode' },
-  { id: 'nga', name: 'nga', cmd: 'nga.cmd' },
+  { id: 'nga', name: 'nga', cmd: 'nga.cmd', statsCmd: 'nga stats --days {days}' },
 ];
 
 export function defaultConfigFile(baseDir) {
@@ -56,8 +55,12 @@ export function parseDevflowConfig(xml) {
         const agent = { id, name: decode(attr(m[1], 'name')) || id, cmd };
         const resumeCmd = decode(attr(m[1], 'resumeCmd'));
         const resumeDiscover = decode(attr(m[1], 'resumeDiscover'));
+        const statsCmd = decode(attr(m[1], 'statsCmd'));
+        const skillsDir = decode(attr(m[1], 'skillsDir'));
         if (resumeCmd) agent.resumeCmd = resumeCmd;
         if (resumeDiscover) agent.resumeDiscover = resumeDiscover;
+        if (statsCmd) agent.statsCmd = statsCmd;
+        if (skillsDir) agent.skillsDir = skillsDir;
         found.push(agent);
       }
     }
@@ -80,6 +83,8 @@ export function serializeDevflowConfig(cfg) {
       const attrs = [`id="${escXml(a.id)}"`, `name="${escXml(a.name)}"`, `cmd="${escXml(a.cmd)}"`];
       if (a.resumeCmd) attrs.push(`resumeCmd="${escXml(a.resumeCmd)}"`);
       if (a.resumeDiscover) attrs.push(`resumeDiscover="${escXml(a.resumeDiscover)}"`);
+      if (a.statsCmd) attrs.push(`statsCmd="${escXml(a.statsCmd)}"`);
+      if (a.skillsDir) attrs.push(`skillsDir="${escXml(a.skillsDir)}"`);
       return `    <agent ${attrs.join(' ')} />`;
     })
     .join('\n');
@@ -167,11 +172,11 @@ export function validateWorkflows(workflows) {
   });
 }
 
-// 用新的 workflows 覆盖 config 的 <workflows> 段（保留 server/agents）
-export function updateWorkflows(file, workflows) {
+// 用新的 workflows 覆盖 config 的 <workflows> 段（保留 server/agents）；seedStore 传入时同步刷新工作流种子表
+export function updateWorkflows(file, workflows, seedStore = null) {
   const list = validateWorkflows(workflows);
   const cur = loadDevflowConfig(file);
   fs.writeFileSync(file, serializeDevflowConfig({ server: cur.server, agents: cur.agents, workflows: list }), 'utf8');
-  updateSeed(file, list);
+  seedStore?.update?.(list);
   return list;
 }

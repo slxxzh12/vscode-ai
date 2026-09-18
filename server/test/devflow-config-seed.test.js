@@ -29,5 +29,16 @@ test('seed 配置：交付运维组含「打包」阶段（package），排在�
   const ops = dev.stages.filter((s) => s.group === '交付运维');
   assert.deepEqual(ops.map((s) => s.id), ['package', 'deploy', 'troubleshoot']);
   assert.equal(ops[0].label, '打包release');
-  assert.deepEqual(ops[0].prompts, ['根据打包脚本打包release', '调用/compact 压缩上下文']);
+  assert.equal(ops[0].prompts.length, 1);
+  assert.ok(ops[0].prompts[0].includes('根据打包脚本打包release'));
+});
+
+test('seed 配置：Push&Merge 代码阶段提示词合并为一条', () => {
+  const cfg = parseDevflowConfig(fs.readFileSync(SEED, 'utf8'));
+  const dev = cfg.workflows.find((w) => w.id === 'dev');
+  assert.ok(dev, '缺少 dev 工作流');
+  const stage = dev.stages.find((s) => s.id === 'push-merge');
+  assert.ok(stage, '缺少 push-merge 阶段');
+  assert.equal(stage.prompts.length, 1);
+  assert.ok(stage.prompts[0].includes('push'));
 });

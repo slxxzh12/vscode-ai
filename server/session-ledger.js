@@ -3,7 +3,9 @@ import path from 'node:path';
 import { createJsonStore } from './json-store.js';
 
 // 会话账本 + 终端回滚落盘。一个端口一份：sessions.json + session-logs/<id>.log。
-export const MAX_SESSIONS = 30;
+// 存储上限（保留 kind/agentId/agentCmd/agentSessionId 供按原 agent 恢复）；UI 另按 30 个展示，
+// 见 web/src/sessionTree.ts 的 MAX_SESSION_NODES。
+export const MAX_SESSIONS = 500;
 export const MAX_LOG_BYTES = 512 * 1024;
 export const KINDS = ['agent', 'shell', 'workflow'];   // workflow 仅用于识别并跳过恢复
 
@@ -76,6 +78,12 @@ export function createSessionLedger({ file = null, logsDir = null, logger = cons
     const rest = cur.sessions.filter((s) => s.id !== entry.id);
     return store.write({ sessions: [{ ...existing, ...entry }, ...rest] });
   }
+  // 关闭会话（kill）：把回滚落盘后丢内存缓冲，但保留记录与日志文件（供历史恢复）。
+  function close(id) {
+    flushLog(id);
+    buffers.delete(id);
+    dirty.delete(id);
+  }
   function remove(id) {
     const cur = store.read();
     store.write({ sessions: cur.sessions.filter((s) => s.id !== id) });
@@ -84,5 +92,5 @@ export function createSessionLedger({ file = null, logsDir = null, logger = cons
     const f = logFile(id);
     if (f) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } }
   }
-  return { read: store.read, upsert, remove, appendLog, flushLog, flushAll, readLog };
+  return { read: store.read, upsert, remove, close, appendLog, flushLog, flushAll, readLog };
 }

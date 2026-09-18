@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { parseStats, parseNum, collectAgentStats, resolveAgentBin, ensureAgentOnPath } from '../collaboration/agent-stats.js';
+import { parseStats, parseNum, parseStatsCmd, collectAgentStats, resolveAgentBin, ensureAgentOnPath } from '../collaboration/agent-stats.js';
 
 const SAMPLE = [
   '│Sessions                                             21 │',
@@ -53,6 +53,24 @@ test('collectAgentStats：非零退出重试，成功即返回', async () => {
   assert.equal(calls, 3);
   assert.equal(r.sessions, 21);
   assert.equal(r.error, undefined);
+});
+
+test('parseStatsCmd：{days} 展开、首段解析可执行文件、空模板返回 null', () => {
+  const spec = parseStatsCmd('opencode stats --days {days}', 7, { env: { PATH: '' }, exists: () => false });
+  assert.deepEqual(spec, { bin: 'opencode', args: ['stats', '--days', '7'] });
+  assert.equal(parseStatsCmd('', 7), null);
+  assert.equal(parseStatsCmd('   ', 7), null);
+});
+
+test('collectAgentStats：配了 statsCmd 走模板，agent 仍记 cmd', async () => {
+  const calls = [];
+  const r = await collectAgentStats({
+    cmd: 'claudecode', statsCmd: 'claudecode usage --days {days}', env: { PATH: '' }, sleepFn: async () => {},
+    execFileFn: (bin, args, opts, cb) => { calls.push([bin, args]); cb(null, SAMPLE, ''); },
+  });
+  assert.deepEqual(calls[0], ['claudecode', ['usage', '--days', '7']]);
+  assert.equal(r.agent, 'claudecode');
+  assert.equal(r.sessions, 21);
 });
 
 test('collectAgentStats：ENOENT 不重试，直接返回 error', async () => {

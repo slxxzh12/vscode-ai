@@ -56,6 +56,16 @@ export function ensureAgentOnPath(cmd, { env = process.env, exists = fs.existsSy
   return bin;
 }
 
+// 解析用量采集命令模板：`<cmd> <args...>`，`{days}` 替换为天数；首段作为可执行文件解析。
+// 返回 { bin, args }；模板为空返回 null（调用方回退旧行为 `<cmd> stats --days N`）。
+export function parseStatsCmd(template, days, { env = process.env, exists = fs.existsSync, appRoot = APP_ROOT } = {}) {
+  const text = String(template == null ? '' : template).trim();
+  if (!text) return null;
+  const tokens = text.replace(/\{days\}/g, String(days)).split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+  return { bin: resolveAgentBin(tokens[0], { env, exists, appRoot }), args: tokens.slice(1) };
+}
+
 export function parseNum(raw) {
   if (raw == null) return null;
   const s = String(raw).replace(/[$,\s]/g, '');
@@ -86,15 +96,16 @@ export function parseStats(text) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 采集本机用量。opencode stats 偶发（并发访问数据目录时）非零退出，故默认重试几次；
-// 命令不存在（ENOENT）重试无意义，直接返回 error。
+// 采集本机用量。命令来自 agent 配置的 statsCmd 模板（每个 agent 一套），未配置时回退 `<cmd> stats --days N`。
+// opencode stats 偶发（并发访问数据目录时）非零退出，故默认重试几次；命令不存在（ENOENT）重试无意义，直接返回 error。
 export function collectAgentStats({
-  cmd = 'opencode', days = 7, timeoutMs = 20000, env = process.env,
+  cmd = 'opencode', statsCmd = '', days = 7, timeoutMs = 20000, env = process.env,
   attempts = 3, retryDelayMs = 800, execFileFn = execFile, sleepFn = sleep,
 } = {}) {
-  const bin = resolveAgentBin(cmd, { env });
+  const spec = parseStatsCmd(statsCmd, days, { env })
+    || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
   const runOnce = () => new Promise((resolve) => {
-    execFileFn(bin, ['stats', '--days', String(days)], { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+    execFileFn(spec.bin, spec.args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
       if (err && !stdout) { resolve({ error: String((err && err.message) || err), code: err && err.code }); return; }
       resolve({ ...parseStats(stdout), collectedAt: Date.now() });
     });

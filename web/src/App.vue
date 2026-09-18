@@ -22,6 +22,10 @@ import { readMobileLanding, writeMobileLanding } from './mobileLanding';
 import { useSessionProjects } from './sessionProjects';
 import { fetchWindowState, planRestore, saveWindowState, flushWindowState, toSavedTabs, type HistoryTab, type Rail } from './windowState';
 import { filterMessages, sessionOfActiveTab } from './msgFilter';
+import { openRestoredSession } from './sessionRestore';
+import { useLedgerSessions } from './ledgerSessions';
+import type { SessionExtra } from './sessionTree';
+import { allowedRestoreIds, loadRecentTabs, loadRestoreTabs, pushRecentTab, saveRecentTabs } from './restorePrefs';
 
 const appRef = ref<HTMLDivElement | null>(null);
 
@@ -173,19 +177,41 @@ const msgHistory = useMessageHistory();
 // —— 窗口状态：上次页签/激活页签/左侧栏位/消息筛选 ——
 const msgFilter = ref(true);
 const { map: sessionProjectMap, load: loadSessionProjects } = useSessionProjects();
+const { sessions: ledgerSessions, load: loadLedgerSessions } = useLedgerSessions();
+// 历史面板「全部会话」的会话来源：账本（含已关闭）∪ 运行中；历史消息里的会话由 sessionTree 合并
+const sessionExtras = computed<SessionExtra[]>(() => {
+  const byId = new Map<string, SessionExtra>();
+  for (const s of ledgerSessions.value) byId.set(s.id, { id: s.id, name: s.name, updatedAt: s.updatedAt });
+  for (const s of terminal.state.sessions) if (!byId.has(s.id)) byId.set(s.id, { id: s.id, name: s.name });
+  return [...byId.values()];
+});
 let windowRestored = false;             // 闸门：恢复完成前不写盘（避免空状态覆盖存档）
 let deepLinkOpened = false;             // ?open= 深链已打开文件：优先于存档的 activeTab
+// —— 刷新后只恢复最近点击的 N 个页签（会话+文件合计，默认 5，可在设置面板改）——
+// 同步读 localStorage，保证会话页签的可见集合在 TerminalView 首次收到 SESSION_LIST 前就定好。
+let recentTabs = loadRecentTabs();
+const bootAllowed = allowedRestoreIds(recentTabs, loadRestoreTabs());
+const visibleSessionIds = bootAllowed
+  ? [...bootAllowed].filter((id) => id.startsWith('s:')).map((id) => id.slice(2))
+  : null;                                // null = 无历史，不限制（保持旧行为）
 const liveProjectBySession = computed(() => {
   const out: Record<string, string | null> = {};
   for (const s of terminal.state.sessions) out[s.id] = s.projectId ?? null;
   return out;
 });
 const liveSessionIds = computed(() => terminal.state.sessions.filter((s) => s.state === 'running').map((s) => s.id));
-async function openHistorySession(sid: string) {
-  const s = await terminal.restoreSession(sid);
-  if (!s) { alert(t('hist.tree.restore_failed', { reason: terminal.state.error || 'restore-failed' })); return; }
-  if (s.restored && s.kind === 'agent' && s.resumed === false) alert(t('hist.tree.fresh_agent'));
+async function openHistorySession(sid: string, name?: string) {
+  await openRestoredSession(sid, {
+    restore: (id) => terminal.restoreSession(id, { name }),
+    activate: (id) => center.activateSession(id),
+    error: () => terminal.state.error,
+    onFailed: (reason) => alert(t('hist.tree.restore_failed', { reason })),
+    onFreshAgent: () => alert(t('hist.tree.fresh_agent')),
+    onRecreated: () => alert(t('hist.tree.recreated')),
+  });
 }
+// 会话集合变化（新建/退出/关闭）后刷新账本，保证「全部会话」能列出已关闭会话
+watch(() => terminal.state.sessions.map((s) => s.id).join(','), () => { void loadLedgerSessions(true); });
 const activeSessionTab = computed(() => sessionOfActiveTab(center.active.value));
 const visibleMessages = computed(() => filterMessages({
   messages: msgHistory.messages.value,
@@ -217,14 +243,20 @@ async function restoreWindowState(projectsReady: Promise<void>) {
   if (plan.rail) rail.value = plan.rail;
   if (plan.historyTab) historyTab.value = plan.historyTab;
   if (typeof plan.msgFilter === 'boolean') msgFilter.value = plan.msgFilter;
-  const opened = plan.tabs.map((t) => `f:${t.projectId}|${t.path}`);
-  for (const t of plan.tabs) center.openFile(t.projectId, t.path, t.label);
+  const tabs = bootAllowed ? plan.tabs.filter((t) => bootAllowed.has(`f:${t.projectId}|${t.path}`)) : plan.tabs;
+  const opened = tabs.map((t) => `f:${t.projectId}|${t.path}`);
+  for (const t of tabs) center.openFile(t.projectId, t.path, t.label);
   if (deepLinkOpened) {
     // 深链优先：不动激活项
-  } else if (plan.activeFileTab) {
+  } else if (plan.activeFileTab && opened.includes(plan.activeFileTab)) {
     center.setActive(plan.activeFileTab);
   } else if (opened.includes(center.activeId.value ?? '')) {
-    center.setActive(null);             // 别停在最后一个恢复出来的文件页签，交回会话激活逻辑
+    // 恢复出的文件页签不抢占激活：回到当前会话页签；会话列表未到时置空，交给会话激活逻辑
+    const sid = terminal.state.activeSessionId;
+    const tab = sid
+      ? center.tabs.value.find((t) => t.id === `s:${sid}`)
+      : center.tabs.value.find((t) => t.kind === 'session');
+    center.setActive(tab?.id ?? null);
   }
   windowRestored = true;
 }
@@ -232,6 +264,12 @@ watch(
   [() => center.tabs.value.map((t) => `${t.id}|${t.label}`).join(','), center.activeId, rail, historyTab, msgFilter],
   () => { if (windowRestored) saveWindowState(currentWindowState()); },
 );
+// 记录最近点击的页签顺序（会话+文件合并），刷新时据此只恢复最近 N 个
+watch(center.activeId, (id) => {
+  if (!windowRestored || !id) return;
+  recentTabs = pushRecentTab(recentTabs, id);
+  saveRecentTabs(recentTabs);
+});
 function persistWindowState() { if (windowRestored) void flushWindowState(currentWindowState()); }
 // 当天输入超过 3 条消息时，主动展示一次历史消息；当天已展示过则不再主动，仅用户点击才展示
 const AUTO_SHOWN_KEY = 'devflow-history-auto-shown';
@@ -503,6 +541,7 @@ onMounted(async () => {
   const projectsReady = loadProjects();
   void restoreWindowState(projectsReady);      // 后台恢复：不阻塞终端连接
   void loadSessionProjects();
+  void loadLedgerSessions();
   processOpenParam();
   msgHistory.load();
   syncHash();
@@ -554,10 +593,10 @@ onBeforeUnmount(() => {
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'history' }" :title="$t('nav.history')" @click="rail = 'history'">🕘</button>
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
+        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🏪</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'proxy' }" :title="$t('nav.proxy')" @click="rail = 'proxy'">🔀</button>
         <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
-        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🏪</button>
         <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings">⚙</button>
       </aside>
       <template v-if="rail === 'contacts'">
@@ -588,7 +627,7 @@ onBeforeUnmount(() => {
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
           <HistoryList v-if="rail === 'history'" :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter"
-            :live-session-ids="liveSessionIds"
+            :live-session-ids="liveSessionIds" :sessions="sessionExtras"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
             @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
             @update:filter="msgFilter = $event" @open-session="openHistorySession" />
@@ -596,7 +635,7 @@ onBeforeUnmount(() => {
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
         <section class="center">
-          <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" />
+          <TerminalView :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" />
         </section>
       </template>
     </div>

@@ -149,3 +149,40 @@ export async function commitScreen(root, { git = defaultGit, isGitRepoFn = isGit
     return { uploaded: false, reason: e && e.code === 'git-unavailable' ? 'git-unavailable' : 'git-failed' };
   }
 }
+
+// ---- 软件交付产物：固定目录 <应用目录>/dist-portable/，只读普通文件 ----
+export const ARTIFACTS_DIR = 'dist-portable';
+
+export function artifactsDir(root) {
+  return path.join(root, ARTIFACTS_DIR);
+}
+
+export function listArtifacts(dir) {
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const items = [];
+  for (const name of names) {
+    let st;
+    try { st = fs.statSync(path.join(dir, name)); } catch { continue; }
+    if (!st.isFile()) continue;
+    items.push({ name, size: st.size, mtime: st.mtimeMs });
+  }
+  items.sort((a, b) => b.mtime - a.mtime);
+  return items;
+}
+
+export function resolveArtifact(dir, name) {
+  const raw = String(name ?? '');
+  if (!raw || raw !== path.basename(raw) || /[\\/]/.test(raw)) throw err('bad-name', 'invalid artifact name');
+  const base = path.resolve(dir);
+  const abs = path.resolve(base, raw);
+  if (abs !== base && !abs.startsWith(base + path.sep)) throw err('bad-name', 'artifact escapes directory');
+  let st;
+  try { st = fs.statSync(abs); } catch { throw err('not-found', 'artifact not found'); }
+  if (!st.isFile()) throw err('not-found', 'artifact not found');
+  return abs;
+}

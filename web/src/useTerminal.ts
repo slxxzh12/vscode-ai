@@ -2,7 +2,7 @@ import { reactive } from 'vue';
 import { C2S, S2C } from '@devflow/shared';
 
 export type ConnStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
-export interface SessionSummary { id: string; name: string; projectId: string | null; state: 'running' | 'exited'; cwd: string; cols: number; rows: number; exitCode: number | null; kind?: 'agent' | 'shell' | 'workflow'; agentId?: string | null; restored?: boolean; resumed?: boolean; }
+export interface SessionSummary { id: string; name: string; projectId: string | null; state: 'running' | 'exited'; cwd: string; cols: number; rows: number; exitCode: number | null; kind?: 'agent' | 'shell' | 'workflow'; agentId?: string | null; restored?: boolean; resumed?: boolean; recreated?: boolean; }
 export type Handler = (msg: any) => void;
 
 export interface UseTerminalOptions {
@@ -125,8 +125,8 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
       if (state.activeSessionId === id) state.activeSessionId = null;
     },
     switchTo(id: string) { state.activeSessionId = id; send(C2S.START, { sessionId: id }); },
-    restoreSession(id: string) {
-      send(C2S.RESTORE, { sessionId: id });
+    restoreSession(id: string, opts: { name?: string } = {}) {
+      send(C2S.RESTORE, { sessionId: id, name: opts.name });
       return new Promise<SessionSummary | null>((resolve) => { restoreResolve = resolve; });
     },
     createSession(input: { projectId?: string | null; cols?: number; rows?: number; kind?: 'agent' | 'shell'; agentId?: string | null; agentCmd?: string | null }) {

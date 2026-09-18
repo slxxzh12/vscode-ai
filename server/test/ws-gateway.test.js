@@ -186,6 +186,22 @@ test('restore：not-found → ERROR restore-failed', async () => {
   }
 });
 
+test('restore：透传 name，recreated 时响应带标记', async () => {
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory([])({ cwd: process.cwd() }) });
+  const seen = [];
+  const session = await sm.create({ id: 's_new', name: '重建', kind: 'shell' });
+  const t = await startTestServer({ sessionManager: sm, restoreSessionById: async (id, opts) => { seen.push({ id, opts }); return { ok: true, session, recreated: true }; } });
+  try {
+    const c = await t.connect();
+    c.send(C2S.RESTORE, { sessionId: 's_new', name: '重建' });
+    const created = await c.wait((m) => m.type === S2C.SESSION_CREATED);
+    assert.deepEqual(seen, [{ id: 's_new', opts: { name: '重建' } }]);
+    assert.equal(created.session.recreated, true);
+  } finally {
+    await t.stop();
+  }
+});
+
 test('restore：未注入 restoreSessionById 时回 error', async () => {
   const { t } = await makeHarness();
   try {

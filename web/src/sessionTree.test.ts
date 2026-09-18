@@ -35,4 +35,19 @@ describe('buildSessionTree', () => {
     ]);
     expect(tree.map((n) => n.sessionId)).toEqual(['s2', 's1']);
   });
+
+  it('合并会话来源：无消息的会话也生成节点，标签取 name', () => {
+    const tree = buildSessionTree(
+      [m({ text: 'x', ts: 10, sessionId: 's1', tabName: 'A' })],
+      '未知会话',
+      [{ id: 's2', name: 'B', updatedAt: 20 }, { id: 's1', name: 'A-live', updatedAt: 30 }],
+    );
+    expect(tree.map((n) => n.label)).toEqual(['A', 'B']);
+    expect(tree.find((n) => n.sessionId === 's2')!.messages).toEqual([]);
+  });
+
+  it('默认最多 30 个会话节点', () => {
+    const msgs = Array.from({ length: 40 }, (_, i) => m({ text: 'x', ts: i + 1, sessionId: `s${i}` }));
+    expect(buildSessionTree(msgs).length).toBe(30);
+  });
 });
