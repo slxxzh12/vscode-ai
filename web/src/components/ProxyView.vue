@@ -3,6 +3,7 @@ import { ref, onMounted, watch, computed } from 'vue';
 import { useLlm, type LlmStatus, type LlmToken, type LlmPluginEntry } from '../useLlm';
 import ChangePassphraseDialog from './ChangePassphraseDialog.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
+import OpencodeConfigCard from './OpencodeConfigCard.vue';
 import { t } from '../i18n';
 
 const api = useLlm();
@@ -301,6 +302,8 @@ async function copyConfig() {
         <span v-if="!p.hasKey" class="warn">{{ $t('llm.provider.nokey') }}</span>
       </div>
     </section>
+
+    <OpencodeConfigCard @saved="refresh" />
 
     <section v-if="st?.vault.unlocked" class="card">
       <div class="ch">{{ $t('llm.proxy.title') }}
