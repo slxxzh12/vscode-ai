@@ -43,7 +43,7 @@ import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
-import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows } from './devflow-config.js';
+import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, setDefaultAgent } from './devflow-config.js';
 import { createWorkflowSeedStore } from './workflow-seed.js';
 import { setLocale, t } from './i18n.js';
 import { isPeerRequest, matchAccessToken, resolveInviteDaysAllowForever, resolveBindHost, hostRestartNeeded } from './remote-gate.js';
@@ -75,9 +75,11 @@ const PORT_SOURCE = validPort(process.env.DEVFLOW_PORT) ? 'env' : (readPortFile(
 setLocale(BOOT_CFG.server.language);
 const NODE = instanceName();
 
-// 默认 agent 配置（终端启动命令 + 用量采集命令 statsCmd 共用同一份）
+// 默认 agent 配置（终端启动命令 + 用量采集命令 statsCmd 共用同一份）；每次实时读配置，
+// 设置默认 agent 后无需重启即生效
 function defaultAgent() {
-  const a = (BOOT_CFG.agents.list || []).find((x) => x.id === BOOT_CFG.agents.default) || {};
+  const c = loadDevflowConfig(configFile);
+  const a = (c.agents.list || []).find((x) => x.id === c.agents.default) || {};
   return { id: a.id || '', cmd: a.cmd || 'opencode', statsCmd: a.statsCmd || '' };
 }
 
@@ -339,6 +341,7 @@ function buildWorkspace({ paths, port }) {
     onLocal: syncUsageSnapshot,
     cmd: agent.cmd,
     statsCmd: agent.statsCmd,
+    resolveAgent: () => defaultAgent(),
     logger: log,
   });
   const usageMount = createUsageMount({
@@ -505,7 +508,25 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/agents' && req.method === 'GET') {
     const c = loadDevflowConfig(configFile);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ default: c.agents.default, agents: c.agents.list }));
+    res.end(JSON.stringify({ default: c.agents.default, agents: c.agents.list, chosen: !!c.agents.chosen }));
+    return;
+  }
+  if (url.pathname === '/api/agents/default' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      try {
+        const r = setDefaultAgent(configFile, body.id);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: true, default: r.default }));
+      } catch (e) {
+        const code = (e && e.code === 'bad-agent') ? 400 : 500;
+        res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: (e && e.code) || 'error', message: String((e && e.message) || e) }));
+      }
+    });
     return;
   }
   if (url.pathname === '/api/version' && req.method === 'GET') {
