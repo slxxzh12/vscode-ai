@@ -39,6 +39,18 @@ function post(server, url, obj) {
   });
 }
 
+function del(server, url) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: server.address().port, path: url, method: 'DELETE' }, (res) => {
+      let body = '';
+      res.on('data', (d) => (body += d));
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 function postRaw(server, url, raw) {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port: server.address().port, path: url, method: 'POST',
@@ -649,4 +661,72 @@ test('POST /api/window-state 非法字段被剔除（rail=mobile 不持久化）
   const r = await post(server, '/api/window-state', { rail: 'mobile', msgFilter: 'x', tabs: 'nope' });
   assert.equal(r.status, 200);
   assert.deepEqual(JSON.parse(r.body), {});
+});
+
+test('POST /api/curl 执行后按 curl 去重落盘到 postman 目录', async (t) => {
+  const { createPostmanHistory } = await import('../postman-history.js');
+  const dir = tmpDir();
+  const postmanHistory = createPostmanHistory({ dir });
+  const result = { ok: true, code: 0, error: '', timedOut: false, stdout: 'ok', stderr: '' };
+  const server = await start(new Projects({ projects: [] }), { runCurlFn: async () => result, postmanHistory });
+  t.after(() => server.close());
+
+  const r1 = await post(server, '/api/curl', { command: 'curl https://a.com' });
+  assert.equal(r1.status, 200);
+  assert.deepEqual(JSON.parse(r1.body), result);
+  await post(server, '/api/curl', { command: 'curl https://a.com' });
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+  assert.equal(files.length, 1, '同一 curl 只留一条记录');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, files[0]), 'utf8')).command, 'curl https://a.com');
+
+  const got = await request(server, '/api/postman/history');
+  assert.equal(got.status, 200);
+  const items = JSON.parse(got.body).items;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].command, 'curl https://a.com');
+  assert.equal(items[0].id, files[0]);
+
+  const removed = await del(server, `/api/postman/history?id=${encodeURIComponent(items[0].id)}`);
+  assert.equal(removed.status, 200);
+  assert.equal(fs.readdirSync(dir).filter((f) => f.endsWith('.json')).length, 0);
+  assert.equal((await del(server, '/api/postman/history?id=../evil.json')).status, 404);
+});
+
+test('GET /api/postman/history 未注入 store 时返回空列表', async (t) => {
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/postman/history');
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body), { items: [], folders: [] });
+});
+
+test('POST/DELETE /api/postman/folder 与 /api/postman/move', async (t) => {
+  const { createPostmanHistory } = await import('../postman-history.js');
+  const dir = tmpDir();
+  const postmanHistory = createPostmanHistory({ dir });
+  const result = { ok: true, code: 0, error: '', timedOut: false, stdout: 'ok', stderr: '' };
+  const server = await start(new Projects({ projects: [] }), { runCurlFn: async () => result, postmanHistory });
+  t.after(() => server.close());
+
+  const made = await post(server, '/api/postman/folder', { path: 'foo' });
+  assert.equal(made.status, 200);
+  assert.deepEqual(JSON.parse(made.body), { ok: true, folder: 'foo' });
+  assert.equal(fs.existsSync(path.join(dir, 'foo')), true);
+
+  await post(server, '/api/curl', { command: 'curl https://a.com', folder: 'foo' });
+  const items = JSON.parse((await request(server, '/api/postman/history')).body).items;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, `foo/${items[0].name}`);
+
+  const moved = await post(server, '/api/postman/move', { id: items[0].id, folder: '' });
+  assert.equal(moved.status, 200);
+  const after = JSON.parse((await request(server, '/api/postman/history')).body).items;
+  assert.equal(after[0].folder, '');
+
+  const bad = await post(server, '/api/postman/folder', { path: '../evil' });
+  assert.equal(bad.status, 400);
+
+  const removed = await del(server, '/api/postman/folder?path=foo');
+  assert.equal(removed.status, 200);
+  assert.equal((await del(server, '/api/postman/folder?path=foo')).status, 404);
 });

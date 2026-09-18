@@ -43,7 +43,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -212,10 +212,42 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const command = String(body.command ?? '');
         if (!command.trim()) return sendJson(res, 400, { error: 'empty' });
         try {
-          sendJson(res, 200, await runCurlFn(command));
+          const result = await runCurlFn(command);
+          try { postmanHistory?.record?.(command, result, { folder: String(body.folder ?? '') }); } catch (e) { logger?.warn?.('postman history write failed:', e?.message || e); }
+          sendJson(res, 200, result);
         } catch (e) {
           sendJson(res, 400, { error: e?.code || 'bad-command', message: String(e?.message || e) });
         }
+        return;
+      }
+      if (url.pathname === '/api/postman/history' && req.method === 'GET') {
+        sendJson(res, 200, { items: postmanHistory?.list?.() ?? [], folders: postmanHistory?.listFolders?.() ?? [] });
+        return;
+      }
+      if (url.pathname === '/api/postman/history' && req.method === 'DELETE') {
+        const ok = postmanHistory?.remove?.(url.searchParams.get('id') || '') ?? false;
+        sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
+        return;
+      }
+      if (url.pathname === '/api/postman/folder' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        try {
+          const folder = postmanHistory?.createFolder?.(String(body.path ?? '')) ?? '';
+          sendJson(res, 200, { ok: true, folder });
+        } catch (e) {
+          sendJson(res, 400, { error: e?.code || 'bad-path' });
+        }
+        return;
+      }
+      if (url.pathname === '/api/postman/folder' && req.method === 'DELETE') {
+        const ok = postmanHistory?.removeFolder?.(url.searchParams.get('path') || '') ?? false;
+        sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
+        return;
+      }
+      if (url.pathname === '/api/postman/move' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const ok = postmanHistory?.move?.(String(body.id ?? ''), String(body.folder ?? '')) ?? false;
+        sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
         return;
       }
       if (url.pathname === '/api/raw' && req.method === 'GET') {

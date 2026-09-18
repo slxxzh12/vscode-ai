@@ -36,11 +36,13 @@ export function portPaths(port, { root = dataHome() } = {}) {
     codePrefsFile: path.join(dir, 'code-prefs.json'),
     composerPrefsFile: path.join(dir, 'composer-prefs.json'),
     skillsRoot: path.join(dir, 'skills-opencode'),
+    toolsDir: path.join(dir, 'tools'),
+    postmanDir: path.join(dir, 'tools', 'postman'),
   };
 }
 
 export function ensurePortDirs(paths) {
-  for (const d of [paths.dir, paths.schedulerDir, paths.collabDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.skillsRoot, paths.sessionLogsDir]) {
+  for (const d of [paths.dir, paths.schedulerDir, paths.collabDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.skillsRoot, paths.sessionLogsDir, paths.postmanDir]) {
     fs.mkdirSync(d, { recursive: true });
   }
   return paths;
