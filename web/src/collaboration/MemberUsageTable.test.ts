@@ -46,4 +46,23 @@ describe('MemberUsageTable', () => {
     await flushPromises();
     expect(w.text()).toContain(t('collab.member.master'));
   });
+
+  function mountWithIdentity(peers: Record<string, CollabUsage>, group: unknown, machineId: string) {
+    const snap = { ...EMPTY_SNAPSHOT, group: group as never, identity: { ...EMPTY_SNAPSHOT.identity, machineId } };
+    const collab = { state: ref(snap) } as unknown as CollabApi;
+    return mountC(MemberUsageTable, { props: { collab, peers, group: group as never }, global: { plugins: [ElementPlus], stubs: { teleport: true } } });
+  }
+
+  it('自己所在行显示「我」徽标', async () => {
+    const now = Date.now();
+    const w = mountWithIdentity(
+      { m1: { agent: '*', days: 1, machineId: 'm1', username: 'alice', host: 'h', port: 1, messages: 1, receivedAt: now } },
+      { id: 'g', name: 'G', hubId: 'hub2', createdAt: 1, members: [{ machineId: 'm1' }, { machineId: 'hub2' }] },
+      'm1',
+    );
+    await flushPromises();
+    const badge = w.find('.mebadge');
+    expect(badge.exists()).toBe(true);
+    expect(badge.text()).toBe(t('collab.member.me'));
+  });
 });
