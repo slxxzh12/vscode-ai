@@ -34,7 +34,7 @@ DevFlow 在**后端重启**或用户点击历史面板会话树的「打开」�
 <agent id="claudecode" name="ClaudeCode" cmd="claudecode"
        resumeCmd="claudecode --resume {id}"
        resumeDiscover="<列出最近会话 id 的命令>" />
-<agent id="nga" name="nga" cmd="nga.cmd" resumeCmd="nga.cmd --continue" />
+<agent id="nga" name="nga" cmd="nga" resumeCmd="nga --continue" />
 ```
 
 - opencode 无需配置（内建）。

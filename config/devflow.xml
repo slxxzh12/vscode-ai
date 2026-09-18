@@ -16,14 +16,15 @@
     - statsCmd="命令模板"：本机用量采集命令，{days} 替换为天数；缺省回退 <cmd> stats --days {days}。
     示例（真值按本机 CLI 填写，勿写密钥）：
       <agent id="claudecode" name="ClaudeCode" cmd="claudecode" statsCmd="claudecode stats --days {days}" resumeCmd="claudecode --resume {id}" resumeDiscover="<列出最近会话 id 的命令>" />
-      <agent id="nga" name="nga" cmd="nga.cmd" statsCmd="nga stats --days {days}" resumeCmd="nga.cmd --continue" />
+      <agent id="nga" name="nga" cmd="nga" statsCmd="nga stats --days {days}" resumeCmd="nga --continue" />
     注意：resumeCmd 不含 {id}（如 --continue）时，同目录多会话会都接到「最近一次」，易串台。
     详见 docs/learn/agent续会话配置.md。
   -->
   <agents default="opencode">
     <agent id="opencode" name="OpenCode" cmd="opencode" statsCmd="opencode stats --days {days}" />
     <agent id="claudecode" name="ClaudeCode" cmd="claudecode" />
-    <agent id="nga" name="nga" cmd="nga.cmd" statsCmd="nga stats --days {days}" />
+    <agent id="nga" name="nga" cmd="nga" statsCmd="nga stats --days {days}" />
+    <agent id="codeagent" name="codeagent" cmd="codeagent" />
   </agents>
 
   <workflows>

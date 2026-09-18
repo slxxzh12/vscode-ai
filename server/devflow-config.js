@@ -9,7 +9,8 @@ export const DEFAULT_AGENT = 'opencode';
 export const DEFAULT_AGENTS = [
   { id: 'opencode', name: 'OpenCode', cmd: 'opencode', statsCmd: 'opencode stats --days {days}' },
   { id: 'claudecode', name: 'ClaudeCode', cmd: 'claudecode' },
-  { id: 'nga', name: 'nga', cmd: 'nga.cmd', statsCmd: 'nga stats --days {days}' },
+  { id: 'nga', name: 'nga', cmd: 'nga', statsCmd: 'nga stats --days {days}' },
+  { id: 'codeagent', name: 'codeagent', cmd: 'codeagent' },
 ];
 
 export function defaultConfigFile(baseDir) {
