@@ -3,11 +3,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
-import MobileView from './MobileView.vue';
+import AppMarketView from './AppMarketView.vue';
 import { locale } from '../i18n';
+import { MARKET_CLIENTS } from '../marketApps';
 
 function mount() {
-  return mountC(MobileView, { global: { plugins: [ElementPlus], stubs: { teleport: true } } });
+  return mountC(AppMarketView, { global: { plugins: [ElementPlus], stubs: { teleport: true } } });
 }
 
 afterEach(() => {
@@ -15,7 +16,7 @@ afterEach(() => {
   locale.value = 'zh-CN';
 });
 
-describe('MobileView', () => {
+describe('AppMarketView', () => {
   it('公告有内容时渲染 Markdown', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => ({ ok: true, content: '## 公告标题' }) })));
     const w = mount();
@@ -39,14 +40,44 @@ describe('MobileView', () => {
     expect(w.find('.hint').exists()).toBe(true);
   });
 
-  it('渲染下载卡片与内嵌小工具', async () => {
+  it('渲染客户端卡片与内嵌小工具', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => ({ ok: false }) })));
     const w = mount();
     await flushPromises();
-    expect(w.findAll('.card')).toHaveLength(2);
+    expect(w.findAll('.card')).toHaveLength(MARKET_CLIENTS.length);
     expect(w.find('.qr').exists()).toBe(true);
     expect(w.findAll('.mticon')).toHaveLength(4);
-    expect(w.find('.col-tools').exists()).toBe(true);
+  });
+
+  it('无扩展时显示空态', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({}) })));
+    const w = mount();
+    await flushPromises();
+    expect(w.find('.exts').exists()).toBe(false);
+    expect(w.find('.empty').exists()).toBe(true);
+  });
+
+  it('扩展列表可安装', async () => {
+    locale.value = 'zh-CN';
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.startsWith('/api/collab/downloads') && (!init || init.method !== 'POST')) {
+        return { ok: true, json: async () => ({ manifest: { files: [{ name: 'a.zip', kind: 'skill', size: 1024, updatedAt: 1 }] } }) };
+      }
+      if (url === '/api/collab/downloads/install') {
+        return { ok: true, json: async () => ({ code: 'ok' }) };
+      }
+      return { ok: false, json: async () => ({}) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const w = mount();
+    await flushPromises();
+    expect(w.findAll('.ext')).toHaveLength(1);
+    const btn = w.find('.einstall');
+    expect(btn.exists()).toBe(true);
+    await btn.trigger('click');
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledWith('/api/collab/downloads/install', expect.objectContaining({ method: 'POST' }));
+    expect(w.text()).toContain('已安装');
   });
 
   it('切换语言会重新拉取公告', async () => {

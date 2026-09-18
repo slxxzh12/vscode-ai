@@ -15,7 +15,7 @@ import { useTheme } from './theme';
 import { useI18n } from './i18n';
 import { parseOpenParam } from './deeplink';
 import ProxyView from './components/ProxyView.vue';
-import MobileView from './components/MobileView.vue';
+import AppMarketView from './components/AppMarketView.vue';
 import { startDesktopRemoteCoder } from './remote-coder/useDesktopRemoteCoder';
 import { useVersion } from './useVersion';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
@@ -557,7 +557,7 @@ onBeforeUnmount(() => {
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'proxy' }" :title="$t('nav.proxy')" @click="rail = 'proxy'">🔀</button>
         <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
-        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">📱</button>
+        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🏪</button>
         <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings">⚙</button>
       </aside>
       <template v-if="rail === 'contacts'">
@@ -582,7 +582,7 @@ onBeforeUnmount(() => {
       </template>
       <template v-else-if="rail === 'mobile'">
         <section class="center">
-          <MobileView />
+          <AppMarketView />
         </section>
       </template>
       <template v-else>
