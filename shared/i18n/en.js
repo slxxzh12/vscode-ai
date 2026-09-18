@@ -660,6 +660,7 @@ export const messages = {
   'term.composer_expand': 'Expand',
   'term.composer_min': 'Minimize',
   'term.phase_hints': 'Common prompts for this stage: click a phrase to fill; click a number to send',
+  'term.prompt_autosend': 'Click prompt to send',
   'term.common': 'Common',
   'term.composer_placeholder': 'Type here; Enter sends to the active session; Shift+Enter for newline',
   'term.history': '🕘 History',

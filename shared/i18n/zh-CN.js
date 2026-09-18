@@ -660,6 +660,7 @@ export const messages = {
   'term.composer_expand': '展开',
   'term.composer_min': '最小化',
   'term.phase_hints': '该阶段常用提示：阶段词点击填入输入框，编号点击直接发送',
+  'term.prompt_autosend': '提示词即点即发',
   'term.common': '常用',
   'term.composer_placeholder': '输入内容，回车送入上方当前会话；Shift+Enter 换行',
   'term.history': '🕘 历史',
