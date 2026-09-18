@@ -653,7 +653,7 @@ export const messages = {
   'term.compact': 'Compact',
   'term.compact_hint': 'Send /compact to the agent to compact the session context',
   'term.undo_hint': 'Send /undo to the agent to undo the last step',
-  'term.cancel_exec': 'Cancel run',
+  'term.cancel_exec': 'Pause Task',
   'term.end_task': 'End Task',
   'term.end_task_hint': 'Send /clear to the agent to end the current session and start a new one',
   'term.auto_compact': 'Auto-compact context',
