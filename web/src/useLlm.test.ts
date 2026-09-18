@@ -78,9 +78,9 @@ describe('useLlm', () => {
     await llm.opencodeConfig();
     expect(calls[0].url).toBe('/api/llm-admin/opencode');
     expect(calls[0].init?.method || 'GET').toBe('GET');
-    await llm.saveOpencodeConfig({ provider: { a: {} }, model: 'a/m' });
+    await llm.saveOpencodeConfig({ providers: [{ id: 'deepseek', apiKey: '', models: ['deepseek-v4-flash'] }], model: 'deepseek/deepseek-v4-flash' });
     expect(calls[1].url).toBe('/api/llm-admin/opencode');
     expect(calls[1].init?.method).toBe('POST');
-    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ provider: { a: {} }, model: 'a/m' });
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ providers: [{ id: 'deepseek', apiKey: '', models: ['deepseek-v4-flash'] }], model: 'deepseek/deepseek-v4-flash' });
   });
 });

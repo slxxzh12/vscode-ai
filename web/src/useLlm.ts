@@ -1,4 +1,6 @@
-import type { OpencodeConfigFile, OpencodeProvider } from './opencodeConfig';
+import type { OpencodeConfigFile } from './opencodeConfig';
+
+export interface ProviderSelection { id: string; apiKey: string; models: string[] }
 
 export interface LlmToken { id: string; employeeId: string; jwt: string; iat: number; exp: number; jti: string; revoked: boolean; }
 export interface LlmProvider { id: string; name: string; baseURL: string; hasKey: boolean; models: string[]; }
@@ -46,7 +48,7 @@ export function useLlm() {
       return json<{ config: string }>(`/api/llm-admin/opencode-config?${q.toString()}`);
     },
     opencodeConfig: () => json<OpencodeConfigFile>('/api/llm-admin/opencode'),
-    saveOpencodeConfig: (payload: { provider: Record<string, OpencodeProvider>; model: string }) =>
-      post<{ ok: boolean; path: string; backups: string[]; config: unknown }>('/api/llm-admin/opencode', payload),
+    saveOpencodeConfig: (payload: { providers: ProviderSelection[]; model: string }) =>
+      post<{ ok: boolean; path: string; backups: string[]; config: unknown; skipped: string[] }>('/api/llm-admin/opencode', payload),
   };
 }
