@@ -1278,8 +1278,8 @@ onBeforeUnmount(() => {
 .cact.compact:hover { background: color-mix(in srgb, var(--ok) 18%, transparent); }
 .cact.cancel { flex: 30; border-color: var(--err); color: var(--err); }
 .cact.cancel:hover { background: color-mix(in srgb, var(--err) 18%, transparent); }
-.cact.endtask { flex: 20; }
-.cact.endtask:hover { background: color-mix(in srgb, var(--tx1) 12%, transparent); }
+.cact.endtask { flex: 20; border-color: var(--warn2); color: var(--warn2); }
+.cact.endtask:hover { background: color-mix(in srgb, var(--warn2) 18%, transparent); }
 /* 手机页：工作流/提示条改为单行横向滚动，保证输入框与发送按钮始终有高度、不被挤出 */
 .composer.phone { padding: 0 8px 8px; gap: 4px; }
 .composer.phone:not(.min) { min-height: 148px; }
