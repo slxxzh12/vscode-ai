@@ -23,6 +23,7 @@ function cardTypeKey(type: string): string {
 }
 function openTasks() { window.location.hash = '#contacts/tasks'; }
 const me = computed(() => snap.value.identity.machineId);
+const hubId = computed(() => group.value?.hubId || '');
 const myPending = computed(() => props.collab.pendingCmdState.value.filter((p) => p.groupId === props.groupId));
 const skillOpen = ref(false);
 const skillFocus = ref<'skills' | 'workflow'>('skills');
@@ -123,7 +124,9 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
     <div class="msgs" ref="msgListEl">
       <div v-for="m in chat.messages" :key="m.id" class="msg" :class="{ mine: isMine(m) }">
         <div class="meta">
-          <span class="who">{{ isMine(m) ? $t('collab.chat.me') : nameOf(m.fromId) }}</span>
+          <span class="who">{{ nameOf(m.fromId) }}</span>
+          <span v-if="m.fromId === hubId" class="tag master">{{ $t('collab.member.master') }}</span>
+          <span v-if="isMine(m)" class="tag me">{{ $t('collab.chat.me') }}</span>
           <span class="time">{{ fmtTime(m.ts) }}</span>
           <span v-if="m.kind === 'system'" class="tag sys">{{ $t('collab.chat.system') }}</span>
         </div>
@@ -180,7 +183,10 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
 .msg { max-width: 100%; display: flex; flex-direction: column; gap: 2px; }
 .meta { display: flex; gap: 6px; color: var(--tx6); font-size: 11px; align-items: center; }
 .who { color: var(--tx2); font-weight: 600; }
-.tag.sys { background: var(--bg5); color: var(--tx2); padding: 0 6px; border-radius: 8px; font-size: 10px; }
+.tag { padding: 0 6px; border-radius: 8px; font-size: 10px; }
+.tag.sys { background: var(--bg5); color: var(--tx2); }
+.tag.master { background: var(--warn); color: #fff; font-weight: 700; }
+.tag.me { background: var(--ac); color: var(--onac); font-weight: 700; }
 .bubble { background: var(--bg4); border: 1px solid var(--bd); border-radius: 8px; padding: 6px 10px; color: var(--tx); white-space: pre-wrap; word-break: break-word; align-self: flex-start; }
 .msg.mine .bubble { background: color-mix(in srgb, var(--ac) 22%, transparent); border-color: var(--ac); align-self: flex-end; }
 .at { color: var(--ac2); font-weight: 600; }
