@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { requestShot, fetchScreenRev, sendRemoteMessage, waitForNewScreen, screenUrl } from './useRemoteCoder';
+import { requestShot, fetchScreenRev, sendRemoteMessage, waitForNewScreen, screenUrl, fetchRemoteInfo, appendMessages } from './useRemoteCoder';
 
 type Call = { url: string; init?: RequestInit };
 
@@ -51,5 +51,25 @@ describe('useRemoteCoder', () => {
   it('screenUrl 带 rev', () => {
     expect(screenUrl('r1')).toBe('/api/remote-coder/screen.png?v=r1');
     expect(screenUrl('')).toBe('/api/remote-coder/screen.png?v=');
+  });
+
+  it('appendMessages 提交原始 JSONC 文本，失败抛错', async () => {
+    const { fetchFn, calls } = mkFetch({ ok: true, added: 2, ids: ['a', 'b'] });
+    const r = await appendMessages('[{"kind":"message","text":"a"}]', { fetch: fetchFn as never });
+    expect(calls[0].url).toBe('/api/remote-coder/messages');
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ text: '[{"kind":"message","text":"a"}]' });
+    expect(r).toEqual({ added: 2, ids: ['a', 'b'] });
+
+    const bad = mkFetch({});
+    bad.fetchFn.mockImplementationOnce(async () => ({ ok: false, status: 400, json: async () => ({ message: 'bad-jsonc' }) }));
+    await expect(appendMessages('x', { fetch: bad.fetchFn as never })).rejects.toThrow('bad-jsonc');
+  });
+
+  it('fetchRemoteInfo 取真实路径，异常回退空串', async () => {
+    const info = { dir: 'D:/app/remote_coder', messagesFile: 'D:/app/remote_coder/messages.jsonc' };
+    const { fetchFn } = mkFetch(info);
+    expect(await fetchRemoteInfo({ fetch: fetchFn as never })).toEqual(info);
+    const boom = vi.fn(async () => { throw new Error('offline'); });
+    expect(await fetchRemoteInfo({ fetch: boom as never })).toEqual({ dir: '', messagesFile: '' });
   });
 });

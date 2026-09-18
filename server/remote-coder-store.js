@@ -82,6 +82,30 @@ export function appendMessage(dir, entry) {
   return entry;
 }
 
+// 编辑区输入：接受单个对象或对象数组，只取 kind+text，其余字段忽略。
+export function normalizeEntries(raw, now = Date.now(), rand = Math.random) {
+  const items = Array.isArray(raw) ? raw : [raw];
+  return items.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw err('bad-entry', 'entry must be an object');
+    }
+    const kind = item.kind == null ? 'message' : item.kind;
+    if (!KINDS.has(kind)) throw err('bad-kind', `unknown kind: ${kind}`);
+    return makeEntry({ kind, text: item.text }, now, rand);
+  });
+}
+
+// 原始 JSONC 文本 → 条目数组；解析失败统一抛 bad-jsonc。
+export function entriesFromJsonc(text, now = Date.now(), rand = Math.random) {
+  let raw;
+  try {
+    raw = parseJsonc(text);
+  } catch {
+    throw err('bad-jsonc', 'invalid jsonc');
+  }
+  return normalizeEntries(raw, now, rand);
+}
+
 export function inbox(dir) {
   return readMessages(dir).filter((m) => m && m.handled !== true);
 }

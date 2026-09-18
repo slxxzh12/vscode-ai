@@ -8,6 +8,7 @@ import {
   readMessages, writeMessages, newId, makeEntry, appendMessage, inbox, markHandled,
   saveScreen, screenRev, commitScreen,
   artifactsDir, listArtifacts, resolveArtifact,
+  normalizeEntries, entriesFromJsonc,
 } from '../remote-coder-store.js';
 
 
@@ -144,4 +145,25 @@ test('resolveArtifact：返回绝对路径；拒绝穿越/分隔符名；不存�
   assert.throws(() => resolveArtifact(dir, 'nope.zip'), (e) => e.code === 'not-found');
   assert.throws(() => resolveArtifact(dir, 'sub'), (e) => e.code === 'not-found');
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('normalizeEntries：对象/数组都接受；非法 kind、空 message 报错；忽略多余字段', () => {
+  const now = 1758000000000;
+  const rand = () => 0.5;
+  const one = normalizeEntries({ kind: 'message', text: ' hi ', id: 'x', handled: true }, now, rand);
+  assert.deepEqual(one, [{ id: 'm-1758000000000-8000', ts: now, kind: 'message', text: 'hi', handled: false }]);
+  const many = normalizeEntries([{ kind: 'screenshot' }, { kind: 'deliver' }], now, rand);
+  assert.deepEqual(many.map((e) => e.kind), ['screenshot', 'deliver']);
+  assert.throws(() => normalizeEntries({ kind: 'nope' }, now, rand), (e) => e.code === 'bad-kind');
+  assert.throws(() => normalizeEntries([{ kind: 'message', text: '   ' }], now, rand), (e) => e.code === 'bad-message');
+  assert.throws(() => normalizeEntries([123], now, rand), (e) => e.code === 'bad-entry');
+  assert.throws(() => normalizeEntries(['x'], now, rand), (e) => e.code === 'bad-entry');
+});
+
+test('entriesFromJsonc：解析对象或数组，坏 JSONC 抛 bad-jsonc', () => {
+  const list = entriesFromJsonc('[\n  // c\n  {"kind":"message","text":"x"}\n]', 1, () => 0);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].kind, 'message');
+  assert.equal(list[0].text, 'x');
+  assert.throws(() => entriesFromJsonc('{ nope', 1, () => 0), (e) => e.code === 'bad-jsonc');
 });

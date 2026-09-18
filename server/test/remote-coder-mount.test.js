@@ -110,3 +110,36 @@ test('旧 /api/snapshot 已移除（404）', async (t) => {
   t.after(() => { server.close(); fs.rmSync(root, { recursive: true, force: true }); });
   assert.equal((await req(server, '/api/snapshot', { method: 'POST', body: { dataUrl: png('X') } })).status, 404);
 });
+
+test('info 端点：返回 remote_coder 绝对路径', async (t) => {
+  const root = tmpDir();
+  const server = await start(root);
+  t.after(() => { server.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  const r = json(await req(server, '/api/remote-coder/info'));
+  assert.equal(r.dir, path.join(root, 'remote_coder'));
+  assert.equal(r.messagesFile, path.join(root, 'remote_coder', 'messages.jsonc'));
+});
+
+test('messages 端点：追加对象/数组；坏 jsonc 与非法 kind 400；too-large 413', async (t) => {
+  const root = tmpDir();
+  const server = await start(root);
+  t.after(() => { server.close(); fs.rmSync(root, { recursive: true, force: true }); });
+
+  const r = json(await req(server, '/api/remote-coder/messages', {
+    method: 'POST',
+    body: { text: '[{"kind":"message","text":"a"},{"kind":"deliver"}]' },
+  }));
+  assert.equal(r.ok, true);
+  assert.equal(r.added, 2);
+  assert.equal(r.ids.length, 2);
+  const list = json(await req(server, '/api/remote-coder/inbox'));
+  assert.deepEqual(list.entries.map((e) => e.kind), ['message', 'deliver']);
+  assert.equal(list.entries[0].text, 'a');
+
+  assert.equal((await req(server, '/api/remote-coder/messages', { method: 'POST', body: { text: '{ nope' } })).status, 400);
+  assert.equal((await req(server, '/api/remote-coder/messages', { method: 'POST', body: { text: '{"kind":"nope"}' } })).status, 400);
+  assert.equal((await req(server, '/api/remote-coder/messages', {
+    method: 'POST',
+    body: { text: JSON.stringify({ kind: 'message', text: 'x'.repeat(40000) }) },
+  })).status, 413);
+});

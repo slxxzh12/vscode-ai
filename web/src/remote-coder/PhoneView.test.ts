@@ -65,4 +65,41 @@ describe('PhoneView', () => {
     expect(JSON.parse(String(shotCall?.init?.body))).toEqual({ kind: 'screenshot' });
     expect(w.find('.st').text()).toContain(t('remote.shot_done', { time: '' }).trim());
   });
+
+  it('打开 JSONC 面板：显示真实路径、提交后清空并提示已追加', async () => {
+    const calls: Call[] = [];
+    const fetchFn = vi.fn(async (url: string, init?: RequestInit): Promise<any> => {
+      calls.push({ url, init });
+      if (url === '/api/remote-coder/info') {
+        return { ok: true, status: 200, json: async () => ({ dir: 'X:/app/remote_coder', messagesFile: 'X:/app/remote_coder/messages.jsonc' }) };
+      }
+      if (url === '/api/remote-coder/messages') {
+        return { ok: true, status: 200, json: async () => ({ ok: true, added: 2, ids: ['a', 'b'] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ rev: '' }) };
+    });
+    vi.stubGlobal('fetch', fetchFn);
+    vi.stubGlobal('WebSocket', FakeWS as any);
+
+    const w = mountC(PhoneView);
+    await flushPromises();
+    expect(w.find('.jp-input').exists()).toBe(false);
+
+    await w.find('.jsonc').trigger('click');
+    await flushPromises();
+    expect(w.find('.jp-input').exists()).toBe(true);
+    expect(w.text()).toContain('X:/app/remote_coder/messages.jsonc');
+
+    await w.find('.jp-input').setValue('[{"kind":"message","text":"a"},{"kind":"deliver"}]');
+    await w.find('.jp-submit').trigger('click');
+    await flushPromises();
+    const post = calls.find((c) => c.url === '/api/remote-coder/messages');
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ text: '[{"kind":"message","text":"a"},{"kind":"deliver"}]' });
+    expect((w.find('.jp-input').element as HTMLTextAreaElement).value).toBe('');
+    expect(w.find('.jp-status').text()).toContain(t('remote.jsonc_added', { n: 2 }));
+
+    await w.find('.jp-close').trigger('click');
+    await flushPromises();
+    expect(w.find('.jp-input').exists()).toBe(false);
+  });
 });

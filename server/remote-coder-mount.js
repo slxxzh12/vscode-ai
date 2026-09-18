@@ -26,6 +26,17 @@ export function createRemoteCoder({ repoRoot, logger = console, store = defaultS
         sendJson(res, 200, { ok: true, id: entry.id });
         return true;
       }
+      if (pathname === `${PREFIX}/info` && req.method === 'GET') {
+        sendJson(res, 200, { dir, messagesFile: path.join(dir, store.MESSAGES_FILE) });
+        return true;
+      }
+      if (pathname === `${PREFIX}/messages` && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const entries = store.entriesFromJsonc(body && body.text);
+        const ids = entries.map((entry) => store.appendMessage(dir, entry).id);
+        sendJson(res, 200, { ok: true, added: ids.length, ids });
+        return true;
+      }
       if (pathname === `${PREFIX}/ack` && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, { ok: true, changed: store.markHandled(dir, body.ids) });
@@ -50,7 +61,8 @@ export function createRemoteCoder({ repoRoot, logger = console, store = defaultS
       sendJson(res, 400, { error: 'bad-request' });
       return true;
     } catch (err) {
-      if (err.code === 'bad-image' || err.code === 'bad-message' || err.code === 'bad-jsonc') {
+      if (err.code === 'bad-image' || err.code === 'bad-message' || err.code === 'bad-jsonc'
+        || err.code === 'bad-entry' || err.code === 'bad-kind') {
         sendJson(res, 400, { error: err.code, message: String(err.message) });
         return true;
       }

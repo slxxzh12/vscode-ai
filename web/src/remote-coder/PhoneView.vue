@@ -3,11 +3,13 @@ import { onMounted, onBeforeUnmount, ref } from 'vue';
 import { useTerminal } from '../useTerminal';
 import { useCenter } from '../useCenter';
 import TerminalView from '../components/TerminalView.vue';
+import JsoncPanel from './JsoncPanel.vue';
 import { fetchScreenRev, requestShot, waitForNewScreen } from './useRemoteCoder';
 import { t } from '../i18n';
 
 const terminal = useTerminal({});
 const center = useCenter();
+const showJsonc = ref(false);
 
 const rev = ref('');
 const pending = ref(false);
@@ -59,12 +61,14 @@ onBeforeUnmount(() => {
   <div class="phone">
     <header class="ph">
       <span class="ttl">{{ $t('remote.title') }}</span>
+      <button class="jsonc" :title="$t('remote.jsonc_open')" @click="showJsonc = true">{}</button>
       <button class="shot" :disabled="pending" @click="onShot">{{ $t('remote.shot') }}</button>
       <span class="st" :title="status">{{ status }}</span>
     </header>
     <div class="body">
       <TerminalView :terminal="terminal" :center="center" :project-id="null" :phone="true" />
     </div>
+    <JsoncPanel v-if="showJsonc" @close="showJsonc = false" />
   </div>
 </template>
 
@@ -73,6 +77,7 @@ onBeforeUnmount(() => {
 .ph { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg1); border-bottom: 1px solid var(--bd2); }
 .ttl { font-weight: 700; color: var(--tx1); }
 .shot { background: var(--ac); color: var(--onac); border: none; border-radius: 6px; padding: 5px 14px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.jsonc { background: var(--bg2); color: var(--tx1); border: 1px solid var(--bd2); border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-family: monospace; }
 .shot:disabled { opacity: .6; cursor: default; }
 .st { flex: 1; min-width: 0; color: var(--tx3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .body { flex: 1; min-height: 0; display: flex; }

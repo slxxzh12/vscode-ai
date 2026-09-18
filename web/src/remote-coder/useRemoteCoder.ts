@@ -39,6 +39,29 @@ export function screenUrl(rev: string): string {
   return `/api/remote-coder/screen.png?v=${encodeURIComponent(rev)}`;
 }
 
+export interface RemoteInfo { dir: string; messagesFile: string }
+
+export async function fetchRemoteInfo(deps: RemoteDeps = { fetch: realFetch }): Promise<RemoteInfo> {
+  try {
+    const res = await deps.fetch('/api/remote-coder/info');
+    const data = await res.json().catch(() => ({}));
+    return {
+      dir: typeof data?.dir === 'string' ? data.dir : '',
+      messagesFile: typeof data?.messagesFile === 'string' ? data.messagesFile : '',
+    };
+  } catch {
+    return { dir: '', messagesFile: '' };
+  }
+}
+
+export async function appendMessages(
+  text: string,
+  deps: RemoteDeps = { fetch: realFetch },
+): Promise<{ added: number; ids: string[] }> {
+  const data = await postJson('/api/remote-coder/messages', { text }, deps);
+  return { added: Number(data?.added) || 0, ids: Array.isArray(data?.ids) ? data.ids : [] };
+}
+
 export interface WaitOptions extends Partial<RemoteDeps> {
   timeoutMs?: number;
   intervalMs?: number;
