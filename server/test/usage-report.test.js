@@ -168,3 +168,22 @@ test('start：启动立即上报一次，下一次延迟落在 60–90 分钟', 
   assert.deepEqual(delays, [MIN_INTERVAL_MS]);
   r.stop();
 });
+
+test('reportNow：resolveAgent 提供时每次上报动态取默认 agent', async () => {
+  const file = tmpFile();
+  const seen = [];
+  let current = { cmd: 'opencode', statsCmd: 'opencode stats --days {days}' };
+  const r = createUsageReporter({
+    file, identity: () => ({ machineId: 'm1' }),
+    resolveAgent: () => current,
+    collect: async (args) => { seen.push(args); return { sessions: 1 }; },
+  });
+  await r.reportNow();
+  current = { cmd: 'codeagent', statsCmd: 'codeagent stats --days {days}' };
+  await r.reportNow();
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0].cmd, 'opencode');
+  assert.equal(seen[0].statsCmd, 'opencode stats --days {days}');
+  assert.equal(seen[1].cmd, 'codeagent');
+  assert.equal(seen[1].statsCmd, 'codeagent stats --days {days}');
+});

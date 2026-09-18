@@ -52,7 +52,7 @@ export function saveReportConfig(file, cfg) {
 
 // slave 侧上报器：启动即报一次（先本地落库自己这份，再发给 master），之后 60–90 分钟随机再报
 export function createUsageReporter({
-  file, identity, peers = null, onLocal = null, cmd = 'opencode', statsCmd = '', collect = collectAgentStats,
+  file, identity, peers = null, onLocal = null, cmd = 'opencode', statsCmd = '', resolveAgent = null, collect = collectAgentStats,
   fetchFn = fetch, logger = console, random = Math.random,
   now = () => Date.now(), scheduleFn = (fn, ms) => setTimeout(fn, ms),
 } = {}) {
@@ -63,11 +63,20 @@ export function createUsageReporter({
   const config = () => loadReportConfig(file);
   const statusOf = () => ({ ...status, config: config() });
 
+  const currentAgent = () => {
+    const r = typeof resolveAgent === 'function' ? resolveAgent() : null;
+    return {
+      cmd: (r && r.cmd) || cmd,
+      statsCmd: (r && r.statsCmd) || statsCmd,
+    };
+  };
+
   async function reportNow() {
     const cfg = config();
+    const a = currentAgent();
     let usage;
-    try { usage = await collect({ cmd, statsCmd, days: cfg.days }); }
-    catch (e) { usage = { agent: cmd, days: cfg.days, error: String((e && e.message) || e) }; }
+    try { usage = await collect({ cmd: a.cmd, statsCmd: a.statsCmd, days: cfg.days }); }
+    catch (e) { usage = { agent: a.cmd, days: cfg.days, error: String((e && e.message) || e) }; }
     const me = (typeof identity === 'function' ? identity() : identity) || {};
     const self = {
       ...usage,
