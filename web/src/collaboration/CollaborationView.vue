@@ -7,12 +7,16 @@ import type { useTerminal } from '../useTerminal';
 import GroupView from './GroupView.vue';
 import TasksView from './TasksView.vue';
 import SyncUpdateDialog from './SyncUpdateDialog.vue';
+import SkillDistributor from './SkillDistributor.vue';
+import AssetImportDialog from './AssetImportDialog.vue';
 import { t } from '../i18n';
 
 type CollabTab = 'group' | 'tasks';
 const props = defineProps<{ terminal: ReturnType<typeof useTerminal>; tab?: CollabTab }>();
 const emit = defineEmits<{ (e: 'update:tab', v: CollabTab): void }>();
 const collab = useCollab();
+const exportOpen = ref(false);
+const importOpen = ref(false);
 const snap = computed(() => collab.state.value ?? EMPTY_SNAPSHOT);
 const tab = computed(() => props.tab ?? 'group');
 function setTab(v: CollabTab) { emit('update:tab', v); }
@@ -77,6 +81,8 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
           {{ t.label }}
         </button>
       </nav>
+      <button class="tb" @click="exportOpen = true">{{ $t('collab.export.button') }}</button>
+      <button class="tb" @click="importOpen = true">{{ $t('collab.import.button') }}</button>
       <div class="idbar" v-if="snap.identity.machineId">
         {{ snap.identity.employeeId || snap.identity.username }} · {{ snap.identity.host }}:{{ snap.identity.port }}
         <span class="fp">{{ snap.identity.publicKey.slice(-8) }}</span>
@@ -96,6 +102,8 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
       @accept="acceptUpdate"
       @reject="rejectUpdate"
     />
+    <SkillDistributor :open="exportOpen" :collab="collab" @close="exportOpen = false" />
+    <AssetImportDialog :open="importOpen" :collab="collab" @close="importOpen = false" />
   </div>
 </template>
 
@@ -106,6 +114,8 @@ onBeforeUnmount(() => { unsubs.forEach((u) => u()); });
 .tabs { display: flex; gap: 4px; }
 .tab { background: none; border: none; color: var(--tx2); padding: 6px 10px; cursor: pointer; border-radius: 4px; }
 .tab.on { background: var(--ac); color: var(--onac); }
+.tb { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.tb:hover { border-color: var(--ac2); }
 .idbar { margin-left: auto; color: var(--tx2); font-size: 12px; display: flex; align-items: center; gap: 6px; }
 .fp { color: var(--tx6); font-family: monospace; font-size: 11px; }
 .err { color: var(--err); font-size: 12px; }

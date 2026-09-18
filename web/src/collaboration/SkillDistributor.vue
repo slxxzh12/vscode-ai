@@ -4,10 +4,13 @@ import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import { t } from '../i18n';
 
-const props = defineProps<{ collab: CollabApi; groupId: string; focus?: 'all' | 'skills' | 'workflow'; open?: boolean }>();
+const props = defineProps<{ collab: CollabApi; groupId?: string; focus?: 'all' | 'skills' | 'workflow'; open?: boolean }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 const focus = computed(() => props.focus ?? 'all');
-const dialogTitle = computed(() => (focus.value === 'workflow' ? t('collab.chat.distribute_workflow') : t('collab.chat.distribute')));
+const local = computed(() => !props.groupId);
+const dialogTitle = computed(() => (local.value
+  ? t('collab.export.title')
+  : focus.value === 'workflow' ? t('collab.chat.distribute_workflow') : t('collab.chat.distribute')));
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const group = computed(() => (snap.value.groups || []).find((g) => g.id === props.groupId) || null);
 const isMaster = computed(() => !!snap.value.groups?.find((g) => g.id === props.groupId && g.hubId === snap.value.identity.machineId));
@@ -74,7 +77,7 @@ onMounted(async () => {
   loadAssets();
 });
 // 记住上一次勾选：每次弹出默认带出（按群 + 入口分别存）
-const storeKey = computed(() => `collab-dist-${props.groupId}-${focus.value}-${selectedAgent.value}`);
+const storeKey = computed(() => `collab-dist-${props.groupId || 'local'}-${focus.value}-${selectedAgent.value}`);
 function loadChecked() {
   try {
     const raw = localStorage.getItem(storeKey.value);
@@ -102,6 +105,11 @@ async function doSubmit() {
   try {
     const r = await props.collab.buildPackage(selected.value);
     pkg.value = r.package;
+    if (local.value) {
+      await downloadPkg();
+      msg.value = t('collab.dist.packed');
+      return;
+    }
     if (isMaster.value) {
       const pub = await props.collab.publishPackage(pkg.value.id);
       if (pub.code !== 'ok') { msgErr.value = t('common.send_failed', { msg: pub.code }); return; }
@@ -109,7 +117,7 @@ async function doSubmit() {
       publishedVersion.value = pub.version || '';
       msg.value = t('collab.dist.published', { version: pub.version || '—' });
     } else {
-      const up = await props.collab.uploadPackage(pkg.value.id, props.groupId);
+      const up = await props.collab.uploadPackage(pkg.value.id, props.groupId || '');
       if (up.code !== 'ok') { msgErr.value = t('common.send_failed', { msg: up.code }); return; }
       sent.value = true;
       msg.value = t('collab.dist.uploaded');
@@ -137,7 +145,7 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
   <el-dialog :model-value="!!open" :title="dialogTitle" width="640px" append-to-body class="sddlg" @update:model-value="emit('close')">
   <div class="sd">
     <div class="head">
-      <span class="htitle">{{ $t('collab.dist.title') }} <span class="gn">{{ group?.name || '' }}</span></span>
+      <span class="htitle">{{ local ? $t('collab.export.title') : $t('collab.dist.title') }} <span class="gn">{{ group?.name || '' }}</span></span>
       <button class="mini" @click="toggleAll(selectedCount !== totalCount)">{{ selectedCount === totalCount ? $t('collab.dist.none') : $t('collab.dist.all') }}</button>
     </div>
     <div v-if="agents.length" class="agents">
@@ -192,7 +200,7 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
     <div class="acts">
       <template v-if="!pkg">
         <button class="go" :disabled="working || !selectedCount" @click="doSubmit">
-          {{ working ? $t('common.sending') : (isMaster ? $t('collab.dist.pack_publish', { count: selectedCount }) : $t('collab.dist.pack_upload', { count: selectedCount })) }}
+          {{ working ? $t('common.sending') : (local ? $t('collab.export.pack_download', { count: selectedCount }) : (isMaster ? $t('collab.dist.pack_publish', { count: selectedCount }) : $t('collab.dist.pack_upload', { count: selectedCount }))) }}
         </button>
       </template>
       <template v-else>

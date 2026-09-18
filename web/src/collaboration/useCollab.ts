@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue';
 import type { CollabSnapshot, CollabChatMessage, CollabPendingCmd, CollabGroup } from './types';
+import type { AssetManifest, AssetManifestSummary } from './types';
 import { t } from '../i18n';
 
 async function http<T>(url: string, init?: RequestInit): Promise<T> {
@@ -130,6 +131,9 @@ export function useCollab() {
     getAssets: () => http<{ skills: { name: string }[]; command: { name: string }[]; agent: { name: string }[]; workflow: { id: string; name: string }[] }>('/api/collab/assets'),
     buildPackage: (sel: { skills?: string[]; command?: string[]; agent?: string[]; workflow?: string[] }) =>
       post<{ package: { id: string; fileName: string; size: number } }>('/api/collab/packages', { skills: sel.skills || [], command: sel.command || [], agent: sel.agent || [], workflow: sel.workflow || [] }),
+    importAsset: (file: File) => http<{ id: string; manifest: AssetManifest; summary: AssetManifestSummary }>('/api/collab/import', { method: 'POST', body: file }),
+    applyImport: (id: string) => post<{ code: string; counts?: Record<string, number> }>(`/api/collab/import/${id}/apply`),
+    discardImport: (id: string) => http<{ code: string }>(`/api/collab/import/${id}`, { method: 'DELETE' }),
     getWorkflowSeed: () => http<{ version: number; workflows: { id: string; label: string; hash: string }[] }>('/api/workflows-seed'),
     sendPackage: (id: string, groupId: string) => post<{ code: string; pushed: number; failures: unknown[] }>(`/api/collab/packages/${id}/send`, { groupId }),
     publishPackage: (id: string) => post<{ code: string; name?: string; version?: string }>(`/api/collab/packages/${id}/publish`),

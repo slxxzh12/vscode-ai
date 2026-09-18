@@ -102,4 +102,27 @@ describe('SkillDistributor agent selector', () => {
     expect(collab.uploadPackage).toHaveBeenCalledWith('p1', 'g1');
     expect(collab.publishPackage).not.toHaveBeenCalled();
   });
+
+  it('本地导出模式：无 groupId 时打包后直接下载，不发布/上传', async () => {
+    const collab: any = mockCollab();
+    collab.buildPackage.mockResolvedValue({ package: { id: 'p1', fileName: 'a.zip', size: 1 } });
+    const fetchMock = vi.fn(async () => ({ ok: true, blob: async () => new Blob(['x']) }));
+    vi.stubGlobal('fetch', fetchMock);
+    if (!(URL as any).createObjectURL) (URL as any).createObjectURL = () => 'blob:x';
+    if (!(URL as any).revokeObjectURL) (URL as any).revokeObjectURL = () => {};
+    try {
+      const w = mountC(SkillDistributor, {
+        props: { collab, focus: 'skills', open: true },
+        global: { plugins: [ElementPlus], stubs: { teleport: true, 'el-dialog': { template: '<div><slot /></div>' } } },
+      });
+      await flushPromises();
+      await w.find('input[type="checkbox"]').setValue(true);
+      await w.find('button.go').trigger('click');
+      await flushPromises();
+      expect(collab.buildPackage).toHaveBeenCalled();
+      expect(collab.publishPackage).not.toHaveBeenCalled();
+      expect(collab.uploadPackage).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledWith('/api/collab/outfile/p1');
+    } finally { vi.unstubAllGlobals(); }
+  });
 });
