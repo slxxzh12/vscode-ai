@@ -21,6 +21,9 @@ import { pickRestoredAgent, restoredAgentIds } from '../sessionRestore';
 import { copyText } from '../clipboard';
 import { MAX_RESTORE_TABS, restoreTabs, setRestoreTabs } from '../restorePrefs';
 import { isAgentSession, phoneHintKey } from '../remote-coder/phoneMode';
+import { createReadyGate } from './sessionNaming';
+import TabRenameDialog from './TabRenameDialog.vue';
+import { setTabDescription } from './tabDescriptions';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -95,21 +98,40 @@ function tabLabel(id: string) {
   if (custom) return custom;
   return id === agentSid.value ? `◈ ${currentAgent.value.name}` : sessionLabel(id);
 }
-const renamingId = ref<string | null>(null);
-const renameValue = ref('');
-let renameInputEl: HTMLInputElement | null = null;
-function setRenameInput(el: unknown) { renameInputEl = (el as HTMLInputElement | null) || null; }
-function startRename(tabId: string) {
-  if (!tabId.startsWith('s:')) return;   // 仅会话页签支持重命名
-  renamingId.value = tabId;
-  renameValue.value = props.center.tabs.value.find((t) => t.id === tabId)?.label || '';
-  void nextTick(() => { renameInputEl?.focus(); renameInputEl?.select(); });
+// —— 页签双击弹框：页签名 + 详细描述（描述仅提示展示，随会话持久化）——
+// 页签改名同步 Agent 期间：置 true 打开全屏蒙层并掐断终端输入，避免用户操作干扰脚本化 /rename 时序
+const syncingRename = ref(false);
+let renameMaskEl: HTMLDivElement | null = null;
+function setRenameMask(el: unknown) { renameMaskEl = (el as HTMLDivElement | null) || null; }
+
+const tabDescs = ref<Record<string, string>>({});
+let tabDescsKey = 'devflow-tab-descs-none';
+function loadTabDescs() {
+  try {
+    const a = JSON.parse(localStorage.getItem(tabDescsKey) || '{}');
+    tabDescs.value = (a && typeof a === 'object' && !Array.isArray(a)) ? a : {};
+  } catch { tabDescs.value = {}; }
 }
-function commitRename(tabId: string) {
-  if (renamingId.value !== tabId) return;
-  renamingId.value = null;
+function persistTabDescs() { try { localStorage.setItem(tabDescsKey, JSON.stringify(tabDescs.value)); } catch { /* ignore */ } }
+
+const dialogSid = ref<string | null>(null);
+const dialogName = ref('');
+const dialogDesc = ref('');
+const dialogPlaceholder = ref('');
+function openTabDialog(tabId: string) {
+  if (!tabId.startsWith('s:')) return;   // 仅会话页签
   const sid = tabId.slice(2);
-  const name = renameValue.value.trim();
+  dialogSid.value = sid;
+  dialogName.value = (tabNames.value[sid] || '').trim();
+  dialogDesc.value = tabDescs.value[sid] || '';
+  dialogPlaceholder.value = tabLabel(sid);   // 无自定义名时即默认显示名
+}
+function onTabDialogCancel() { dialogSid.value = null; }
+function onTabDialogConfirm(payload: { name: string; description: string }) {
+  const sid = dialogSid.value;
+  if (!sid) return;
+  dialogSid.value = null;
+  const name = payload.name.trim();
   const next = { ...tabNames.value };
   if (name) next[sid] = name; else delete next[sid];
   tabNames.value = next;
@@ -117,34 +139,50 @@ function commitRename(tabId: string) {
   props.center.ensureSession(sid, tabLabel(sid), sessionState(sid));
   msgHistory.renameTab(sid, tabLabel(sid));   // 同步更新历史消息里记录的页签名
   if (name) syncAgentRename(sid, name);       // 同步改 Agent 内的对话名
+  tabDescs.value = setTabDescription(tabDescs.value, sid, payload.description);
+  persistTabDescs();
 }
-function cancelRename() { renamingId.value = null; }
+
+// composer 上当前会话的详细描述（只读提示）
+const activeTabDesc = computed(() => {
+  const sid = props.terminal.state.activeSessionId;
+  return sid ? (tabDescs.value[sid] || '') : '';
+});
 
 // 页签改名后让 Agent 内的对话名跟着改：向 Agent 发 `/rename`（斜杠命令需回车从补全列表选中执行）
 // → 清掉预填的旧标题 → 输入新名 → 回车确认。仅 Agent 会话有该命令（shell 会话跳过）。
+// 整个流程由固定延时串起来、易被用户输入打乱，故期间用全屏蒙层 + 输入闸门屏蔽用户操作。
 function syncAgentRename(sid: string, name: string) {
+  if (syncingRename.value) return;                     // 已在同步中：忽略再次触发，避免时序互相打架
   if (!agentSids.value.has(sid)) return;               // 仅 Agent 会话
   if (sessionState(sid) !== 'running') return;
   const prev = props.terminal.state.activeSessionId;
   const needSwitch = prev !== sid;                     // input 只作用于活动会话：后台页签先切过去
+  syncingRename.value = true;
+  void nextTick(() => renameMaskEl?.focus());          // 蒙层抢焦点：否则键盘仍会漏进 xterm
   if (needSwitch) props.terminal.switchTo(sid);
   const at = () => props.terminal.state.activeSessionId === sid;
+  const finish = () => {
+    const done = () => { syncingRename.value = false; void nextTick(() => term?.focus()); };
+    if (needSwitch && prev) setTimeout(() => { props.terminal.switchTo(prev); done(); }, 600);
+    else done();
+  };
   setTimeout(() => {
-    if (!at()) return;
+    if (!at()) return finish();
     props.terminal.input('/rename');                   // 输入斜杠命令
     setTimeout(() => {
-      if (!at()) return;
+      if (!at()) return finish();
       props.terminal.input('\r');                      // 回车从补全列表执行命令，打开改名输入
       setTimeout(() => {
-        if (!at()) return;
+        if (!at()) return finish();
         props.terminal.input('\x7f'.repeat(200));      // 清掉预填的旧标题
         setTimeout(() => {
-          if (!at()) return;
+          if (!at()) return finish();
           props.terminal.input(name);                  // 输入新名
           setTimeout(() => {
-            if (!at()) return;
+            if (!at()) return finish();
             props.terminal.input('\r');                // 回车确认
-            if (needSwitch && prev) setTimeout(() => props.terminal.switchTo(prev), 600);
+            finish();
           }, 400);
         }, 250);
       }, 1200);
@@ -248,40 +286,72 @@ async function restartBackend() {
 }
 function onOpenSettings() { settingsOpen.value = true; loadSettings(); }
 
-// 新建会话：先选择要执行的命令（终端 cmd / 各 Agent），3 秒后自动执行选中项
+// 新建会话：先输入任务名（可选）再选择要执行的命令；不再倒计时自动创建
 const newOpen = ref(false);
 const newSelected = ref('cmd');
-const newCountdown = ref(3);
-let newTimer: ReturnType<typeof setInterval> | null = null;
+const newName = ref('');
 const newChoices = computed(() => [
   { id: 'cmd', label: t('term.new_cmd'), cmd: '' },
   ...agents.value.map((a) => ({ id: a.id, label: a.name, cmd: a.cmd })),
 ]);
-function stopNewTimer() { if (newTimer) { clearInterval(newTimer); newTimer = null; } }
 function openNew() {
   const ids = newChoices.value.map((c) => c.id);
   newSelected.value = ids.includes(agentId.value) ? agentId.value : (ids[0] || 'cmd');
+  newName.value = '';
   newOpen.value = true;
-  newCountdown.value = 3;
-  stopNewTimer();
-  newTimer = setInterval(() => {
-    newCountdown.value -= 1;
-    if (newCountdown.value <= 0) { stopNewTimer(); createNew(newSelected.value); }
-  }, 1000);
 }
-function closeNew() { stopNewTimer(); newOpen.value = false; }
+function closeNew() { newOpen.value = false; }
+// 名字留空时创建后的短暂提示
+const renameHint = ref('');
+let renameHintTimer: ReturnType<typeof setTimeout> | null = null;
+function showRenameHint() {
+  renameHint.value = t('term.rename_hint');
+  if (renameHintTimer) clearTimeout(renameHintTimer);
+  renameHintTimer = setTimeout(() => { renameHint.value = ''; renameHintTimer = null; }, 4000);
+}
 async function createNew(id: string) {
-  stopNewTimer();
   newOpen.value = false;
   const c = newChoices.value.find((x) => x.id === id) || newChoices.value[0];
+  const name = newName.value.trim();
+  newName.value = '';
   const s = await props.terminal.createSession({
     projectId: props.projectId, cols: 80, rows: 24,
     kind: c.cmd ? 'agent' : 'shell', agentId: c.cmd ? c.id : null, agentCmd: c.cmd || null,
   });
   if (c.cmd) markAgent(s.id);
-  props.center.ensureSession(s.id, c.cmd ? `◈ ${c.label}` : c.label, s.state || 'running');
+  const label = c.cmd ? `◈ ${c.label}` : c.label;
+  props.center.ensureSession(s.id, name || label, s.state || 'running');
+  if (name) {
+    const next = { ...tabNames.value };
+    next[s.id] = name;
+    tabNames.value = next;
+    persistTabNames();
+    msgHistory.renameTab(s.id, name);
+  } else {
+    showRenameHint();
+  }
   props.terminal.switchTo(s.id);
-  if (c.cmd) setTimeout(() => { props.terminal.input(`${c.cmd}`); setTimeout(() => props.terminal.input('\r'), 200); }, 1200);
+  if (c.cmd) setTimeout(() => {
+    props.terminal.input(`${c.cmd}`);
+    setTimeout(() => props.terminal.input('\r'), 200);
+    if (name) void syncNewAgentName(s.id, name);
+  }, 1200);
+}
+// 新 Agent 会话就绪后同步对话名：最短 3s + 输出静默 1.2s，超时 30s 放弃
+async function syncNewAgentName(sid: string, name: string) {
+  const gate = createReadyGate({ now: () => Date.now() });
+  const unsub = props.terminal.on(S2C.OUTPUT, (msg: any) => { if (msg.sessionId === sid) gate.output(); });
+  const ok = await new Promise<boolean>((resolve) => {
+    const timer = setInterval(() => {
+      if (props.terminal.state.activeSessionId !== sid) { clearInterval(timer); unsub(); resolve(false); return; }
+      const st = gate.poll();
+      if (st === 'waiting') return;
+      clearInterval(timer);
+      unsub();
+      resolve(st === 'ready');
+    }, 200);
+  });
+  if (ok) syncAgentRename(sid, name);
 }
 let cfgKey = 'devflow-agent-cfg-none';
 let cfgLoaded = false;
@@ -707,7 +777,7 @@ function init() {
     requestAnimationFrame(() => onResize());
   });
   resizeObserver.observe(hostRef.value!);
-  dataSub = term.onData((d: string) => { props.terminal.input(d); });
+  dataSub = term.onData((d: string) => { if (syncingRename.value) return; props.terminal.input(d); });
   selSub = term.onSelectionChange(() => { hasSelection.value = !!term?.hasSelection(); });
   props.terminal.bindIO({
     output: (d) => term?.write(d),
@@ -846,9 +916,11 @@ onMounted(async () => {
   cfgKey = `devflow-agent-cfg-${fp}`;
   agentSidsKey = `devflow-agent-sids-${fp}`;
   tabNamesKey = `devflow-tab-names-${fp}`;
+  tabDescsKey = `devflow-tab-descs-${fp}`;
   loadAgentSids();
   void loadComposerPrefs();
   loadTabNames();
+  loadTabDescs();
   await loadAgents();
   loadCfg();           // 本地已保存配置优先覆盖 API 默认
   cfgLoaded = true;
@@ -867,7 +939,7 @@ onBeforeUnmount(() => {
   if (copySelTimer) { clearTimeout(copySelTimer); copySelTimer = null; }
   unsubList?.();
   unsubCfg?.();
-  stopNewTimer();
+  if (renameHintTimer) { clearTimeout(renameHintTimer); renameHintTimer = null; }
   selSub?.dispose();
   selSub = null;
   dataSub?.dispose();
@@ -882,15 +954,19 @@ onBeforeUnmount(() => {
     <div v-if="newOpen" class="setmask" @click.self="closeNew">
       <div class="newmodal">
         <header class="seth"><span>{{ $t('term.new_session') }}</span><button class="setx" @click="closeNew">×</button></header>
+        <div class="newname">
+          <input v-model="newName" class="newname-input" :placeholder="$t('term.new_task_name')" @keyup.enter="createNew(newSelected)" />
+          <div class="newname-hint">{{ $t('term.new_task_name_hint') }}</div>
+        </div>
         <div class="newlist">
           <button v-for="c in newChoices" :key="c.id" class="newitem" :class="{ on: newSelected === c.id }" @click="createNew(c.id)">
             <span class="ni-label">{{ c.label }}</span>
             <span class="ni-cmd">{{ c.cmd || $t('term.default_shell') }}</span>
           </button>
         </div>
-        <div class="newhint">{{ $t('term.auto_start_in', { n: newCountdown }) }}</div>
       </div>
     </div>
+    <div v-if="renameHint" class="renamehint">{{ renameHint }}</div>
     <div v-if="settingsOpen" class="setmask" @click.self="settingsOpen = false">
       <div class="setmodal">
         <header class="seth">
@@ -979,16 +1055,19 @@ onBeforeUnmount(() => {
         </footer>
       </div>
     </div>
+    <div v-if="syncingRename" :ref="setRenameMask" class="renamemask" tabindex="-1" @keydown.prevent @mousedown.prevent>
+      <div class="renamemask-box"><span class="renamemask-spin" />{{ $t('term.rename_syncing') }}</div>
+    </div>
+    <TabRenameDialog v-if="dialogSid"
+      :name="dialogName" :description="dialogDesc" :placeholder="dialogPlaceholder"
+      @confirm="onTabDialogConfirm" @cancel="onTabDialogCancel" />
     <div class="tabstrip">
       <div v-for="t in center.tabs.value" :key="t.id" class="tab"
         :class="{ active: center.activeId.value === t.id }" @click="onTabClick(t.id)"
-        @dblclick="t.kind === 'session' && startRename(t.id)">
+        @dblclick="t.kind === 'session' && openTabDialog(t.id)">
         <span v-if="t.kind === 'session'" :class="['dot', sessionState(t.id.slice(2))]" />
         <span v-else class="file-ic">▤</span>
-        <input v-if="renamingId === t.id" v-model="renameValue" class="rename-input"
-          :ref="setRenameInput" :title="$t('term.tab_rename')"
-          @click.stop @dblclick.stop @keyup.enter="commitRename(t.id)" @keyup.esc="cancelRename" @blur="commitRename(t.id)" />
-        <span v-else class="nm" :title="t.kind === 'file' ? t.path : (t.label + ' — ' + $t('term.tab_rename'))">{{ t.label }}</span>
+        <span class="nm" :title="t.kind === 'file' ? t.path : (t.label + ' — ' + $t('term.tab_rename'))">{{ t.label }}</span>
         <span v-if="t.id !== 's:' + agentSid" class="x" @click="onTabClose(t.id, $event)" @dblclick.stop>×</span>
       </div>
       <button v-if="!phone" class="new" @click="openNew">{{ $t('term.new_session_btn') }}</button>
@@ -1006,7 +1085,7 @@ onBeforeUnmount(() => {
         :detail-token="detailToken" :detail-path="detailPath" />
     </div>
 
-    <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerCollapsed }" :style="{ height: (composerCollapsed ? 40 : composerH) + 'px' }">
+    <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerCollapsed, phone }" :style="{ height: (composerCollapsed ? 40 : composerH) + 'px' }">
       <div class="cbar" @mousedown="onComposerDragDown">
         <div v-if="activeIsAgent" class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
@@ -1058,6 +1137,7 @@ onBeforeUnmount(() => {
               @keydown="onComposerKey"
             />
             <div class="ctools">
+              <span v-if="activeTabDesc" class="cdsc" :title="activeTabDesc">{{ activeTabDesc }}</span>
               <button class="cbtn" :title="$t('term.pick_file')" @mousedown.stop @click="pickFileForPrompt">{{ $t('term.pick_file') }}</button>
               <button class="cbtn" :disabled="!composerText && !translatedText && !activeStage" :title="$t('term.clear_prompt')" @mousedown.stop @click="clearPrompt">{{ $t('term.clear_prompt') }}</button>
               <button v-if="translateMode" class="cbtn" :disabled="translating || !composerText.trim()" :title="$t('term.translate')" @mousedown.stop @click="translateNow">{{ translating ? $t('term.translating') : $t('term.translate') }}</button>
@@ -1109,6 +1189,7 @@ onBeforeUnmount(() => {
 .cbar .gear { margin-left: 4px; }
 .cbar .asel { height: 20px; padding: 0 6px; }
 .ctools { position: absolute; top: 6px; right: 8px; z-index: 2; display: flex; gap: 6px; }
+.ctools .cdsc { flex: 0 1 auto; min-width: 0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: color-mix(in srgb, var(--warn2) 16%, transparent); border: 1px solid color-mix(in srgb, var(--warn2) 60%, transparent); color: var(--warn2); border-radius: 6px; padding: 1px 8px; line-height: 18px; font-size: 11px; }
 .cbtn { background: var(--bg4); border: 1px solid var(--bd); color: var(--tx3); border-radius: 6px; padding: 1px 8px; line-height: 18px; cursor: pointer; font-size: 11px; }
 .cbtn:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
 .cbtn:disabled { opacity: .55; cursor: default; }
@@ -1141,8 +1222,8 @@ onBeforeUnmount(() => {
 .chipbar { display: flex; align-items: flex-start; gap: 6px; flex: none; }
 .chipstage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: 1; min-width: 0; max-height: 84px; overflow-y: auto; }
 .chipextra { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: none; }
-.chipextra .chip { padding: 1px 9px; gap: 3px; min-width: 28px; font-size: 10px; line-height: 14px; justify-content: center; }
-.chipextra .cdot { width: 4px; height: 4px; margin-top: 4px; }
+.chipextra .chip { padding: 3px 12px; gap: 4px; min-width: 34px; font-size: 13px; line-height: 18px; justify-content: center; }
+.chipextra .cdot { width: 5px; height: 5px; margin-top: 6px; }
 .chips-label { color: var(--tx3); font-size: 11px; flex: none; margin-right: 2px; line-height: 20px; }
 .chip { display: inline-flex; align-items: flex-start; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; text-align: left; white-space: normal; max-width: 100%; }
 .chip:hover { border-color: var(--ac2); color: var(--ac2); }
@@ -1159,6 +1240,22 @@ onBeforeUnmount(() => {
 .cact.compact:hover { background: color-mix(in srgb, var(--ok) 18%, transparent); }
 .cact.cancel { flex: 35; border-color: var(--err); color: var(--err); }
 .cact.cancel:hover { background: color-mix(in srgb, var(--err) 18%, transparent); }
+/* 手机页：工作流/提示条改为单行横向滚动，保证输入框与发送按钮始终有高度、不被挤出 */
+.composer.phone { padding: 0 8px 8px; gap: 4px; }
+.composer.phone:not(.min) { min-height: 148px; }
+.composer.phone .cbar { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.composer.phone .cbar::-webkit-scrollbar { display: none; }
+.composer.phone .flowbar,
+.composer.phone .chipbar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.composer.phone .flowbar::-webkit-scrollbar,
+.composer.phone .chipbar::-webkit-scrollbar { display: none; }
+.composer.phone .fgroup { flex: none; }
+.composer.phone .chipstage { flex: none; flex-wrap: nowrap; max-height: none; overflow: visible; }
+.composer.phone .chipextra { flex-wrap: nowrap; }
+.composer.phone .cwrap { min-height: 46px; }
+.composer.phone .cinput { padding: 30px 12px 8px 12px; }
+.composer.phone .csend { min-width: 0; padding: 0 16px; font-size: 14px; }
+.composer.phone .cagentacts { min-width: 60px; }
 .cfgpop { position: absolute; top: calc(100% + 4px); left: 10px; z-index: 60; width: 280px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 26px rgba(0,0,0,.35); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 .cfgrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--tx2); }
 .cfgrow span { width: 62px; flex: none; }
@@ -1174,6 +1271,10 @@ onBeforeUnmount(() => {
 .cfghint.warn { color: var(--warn2); }
 .acfg.gear { flex: none; }
 .setmask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; }
+.renamemask { position: fixed; inset: 0; z-index: 4000; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; cursor: wait; outline: none; }
+.renamemask-box { display: inline-flex; align-items: center; gap: 10px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; padding: 12px 20px; color: var(--tx1); font-size: 13px; box-shadow: 0 10px 34px rgba(0,0,0,.45); }
+.renamemask-spin { width: 14px; height: 14px; flex: none; border: 2px solid color-mix(in srgb, var(--ac2) 35%, transparent); border-top-color: var(--ac2); border-radius: 50%; animation: renamemask-rotate .7s linear infinite; }
+@keyframes renamemask-rotate { to { transform: rotate(360deg); } }
 .setmodal { width: 1080px; max-width: 96vw; height: 92vh; max-height: 92vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
 .seth { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg4); color: var(--tx1); font-weight: 700; flex: none; }
 .setx { background: none; border: none; color: var(--tx3); font-size: 16px; cursor: pointer; }
@@ -1210,14 +1311,17 @@ onBeforeUnmount(() => {
 .newitem { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: none; border: 1px solid var(--bd); color: var(--tx1); border-radius: 6px; padding: 8px 12px; cursor: pointer; text-align: left; }
 .newitem:hover { border-color: var(--ac2); background: color-mix(in srgb, var(--ac) 8%, transparent); }
 .newitem.on { border-color: var(--ac); background: color-mix(in srgb, var(--ac) 16%, transparent); }
-.newhint { padding: 6px 14px 12px; color: var(--tx6); font-size: 12px; text-align: center; }
+.newname { padding: 10px 12px 0; }
+.newname-input { width: 100%; box-sizing: border-box; background: var(--bg4); color: var(--tx1); border: 1px solid var(--bd); border-radius: 6px; padding: 7px 10px; font-size: 13px; outline: none; }
+.newname-input:focus { border-color: var(--ac2); }
+.newname-hint { margin-top: 6px; color: var(--tx6); font-size: 11px; }
+.renamehint { position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 3000; background: var(--bg1); border: 1px solid var(--bd2); color: var(--tx1); border-radius: 6px; padding: 8px 16px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
 .ni-label { font-size: 13px; font-weight: 600; }
 .ni-cmd { color: var(--tx6); font-family: Consolas, monospace; font-size: 11px; }
 .tabstrip { display: flex; align-items: center; gap: 2px; background: var(--bg2); border-bottom: 1px solid var(--bd); padding: 0 8px; height: 32px; overflow-x: auto; flex: none; }
 .tab { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--tx2); padding: 0 10px; height: 100%; cursor: pointer; border-right: 1px solid var(--bd); flex: none; max-width: 220px; }
 .tab.active { background: var(--bg3); color: var(--tx1); }
 .tab .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tab .rename-input { background: var(--bg4); color: var(--tx1); border: 1px solid var(--ac2); border-radius: 3px; padding: 1px 6px; font-size: 12px; min-width: 60px; max-width: 160px; outline: none; }
 .tab .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .dot.running { background: var(--ok); }
 .dot.exited { background: var(--tx5); }
