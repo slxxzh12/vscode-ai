@@ -102,3 +102,13 @@ test('commitScreen：依次 add/commit/push；失败标 git-failed', async () =>
   assert.deepEqual(bad, { uploaded: false, reason: 'git-failed' });
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('deliver 条目：无 text、id 前缀 d-', () => {
+  const now = 1758000000000;
+  const rand = () => 0.5;
+  const d = makeEntry({ kind: 'deliver' }, now, rand);
+  assert.deepEqual(d, { id: 'd-1758000000000-8000', ts: now, kind: 'deliver', handled: false });
+  assert.equal(newId('deliver', 1, () => 0), 'd-1-0000');
+  assert.equal(newId('message', 1, () => 0), 'm-1-0000');
+  assert.equal(newId('screenshot', 1, () => 0), 'c-1-0000');
+});

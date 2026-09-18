@@ -55,14 +55,18 @@ export function writeMessages(dir, list) {
   fs.renameSync(tmp, file);
 }
 
+const ID_PREFIX = { screenshot: 'c', deliver: 'd' };
+const KINDS = new Set(['screenshot', 'deliver', 'message']);
+
 export function newId(kind, now = Date.now(), rand = Math.random) {
-  const prefix = kind === 'screenshot' ? 'c' : 'm';
+  const prefix = ID_PREFIX[kind] || 'm';
   const suffix = Math.floor(rand() * 0x10000).toString(16).padStart(4, '0');
   return `${prefix}-${now}-${suffix}`;
 }
 
 export function makeEntry(input, now = Date.now(), rand = Math.random) {
-  const kind = input && input.kind === 'screenshot' ? 'screenshot' : 'message';
+  const raw = input && input.kind;
+  const kind = KINDS.has(raw) ? raw : 'message';
   const text = kind === 'message' ? String((input && input.text) ?? '').trim() : '';
   if (kind === 'message' && !text) throw err('bad-message', 'text is required');
   if (Buffer.byteLength(text, 'utf8') > MAX_TEXT_BYTES) throw err('too-large', 'text too large');
