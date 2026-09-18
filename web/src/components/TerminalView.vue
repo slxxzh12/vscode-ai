@@ -613,8 +613,8 @@ async function pickFileForPrompt() {
 
 // 底部框高度（可上下拖动）+ 最小化
 const COMPOSER_H_KEY = props.phone ? 'devflow-composer-h-phone' : 'devflow-composer-h';
-const composerH = ref(props.phone ? 150 : 240);
-const composerMin = ref(true);
+const composerH = ref(props.phone ? 200 : 240);
+const composerMin = ref(props.phone ? false : true);   // 手机首次进入即展开；桌面保持收起
 function loadComposerH() {
   try {
     const h = Number(localStorage.getItem(COMPOSER_H_KEY));
