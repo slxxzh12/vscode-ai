@@ -64,6 +64,7 @@ import { askPortConflict } from './native-dialog.js';
 import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
 import { VERSION } from './version.js';
 import { createNotice } from './notice.js';
+import { createPostmanHistory } from './postman-history.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -330,6 +331,7 @@ function buildWorkspace({ paths, port }) {
     },
   });
   engine.peer = makePeerClient();
+  engine.cleanupStagedImports();
   const collabMount = createCollabMount({ engine, logger: log });
   const usagePeers = engine.peers;
   // 用量快照随心跳广播；成员拉取时由 _inPullDownloads 一并带回，不再落 usage.json 文件
@@ -388,7 +390,8 @@ function buildWorkspace({ paths, port }) {
     broadcastSched(type, payload);
   });
 
-  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger });
+  const postmanHistory = createPostmanHistory({ dir: paths.postmanDir });
+  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger, postmanHistory });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });

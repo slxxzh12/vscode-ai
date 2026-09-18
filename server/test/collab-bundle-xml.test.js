@@ -35,8 +35,8 @@ test('buildPackage：勾选工作流打成 XML zip，且同时落一份到 downl
     assert.equal(seeds[0].sent, false);
 
     const entries = readZip(fs.readFileSync(up));
-    assert.deepEqual(entries.map((e) => e.name), ['workflow/workflows.xml'], '工作流打成一份 XML');
-    const parsed = parseWorkflowsXml(entries[0].data.toString('utf8'));
+    assert.deepEqual(entries.map((e) => e.name), ['workflow/workflows.xml', 'Manifest.json'], '工作流打成一份 XML + Manifest');
+    const parsed = parseWorkflowsXml(entries.find((e) => e.name === 'workflow/workflows.xml').data.toString('utf8'));
     assert.deepEqual(parsed, WORKFLOWS);
   } finally { await h.stop(); }
 });

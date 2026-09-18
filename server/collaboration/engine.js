@@ -13,6 +13,8 @@ import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
 import { packSkill } from './skill-packer.js';
 import { installZip } from './skill-installer.js';
 import { installBundleZip } from './bundle-installer.js';
+import { buildManifest } from './asset-manifest.js';
+import { stageImport as stageImportAsset, applyImport as applyImportAsset, discardImport as discardImportAsset, cleanupStagedImports as cleanupStagedImportsAsset } from './asset-import.js';
 import { distKindsOf, distTypeOf, distUrl, shouldProcess, downloadAddrOf } from './dist-task.js';
 import { buildZip } from './zip.js';
 import { createOpenCodeRunner } from './remote-runner.js';
@@ -212,6 +214,19 @@ export class CollabEngine {
       skills: skillDetails,
       workflow: pickedWorkflows.map((w) => ({ id: w.id, label: w.label, stages: (w.stages || []).length })),
     };
+    files.push({
+      rel: 'Manifest.json',
+      data: Buffer.from(JSON.stringify(buildManifest({
+        selection: { skills: sSel, command: cSel, agent: aSel, workflow: wSel },
+        details: {
+          skills: skillDetails,
+          command: cSel.map((name) => ({ name })),
+          agent: aSel.map((name) => ({ name })),
+          workflow: pickedWorkflows.map((w) => ({ id: w.id, label: w.label, stages: (w.stages || []).length })),
+        },
+        source: { machineId: this.pub.machineId, host: this.pub.host, port: this.pub.port, employeeId: this.pub.employeeId || '' },
+      })), 'utf8'),
+    });
     const zip = buildZip(files.map((f) => ({ name: f.rel, data: f.data })));
     const hash = crypto.createHash('sha256').update(zip).digest('hex');
     const total = sSel.length + cSel.length + aSel.length + wSel.length;
@@ -872,6 +887,43 @@ export class CollabEngine {
       return { code: 'ok', ...r };
     } catch (e) { return { code: 'invalid', error: String((e && e.message) || e) }; }
   }
+  // ---- 本地导出包导入（独立于群）----
+  importAssetDir() {
+    return this.downloadDir || path.join(os.tmpdir(), `devflow-import-${this.identity?.machineId || 'x'}`);
+  }
+  stageImport(zip) {
+    try {
+      const r = stageImportAsset({ zip, dir: this.importAssetDir() });
+      if (!this.importStaging) this.importStaging = new Map();
+      this.importStaging.set(r.id, { file: r.file, manifest: r.manifest });
+      return { code: 'ok', id: r.id, manifest: r.manifest, summary: r.summary };
+    } catch (e) {
+      return { code: (e && e.code) || 'invalid-zip', error: String((e && e.message) || e) };
+    }
+  }
+  applyImport(id) {
+    const it = this.importStaging && this.importStaging.get(id);
+    if (!it) return { code: 'not-found' };
+    const r = applyImportAsset({
+      id, file: it.file, manifest: it.manifest,
+      skillRoot: this.skillRoot(), configRoot: this.configRoot(),
+      installWorkflows: (list) => (this.mergeWorkflows ? this.mergeWorkflows(list) : null),
+    });
+    if (r.code === 'ok') {
+      discardImportAsset(it.file);
+      this.importStaging.delete(id);
+      this._emit('synced', {});
+    }
+    return r;
+  }
+  discardImport(id) {
+    const it = this.importStaging && this.importStaging.get(id);
+    if (!it) return { code: 'not-found' };
+    discardImportAsset(it.file);
+    this.importStaging.delete(id);
+    return { code: 'ok' };
+  }
+  cleanupStagedImports() { return cleanupStagedImportsAsset(this.importAssetDir()); }
   // 接受分发任务：确保包在本机 → 解包安装（skills/command/agent 落位 + workflow 融合）→ done
   async acceptTask(id) {
     const task = this.taskStore?.get?.(id);

@@ -65,8 +65,9 @@ export function createCollabMount({ engine, logger = console }) {
     // 仅 POST/PUT 读 body，避免 GET/DELETE 无 body 时挂起；群发文件走 raw body（另读）
     const isBodyMethod = ['POST', 'PUT'].includes(m);
     const isFileUpload = seg[0] === 'groups' && seg[2] === 'files' && m === 'POST';
+    const isAssetImport = seg[0] === 'import' && seg.length === 1 && m === 'POST';
     let body = {};
-    if (isBodyMethod && !isFileUpload) {
+    if (isBodyMethod && !isFileUpload && !isAssetImport) {
       const bodyRaw = await readBody(req).catch(() => '');
       if (bodyRaw) { try { body = JSON.parse(bodyRaw); } catch { body = {}; } }
     }
@@ -132,6 +133,22 @@ export function createCollabMount({ engine, logger = console }) {
         const r = await engine.uploadPackageToMaster(seg[1], body.groupId);
         if (r.code !== 'ok') return sendJson(res, 400, { error: r.code });
         return ok(res, r);
+      }
+      // ---- 本地资产导入（独立于群）----
+      if (seg[0] === 'import' && seg.length === 1 && m === 'POST') {
+        const data = await readRaw(req).catch(() => null);
+        if (!data) return sendJson(res, 413, { error: 'too_large' });
+        const r = engine.stageImport(data);
+        if (r.code !== 'ok') return sendJson(res, 400, { error: r.code });
+        return ok(res, { id: r.id, manifest: r.manifest, summary: r.summary });
+      }
+      if (seg[0] === 'import' && seg.length === 3 && seg[2] === 'apply' && m === 'POST') {
+        const r = engine.applyImport(seg[1]);
+        if (r.code !== 'ok') return sendJson(res, 400, { error: r.code });
+        return ok(res, { code: 'ok', counts: r.counts });
+      }
+      if (seg[0] === 'import' && seg.length === 2 && m === 'DELETE') {
+        return ok(res, engine.discardImport(seg[1]));
       }
       // 我发出的文件（upload 目录留档）下载
       if (seg[0] === 'outfile' && seg.length === 2 && m === 'GET') {
