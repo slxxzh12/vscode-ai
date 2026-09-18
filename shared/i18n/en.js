@@ -98,6 +98,7 @@ export const messages = {
   'collab.join_link.failed': 'Join failed: {code}',
   'collab.member.title': 'Members ({count})',
   'collab.member.master': 'Master',
+  'collab.member.me': 'Me',
   'collab.placeholder_short': 'No group selected',
   'collab.announce.title': 'Announcement',
   'collab.announce.edit': 'Edit',

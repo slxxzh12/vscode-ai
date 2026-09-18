@@ -98,6 +98,7 @@ export const messages = {
   'collab.join_link.failed': '接入失败：{code}',
   'collab.member.title': '成员（{count}）',
   'collab.member.master': '群主',
+  'collab.member.me': '我',
   'collab.placeholder_short': '未选择群组',
   'collab.announce.title': '群公告',
   'collab.announce.edit': '编辑',
