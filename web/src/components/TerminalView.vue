@@ -728,7 +728,7 @@ function compactContext() {
 function undoContext() {
   sendToActive('/undo');
 }
-// 结束当前任务：给当前会话发 /clear（opencode 里是 /new 的别名，结束当前会话并开始新会话）
+// 清空上下文：给当前会话发 /clear（opencode 里是 /new 的别名，清空当前会话上下文并开始新会话）
 function endTask() {
   resetAutoCompact();
   sendToActive('/clear');
