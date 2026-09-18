@@ -18,6 +18,7 @@ import WorkflowEditor from './WorkflowEditor.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
 import { captureToPngDataUrl } from '../snapshot';
 import { pickRestoredAgent, restoredAgentIds } from '../sessionRestore';
+import { copyText } from '../clipboard';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -33,9 +34,13 @@ let term: Terminal | null = null;
 let fit: FitAddon | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let dataSub: { dispose(): void } | null = null;
+let selSub: { dispose(): void } | null = null;
 let unsubList: (() => void) | null = null;
 let unsubCfg: (() => void) | null = null;
 let autoTried = false;
+const hasSelection = ref(false);
+const copiedSel = ref(false);
+let copySelTimer: ReturnType<typeof setTimeout> | null = null;
 
 const activeFile = computed(() => (props.center.active.value?.kind === 'file' ? props.center.active.value : null));
 const isSessionView = computed(() => props.center.activeKind.value !== 'file');
@@ -532,14 +537,16 @@ const stageGroups = computed(() => {
 const activeStage = ref('');
 const chips = computed<Chip[]>(() => {
   const st = curWf.value.stages.find((s) => s.id === activeStage.value) || curWf.value.stages[0];
-  // 阶段提示（替换型）+ 固定附加项 1/2/3/4/5/ok（追加型），见 phaseChips.ts
+  // 阶段提示（替换型）+ 固定附加项 1/2/3/4/5（追加型），见 phaseChips.ts
   return buildChips(st?.prompts);
 });
 const stageChips = computed(() => chips.value.filter((c) => !c.append));   // 工作流阶段提示（左侧，可被挤/滚动）
-const extraChips = computed(() => chips.value.filter((c) => c.append));    // 固定附加项 1/2/3/4/5/ok（右侧，固定位置）
-// 替换型 chip 整段填入；追加型 chip 追加到末尾（彼此不互斥，可连点多个）
+const extraChips = computed(() => chips.value.filter((c) => c.append));    // 固定附加项 1/2/3/4/5（右侧，固定位置）
+// 替换型 chip 整段填入输入框；追加型 chip（编号）点击即直接发送
 function onChipClick(c: Chip) {
-  composerText.value = c.append ? appendText(composerText.value, c.text) : c.text;
+  if (!c.append) { composerText.value = c.text; return; }
+  composerText.value = appendText(composerText.value, c.text);
+  void submitComposer();
 }
 function chipText(s: string) {
   const t = s.replace(/\s+/g, ' ').trim();
@@ -709,6 +716,7 @@ function init() {
   });
   resizeObserver.observe(hostRef.value!);
   dataSub = term.onData((d: string) => { props.terminal.input(d); });
+  selSub = term.onSelectionChange(() => { hasSelection.value = !!term?.hasSelection(); });
   props.terminal.bindIO({
     output: (d) => term?.write(d),
     replay: (d) => { term?.clear(); term?.write(d); requestAnimationFrame(() => onResize()); },
@@ -789,6 +797,13 @@ function termTheme(dark: boolean) {
 }
 watch(isDark, (d) => { if (term) { term.options.theme = termTheme(d); requestAnimationFrame(() => onResize()); } });
 
+async function copySel() {
+  const ok = await copyText(term?.getSelection() ?? '');
+  if (!ok) return;
+  copiedSel.value = true;
+  if (copySelTimer) clearTimeout(copySelTimer);
+  copySelTimer = setTimeout(() => { copiedSel.value = false; copySelTimer = null; }, 1500);
+}
 function onTabClick(id: string) {
   const t = props.center.tabs.value.find((x) => x.id === id);
   if (!t) return;
@@ -843,9 +858,12 @@ onBeforeUnmount(() => {
   window.removeEventListener('df-remote-send', onRemoteSend);
   window.removeEventListener('df-remote-screen', onRemoteScreen);
   if (autoCompactTimer) { clearTimeout(autoCompactTimer); autoCompactTimer = null; }
+  if (copySelTimer) { clearTimeout(copySelTimer); copySelTimer = null; }
   unsubList?.();
   unsubCfg?.();
   stopNewTimer();
+  selSub?.dispose();
+  selSub = null;
   dataSub?.dispose();
   term?.dispose();
   term = null;
@@ -1026,6 +1044,7 @@ onBeforeUnmount(() => {
               <button class="cbtn" :disabled="!composerText && !translatedText && !activeStage" :title="$t('term.clear_prompt')" @mousedown.stop @click="clearPrompt">{{ $t('term.clear_prompt') }}</button>
               <button v-if="translateMode" class="cbtn" :disabled="translating || !composerText.trim()" :title="$t('term.translate')" @mousedown.stop @click="translateNow">{{ translating ? $t('term.translating') : $t('term.translate') }}</button>
               <button class="cbtn" :class="{ on: translateMode }" :title="$t('term.translate_toggle')" @mousedown.stop @click="toggleTranslate">{{ $t('term.translate_toggle') }}</button>
+              <button class="cbtn" :disabled="!hasSelection" :title="$t('term.copy_sel')" @mousedown.stop @click="copySel">{{ copiedSel ? $t('term.copied') : $t('term.copy_sel') }}</button>
               <button class="cbtn" :title="$t('term.history')" @mousedown.stop @click="openHistory">{{ $t('term.history') }}</button>
             </div>
           </div>
