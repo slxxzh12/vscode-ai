@@ -129,4 +129,5 @@
 - **每次提交/推送前，自动触发并执行 `docs/learn/git仓库提交检查和提交事项.md` 的检查清单（尤其敏感信息扫描）；未通过一律不得 commit / push。** 该文件是提交规范的唯一事实源，更新流程只改它。
 - 团队/流程类知识统一沉淀到 `docs/learn/`；提交、发布、环境等操作规范都放这里，由本节挂钩。
 - 一律在 `master` 操作（无远程 PR 需求时）。`git push origin master`。
+- **发布 Gitee Release 只挂标准包**（`vscode-ai-windows-x64-<version>.zip`）：内置 opencode 离线包（`vscode-ai-windows-x64-<version>-opencode.zip`，约 113 MB）超出 Gitee 附件单文件 100 MB 限制，**不上传**（仅本地保留/另行分发）。发版先推 tag 再建 Release，附件只能走远端 API。
 - 仓库远端残留 `feat/web-terminal` 分支，已合并删除需求时：`git push origin --delete feat/web-terminal`。
