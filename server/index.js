@@ -20,6 +20,7 @@ import { createWindowState } from './window-state.js';
 import { createSessionLedger } from './session-ledger.js';
 import { restoreSessions, restoreRecord } from './session-restore.js';
 import { discoverAgentSessionId } from './agent-resume.js';
+import { createAgentStartupGuard } from './agent-startup-guard.js';
 import { claimedAgentSessionIds, findClaimOwner } from './session-claims.js';
 import { CollabStore } from './collaboration/store.js';
 import { loadIdentity, detectHost } from './collaboration/identity.js';
@@ -236,6 +237,7 @@ function buildWorkspace({ paths, port }) {
       setTimeout(() => { void runDiscovery(session); }, delay).unref?.();
     }
   }
+  let startupGuard = null;   // 构造 SessionManager 后立即赋值；onCreated 触发时已就绪
   const sessionManager = new SessionManager({
     logger: log,
     projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
@@ -247,11 +249,16 @@ function buildWorkspace({ paths, port }) {
         agentId: s.agentId, agentCmd: s.agentCmd, cols: s.cols, rows: s.rows,
         createdAt: s.createdAt, updatedAt: Date.now(), state: 'running',
       });
-      if (s.kind === 'agent') scheduleAgentDiscovery(s);
+      if (s.kind === 'agent') {
+        scheduleAgentDiscovery(s);
+        startupGuard?.arm(s);
+      }
     },
   });
+  startupGuard = createAgentStartupGuard({ sessionManager, logger: log });
   sessionManager.on('data', (s, chunk) => sessionLedger.appendLog(s.id, chunk));
   sessionManager.on('exit', (s) => {
+    startupGuard.disarm(s.id);
     sessionLedger.flushLog(s.id);
     const row = sessionLedger.read().sessions.find((r) => r.id === s.id);
     if (row) sessionLedger.upsert({ ...row, state: 'exited', updatedAt: Date.now() });
@@ -260,6 +267,7 @@ function buildWorkspace({ paths, port }) {
     if (s.kind === 'agent') runDiscovery(s, { requireAlive: false });
   });
   sessionManager.on('removed', (id) => {
+    startupGuard.disarm(id);
     sessionLedger.close(id);
     const row = sessionLedger.read().sessions.find((r) => r.id === id);
     if (row) sessionLedger.upsert({ ...row, state: 'exited', updatedAt: Date.now() });
