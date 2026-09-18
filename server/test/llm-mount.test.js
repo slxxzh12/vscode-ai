@@ -315,11 +315,14 @@ test('test-example 返回流式/非流式 curl；test-script 写 bat', async (t)
   assert.equal((await jget(server, `/api/llm-admin/test-example?token=${tok.id}&pid=nope&model=a`)).status, 404);
 });
 
-test('opencode 配置 GET/POST：无需解锁，写盘且保留其余顶层键', async (t) => {
+test('opencode 配置 GET/POST：预设选择写盘、保留其余顶层键与非预设 provider', async (t) => {
   const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
   fs.writeFileSync(path.join(oc, 'opencode.json'), JSON.stringify({
     agent: { a: {} },
-    provider: { corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { m1: {} } } },
+    provider: {
+      corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { m1: {} } },
+      deepseek: { options: { baseURL: 'old', apiKey: 'OLD' }, models: { 'deepseek-v4-flash': { name: 'Legacy' } } },
+    },
     model: 'corp/m1',
   }));
   const vault = tmpVault();
@@ -332,18 +335,27 @@ test('opencode 配置 GET/POST：无需解锁，写盘且保留其余顶层键',
 
   const g = await jget(server, '/api/llm-admin/opencode');
   assert.equal(g.status, 200);
-  const gj = JSON.parse(g.body);
-  assert.equal(gj.config.provider.corp.options.apiKey, 'K');
-  assert.match(gj.raw, /corp/);
+  assert.equal(JSON.parse(g.body).config.provider.corp.options.apiKey, 'K');
 
   const r = await jpost(server, '/api/llm-admin/opencode', {
-    provider: { glm: { options: { baseURL: 'https://glm/v1', apiKey: 'G' }, models: { g1: {} } } },
-    model: 'glm/g1',
+    providers: [
+      { id: 'deepseek', apiKey: '', models: ['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'] },
+      { id: 'qwen', apiKey: '', models: ['qwen3-max'] },
+    ],
+    model: 'deepseek/deepseek-v4-flash',
   });
   assert.equal(r.status, 200);
+  const body = JSON.parse(r.body);
+  assert.deepEqual(body.skipped, ['qwen']);
+
   const saved = JSON.parse(fs.readFileSync(path.join(oc, 'opencode.json'), 'utf8'));
-  assert.deepEqual(Object.keys(saved.provider), ['glm']);
-  assert.equal(saved.model, 'glm/g1');
+  assert.deepEqual(Object.keys(saved.provider).sort(), ['corp', 'deepseek']);
+  assert.equal(saved.provider.corp.options.apiKey, 'K');
+  assert.equal(saved.provider.deepseek.options.baseURL, 'https://api.deepseek.com/v1');
+  assert.equal(saved.provider.deepseek.options.apiKey, 'OLD');
+  assert.equal(saved.provider.deepseek.models['deepseek-v4-flash'].name, 'Legacy');
+  assert.equal(saved.provider.deepseek.models['deepseek-v4-flash-vision-exp'].attachment, true);
+  assert.equal(saved.model, 'deepseek/deepseek-v4-flash');
   assert.deepEqual(saved.agent, { a: {} });
 });
 
@@ -356,6 +368,6 @@ test('opencode 配置 POST 非法体 400、坏文件 400', async (t) => {
   await mount.ready;
   const server = await startMount(mount);
   t.after(() => server.close());
-  assert.equal((await jpost(server, '/api/llm-admin/opencode', { provider: 'x', model: '' })).status, 400);
-  assert.equal((await jpost(server, '/api/llm-admin/opencode', { provider: {}, model: '' })).status, 400);
+  assert.equal((await jpost(server, '/api/llm-admin/opencode', { providers: 'x', model: '' })).status, 400);
+  assert.equal((await jpost(server, '/api/llm-admin/opencode', { providers: [{ id: 'nope', models: [] }], model: '' })).status, 400);
 });

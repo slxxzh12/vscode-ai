@@ -5,6 +5,7 @@ import path from 'node:path';
 import { signJwt } from './llm-jwt.js';
 import { listProviders, getProvider, buildOpencodeConfigMulti, opencodeConfigDir } from './llm-config.js';
 import { readActiveConfig, mergeAndWrite } from './llm-opencode-config.js';
+import { validateSelections, mergePresetProviders } from './llm-provider-presets.js';
 import { createProxyHandler } from './llm-proxy.js';
 import { createCache } from './llm-cache.js';
 import { loadPlugins, EXAMPLE_PLUGIN, writeExamplePlugin } from './relay-plugins.js';
@@ -155,12 +156,16 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
       }
       if (seg[0] === 'opencode' && !seg[1] && method === 'POST') {
         const b = await readJson(req);
+        const selections = Array.isArray(b.providers) ? b.providers : [];
+        validateSelections(selections);
+        const current = readActiveConfig({ dir: opencodeDir }).config?.provider || {};
+        const { provider, skipped } = mergePresetProviders({ current, selections });
         const saved = mergeAndWrite({
           dir: opencodeDir,
-          provider: b.provider || {},
+          provider,
           model: typeof b.model === 'string' ? b.model : '',
         });
-        return sendJson(res, 200, { ok: true, path: saved.path, backups: saved.backups, config: saved.config });
+        return sendJson(res, 200, { ok: true, path: saved.path, backups: saved.backups, config: saved.config, skipped });
       }
       if (locked()) return sendJson(res, 423, { error: 'locked' });
       if (seg[0] === 'plugins' && seg[1] === 'reload' && method === 'POST') return sendJson(res, 200, { entries: await reloadPlugins() });
