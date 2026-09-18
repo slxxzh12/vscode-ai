@@ -142,11 +142,17 @@ export function createCollabMount({ engine, logger = console }) {
         fs.createReadStream(abs).pipe(res);
         return;
       }
-      // 我的开发工具（决定技能目录）
+      // 我的开发工具/agent（决定技能目录）
       if (seg[0] === 'tool' && m === 'GET') return ok(res, engine.getToolInfo());
       if (seg[0] === 'tool' && m === 'POST') {
-        const r = engine.setTool(body.kind, body.customRoot);
-        if (r.code !== 'ok') return sendJson(res, 400, { error: r.code === 'need-custom-root' ? t('collab.err.need_custom_root') : r.code });
+        const r = engine.setTool({ agentId: body.agentId || body.kind, customRoot: body.customRoot });
+        if (r.code !== 'ok') {
+          const msg = r.code === 'need-custom-root' ? t('collab.err.need_custom_root')
+            : r.code === 'agent-unavailable' ? t('collab.err.agent_unavailable')
+              : r.code === 'unknown-agent' ? t('collab.err.unknown_agent')
+                : r.code;
+          return sendJson(res, 400, { error: msg });
+        }
         return ok(res, r);
       }
       // 我的 upload/download 目录（下载页/收件箱辅助展示）

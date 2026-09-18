@@ -313,6 +313,7 @@ function buildWorkspace({ paths, port }) {
     events: eventBus,
     logger: log,
     getWorkflows: () => loadDevflowConfig(configFile).workflows,
+    getAgents: () => loadDevflowConfig(configFile).agents,
     mergeWorkflows: (incoming) => {
       const merged = mergeWorkflowList(loadDevflowConfig(configFile).workflows, incoming);
       return updateWorkflows(configFile, merged, workflowSeedStore);

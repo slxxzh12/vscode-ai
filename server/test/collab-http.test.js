@@ -242,3 +242,42 @@ test('legacy route POST /api/collab/stats removed (404)', async () => {
   } finally { A.server.close(); }
 });
 
+test('/tool GET 返回 agents 列表；POST 切 agent / 未知 agent 400', async () => {
+  const dir = tmp();
+  const skillsRoot = path.join(dir, 'skills');
+  fs.mkdirSync(skillsRoot, { recursive: true });
+  const store = new CollabStore({ file: path.join(dir, 'collab.json') });
+  const identity = loadIdentity({ file: path.join(dir, 'identity.json'), username: 'tool', host: '127.0.0.1', port: 0 });
+  const engine = new CollabEngine({
+    store, identity, skillsRoot,
+    getAgents: () => ({
+      default: 'opencode',
+      list: [
+        { id: 'opencode', name: 'OpenCode', cmd: 'opencode' },
+        { id: 'claudecode', name: 'ClaudeCode', cmd: 'claudecode' },
+      ],
+    }),
+  });
+  const mount = createCollabMount({ engine, logger: console });
+  const server = http.createServer((req, res) => mount(req, res));
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  try {
+    const got = await fetch(`http://127.0.0.1:${port}/api/collab/tool`).then((r) => r.json());
+    assert.equal(got.selected, 'opencode');
+    assert.equal(got.agents.length, 2);
+    assert.ok(got.agents[0].skillsDir);
+
+    const ok = await post(`http://127.0.0.1:${port}/api/collab/tool`, { agentId: 'claudecode' });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.selected, 'claudecode');
+
+    const bad = await post(`http://127.0.0.1:${port}/api/collab/tool`, { agentId: 'nope' });
+    assert.equal(bad.status, 400);
+    assert.ok(bad.body.error, '返回本地化错误文案');
+
+    const needRoot = await post(`http://127.0.0.1:${port}/api/collab/tool`, { agentId: 'custom', customRoot: '' });
+    assert.equal(needRoot.status, 400);
+  } finally { server.close(); }
+});
+

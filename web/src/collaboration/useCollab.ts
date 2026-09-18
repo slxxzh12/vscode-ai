@@ -114,8 +114,19 @@ export function useCollab() {
       }
       return res.json();
     },
-    getTool: () => http<{ tool: { kind: 'opencode' | 'claudecode' | 'custom'; customRoot: string | null }; root: string }>('/api/collab/tool'),
-    setTool: (kind: string, customRoot?: string | null) => post<{ code: string; root: string }>('/api/collab/tool', { kind, customRoot: customRoot ?? null }),
+    getTool: () => http<{
+      tool: { agentId: string; customRoot: string | null };
+      root: string;
+      selected: string;
+      agents: { id: string; name: string; cmd: string; skillsDir: string | null; exists: boolean; selectable: boolean; selected: boolean }[];
+    }>('/api/collab/tool'),
+    setTool: (agentId: string, customRoot?: string | null) => post<{
+      code: string;
+      root: string;
+      selected: string;
+      tool: { agentId: string; customRoot: string | null };
+      agents: { id: string; name: string; cmd: string; skillsDir: string | null; exists: boolean; selectable: boolean; selected: boolean }[];
+    }>('/api/collab/tool', { agentId, customRoot: customRoot ?? null }),
     getAssets: () => http<{ skills: { name: string }[]; command: { name: string }[]; agent: { name: string }[]; workflow: { id: string; name: string }[] }>('/api/collab/assets'),
     buildPackage: (sel: { skills?: string[]; command?: string[]; agent?: string[]; workflow?: string[] }) =>
       post<{ package: { id: string; fileName: string; size: number } }>('/api/collab/packages', { skills: sel.skills || [], command: sel.command || [], agent: sel.agent || [], workflow: sel.workflow || [] }),

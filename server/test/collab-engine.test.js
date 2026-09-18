@@ -101,8 +101,8 @@ test('åˆ‡æ¢å·¥å…·ç›®å½•ï¼šåˆ†å‘æº/å®‰è£…ç›®æ ‡è·Ÿæ‰€é€‰å·¥å…·èµ°ï¼Œupload ç•™
     const customA = path.join(tmp(), 'custom-a');
     const customB = path.join(tmp(), 'custom-b');
     // A åˆ‡åˆ°è‡ªå®šä¹‰å·¥å…·ç›®å½•å¹¶é€ ä¸€ä¸ª skillï¼›B ä¹Ÿåˆ‡åˆ°å¦ä¸€ä¸ªè‡ªå®šä¹‰ç›®å½•ä½œå®‰è£…ç›®æ ‡
-    assert.equal(A.setTool('custom', customA).root, customA);
-    assert.equal(B.setTool('custom', customB).root, customB);
+    assert.equal(A.setTool({ agentId: 'custom', customRoot: customA }).root, customA);
+    assert.equal(B.setTool({ agentId: 'custom', customRoot: customB }).root, customB);
     const skillDir = path.join(A.skillRoot(), 'demo');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# demo', 'utf8');
@@ -244,28 +244,28 @@ test('_inUpdateCheck/_inListDownloads éžæˆå‘˜è¢«æ‹’', () => {
   });
 });
 
-test('Èº¹«¸æ£ºÈºÖ÷ÉèÖÃºóËæ member-sync ÏÂ·¢¸ø³ÉÔ±£»·ÇÈºÖ÷±»¾Ü', async () => {
+test('Èºï¿½ï¿½ï¿½æ£ºÈºï¿½ï¿½ï¿½ï¿½ï¿½Ãºï¿½ï¿½ï¿½ member-sync ï¿½Â·ï¿½ï¿½ï¿½ï¿½ï¿½Ô±ï¿½ï¿½ï¿½ï¿½Èºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {
     const [A, B] = h.nodes;
     await groupUp(A, B);
-    const r = await A.setAnnouncement('½ñÌì 18:00 ·¢°æ£¬ÇëÔÚÏÂ°àÇ°Ìá½»');
+    const r = await A.setAnnouncement('ï¿½ï¿½ï¿½ï¿½ 18:00 ï¿½ï¿½ï¿½æ£¬ï¿½ï¿½ï¿½ï¿½ï¿½Â°ï¿½Ç°ï¿½á½»');
     assert.equal(r.ok, true);
     await new Promise((res) => setTimeout(res, 200));
-    assert.equal(A.store.getGroup().announcement, '½ñÌì 18:00 ·¢°æ£¬ÇëÔÚÏÂ°àÇ°Ìá½»');
-    assert.equal(B.store.getGroup().announcement, '½ñÌì 18:00 ·¢°æ£¬ÇëÔÚÏÂ°àÇ°Ìá½»');
-    const denied = await B.setAnnouncement('²»¸ÃÉúÐ§');
+    assert.equal(A.store.getGroup().announcement, 'ï¿½ï¿½ï¿½ï¿½ 18:00 ï¿½ï¿½ï¿½æ£¬ï¿½ï¿½ï¿½ï¿½ï¿½Â°ï¿½Ç°ï¿½á½»');
+    assert.equal(B.store.getGroup().announcement, 'ï¿½ï¿½ï¿½ï¿½ 18:00 ï¿½ï¿½ï¿½æ£¬ï¿½ï¿½ï¿½ï¿½ï¿½Â°ï¿½Ç°ï¿½á½»');
+    const denied = await B.setAnnouncement('ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð§');
     assert.equal(denied.ok, false);
     assert.equal(denied.error, 'not-hub');
   } finally { await h.stop(); }
 });
 
-test('ÈºÖ÷»»µØÖ·£ºrenameGroup Ç©Ãû¹ã²¥ºó£¬³ÉÔ±°ÑÈºÖ÷Ö¸µ½ÐÂµØÖ·', async () => {
+test('Èºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½renameGroup Ç©ï¿½ï¿½ï¿½ã²¥ï¿½ó£¬³ï¿½Ô±ï¿½ï¿½Èºï¿½ï¿½Ö¸ï¿½ï¿½ï¿½Âµï¿½Ö·', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {
     const [A, B] = h.nodes;
     await groupUp(A, B);
-    // Ä£Äâ A »»ÁË¶ÔÍâµØÖ·£¨host/port ±ä»¯ºóÖØÐÂÉÏÏß£©
+    // Ä£ï¿½ï¿½ A ï¿½ï¿½ï¿½Ë¶ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½host/port ï¿½ä»¯ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß£ï¿½
     A.identity.host = '10.9.9.9';
     A.identity.port = 45678;
     const moved = await A.announceIfMoved();
@@ -276,13 +276,13 @@ test('ÈºÖ÷»»µØÖ·£ºrenameGroup Ç©Ãû¹ã²¥ºó£¬³ÉÔ±°ÑÈºÖ÷Ö¸µ½ÐÂµØÖ·', async () => {
     assert.equal(hubInB.port, 45678);
     assert.equal(B.store.getGroup().name, `${A.pub.username}@10.9.9.9:45678`);
     assert.equal(B.store.getGroup().hubId, A.pub.machineId);
-    // µØÖ·Ã»±äÊ±²»×öÎÞÎ½¹ã²¥
+    // ï¿½ï¿½Ö·Ã»ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î½ï¿½ã²¥
     const again = await A.announceIfMoved();
     assert.equal(again.unchanged, true);
   } finally { await h.stop(); }
 });
 
-test('ÈºÖ÷»»ÐÂ£º¾ÉÈºÖ÷Ç©Ãû¸æÖªÐÂ hubId£¬³ÉÔ±¸úËæ¸ü»»ÈºÖ÷', async () => {
+test('Èºï¿½ï¿½ï¿½ï¿½ï¿½Â£ï¿½ï¿½ï¿½Èºï¿½ï¿½Ç©ï¿½ï¿½ï¿½ï¿½Öªï¿½ï¿½ hubIdï¿½ï¿½ï¿½ï¿½Ô±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Èºï¿½ï¿½', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {
     const [A, B] = h.nodes;
@@ -294,14 +294,14 @@ test('ÈºÖ÷»»ÐÂ£º¾ÉÈºÖ÷Ç©Ãû¸æÖªÐÂ hubId£¬³ÉÔ±¸úËæ¸ü»»ÈºÖ÷', async () => {
   } finally { await h.stop(); }
 });
 
-test('ÈºÖ÷»»µØÖ·£º¼´Ê¹ÈºÃûÃ»±ä£¬ÈºÖ÷ÄÇÌõ¼ÇÂ¼µÄ host/port ±äÁËÒ²»á×Ô¶¯¹ã²¥', async () => {
+test('Èºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½Ê¹Èºï¿½ï¿½Ã»ï¿½ä£¬Èºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ host/port ï¿½ï¿½ï¿½ï¿½Ò²ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ã²¥', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {
     const [A, B] = h.nodes;
     await groupUp(A, B);
     const g = A.store.getGroup();
     const hub = g.members.find((m) => m.machineId === A.pub.machineId);
-    hub.port = 1111;                       // ÖÆÔì¡¸±¾µØ¼ÇÂ¼³Â¾É¡¹µ«ÈºÃûÇ¡ºÃµÈÓÚµ±Ç° ÓÃ»§Ãû@host:port
+    hub.port = 1111;                       // ï¿½ï¿½ï¿½ì¡¸ï¿½ï¿½ï¿½Ø¼ï¿½Â¼ï¿½Â¾É¡ï¿½ï¿½ï¿½Èºï¿½ï¿½Ç¡ï¿½Ãµï¿½ï¿½Úµï¿½Ç° ï¿½Ã»ï¿½ï¿½ï¿½@host:port
     g.name = `${A.pub.username}@${A.pub.host}:${A.pub.port}`;
     A.store.upsertGroup(g);
 

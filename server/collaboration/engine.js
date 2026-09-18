@@ -20,6 +20,7 @@ import { nextVersion } from './sync-seed.js';
 import { createDownloadStore } from '../download-store.js';
 import { createSyncStore } from '../sync-store.js';
 import { t } from '../i18n.js';
+import { agentSkillsDir, listAgentOptions, resolveSkillRoot } from './agent-skills.js';
 
 // 递归收集目录内文件（跳过隐藏/.git）
 function collectTree(dir, rel, out) {
@@ -47,7 +48,7 @@ export function profileLabel(p) {
 
 // events 注入（便于 web 层广播到浏览器 /ws）；peer 注入（真实 HTTP 或测试直连）
 export class CollabEngine {
-  constructor({ store, identity, events = null, peer = null, peers = null, seedStore = null, collabDb = null, taskStore = null, downloadStore = null, syncStore = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null }) {
+  constructor({ store, identity, events = null, peer = null, peers = null, seedStore = null, collabDb = null, taskStore = null, downloadStore = null, syncStore = null, skillsRoot = null, inboxDir = null, uploadDir = null, downloadDir = null, downloadsDir = null, runner = null, logger = console, getWorkflows = null, mergeWorkflows = null, getAgents = null }) {
     this.store = store;
     this.identity = identity;      // { machineId, username, host, port, publicKey, privateKey }
     this.peers = peers;            // 用量上报库（master 侧），见 server/usage-peers.js
@@ -65,23 +66,53 @@ export class CollabEngine {
     this.runner = runner || createOpenCodeRunner();
     this.getWorkflows = typeof getWorkflows === 'function' ? getWorkflows : null;
     this.mergeWorkflows = typeof mergeWorkflows === 'function' ? mergeWorkflows : null;
+    this.getAgents = typeof getAgents === 'function' ? getAgents : null;   // 返回 { default, list }
     this.log = logger;
     _extendChat(this);
   }
   get pub() { return toPublicProfile(this.identity); }
 
-  // 本机选定的开发工具 → 技能根目录（分发打包源 & 安装目标），默认 opencode
-  skillRoot() {
-    const t = this.store.getTool();
-    if (t.kind === 'custom' && t.customRoot) return path.resolve(t.customRoot);
-    if (t.kind === 'claudecode') return path.join(os.homedir(), '.claude', 'skills');
-    return this.skillDefaultRoot;
+  // 当前生效的工具选择（未选择时兜底 devflow 默认 agent）
+  effectiveTool() {
+    const tool = this.store.getTool() || {};
+    const cfg = this.getAgents ? this.getAgents() : null;
+    return { agentId: tool.agentId || cfg?.default || 'opencode', customRoot: tool.customRoot || null };
   }
-  getToolInfo() { return { tool: this.store.getTool(), root: this.skillRoot() }; }
-  setTool(kind, customRoot) {
-    const k = kind === 'claudecode' || kind === 'custom' ? kind : 'opencode';
-    if (k === 'custom' && !(customRoot && typeof customRoot === 'string' && customRoot.trim())) return { code: 'need-custom-root' };
-    this.store.setTool({ kind: k, customRoot: k === 'custom' ? customRoot.trim() : null });
+  // 本机选定的 agent → 技能根目录（分发打包源 & 安装目标）
+  skillRoot() {
+    const cfg = this.getAgents ? this.getAgents() : null;
+    const tool = this.effectiveTool();
+    return resolveSkillRoot({
+      selected: tool.agentId,
+      customRoot: tool.customRoot,
+      agents: cfg?.list || [],
+      defaultSkillsRoot: this.skillDefaultRoot,
+    });
+  }
+  getToolInfo() {
+    const cfg = this.getAgents ? this.getAgents() : null;
+    const tool = this.effectiveTool();
+    return {
+      tool,
+      root: this.skillRoot(),
+      selected: tool.agentId,
+      agents: listAgentOptions({ agents: cfg?.list || [], selected: tool.agentId }),
+    };
+  }
+  setTool({ agentId, customRoot } = {}) {
+    const cfg = this.getAgents ? this.getAgents() : null;
+    const list = cfg?.list || [];
+    if (agentId === 'custom') {
+      const root = customRoot && String(customRoot).trim();
+      if (!root) return { code: 'need-custom-root' };
+      this.store.setTool({ agentId: 'custom', customRoot: root });
+      this._emit('synced', {});
+      return { code: 'ok', ...this.getToolInfo() };
+    }
+    const agent = list.find((a) => a.id === agentId);
+    if (!agent) return { code: 'unknown-agent' };
+    if (!agentSkillsDir(agent)) return { code: 'agent-unavailable' };
+    this.store.setTool({ agentId, customRoot: null });
     this._emit('synced', {});
     return { code: 'ok', ...this.getToolInfo() };
   }

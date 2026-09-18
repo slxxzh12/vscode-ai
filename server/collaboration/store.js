@@ -12,7 +12,7 @@ export function defaultData() {
     skillsInbox: [],     // { id, kind:'skill'|'file', fromId, groupId|null, skillName|null, fileName|null, hash, size, zipPath, status, receivedAt }
     groupSkills: [],     // { groupId, skillName, hash, distributedBy, installed }
     outbox: [],          // 我发出的传输记录 { id, kind, groupId, skillName|null, fileName|null, size, hash, createdAt }
-    tool: { kind: 'opencode', customRoot: null },  // 我的开发工具：opencode | claudecode | custom(customRoot)
+    tool: null,          // 我的开发工具：{ agentId: '<agent id>' | 'custom', customRoot }
     chatSeq: 0,          // 本机全局单调消息序号
     chatMessages: [],    // { id, groupId, kind, fromId, text, toId, meta, ts, seq }
     pendingCmds: [],     // { id(reqId), groupId, fromId, text, receivedAt }
@@ -42,6 +42,10 @@ export class CollabStore {
           if (!g.hubId && g.ownerId) g.hubId = g.ownerId;
           delete g.ownerId;
           for (const m of g.members || []) if (m && typeof m === 'object') delete m.role;
+        }
+        // 旧结构 tool.kind → tool.agentId（幂等）
+        if (data.tool && typeof data.tool === 'object' && data.tool.agentId === undefined && data.tool.kind !== undefined) {
+          data.tool = { agentId: data.tool.kind, customRoot: data.tool.customRoot || null };
         }
         return data;
       } catch (e) { this.log?.warn?.('store corrupt, reset', e.message); }
@@ -107,9 +111,9 @@ export class CollabStore {
   }
   removeOutbox(id) { this.data.outbox = this.data.outbox.filter((x) => x.id !== id); this.save(); }
 
-  // 我的开发工具
-  getTool() { return this.data.tool || { kind: 'opencode', customRoot: null }; }
-  setTool(tool) { this.data.tool = { kind: 'opencode', customRoot: null, ...tool }; this.save(); return this.data.tool; }
+  // 我的开发工具（未选择返回 null，由 engine 兜底默认 agent）
+  getTool() { return this.data.tool || null; }
+  setTool(tool) { this.data.tool = { agentId: 'opencode', customRoot: null, ...tool }; this.save(); return this.data.tool; }
 
   // group skills
   listGroupSkills(groupId = null) {

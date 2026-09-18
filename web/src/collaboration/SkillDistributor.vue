@@ -18,6 +18,32 @@ const msg = ref('');
 const msgErr = ref('');
 const working = ref(false);
 const toolRoot = ref('');
+type AgentOption = { id: string; name: string; cmd: string; skillsDir: string | null; exists: boolean; selectable: boolean; selected: boolean };
+type ToolInfo = { root: string; selected: string; tool: { agentId: string; customRoot: string | null }; agents: AgentOption[] };
+const agents = ref<AgentOption[]>([]);
+const selectedAgent = ref('');
+const customRoot = ref('');
+function applyToolInfo(info: ToolInfo) {
+  toolRoot.value = info.root || '';
+  selectedAgent.value = info.selected || info.tool?.agentId || '';
+  customRoot.value = info.tool?.customRoot || '';
+  agents.value = info.agents || [];
+}
+async function selectAgent(id: string) {
+  msg.value = ''; msgErr.value = '';
+  if (id === 'custom' && !customRoot.value.trim()) { selectedAgent.value = 'custom'; return; }
+  try {
+    const info = await props.collab.setTool(id, id === 'custom' ? customRoot.value : null);
+    applyToolInfo(info);
+    checked.value = {};
+    await loadAssets();
+  } catch (e: any) { msgErr.value = String(e?.message || e); }
+}
+function onCustomChange(e: Event) { customRoot.value = (e.target as HTMLInputElement).value; }
+async function applyCustomRoot() {
+  if (selectedAgent.value !== 'custom') return;
+  await selectAgent('custom');
+}
 const seedVersion = ref(0);
 type Kind = 'skills' | 'command' | 'agent' | 'workflow';
 const keyOf = (k: Kind, n: string) => `${k}:${n}`;
@@ -42,12 +68,12 @@ const pkg = ref<{ id: string; fileName: string; size: number } | null>(null);
 const sent = ref(false);
 
 onMounted(async () => {
-  props.collab.getTool().then((info) => { toolRoot.value = info.root; }).catch(() => {});
+  props.collab.getTool().then((info) => applyToolInfo(info)).catch(() => {});
   props.collab.getWorkflowSeed().then((s) => { seedVersion.value = s.version || 0; }).catch(() => {});
   loadAssets();
 });
 // 记住上一次勾选：每次弹出默认带出（按群 + 入口分别存）
-const storeKey = computed(() => `collab-dist-${props.groupId}-${focus.value}`);
+const storeKey = computed(() => `collab-dist-${props.groupId}-${focus.value}-${selectedAgent.value}`);
 function loadChecked() {
   try {
     const raw = localStorage.getItem(storeKey.value);
@@ -113,7 +139,21 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
       <span class="htitle">{{ $t('collab.dist.title') }} <span class="gn">{{ group?.name || '' }}</span></span>
       <button class="mini" @click="toggleAll(selectedCount !== totalCount)">{{ selectedCount === totalCount ? $t('collab.dist.none') : $t('collab.dist.all') }}</button>
     </div>
-    <div v-if="toolRoot" class="root" :title="toolRoot">{{ $t('collab.dist.skill_root') }}<code>{{ toolRoot }}</code>{{ $t('collab.dist.skill_root_hint') }}</div>
+    <div v-if="agents.length" class="agents">
+      <div class="sec">{{ $t('collab.dist.agent_selector') }}</div>
+      <label v-for="a in agents" :key="a.id" class="agent" :class="{ off: !a.selectable }">
+        <input type="radio" name="dist-agent" :value="a.id" :checked="selectedAgent === a.id" :disabled="!a.selectable" @change="selectAgent(a.id)" />
+        <span class="anm">{{ a.name }}</span>
+        <code class="apath" :title="a.skillsDir || ''">{{ a.skillsDir || $t('collab.dist.agent_unavailable') }}</code>
+        <span v-if="a.skillsDir && !a.exists" class="amiss">{{ $t('collab.dist.agent_missing') }}</span>
+      </label>
+      <label class="agent">
+        <input type="radio" name="dist-agent" value="custom" :checked="selectedAgent === 'custom'" @change="selectAgent('custom')" />
+        <span class="anm">{{ $t('collab.dist.agent_custom') }}</span>
+        <input class="cinput" :value="customRoot" :placeholder="$t('collab.dist.custom_root_ph')" @change="onCustomChange" @blur="applyCustomRoot" />
+      </label>
+    </div>
+    <div v-if="toolRoot" class="root" :title="toolRoot">{{ toolRoot }}</div>
     <div class="root">{{ $t('collab.seed.version', { version: seedVersion }) }}</div>
 
     <div class="skilllist">
@@ -190,4 +230,11 @@ function fmtSize(n: number) { return n > 1024 * 1024 ? `${(n / 1024 / 1024).toFi
 .pkgname { color: var(--tx2); font-family: Consolas, monospace; font-size: 11px; }
 .ok { color: var(--ok); font-size: 12px; }
 .err { color: var(--err); font-size: 12px; }
+.agents { flex: none; padding: 0 12px 6px; border-top: 1px solid var(--bd2); }
+.agent { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; cursor: pointer; }
+.agent.off { opacity: .5; cursor: default; }
+.anm { flex: none; color: var(--tx); font-weight: 600; min-width: 84px; }
+.apath { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tx3); }
+.amiss { flex: none; color: var(--err); }
+.cinput { flex: 1 1 auto; min-width: 0; background: var(--bg2); border: 1px solid var(--bd); color: var(--tx); border-radius: 4px; padding: 2px 6px; font-size: 12px; }
 </style>
