@@ -1274,11 +1274,11 @@ onBeforeUnmount(() => {
 .csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 16px; font-weight: 700; flex: none; min-width: 156px; }
 .cagentacts { display: flex; flex-direction: column; gap: 6px; flex: none; min-width: 84px; }
 .cact { flex: 1; min-height: 0; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 10px; padding: 0 10px; cursor: pointer; font-size: 12px; font-weight: 700; }
-.cact.compact { flex: 30; border-color: var(--ok); color: var(--ok); }
+.cact.compact { flex: 50; border-color: var(--ok); color: var(--ok); }
 .cact.compact:hover { background: color-mix(in srgb, var(--ok) 18%, transparent); }
-.cact.cancel { flex: 35; border-color: var(--err); color: var(--err); }
+.cact.cancel { flex: 30; border-color: var(--err); color: var(--err); }
 .cact.cancel:hover { background: color-mix(in srgb, var(--err) 18%, transparent); }
-.cact.endtask { flex: 35; }
+.cact.endtask { flex: 20; }
 .cact.endtask:hover { background: color-mix(in srgb, var(--tx1) 12%, transparent); }
 /* 手机页：工作流/提示条改为单行横向滚动，保证输入框与发送按钮始终有高度、不被挤出 */
 .composer.phone { padding: 0 8px 8px; gap: 4px; }
