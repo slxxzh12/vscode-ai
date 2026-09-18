@@ -7,6 +7,7 @@ import {
   parseDevflowConfig, serializeDevflowConfig,
   loadDevflowConfig, ensureConfigFile, updateServerAttrs, buildDefaultConfig,
   validateWorkflows, updateWorkflows, resolveActiveConfigFile,
+  updateAgentsDefault, setDefaultAgent,
 } from '../devflow-config.js';
 import { createWorkflowSeedStore } from '../workflow-seed.js';
 
@@ -187,4 +188,41 @@ test('parse/serialize 支持 agent skillsDir 属性', () => {
 test('serialize 未配置 skillsDir 时不输出该属性', () => {
   const out = serializeDevflowConfig(buildDefaultConfig());
   assert.doesNotMatch(out, /skillsDir=/);
+});
+
+test('parseDevflowConfig 解析 agents chosen（缺省 false / chosen="1" 为 true）', () => {
+  assert.equal(parseDevflowConfig(SAMPLE).agents.chosen, false);
+  const c = parseDevflowConfig('<devflow><agents default="opencode" chosen="1"><agent id="opencode" name="OpenCode" cmd="opencode" /></agents></devflow>');
+  assert.equal(c.agents.chosen, true);
+});
+
+test('serializeDevflowConfig 仅 chosen=true 时输出 chosen 属性', () => {
+  assert.doesNotMatch(serializeDevflowConfig(buildDefaultConfig()), /chosen=/);
+  const cfg = buildDefaultConfig();
+  const out = serializeDevflowConfig({ ...cfg, agents: { default: 'opencode', list: cfg.agents.list, chosen: true } });
+  assert.match(out, /<agents default="opencode" chosen="1">/);
+  assert.equal(parseDevflowConfig(out).agents.chosen, true);
+});
+
+test('updateAgentsDefault 改写 default/chosen 且保留其余内容', () => {
+  const f = tmpFile();
+  fs.writeFileSync(f, SAMPLE, 'utf8');
+  const r = updateAgentsDefault(f, 'opencode');
+  assert.deepEqual(r, { default: 'opencode', chosen: true });
+  const xml = fs.readFileSync(f, 'utf8');
+  assert.match(xml, /<agents default="opencode" chosen="1">/);
+  assert.ok(xml.includes('<!-- keep me -->'), '注释保留');
+  assert.ok(xml.includes('<workflow id="dev"'), '工作流保留');
+  const c = parseDevflowConfig(xml);
+  assert.equal(c.agents.default, 'opencode');
+  assert.equal(c.agents.chosen, true);
+  assert.deepEqual(c.agents.list.map((a) => a.id), ['opencode', 'nga'], 'agent 列表保留');
+});
+
+test('setDefaultAgent 校验未知 id 抛 bad-agent，合法则写盘', () => {
+  const f = tmpFile();
+  fs.writeFileSync(f, SAMPLE, 'utf8');
+  assert.equal(setDefaultAgent(f, 'nga').default, 'nga');
+  assert.equal(parseDevflowConfig(fs.readFileSync(f, 'utf8')).agents.chosen, true);
+  assert.throws(() => setDefaultAgent(f, 'nope'), (e) => e.code === 'bad-agent');
 });

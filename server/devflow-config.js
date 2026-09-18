@@ -29,7 +29,7 @@ function escXml(s) {
 export function buildDefaultConfig() {
   return {
     server: { language: DEFAULT_LOCALE, host: '127.0.0.1' },
-    agents: { default: DEFAULT_AGENT, list: DEFAULT_AGENTS.map((a) => ({ ...a })) },
+    agents: { default: DEFAULT_AGENT, list: DEFAULT_AGENTS.map((a) => ({ ...a })), chosen: false },
     workflows: fallbackWorkflows(),
   };
 }
@@ -44,6 +44,7 @@ export function parseDevflowConfig(xml) {
 
   let list = defaults.agents.list;
   let defAgent = defaults.agents.default;
+  let chosen = false;
   const agentsTag = text.match(/<agents\b([^>]*)>([\s\S]*?)<\/agents>/i);
   if (agentsTag) {
     const found = [];
@@ -68,12 +69,13 @@ export function parseDevflowConfig(xml) {
     if (found.length) list = found;
     const d = decode(attr(agentsTag[1], 'default'));
     defAgent = (d && list.some((a) => a.id === d)) ? d : list[0].id;
+    chosen = attr(agentsTag[1], 'chosen') === '1';
   }
 
   const workflows = parseWorkflowXml(text);
   return {
     server: { language, host },
-    agents: { default: defAgent, list },
+    agents: { default: defAgent, list, chosen },
     workflows: workflows.length ? workflows : fallbackWorkflows(),
   };
 }
@@ -95,7 +97,7 @@ export function serializeDevflowConfig(cfg) {
 <devflow>
   <server language="${escXml(cfg.server.language)}" host="${escXml(cfg.server.host || '127.0.0.1')}" />
 
-  <agents default="${escXml(cfg.agents.default)}">
+  <agents default="${escXml(cfg.agents.default)}"${cfg.agents.chosen ? ' chosen="1"' : ''}>
 ${agents}
   </agents>
 
@@ -148,6 +150,34 @@ export function updateServerAttrs(file, patch = {}) {
   else xml = xml.replace(/<devflow(\s*)>/i, `<devflow$1>\n  ${tag}`);
   fs.writeFileSync(file, xml, 'utf8');
   return { language, host };
+}
+
+// 改写 <agents> 开标签的 default 与 chosen="1"，保留其余内容（含注释/工作流）
+export function updateAgentsDefault(file, id) {
+  ensureConfigFile(file);
+  let xml = fs.readFileSync(file, 'utf8');
+  const m = xml.match(/<agents\b([^>]*?)>/i);
+  const cur = m ? m[1] : '';
+  const rest = cur
+    .replace(/\s*default\s*=\s*"[^"]*"/i, '')
+    .replace(/\s*chosen\s*=\s*"[^"]*"/i, '')
+    .trim();
+  const tag = `<agents${rest ? ` ${rest}` : ''} default="${escXml(String(id))}" chosen="1">`;
+  if (m) xml = xml.slice(0, m.index) + tag + xml.slice(m.index + m[0].length);
+  fs.writeFileSync(file, xml, 'utf8');
+  return { default: String(id), chosen: true };
+}
+
+// 校验 id 存在于当前 agent 列表后写盘；未知 id 抛 code='bad-agent'
+export function setDefaultAgent(file, id) {
+  const cfg = loadDevflowConfig(file);
+  const target = String(id || '');
+  if (!(cfg.agents.list || []).some((a) => a.id === target)) {
+    const e = new Error('bad-agent');
+    e.code = 'bad-agent';
+    throw e;
+  }
+  return updateAgentsDefault(file, target);
 }
 
 // 校验一份工作流定义（workflow → stages → prompts）
