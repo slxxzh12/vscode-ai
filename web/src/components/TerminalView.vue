@@ -19,6 +19,8 @@ import { useEnglishComposer } from '../useEnglishComposer';
 import { captureToPngDataUrl } from '../snapshot';
 import { pickRestoredAgent, restoredAgentIds } from '../sessionRestore';
 import { copyText } from '../clipboard';
+import { MAX_RESTORE_TABS, restoreTabs, setRestoreTabs } from '../restorePrefs';
+import { isAgentSession, phoneHintKey } from '../remote-coder/phoneMode';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -26,6 +28,8 @@ const props = defineProps<{
   projectId: string | null;
   detailToken?: number;
   detailPath?: string;
+  visibleSessionIds?: string[] | null;   // 非 null 时只自动建这些会话的页签（刷新恢复最近 N 个）
+  phone?: boolean;                       // 手机页（/?phone=1）：不自动建会话、无会话显示空态
 }>();
 const { theme, isDark } = useTheme();
 
@@ -57,8 +61,15 @@ function loadAgentSids() {
 }
 const activeIsAgent = computed(() => {
   const sid = props.terminal.state.activeSessionId;
-  return !!sid && agentSids.value.has(sid);
+  if (!sid) return false;
+  // 手机端 localStorage 没有 agentSids：按会话自身 kind/agentId 判定，保证工作流面板能显示
+  if (props.phone) return isAgentSession(props.terminal.state.sessions.find((s) => s.id === sid) || null);
+  return agentSids.value.has(sid);
 });
+// 手机模式：未选会话时的空态提示词条（桌面模式恒为 null）
+const phoneHint = computed(() => (props.phone
+  ? phoneHintKey({ sessions: props.terminal.state.sessions, activeSessionId: props.terminal.state.activeSessionId })
+  : null));
 const composerCollapsed = computed(() => composerMin.value);
 
 function sessionState(id: string) {
@@ -178,6 +189,9 @@ const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent 
 const settingsOpen = ref(false);
 const editorOpen = ref(false);
 const settingsTab = ref<'general' | 'about'>('general');
+// 刷新后恢复的页签数（设置面板即时生效，存 localStorage）
+const restoreTabsCount = ref(restoreTabs.value);
+function saveRestoreTabsCount() { restoreTabsCount.value = setRestoreTabs(restoreTabsCount.value); }
 const { version: appVersion } = useVersion();
 const serverPort = ref<number | null>(null);
 const loadedPort = ref<number | null>(null);
@@ -392,6 +406,18 @@ function sendAgentText(text: string) {
     props.terminal.input('\r');
   }, 150);
 }
+// 手机模式：把当前选中的 Agent 会话绑定为「固定会话」，复用现有发送/工作流逻辑，且绝不新建会话
+watch(() => props.terminal.state.activeSessionId, (sid) => {
+  if (!props.phone) return;
+  if (!sid) { agentSid.value = null; return; }
+  const s = props.terminal.state.sessions.find((x) => x.id === sid) || null;
+  if (!isAgentSession(s)) { agentSid.value = null; return; }
+  agentSid.value = sid;
+  agentProjectId.value = s?.projectId ?? null;
+  agentAtStart.value = s?.agentId || agentId.value;
+  agentStarted.value = true;
+  agentCliReady.value = true;   // 会话里 CLI 已在运行，手机端不再注入启动命令
+}, { immediate: true });
 
 // 工作流定义来自 config/workflow.xml（GET /api/workflows-xml）；下面为兜底
 interface StageDef { id: string; label: string; prompts: string[]; group?: string; }
@@ -407,8 +433,8 @@ function buildFallbackWf(): WfDef[] {
         { id: 'code', label: t('termwf.code.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.code.prompt')] },
         { id: 'optimize', label: t('termwf.optimize.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.optimize.prompt')] },
         { id: 'test', label: t('termwf.test.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.test.prompt')] },
-        { id: 'push-merge', label: t('termwf.push.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.push.prompt'), t('termwf.push.compact')] },
-        { id: 'package', label: t('termwf.package.label'), group: t('termwf.group.ops'), prompts: [t('termwf.package.prompt'), t('termwf.package.compact')] },
+        { id: 'push-merge', label: t('termwf.push.label'), group: t('termwf.group.delivery'), prompts: [t('termwf.push.prompt')] },
+        { id: 'package', label: t('termwf.package.label'), group: t('termwf.group.ops'), prompts: [t('termwf.package.prompt')] },
         { id: 'deploy', label: t('termwf.deploy.label'), group: t('termwf.group.ops'), prompts: [t('termwf.deploy.prompt')] },
         { id: 'troubleshoot', label: t('termwf.troubleshoot.label'), group: t('termwf.group.ops'), prompts: [t('termwf.troubleshoot.prompt')] },
       ],
@@ -494,8 +520,8 @@ async function pickFileForPrompt() {
 // —— 英文翻译模式的翻译/倒计时/自动发送逻辑见 useEnglishComposer ——
 
 // 底部框高度（可上下拖动）+ 最小化
-const COMPOSER_H_KEY = 'devflow-composer-h';
-const composerH = ref(240);
+const COMPOSER_H_KEY = props.phone ? 'devflow-composer-h-phone' : 'devflow-composer-h';
+const composerH = ref(props.phone ? 150 : 240);
 const composerMin = ref(true);
 function loadComposerH() {
   try {
@@ -518,9 +544,7 @@ function onComposerDragDown(e: MouseEvent) {
   document.addEventListener('mouseup', up);
 }
 // 当前是 Agent 会话才默认展开；其他（含未选中）默认最小化；用户仍可手动折叠/展开
-watch([() => props.terminal.state.activeSessionId, agentSids], ([sid]) => {
-  composerMin.value = !(sid && agentSids.value.has(sid));
-});
+watch(activeIsAgent, (v) => { composerMin.value = !v; });
 
 const curWf = computed<WfDef>(() => wfDefs.value.find((w) => w.id === wfKind.value) || wfDefs.value[0] || buildFallbackWf()[0]);
 const STAGES = computed(() => curWf.value.stages);
@@ -591,7 +615,7 @@ function sendToActive(text: string) {
   const t = text.trim();
   if (!t) return;
   const sid = props.terminal.state.activeSessionId;
-  if (!sid) { sendToAgent(t); return; }   // 没有任何会话时回退：启动 Agent 会话再发送
+  if (!sid) { if (props.phone) return; sendToAgent(t); return; }   // 手机模式没有选中会话就不发；桌面回退：启动 Agent 会话再发送
   props.terminal.input(t);
   setTimeout(() => {
     if (props.terminal.state.activeSessionId !== sid) return;
@@ -679,8 +703,9 @@ async function onWfChange() {
 async function runWorkflow() {
   const cmd = wfCmds.value[wfKind.value] || '';
   if (!cmd) return;
-  // Agent 变更时先重启固定会话
-  if (agentSid.value && agentActive() && agentAtStart.value !== agentId.value) {
+  if (props.phone && !(agentSid.value && agentActive())) return;   // 手机模式只往已选会话发，不新建
+  // Agent 变更时先重启固定会话（手机模式不重启主机会话）
+  if (!props.phone && agentSid.value && agentActive() && agentAtStart.value !== agentId.value) {
     props.terminal.killSession(agentSid.value);
     agentSid.value = null;
     agentCliReady.value = false;
@@ -726,6 +751,7 @@ function init() {
   });
   const dims = () => { const d = fit?.proposeDimensions(); return { cols: d?.cols || 80, rows: d?.rows || 24 }; };
   unsubList = props.terminal.on(S2C.SESSION_LIST, () => {
+    if (props.phone) return;   // 手机模式：不自动 adopt/新建会话，交给用户点页签
     if (autoTried || props.terminal.state.activeSessionId) return;
     autoTried = true;
     const adopted = pickRestoredAgent(props.terminal.state.sessions);
@@ -755,10 +781,16 @@ function init() {
   });
 }
 
+// 刷新恢复：只给「最近点击的 N 个」会话自动建页签；其余会话仍由历史面板按需打开。
+// null = 无历史，不限制。当前活动会话始终建页签（新建/历史打开时由 activeSessionId watcher 兜底）。
+const visibleSessionSet = computed(() => (props.visibleSessionIds == null ? null : new Set(props.visibleSessionIds)));
 // 会话列表 → 统一页签栏同步（保证顺序：会话在前，文件在后）
 const knownSessions = ref<string[]>([]);
 watch(() => props.terminal.state.sessions.map((s) => s.id), (ids) => {
+  const visible = visibleSessionSet.value;
+  const active = props.terminal.state.activeSessionId;
   for (const id of ids) {
+    if (visible && !visible.has(id) && id !== active) continue;
     props.center.ensureSession(id, tabLabel(id), sessionState(id));
   }
   for (const old of knownSessions.value) if (!ids.includes(old)) props.center.removeSession(old);
@@ -768,15 +800,22 @@ watch(() => props.terminal.state.sessions.map((s) => s.id), (ids) => {
 
 // 页签自定义名加载/变更后，刷新已存在会话页签的显示名（覆盖加载时序差异）
 watch(tabNames, () => {
+  const visible = visibleSessionSet.value;
+  const active = props.terminal.state.activeSessionId;
   for (const s of props.terminal.state.sessions) {
+    if (visible && !visible.has(s.id) && s.id !== active) continue;
     props.center.ensureSession(s.id, tabLabel(s.id), s.state || 'running');
   }
 }, { deep: true });
 
-// 激活会话变化 → 中心激活对应会话页签（新建/切换时回到终端视图）
+// 激活会话变化 → 中心激活对应会话页签（新建/切换/历史打开时回到终端视图）
+// 先 ensureSession 保证被 visibleSessionIds 过滤掉的会话也能拿到正确标题的页签
 watch(() => props.terminal.state.activeSessionId, (id) => {
   resetAutoCompact();
-  if (id) props.center.activateSession(id);
+  if (id) {
+    props.center.ensureSession(id, tabLabel(id), sessionState(id));
+    props.center.activateSession(id);
+  }
 });
 // 从文件视图切回终端时重排尺寸
 watch(isSessionView, (v) => { if (v) requestAnimationFrame(() => onResize()); });
@@ -923,6 +962,14 @@ onBeforeUnmount(() => {
               <span>{{ $t('term.auto_compact_hint') }}</span>
             </label>
           </div>
+          <div class="setsec">
+            <div class="settitle">{{ $t('term.restore_tabs') }}</div>
+            <div class="cfgrow">
+              <span>{{ $t('term.restore_tabs_label') }}</span>
+              <input v-model.number="restoreTabsCount" type="number" min="1" :max="MAX_RESTORE_TABS" @change="saveRestoreTabsCount" />
+            </div>
+            <div class="cfghint">{{ $t('term.restore_tabs_hint') }}</div>
+          </div>
           </template>
           <template v-else>
             <div class="setsec">
@@ -977,11 +1024,15 @@ onBeforeUnmount(() => {
         <span v-else class="nm" :title="t.kind === 'file' ? t.path : (t.label + ' — ' + $t('term.tab_rename'))">{{ t.label }}</span>
         <span v-if="t.id !== 's:' + agentSid" class="x" @click="onTabClose(t.id, $event)" @dblclick.stop>×</span>
       </div>
-      <button class="new" @click="openNew">{{ $t('term.new_session_btn') }}</button>
+      <button v-if="!phone" class="new" @click="openNew">{{ $t('term.new_session_btn') }}</button>
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
     </div>
 
-    <div v-show="isSessionView" class="term-layer" ref="hostRef" />
+    <div v-show="isSessionView" class="term-wrap">
+      <div class="term-layer" ref="hostRef" />
+      <div v-if="phoneHint" class="phone-empty">{{ $t(phoneHint) }}</div>
+      <button class="copyfloat" :disabled="!hasSelection" :title="$t('term.copy_sel')" @mousedown.stop @click="copySel">{{ copiedSel ? $t('term.copied') : $t('term.copy_sel') }}</button>
+    </div>
     <div v-show="!isSessionView" class="file-layer">
       <FilePreview v-if="activeFile && activeFile.projectId && activeFile.path"
         :key="activeFile.id" :project-id="activeFile.projectId" :path="activeFile.path" :name="activeFile.label"
@@ -1044,8 +1095,7 @@ onBeforeUnmount(() => {
               <button class="cbtn" :disabled="!composerText && !translatedText && !activeStage" :title="$t('term.clear_prompt')" @mousedown.stop @click="clearPrompt">{{ $t('term.clear_prompt') }}</button>
               <button v-if="translateMode" class="cbtn" :disabled="translating || !composerText.trim()" :title="$t('term.translate')" @mousedown.stop @click="translateNow">{{ translating ? $t('term.translating') : $t('term.translate') }}</button>
               <button class="cbtn" :class="{ on: translateMode }" :title="$t('term.translate_toggle')" @mousedown.stop @click="toggleTranslate">{{ $t('term.translate_toggle') }}</button>
-              <button class="cbtn" :disabled="!hasSelection" :title="$t('term.copy_sel')" @mousedown.stop @click="copySel">{{ copiedSel ? $t('term.copied') : $t('term.copy_sel') }}</button>
-              <button class="cbtn" :title="$t('term.history')" @mousedown.stop @click="openHistory">{{ $t('term.history') }}</button>
+              <button v-if="!phone" class="cbtn" :title="$t('term.history')" @mousedown.stop @click="openHistory">{{ $t('term.history') }}</button>
             </div>
           </div>
           <div v-if="translateMode" class="cinputwrap">
@@ -1063,11 +1113,11 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="countdown !== null" class="cprog" :style="{ width: ((countdown ?? 0) / 3) * 100 + '%' }" />
           </div>
-          <button class="csend" @click="onSendClick">{{ countdown !== null ? $t('term.send_countdown', { n: countdown }) : $t('common.send') }}</button>
           <div v-if="activeIsAgent" class="cagentacts">
             <button class="cact compact" :title="$t('term.compact_hint')" @click="compactContext">{{ $t('term.compact') }}</button>
-            <button class="cact cancel" :title="$t('term.undo_hint')" @click="undoContext">{{ $t('common.cancel') }}</button>
+            <button class="cact cancel" :title="$t('term.undo_hint')" @click="undoContext">{{ $t('term.cancel_exec') }}</button>
           </div>
+          <button class="csend" @click="onSendClick">{{ countdown !== null ? $t('term.send_countdown', { n: countdown }) : $t('common.send') }}</button>
         </div>
       </template>
     </div>
@@ -1124,14 +1174,14 @@ onBeforeUnmount(() => {
 .chipbar { display: flex; align-items: flex-start; gap: 6px; flex: none; }
 .chipstage { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: 1; min-width: 0; max-height: 84px; overflow-y: auto; }
 .chipextra { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; flex: none; }
-.chipextra .chip { padding: 2px 9px; gap: 4px; }
+.chipextra .chip { padding: 2px 19px; gap: 4px; min-width: 44px; justify-content: center; }
 .chips-label { color: var(--tx3); font-size: 11px; flex: none; margin-right: 2px; line-height: 20px; }
 .chip { display: inline-flex; align-items: flex-start; gap: 5px; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 12px; padding: 2px 10px; cursor: pointer; font-size: 11px; line-height: 16px; text-align: left; white-space: normal; max-width: 100%; }
 .chip:hover { border-color: var(--ac2); color: var(--ac2); }
 .chip.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .cdot { width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: var(--ac2); flex: none; }
 .chip.on .cdot { background: var(--onac); }
-.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 30px 210px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
+.cinput { flex: 1; min-width: 0; height: 100%; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx); border-radius: 10px; padding: 30px 180px 10px 14px; font-size: 13px; line-height: 1.6; outline: none; resize: none; font-family: inherit; }
 .cinput:focus { border-color: var(--ac2); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac2) 22%, transparent); }
 .cinput::placeholder { color: var(--tx3); }
 .csend { background: var(--window-ac, var(--ac)); color: var(--onac); border: none; border-radius: 10px; padding: 0 28px; cursor: pointer; font-size: 16px; font-weight: 700; flex: none; min-width: 156px; }
@@ -1208,6 +1258,11 @@ onBeforeUnmount(() => {
 .tab .x:hover { color: var(--err); }
 .new { background: none; border: none; color: var(--ac2); cursor: pointer; flex: none; margin-left: 4px; }
 .net { margin-left: auto; color: var(--warn); flex: none; }
+.term-wrap { flex: 1; min-height: 0; position: relative; display: flex; }
 .term-layer { flex: 1; padding: 2px 6px; overflow: hidden; min-height: 0; }
+.copyfloat { position: absolute; top: 8px; right: 14px; z-index: 3; background: color-mix(in srgb, var(--bg4) 85%, transparent); border: 1px solid var(--bd); color: var(--tx3); border-radius: 6px; padding: 2px 8px; line-height: 18px; font-size: 11px; cursor: pointer; }
+.copyfloat:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
+.copyfloat:disabled { opacity: .4; cursor: default; }
 .file-layer { flex: 1; min-height: 0; overflow: hidden; }
+.phone-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px; text-align: center; color: var(--tx4); font-size: 13px; background: var(--bg3); z-index: 2; }
 </style>
