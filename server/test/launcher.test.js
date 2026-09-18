@@ -31,6 +31,16 @@ test('launch.ps1 保留原有能力（快捷方式 / Open-with / 浏览器）', 
   assert.match(ps, /22222/, '默认端口写入脚本');
 });
 
+test('launch.ps1 已在运行时只开浏览器并立即退出（不建快捷方式、不弹关联提示）', () => {
+  const ps = makeLaunchPs1({ port: 22222 });
+  const early = ps.indexOf('已在运行：只打开浏览器');
+  assert.ok(early > -1, '存在 action=open 的早退分支');
+  const seg = ps.slice(early, early + 400);
+  assert.match(seg, /exit 0/);
+  assert.ok(early < ps.indexOf('Void.lnk'), '早退应出现在快捷方式之前');
+  assert.ok(early < ps.indexOf('OpenWithProgids'), '早退应出现在关联提示之前');
+});
+
 test('launch.sh 含 desired 优先、nc 存活探测与 --plan 钩子', () => {
   const sh = makeLaunchSh({ port: 22222 });
   assert.match(sh, /data\/port\.txt/);
