@@ -18,10 +18,10 @@ function okJson(body: unknown) { return { ok: true, json: async () => body }; }
 function errJson(status: number, body: unknown) { return { ok: false, status, json: async () => body }; }
 
 describe('MiniTools', () => {
-  it('渲染 4 个工具；点击打开全屏面板、点 × 关闭', async () => {
+  it('渲染 5 个工具；点击打开全屏面板、点 × 关闭', async () => {
     const w = mount();
     const btns = w.findAll('.mticon');
-    expect(btns).toHaveLength(4);
+    expect(btns).toHaveLength(5);
     expect(w.find('.mtbody').exists()).toBe(false);
     await btns[0].trigger('click');
     await flushPromises();
@@ -92,6 +92,23 @@ describe('MiniTools', () => {
     await flushPromises();
     expect(urls[0]).toBe('/api/format');
     expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('const a=1;');
+  });
+
+  it('Postman：执行 curl 命令并显示输出', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
+      urls.push(u);
+      expect(JSON.parse(String(init?.body))).toEqual({ command: 'curl -s https://a.com' });
+      return okJson({ ok: true, code: 0, stdout: 'hi', stderr: '', timedOut: false });
+    }));
+    const w = mount();
+    await w.findAll('.mticon')[4].trigger('click');
+    await w.find('.mtcurl').setValue('curl -s https://a.com');
+    await w.find('.mtbtn.primary').trigger('click');
+    await flushPromises();
+    expect(urls[0]).toBe('/api/curl');
+    expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('hi');
+    expect(w.find('.mtmsg').exists()).toBe(true);
   });
 
   it('复制输出 / 输出转输入 / 清空', async () => {

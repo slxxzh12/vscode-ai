@@ -4,13 +4,14 @@ import { t } from '../i18n';
 import { parseYamlDoc, serializeYamlDoc } from '../yaml';
 import { sortText, dedupText, type SortMode } from '../textTools';
 
-type ToolId = 'translate' | 'yaml' | 'js' | 'sort';
+type ToolId = 'translate' | 'yaml' | 'js' | 'sort' | 'postman';
 
 const TOOLS: Array<{ id: ToolId; icon: string; label: string; disabled?: boolean; hint?: string }> = [
   { id: 'translate', icon: '🌐', label: 'tools.translate' },
   { id: 'yaml', icon: '🧾', label: 'tools.yaml' },
   { id: 'js', icon: '⚙', label: 'tools.js' },
   { id: 'sort', icon: '↕', label: 'tools.sort' },
+  { id: 'postman', icon: '📮', label: 'tools.postman' },
 ];
 const SORT_BTNS: Array<{ mode: SortMode; key: string }> = [
   { mode: 'asc', key: 'fp.sort.short.asc' },
@@ -24,6 +25,7 @@ const SORT_BTNS: Array<{ mode: SortMode; key: string }> = [
 const open = ref<ToolId | null>(null);
 const dlgOpen = computed({ get: () => open.value !== null, set: (v: boolean) => { if (!v) open.value = null; } });
 const input = ref('');
+const curlCmd = ref('');
 const output = ref('');
 const busy = ref(false);
 const msg = ref('');
@@ -34,6 +36,7 @@ function openTool(id: ToolId) {
   if (TOOLS.find((x) => x.id === id)?.disabled) return;
   open.value = id;
   input.value = '';
+  curlCmd.value = '';
   output.value = '';
   msg.value = '';
   copied.value = false;
@@ -83,6 +86,23 @@ async function runJs() {
   } catch (e) { fail(e); } finally { busy.value = false; }
 }
 
+async function runCurlCmd() {
+  if (busy.value) return;
+  if (!curlCmd.value.trim()) { msg.value = t('et.empty'); return; }
+  busy.value = true; msg.value = ''; output.value = '';
+  try {
+    const res = await fetch('/api/curl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: curlCmd.value }),
+    });
+    const j: any = await res.json().catch(() => ({}));
+    if (!res.ok) { msg.value = t('tools.failed', { msg: j.message || j.error || `HTTP ${res.status}` }); return; }
+    output.value = [j.stdout, j.stderr ? `--- stderr ---\n${j.stderr}` : ''].filter(Boolean).join(j.stdout ? '\n' : '');
+    msg.value = j.timedOut ? t('tools.pm_timeout') : t('tools.pm_exit', { code: j.code });
+  } catch (e) { fail(e); } finally { busy.value = false; }
+}
+
 function runSort(mode: SortMode) { output.value = sortText(input.value, mode); msg.value = ''; }
 function runDedup() { output.value = dedupText(input.value); msg.value = ''; }
 
@@ -120,7 +140,29 @@ async function copyOut() {
     </div>
 
     <el-dialog v-model="dlgOpen" :title="open ? titleOf(open) : ''" fullscreen append-to-body class="mtdlg">
-      <div class="mtbody">
+      <div v-if="open === 'postman'" class="mtbody">
+        <div class="mtacts">
+          <button class="mtbtn primary" :disabled="busy" @click="runCurlCmd">{{ busy ? $t('tools.pm_running') : $t('tools.run') }}</button>
+          <button class="mtbtn" @click="curlCmd = ''; output = ''; msg = ''">{{ $t('tools.clear') }}</button>
+        </div>
+
+        <div v-if="msg" class="mtmsg">{{ msg }}</div>
+
+        <div class="mtcurlbox">
+          <div class="mtcurlbar"><span class="mtcurlprompt">curl</span><span class="mtcurltip">{{ $t('tools.pm_tip') }}</span></div>
+          <textarea v-model="curlCmd" class="mtarea mtcurl" :placeholder="$t('tools.pm_ph')" spellcheck="false" />
+        </div>
+
+        <label class="mtlabel">{{ $t('tools.pm_resp') }}</label>
+        <div class="mtout">
+          <textarea v-model="output" class="mtarea" :placeholder="$t('tools.output')" spellcheck="false" readonly />
+          <div class="mtoutacts">
+            <button class="mtmini" :disabled="!output" @click="copyOut">{{ copied ? $t('tools.copied') : $t('tools.copy') }}</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="mtbody">
         <div class="mtacts">
           <template v-if="open === 'translate'">
             <button class="mtbtn primary" :disabled="busy" @click="runTranslate">{{ busy ? $t('term.translating') : $t('tools.run') }}</button>
@@ -163,6 +205,13 @@ async function copyOut() {
 .mticon:disabled { opacity: .5; cursor: default; }
 .mtglyph { font-size: 40px; line-height: 1; }
 .mtname { text-align: center; line-height: 1.3; }
+.mtlabel { color: var(--tx3); font-size: 12px; }
+.mtcurlbox { display: flex; flex-direction: column; border: 1px solid var(--ac2); border-radius: 8px; overflow: hidden; background: var(--bg1); }
+.mtcurlbar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: var(--bg4); border-bottom: 1px solid var(--bd); }
+.mtcurlprompt { font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 700; color: var(--ac2); }
+.mtcurltip { color: var(--tx4); font-size: 11px; }
+.mtcurl { flex: none; min-height: 120px; border: none; border-radius: 0; background: transparent; }
+.mtcurl:focus { border: none; }
 
 .mtbody { display: flex; flex-direction: column; gap: 10px; height: calc(100vh - 150px); }
 .mtacts { display: flex; flex-wrap: wrap; gap: 8px; }

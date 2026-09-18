@@ -7,19 +7,33 @@ export const ISSUES_URL = 'https://gitee.com/slxxzh12/vscode-ai/issues';
 
 export interface MarketClient {
   id: string;
-  icon: string;
+  icon?: string;
+  brand?: 'apple';
   labelKey: string;
   href: string;
+  platform: 'desktop' | 'mobile';
   qr?: boolean;
+  comingSoon?: boolean;
 }
 
 export const MARKET_CLIENTS: MarketClient[] = [
-  { id: 'win', icon: '🪟', labelKey: 'market.client.win', href: DESKTOP_URL },
-  { id: 'mac_arm', icon: '🍎', labelKey: 'market.client.mac_arm', href: DESKTOP_URL },
-  { id: 'mac_x64', icon: '🍎', labelKey: 'market.client.mac_x64', href: DESKTOP_URL },
-  { id: 'android', icon: '🤖', labelKey: 'market.client.android', href: MOBILE_URL, qr: true },
-  { id: 'ios', icon: '📱', labelKey: 'market.client.ios', href: MOBILE_URL, qr: true },
+  { id: 'win', icon: '🪟', labelKey: 'market.client.win', href: DESKTOP_URL, platform: 'desktop' },
+  { id: 'linux', icon: '🐧', labelKey: 'market.client.linux', href: DESKTOP_URL, platform: 'desktop', comingSoon: true },
+  { id: 'mac_arm', brand: 'apple', labelKey: 'market.client.mac_arm', href: DESKTOP_URL, platform: 'desktop', comingSoon: true },
+  { id: 'mac_x64', brand: 'apple', labelKey: 'market.client.mac_x64', href: DESKTOP_URL, platform: 'desktop', comingSoon: true },
+  { id: 'android', icon: '🤖', labelKey: 'market.client.android', href: MOBILE_URL, platform: 'mobile', qr: true, comingSoon: true },
+  { id: 'ios', icon: '📱', labelKey: 'market.client.ios', href: MOBILE_URL, platform: 'mobile', qr: true, comingSoon: true },
 ];
+
+export interface ClientGroup { key: 'desktop' | 'mobile'; clients: MarketClient[] }
+
+export function groupClients(clients: MarketClient[] | null | undefined): ClientGroup[] {
+  const all = clients || [];
+  return [
+    { key: 'desktop', clients: all.filter((c) => c.platform === 'desktop') },
+    { key: 'mobile', clients: all.filter((c) => c.platform === 'mobile') },
+  ];
+}
 
 export interface DownloadFile { name: string; kind: string; size: number; updatedAt: number }
 
@@ -41,11 +55,15 @@ export function fmtSize(bytes: number): string {
 
 export interface MarketGroups { skill: DownloadFile[]; other: DownloadFile[] }
 
+// 这些类型不在应用市场「扩展」里展示：用量明细、群组分发包
+const HIDDEN_KINDS = new Set(['usage', 'group']);
+
 export function groupDownloadFiles(files: DownloadFile[] | null | undefined): MarketGroups {
   const skill: DownloadFile[] = [];
   const other: DownloadFile[] = [];
   for (const f of files || []) {
     if (!f || !f.name) continue;
+    if (HIDDEN_KINDS.has(f.kind)) continue;
     (installableOf(f) ? skill : other).push(f);
   }
   const byNewest = (a: DownloadFile, b: DownloadFile) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0);

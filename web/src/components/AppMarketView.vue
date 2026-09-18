@@ -7,11 +7,12 @@ import { useCollab } from '../collaboration/useCollab';
 import { useVersion } from '../useVersion';
 import {
   ISSUES_URL, MARKET_CLIENTS, TUTORIAL_URL,
-  fmtSize, groupDownloadFiles, installableOf, marketKindKey, type DownloadFile,
+  fmtSize, groupClients, groupDownloadFiles, installableOf, marketKindKey, type DownloadFile,
 } from '../marketApps';
 
 const base = import.meta.env.BASE_URL;
 const qrMobile = `${base}mobile/qr-mobile.svg`;
+const clientGroups = groupClients(MARKET_CLIENTS);
 
 const collab = useCollab();
 const { version, loadVersion } = useVersion();
@@ -73,72 +74,90 @@ watch(locale, loadNotice);
 
 <template>
   <div class="market">
-    <section class="notice">
-      <h3 class="ntitle">📢 {{ $t('market.notice') }}</h3>
-      <div v-if="noticeHtml" class="nbody" v-html="noticeHtml"></div>
-      <div v-else class="hint">{{ noticeEmpty || $t('market.notice_empty') }}</div>
-    </section>
+    <div class="col col-left">
+      <section class="notice">
+        <h3 class="ntitle">📢 {{ $t('market.notice') }}</h3>
+        <div v-if="noticeHtml" class="nbody" v-html="noticeHtml"></div>
+        <div v-else class="hint">{{ noticeEmpty || $t('market.notice_empty') }}</div>
+      </section>
 
-    <section class="block">
-      <h3 class="btitle">🧩 {{ $t('market.clients') }}</h3>
-      <div class="cards">
-        <div v-for="c in MARKET_CLIENTS" :key="c.id" class="card">
-          <div class="cicon">{{ c.icon }}</div>
-          <div class="cname">{{ $t(c.labelKey) }}</div>
-          <div class="cver">{{ version ? $t('market.version', { version }) : '' }}</div>
-          <img v-if="c.qr" class="qr" :src="qrMobile" :alt="$t(c.labelKey)" width="120" height="120" />
-          <a class="dl" :href="c.href" target="_blank" rel="noopener">{{ $t('market.download') }}</a>
+      <section class="block">
+        <h3 class="btitle">🧩 {{ $t('market.clients') }}</h3>
+        <div v-for="g in clientGroups" :key="g.key" class="cgroup">
+          <h4 class="gtitle">{{ $t(`market.client.${g.key}`) }}</h4>
+          <div class="cards">
+            <div v-for="c in g.clients" :key="c.id" class="card" :class="{ soon: c.comingSoon }">
+              <div class="cicon">
+                <svg v-if="c.brand === 'apple'" class="brand" viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
+                <template v-else>{{ c.icon }}</template>
+              </div>
+              <div class="cname">{{ $t(c.labelKey) }}</div>
+              <div class="cver">{{ !c.comingSoon && version ? $t('market.version', { version }) : '' }}</div>
+              <img v-if="c.qr && !c.comingSoon" class="qr" :src="qrMobile" :alt="$t(c.labelKey)" width="120" height="120" />
+              <span v-if="c.comingSoon" class="soon">{{ $t('market.coming_soon') }}</span>
+              <a v-else class="dl" :href="c.href" target="_blank" rel="noopener">{{ $t('market.download') }}</a>
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="block">
-      <h3 class="btitle">📦 {{ $t('market.extensions') }}</h3>
-      <div v-if="!files.length" class="empty">{{ $t('market.empty') }}</div>
-      <template v-else>
-        <ul v-if="groups.skill.length || groups.other.length" class="exts">
-          <li v-for="f in [...groups.skill, ...groups.other]" :key="f.name" class="ext">
-            <span class="ekind">{{ $t(marketKindKey(f.kind)) }}</span>
-            <span class="ename" :title="f.name">{{ f.name }}</span>
-            <span class="emeta">{{ fmtSize(f.size) }}</span>
-            <span class="emeta">{{ whenLabel(f.updatedAt) }}</span>
-            <button v-if="installableOf(f)" class="einstall" :disabled="installing === f.name" @click="install(f.name)">
-              {{ installing === f.name ? $t('common.sending') : $t('market.install') }}
-            </button>
-          </li>
-        </ul>
-        <div v-else class="empty">{{ $t('market.empty') }}</div>
-      </template>
-      <div v-if="installMsg" class="hint">{{ installMsg }}</div>
-    </section>
+      <footer class="foot">
+        <span>🐞 {{ $t('market.feedback') }}</span>
+        <a class="link" :href="ISSUES_URL" target="_blank" rel="noopener">{{ ISSUES_URL }}</a>
+        <span class="sep">·</span>
+        <span>🎬 {{ $t('market.tutorial') }}</span>
+        <a class="link" :href="TUTORIAL_URL" target="_blank" rel="noopener">{{ TUTORIAL_URL }}</a>
+      </footer>
+    </div>
 
-    <section class="block">
-      <h3 class="btitle">🧰 {{ $t('market.tools') }}</h3>
-      <MiniTools />
-    </section>
+    <div class="col col-right">
+      <section class="block">
+        <h3 class="btitle">🧰 {{ $t('market.tools') }}</h3>
+        <MiniTools />
+      </section>
 
-    <footer class="foot">
-      <span>🐞 {{ $t('market.feedback') }}</span>
-      <a class="link" :href="ISSUES_URL" target="_blank" rel="noopener">{{ ISSUES_URL }}</a>
-      <span class="sep">·</span>
-      <span>🎬 {{ $t('market.tutorial') }}</span>
-      <a class="link" :href="TUTORIAL_URL" target="_blank" rel="noopener">{{ TUTORIAL_URL }}</a>
-    </footer>
+      <section class="block">
+        <h3 class="btitle">📦 {{ $t('market.extensions') }}</h3>
+        <div v-if="!files.length" class="empty">{{ $t('market.empty') }}</div>
+        <template v-else>
+          <ul v-if="groups.skill.length || groups.other.length" class="exts">
+            <li v-for="f in [...groups.skill, ...groups.other]" :key="f.name" class="ext">
+              <span class="ekind">{{ $t(marketKindKey(f.kind)) }}</span>
+              <span class="ename" :title="f.name">{{ f.name }}</span>
+              <span class="emeta">{{ fmtSize(f.size) }}</span>
+              <span class="emeta">{{ whenLabel(f.updatedAt) }}</span>
+              <button v-if="installableOf(f)" class="einstall" :disabled="installing === f.name" @click="install(f.name)">
+                {{ installing === f.name ? $t('common.sending') : $t('market.install') }}
+              </button>
+            </li>
+          </ul>
+          <div v-else class="empty">{{ $t('market.empty') }}</div>
+        </template>
+        <div v-if="installMsg" class="hint">{{ installMsg }}</div>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.market { padding: 14px; overflow: auto; height: 100%; box-sizing: border-box; color: var(--tx); }
-.block { margin: 0 0 18px; }
+.market { padding: 14px; height: 100%; box-sizing: border-box; color: var(--tx); display: grid; grid-template-columns: 1fr 2fr; gap: 16px; overflow: hidden; }
+.col { display: flex; flex-direction: column; gap: 18px; min-height: 0; overflow: auto; }
+.block { margin: 0; }
 .btitle { margin: 0 0 10px; color: var(--tx1); font-size: 14px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.cgroup { margin: 0 0 12px; }
+.cgroup:last-child { margin: 0; }
+.gtitle { margin: 0 0 8px; color: var(--tx3); font-size: 12px; font-weight: 600; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
 .card { border: 1px solid var(--bd); border-radius: 10px; padding: 14px; background: var(--bg2); display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .cicon { font-size: 34px; line-height: 1; }
-.cname { font-weight: 700; color: var(--tx1); font-size: 13px; text-align: center; }
+.brand { display: block; color: var(--tx1); }
+.cname { font-weight: 700; color: var(--tx1); font-size: 13px; text-align: center; line-height: 1.3; min-height: 2.6em; display: flex; align-items: center; justify-content: center; }
 .cver { color: var(--tx4); font-size: 11px; min-height: 14px; }
 .qr { background: #fff; border-radius: 6px; padding: 6px; box-sizing: content-box; }
 .dl { color: var(--ac2); font-size: 12px; font-weight: 600; text-decoration: none; }
 .dl:hover { text-decoration: underline; }
+.card.soon .cicon { filter: grayscale(1); opacity: .45; }
+.soon { color: var(--tx4); font-size: 12px; font-weight: 600; }
 .exts { list-style: none; margin: 0; padding: 0; }
 .ext { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--bd2); font-size: 12px; }
 .ekind { flex: none; background: var(--bg4); color: var(--tx3); border-radius: 4px; padding: 1px 8px; font-size: 11px; }
@@ -148,7 +167,7 @@ watch(locale, loadNotice);
 .einstall:disabled { opacity: .55; cursor: default; }
 .empty { color: var(--tx4); font-size: 12px; }
 .hint { color: var(--tx3); font-size: 12px; margin-top: 6px; }
-.notice { margin: 0 0 18px; border: 1px solid var(--bd); border-radius: 8px; padding: 10px 12px; background: var(--bg2); }
+.notice { margin: 0; border: 1px solid var(--bd); border-radius: 8px; padding: 10px 12px; background: var(--bg2); }
 .ntitle { margin: 0 0 6px; color: var(--tx1); font-size: 13px; }
 .nbody { color: var(--tx2); font-size: 12px; line-height: 1.6; }
 .nbody :deep(h1) { font-size: 16px; margin: 0.5em 0 0.3em; }
@@ -167,8 +186,12 @@ watch(locale, loadNotice);
 .nbody :deep(hr) { border: none; border-top: 1px solid var(--bd); margin: 0.8em 0; }
 .nbody :deep(table) { border-collapse: collapse; margin: 0.5em 0; }
 .nbody :deep(th), .nbody :deep(td) { border: 1px solid var(--bd); padding: 3px 8px; }
-.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--tx3); font-size: 12px; padding-top: 6px; border-top: 1px solid var(--bd2); }
+.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--tx3); font-size: 12px; padding-top: 6px; border-top: 1px solid var(--bd2); margin-top: auto; }
 .foot .link { color: var(--ac2); text-decoration: none; word-break: break-all; }
 .foot .link:hover { text-decoration: underline; }
 .foot .sep { color: var(--tx5); }
+@media (max-width: 760px) {
+  .market { grid-template-columns: 1fr; overflow: auto; }
+  .col { overflow: visible; }
+}
 </style>

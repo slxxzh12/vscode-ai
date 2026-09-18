@@ -13,6 +13,7 @@ import { createRemoteCoder } from './remote-coder-mount.js';
 import { pickFolder, pickAnyFile } from './native-dialog.js';
 import { revealInOs } from './reveal.js';
 import { runScript, RUNNABLE_EXT } from './run-script.js';
+import { runCurl } from './curl-run.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
 
@@ -42,7 +43,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -204,6 +205,17 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
           return sendJson(res, 400, { error: 'unsupported type' });
         }
         sendJson(res, 200, { content: out, size: Buffer.byteLength(out, 'utf8') });
+        return;
+      }
+      if (url.pathname === '/api/curl' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const command = String(body.command ?? '');
+        if (!command.trim()) return sendJson(res, 400, { error: 'empty' });
+        try {
+          sendJson(res, 200, await runCurlFn(command));
+        } catch (e) {
+          sendJson(res, 400, { error: e?.code || 'bad-command', message: String(e?.message || e) });
+        }
         return;
       }
       if (url.pathname === '/api/raw' && req.method === 'GET') {
