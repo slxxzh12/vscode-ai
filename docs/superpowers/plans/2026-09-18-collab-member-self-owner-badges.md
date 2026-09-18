@@ -106,14 +106,16 @@ git commit -m "feat(i18n): 新增协作群「我」成员标识词条"
       'm1',
     );
     await flushPromises();
-    expect(w.text()).toContain(t('collab.member.me'));
+    const badge = w.find('.mebadge');
+    expect(badge.exists()).toBe(true);
+    expect(badge.text()).toBe(t('collab.member.me'));
   });
 ```
 
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `npm.cmd --prefix web run test -- src/collaboration/MemberUsageTable.test.ts`
-Expected: FAIL —— 渲染文本不含「我」（`collab.member.me` 徽标尚未实现）。
+Expected: FAIL —— 找不到 `.mebadge`（`collab.member.me` 徽标尚未实现）。
 
 - [ ] **Step 3: 实现 `me` 与徽标**
 
