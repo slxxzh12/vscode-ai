@@ -51,14 +51,24 @@ describe('HistoryList', () => {
     expect(w.emitted('clear')).toHaveLength(1);
   });
 
-  it('页签切换 emit update:tab', async () => {
+  it('页签切换 emit update:tab（消息 / 最近文件 / 目录 三个页签）', async () => {
     const w = mount();
     const items = w.findAll('.el-tabs__item');
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     await items[0].trigger('click');
     expect(w.emitted('update:tab')?.[0]).toEqual(['messages']);
     await items[1].trigger('click');
     expect(w.emitted('update:tab')?.[1]).toEqual(['files']);
+    await items[2].trigger('click');
+    expect(w.emitted('update:tab')?.[2]).toEqual(['tree']);
+  });
+
+  it('目录页签渲染文件树（无项目时显示空态，不请求）', async () => {
+    const w = mount({ tab: 'tree', projectId: null });
+    await w.vm.$nextTick();
+    expect(w.find('.ft').exists()).toBe(true);
+    expect(w.find('.filterbtn').exists()).toBe(false);
+    expect(w.find('.searchinput').exists()).toBe(false);
   });
 
   it('消息页签：空态、打开/删除（无清空按钮）', async () => {

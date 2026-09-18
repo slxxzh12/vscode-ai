@@ -9,7 +9,6 @@ import DistTaskNotifier from './collaboration/DistTaskNotifier.vue';
 import SchedulerView from './scheduler/SchedulerView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
-import FileTree from './components/FileTree.vue';
 import CodeStats from './components/CodeStats.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
@@ -136,12 +135,13 @@ watch(windowColorValue, (v) => {
 let colorHeartbeat: ReturnType<typeof setInterval> | null = null;
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
-const rail = ref<'explorer' | 'history' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
-const historyTab = ref<'files' | 'messages'>('messages');
+const rail = ref<'explorer' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
+const historyTab = ref<'files' | 'messages' | 'tree'>('tree');
 const collabTab = ref<'group' | 'tasks'>('group');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
-const RAILS = ['explorer', 'history', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
+const RAILS = ['explorer', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
+const SIDE_TABS = ['messages', 'files', 'tree'];
 function parseHashSegs(): string[] {
   try { return decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/').filter(Boolean); }
   catch { return []; }
@@ -150,19 +150,23 @@ function hashRailOf(): string | null {
   const [r] = parseHashSegs();
   return r && RAILS.includes(r) ? r : null;
 }
+function isSideTab(v: string | undefined): v is HistoryTab {
+  return !!v && (SIDE_TABS as string[]).includes(v);
+}
 function hashHistoryTabOf(): HistoryTab | null {
   const [r, sub] = parseHashSegs();
-  return r === 'history' && (sub === 'files' || sub === 'messages') ? sub : null;
+  return (r === 'explorer' || r === 'history') && isSideTab(sub) ? sub : null;
 }
 function applyHash() {
   const [r, sub] = parseHashSegs();
-  if (!r || !RAILS.includes(r)) return;
-  rail.value = r as typeof rail.value;
-  if (r === 'history' && (sub === 'files' || sub === 'messages')) historyTab.value = sub;
+  const historyAlias = r === 'history';
+  if (!r || (!RAILS.includes(r) && !historyAlias)) return;
+  rail.value = (historyAlias ? 'explorer' : r) as typeof rail.value;
+  if ((r === 'explorer' || historyAlias) && isSideTab(sub)) historyTab.value = sub;
   if (r === 'contacts' && (sub === 'group' || sub === 'tasks')) collabTab.value = sub;
 }
 function currentHash() {
-  if (rail.value === 'history') return `#history/${historyTab.value}`;
+  if (rail.value === 'explorer') return `#explorer/${historyTab.value}`;
   if (rail.value === 'contacts') return `#contacts/${collabTab.value}`;
   return `#${rail.value}`;
 }
@@ -241,7 +245,7 @@ async function restoreWindowState(projectsReady: Promise<void>) {
     hashHistoryTab: hashHistoryTabOf(),
     deepLinkOpened,
   });
-  if (plan.rail) rail.value = plan.rail;
+  if (plan.rail && RAILS.includes(plan.rail)) rail.value = plan.rail;
   if (plan.historyTab) historyTab.value = plan.historyTab;
   if (typeof plan.msgFilter === 'boolean') msgFilter.value = plan.msgFilter;
   const tabs = bootAllowed ? plan.tabs.filter((t) => bootAllowed.has(`f:${t.projectId}|${t.path}`)) : plan.tabs;
@@ -288,18 +292,18 @@ watch(todayMsgCount, (n) => {
     if (localStorage.getItem(AUTO_SHOWN_KEY) === k) return;
     if (n > 3) {
       localStorage.setItem(AUTO_SHOWN_KEY, k);
-      rail.value = 'history';
+      rail.value = 'explorer';
       historyTab.value = 'messages';
     }
   } catch { /* ignore */ }
 });
 function onOpenHistory(e: Event) {
   const d = (e as CustomEvent).detail || {};
-  rail.value = 'history';
+  rail.value = 'explorer';
   historyTab.value = d.tab === 'messages' ? 'messages' : 'files';
 }
 function onOpenMessage(text: string) {
-  rail.value = 'history';
+  rail.value = 'explorer';
   window.dispatchEvent(new CustomEvent('df-fill-composer', { detail: { text } }));
 }
 const detailToken = ref(0);
@@ -519,7 +523,7 @@ async function processOpenParam() {
 }
 function openAgentSettings() {
   // 设置弹窗在 TerminalView 内，仅在「目录/历史」视图挂载；其他页（通讯录/统计/定时任务）需先切回目录
-  if (rail.value !== 'explorer' && rail.value !== 'history') { rail.value = 'explorer'; }
+  if (rail.value !== 'explorer') { rail.value = 'explorer'; }
   setTimeout(() => window.dispatchEvent(new Event('df-open-agent-settings')), 120);
 }
 function releaseWindowColor() {
@@ -592,7 +596,6 @@ onBeforeUnmount(() => {
     <div class="main">
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
-        <button class="a-btn" :class="{ on: rail === 'history' }" :title="$t('nav.history')" @click="rail = 'history'">🕘</button>
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🏪</button>
@@ -627,12 +630,12 @@ onBeforeUnmount(() => {
       </template>
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
-          <HistoryList v-if="rail === 'history'" :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter"
-            :live-session-ids="liveSessionIds" :sessions="sessionExtras"
+          <HistoryList :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter"
+            :live-session-ids="liveSessionIds" :sessions="sessionExtras" :project-id="currentProject" :active-path="activeFilePath"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
             @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
-            @update:filter="msgFilter = $event" @open-session="openHistorySession" />
-          <FileTree v-else :key="currentProject || 'none'" :project-id="currentProject" :active-path="activeFilePath" @open-file="openFile" @detail-file="onDetailFile" />
+            @update:filter="msgFilter = $event" @open-session="openHistorySession"
+            @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
         <section class="center">

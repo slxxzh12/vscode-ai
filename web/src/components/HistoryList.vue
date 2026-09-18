@@ -3,18 +3,23 @@ import { computed, ref, watch } from 'vue';
 import type { HistoryMessage } from '../useMessageHistory';
 import { t } from '../i18n';
 import { buildSessionTree, type SessionNode, type SessionExtra } from '../sessionTree';
+import FileTree from './FileTree.vue';
 
 export interface HistoryEntry { projectId: string; path: string; name: string; projName: string; ts: number; }
+export type SideTab = 'files' | 'messages' | 'tree';
 const props = withDefaults(defineProps<{
-  items: HistoryEntry[]; tab: 'files' | 'messages'; messages: HistoryMessage[];
+  items: HistoryEntry[]; tab: SideTab; messages: HistoryMessage[];
   filter?: boolean; liveSessionIds?: string[]; sessions?: SessionExtra[];
+  projectId?: string | null; activePath?: string | null;
 }>(), {
   filter: true,
   liveSessionIds: () => [],
   sessions: () => [],
+  projectId: null,
+  activePath: null,
 });
 const emit = defineEmits<{
-  (e: 'update:tab', tab: 'files' | 'messages'): void;
+  (e: 'update:tab', tab: SideTab): void;
   (e: 'update:filter', v: boolean): void;
   (e: 'open', it: HistoryEntry): void;
   (e: 'remove', projectId: string, path: string): void;
@@ -22,12 +27,14 @@ const emit = defineEmits<{
   (e: 'open-message', text: string): void;
   (e: 'remove-message', msg: HistoryMessage): void;
   (e: 'open-session', sessionId: string, name: string): void;
+  (e: 'open-file', projectId: string, path: string, name: string): void;
+  (e: 'detail-file', projectId: string, path: string, name: string): void;
 }>();
 
 // 页签交给 Element Plus 的 el-tabs 渲染，切页签仍由父组件持有的 tab 决定
 const activeTab = computed({
   get: () => props.tab,
-  set: (v: string | number) => emit('update:tab', v as 'files' | 'messages'),
+  set: (v: string | number) => emit('update:tab', v as SideTab),
 });
 
 // 每次最多展示 50 条，滚动到底部再加载下一批
@@ -164,9 +171,14 @@ function openNode(n: SessionNode) { if (n.sessionId) emit('open-session', n.sess
       <el-tabs v-model="activeTab" class="hltabs">
         <el-tab-pane :label="$t('hist.tab.messages')" name="messages" />
         <el-tab-pane :label="$t('hist.tab.files')" name="files" />
+        <el-tab-pane :label="$t('hist.tab.tree')" name="tree" />
       </el-tabs>
       <button v-if="tab === 'files' && items.length" class="clear" :title="$t('hist.clear_files')" @click="emit('clear')">{{ $t('hist.clear') }}</button>
     </header>
+    <FileTree v-if="tab === 'tree'" class="hltree" :key="projectId || 'none'" :project-id="projectId" :active-path="activePath"
+      @open-file="(pid, p, name) => emit('open-file', pid, p, name)"
+      @detail-file="(pid, p, name) => emit('detail-file', pid, p, name)" />
+    <template v-else>
     <div v-if="tab === 'messages'" class="filterbar" :title="$t('hist.filter.title')">
       <button class="filterbtn" :class="{ on: filter }" @click="emit('update:filter', true)">{{ $t('hist.filter.on') }}</button>
       <button class="filterbtn" :class="{ on: !filter }" @click="emit('update:filter', false)">{{ $t('hist.filter.off') }}</button>
@@ -248,11 +260,13 @@ function openNode(n: SessionNode) { if (n.sessionId) emit('open-session', n.sess
       <div v-if="hasMore" class="more">{{ $t('hist.more') }}</div>
       <div v-else-if="(tab === 'files' ? filteredItems.length : (filter ? filteredMessages.length : treeTotal)) > 0" class="foot">{{ $t('hist.foot') }}</div>
     </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .hl { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.hltree { flex: 1; min-height: 0; overflow-y: auto; }
 .hh { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid var(--bd2); flex: none; gap: 6px; }
 .hltabs { flex: 1 1 auto; min-width: 0; }
 .hltabs :deep(.el-tabs__header) { margin: 0; }
