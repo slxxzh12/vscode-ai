@@ -72,4 +72,15 @@ describe('useLlm', () => {
     stub(() => ({ ok: false, status: 503, body: {} }));
     await expect(llm.status()).rejects.toThrow('HTTP 503');
   });
+
+  it('opencodeConfig 走 GET，saveOpencodeConfig 走 POST', async () => {
+    const calls = stub(() => ({ body: { ok: true, config: { provider: {} } } }));
+    await llm.opencodeConfig();
+    expect(calls[0].url).toBe('/api/llm-admin/opencode');
+    expect(calls[0].init?.method || 'GET').toBe('GET');
+    await llm.saveOpencodeConfig({ provider: { a: {} }, model: 'a/m' });
+    expect(calls[1].url).toBe('/api/llm-admin/opencode');
+    expect(calls[1].init?.method).toBe('POST');
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ provider: { a: {} }, model: 'a/m' });
+  });
 });

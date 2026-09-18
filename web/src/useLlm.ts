@@ -1,3 +1,5 @@
+import type { OpencodeConfigFile, OpencodeProvider } from './opencodeConfig';
+
 export interface LlmToken { id: string; employeeId: string; jwt: string; iat: number; exp: number; jti: string; revoked: boolean; }
 export interface LlmProvider { id: string; name: string; baseURL: string; hasKey: boolean; models: string[]; }
 export interface LlmPluginEntry { file: string; name: string; priority: number; error: string | null; }
@@ -43,5 +45,8 @@ export function useLlm() {
       for (const sel of selections) for (const m of sel.models) { q.append('pid', sel.id); q.append('model', m); }
       return json<{ config: string }>(`/api/llm-admin/opencode-config?${q.toString()}`);
     },
+    opencodeConfig: () => json<OpencodeConfigFile>('/api/llm-admin/opencode'),
+    saveOpencodeConfig: (payload: { provider: Record<string, OpencodeProvider>; model: string }) =>
+      post<{ ok: boolean; path: string; backups: string[]; config: unknown }>('/api/llm-admin/opencode', payload),
   };
 }
