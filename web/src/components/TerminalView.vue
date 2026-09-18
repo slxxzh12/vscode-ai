@@ -118,14 +118,22 @@ const dialogSid = ref<string | null>(null);
 const dialogName = ref('');
 const dialogDesc = ref('');
 const dialogPlaceholder = ref('');
-function openTabDialog(tabId: string) {
-  if (!tabId.startsWith('s:')) return;   // 仅会话页签
-  const sid = tabId.slice(2);
+function openDialogForSid(sid: string) {
   dialogSid.value = sid;
   dialogName.value = (tabNames.value[sid] || '').trim();
   dialogDesc.value = tabDescs.value[sid] || '';
   dialogPlaceholder.value = tabLabel(sid);   // 无自定义名时即默认显示名
 }
+function openTabDialog(tabId: string) {
+  if (!tabId.startsWith('s:')) return;   // 仅会话页签
+  openDialogForSid(tabId.slice(2));
+}
+// 左侧「全部会话」的编辑按钮：对已关闭的会话也允许打开同一个改名弹框
+function editSession(sid: string) {
+  if (!sid) return;
+  openDialogForSid(sid);
+}
+defineExpose({ editSession });
 function onTabDialogCancel() { dialogSid.value = null; }
 function onTabDialogConfirm(payload: { name: string; description: string }) {
   const sid = dialogSid.value;
@@ -136,7 +144,10 @@ function onTabDialogConfirm(payload: { name: string; description: string }) {
   if (name) next[sid] = name; else delete next[sid];
   tabNames.value = next;
   persistTabNames();
-  props.center.ensureSession(sid, tabLabel(sid), sessionState(sid));
+  // 页签改名：仅当该会话已打开页签时更新，避免给已关闭会话凭空建页签
+  if (props.center.tabs.value.some((t) => t.id === `s:${sid}`)) {
+    props.center.ensureSession(sid, tabLabel(sid), sessionState(sid));
+  }
   msgHistory.renameTab(sid, tabLabel(sid));   // 同步更新历史消息里记录的页签名
   if (name) syncAgentRename(sid, name);       // 同步改 Agent 内的对话名
   tabDescs.value = setTabDescription(tabDescs.value, sid, payload.description);
@@ -181,6 +192,7 @@ function cancelDesc() {
 function syncAgentRename(sid: string, name: string) {
   if (syncingRename.value) return;                     // 已在同步中：忽略再次触发，避免时序互相打架
   if (!agentSids.value.has(sid)) return;               // 仅 Agent 会话
+  if (!props.terminal.state.sessions.some((s) => s.id === sid)) return;   // 会话已关闭：无处发送命令
   if (sessionState(sid) !== 'running') return;
   const prev = props.terminal.state.activeSessionId;
   const needSwitch = prev !== sid;                     // input 只作用于活动会话：后台页签先切过去
@@ -251,6 +263,8 @@ const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent 
 const settingsOpen = ref(false);
 const editorOpen = ref(false);
 const settingsTab = ref<'general' | 'about'>('general');
+const firstRunHint = ref(false);
+const agentSecRef = ref<HTMLElement | null>(null);
 // 刷新后恢复的页签数（设置面板即时生效，存 localStorage）
 const restoreTabsCount = ref(restoreTabs.value);
 function saveRestoreTabsCount() { restoreTabsCount.value = setRestoreTabs(restoreTabsCount.value); }
@@ -310,7 +324,13 @@ async function restartBackend() {
     restartMsg.value = t('term.port_restart_failed', { msg: e?.message || e });
   } finally { restarting.value = false; }
 }
-function onOpenSettings() { settingsOpen.value = true; loadSettings(); }
+function onOpenSettings(e: Event) {
+  const firstRun = !!(e as CustomEvent).detail?.firstRun;
+  settingsOpen.value = true;
+  loadSettings();
+  firstRunHint.value = firstRun;
+  if (firstRun) nextTick(() => agentSecRef.value?.scrollIntoView({ block: 'start' }));
+}
 
 // 新建会话：先输入任务名（可选）再选择要执行的命令；不再倒计时自动创建
 const newOpen = ref(false);
@@ -936,6 +956,25 @@ function onTabClose(id: string, ev: Event) {
 
 watch([agentId, agents, wfKind], saveCfg, { deep: true });
 
+watch(settingsOpen, (open, was) => {
+  if (was && !open) {
+    firstRunHint.value = false;
+    window.dispatchEvent(new Event('df-settings-closed'));
+  }
+});
+async function setDefaultAgent(id: string) {
+  agentId.value = id;                    // 本机当前项目即时生效
+  try {
+    const res = await fetch('/api/agents/default', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    firstRunHint.value = false;
+  } catch (e: any) {
+    alert(t('term.agent_set_default_failed', { msg: e?.message || e }));
+  }
+}
+
 onMounted(async () => {
   init();
   window.addEventListener('resize', onResize);
@@ -1011,12 +1050,13 @@ onBeforeUnmount(() => {
           </nav>
           <div class="setbody">
           <template v-if="settingsTab === 'general'">
-          <div class="setsec">
+          <div ref="agentSecRef" class="setsec">
             <div class="settitle">{{ $t('term.agent_list') }} <button class="ghostcfg" @click="addAgent">{{ $t('term.add') }}</button></div>
+            <div v-if="firstRunHint" class="cfghint warn">{{ $t('term.agent_first_run_hint') }}</div>
             <div v-for="a in agents" :key="a.id" class="agentrow">
               <input v-model="a.name" class="ainput aname" :placeholder="$t('term.name')" />
               <input v-model="a.cmd" class="ainput acmd" :placeholder="$t('term.agent_cmd_placeholder')" />
-              <button class="ghostcfg setbtn" :class="{ on: a.id === agentId }" :disabled="a.id === agentId" @click="agentId = a.id">{{ a.id === agentId ? $t('term.is_default') : $t('term.set_default') }}</button>
+              <button class="ghostcfg setbtn" :class="{ on: a.id === agentId }" :disabled="a.id === agentId" @click="setDefaultAgent(a.id)">{{ a.id === agentId ? $t('term.is_default') : $t('term.set_default') }}</button>
               <button class="ghostcfg delbtn" :disabled="agents.length <= 1" @click="removeAgent(a.id)">{{ $t('term.delete') }}</button>
             </div>
             <div class="cfghint">{{ $t('term.agent_hint') }}</div>
