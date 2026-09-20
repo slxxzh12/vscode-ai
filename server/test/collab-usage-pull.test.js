@@ -28,3 +28,24 @@ test('USAGE_PULL：非成员被拒', async () => {
     assert.equal(r.error, 'not-member');
   } finally { await h.stop(); }
 });
+
+test('pullDownloads / _inPullDownloads 不再透传 usage，也不改本地 peers', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    A.verifyAccessToken = (tk) => tk === 'good';
+    A.ensureGroup();
+    await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'good' });
+    A.peers = { list: () => ({ m1: { machineId: 'm1', messages: 5 } }) };
+    let upserted = 0;
+    B.peers = { upsert: () => { upserted += 1; }, list: () => ({}) };
+
+    const r = await B.pullDownloads();
+    assert.equal(r.code, 'ok');
+    assert.equal(upserted, 0, '不应把群主用量合并进本地 peers');
+
+    const incoming = await A.handleIncoming(B._sign('pull-downloads', {}));
+    assert.equal(incoming.ok, true);
+    assert.equal(incoming.data.usage, undefined);
+  } finally { await h.stop(); }
+});

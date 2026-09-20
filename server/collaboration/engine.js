@@ -734,9 +734,6 @@ export class CollabEngine {
       }
       if (data.manifest) this._writeManifest(data.manifest);
       if (data.group) this.store.upsertGroup(data.group);
-      if (data.usage && data.usage.members) {
-        for (const [mid, u] of Object.entries(data.usage.members)) this.peers?.upsert?.({ ...u, machineId: mid });
-      }
       this._emit('synced', {});
       this._emit('heartbeat', {});
       return { code: 'ok', files: (data.files || []).map((f) => f.name) };
@@ -769,7 +766,7 @@ export class CollabEngine {
       if (!fs.existsSync(abs)) continue;
       files.push({ name: f.name, b64: fs.readFileSync(abs).toString('base64') });
     }
-      return { ok: true, data: { manifest, files, group: g, usage: { updatedAt: Date.now(), members: (this.peers && this.peers.list) ? this.peers.list() : {} } } };
+      return { ok: true, data: { manifest, files, group: g } };
   }
   // master 发布捆绑包到 downloads/skills（不再 push 成员）
   publishPackage(packageId) {
