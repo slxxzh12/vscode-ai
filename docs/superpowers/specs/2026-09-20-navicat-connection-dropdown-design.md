@@ -38,7 +38,7 @@
   - 密码用 `el-input type="password" show-password` 展示（默认为掩码、可一键切换明文）；移除原 `.nv-reveal` 👁 按钮与 `doReveal` 的单独入口。
 - **新建态**：
   - 选「＋ 新建连接」（或 `selectedId` 清空）→ `newProfile()`：`form = blank()`、`selectedId = ''`、`mode = 'new'`。
-  - 新建态下 `el-select` 占位改为 `nv.template_ph`，其选项仍是已保存连接；选中一个 → 把其 `type/host/port/user/database/password`（密码来自 `reveal`）填入 `form`，**不复制 id / name**（或保留原 name 供继续改），填充后 `selectedId` 立即清回 `''` 以便再次选模板或保持新建态。
+  - 新建态下 `el-select` 占位改为 `nv.template_ph`，其选项仍是已保存连接；选中一个 → 把其 `type/host/port/user/database/password`（密码来自 `reveal`）填入 `form`，**不复制 id 与 name**（name 保持空白、由用户填写，避免重名），填充后 `selectedId` 立即清回 `''` 以便再次选模板或保持新建态。
   - `mode` 仍为 `'new'`，保存走 POST。
 - **保存（`doSave`）**：
   - 依据 `form.id` 是否存在决定 PATCH / POST（沿用现状）。
