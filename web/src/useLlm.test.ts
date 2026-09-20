@@ -73,14 +73,19 @@ describe('useLlm', () => {
     await expect(llm.status()).rejects.toThrow('HTTP 503');
   });
 
-  it('opencodeConfig 走 GET，saveOpencodeConfig 走 POST', async () => {
+  it('opencodeConfig 走 GET，saveOpencodeConfig 走 POST（含 remove）', async () => {
     const calls = stub(() => ({ body: { ok: true, config: { provider: {} } } }));
     await llm.opencodeConfig();
     expect(calls[0].url).toBe('/api/llm-admin/opencode');
     expect(calls[0].init?.method || 'GET').toBe('GET');
-    await llm.saveOpencodeConfig({ providers: [{ id: 'deepseek', apiKey: '', models: ['deepseek-v4-flash'] }], model: 'deepseek/deepseek-v4-flash' });
+    const payload = {
+      providers: [{ id: 'my-ai', name: 'MyAI', baseURL: 'https://my.ai/v1', apiKey: '', models: ['my-model'] }],
+      remove: ['corp'],
+      model: 'my-ai/my-model',
+    };
+    await llm.saveOpencodeConfig(payload);
     expect(calls[1].url).toBe('/api/llm-admin/opencode');
     expect(calls[1].init?.method).toBe('POST');
-    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ providers: [{ id: 'deepseek', apiKey: '', models: ['deepseek-v4-flash'] }], model: 'deepseek/deepseek-v4-flash' });
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual(payload);
   });
 });
