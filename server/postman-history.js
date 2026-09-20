@@ -71,7 +71,12 @@ export function createPostmanHistory({ dir }) {
     const target = dirOf(rel);
     fs.mkdirSync(target, { recursive: true });
     const file = path.join(target, postmanRecordName(cmd));
-    const rec = { command: cmd, result: normalizeResult(result), updatedAt: new Date(now).toISOString() };
+    let title = '';
+    try {
+      const prev = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (typeof prev?.title === 'string') title = prev.title.trim();
+    } catch { /* 新文件或坏文件：无标题可保留 */ }
+    const rec = { command: cmd, ...(title ? { title } : {}), result: normalizeResult(result), updatedAt: new Date(now).toISOString() };
     fs.writeFileSync(file, `${JSON.stringify(rec, null, 2)}\n`, 'utf8');
     return file;
   };
@@ -130,5 +135,33 @@ export function createPostmanHistory({ dir }) {
     try { fs.renameSync(from, to); return true; } catch { return false; }
   };
 
-  return { dir, record, list, listFolders, remove, createFolder, removeFolder, move };
+  // 只改目录最后一段名字；返回新相对路径。重名抛 exists，非法名抛 bad-path，目标不存在抛 not-found。
+  const renameFolder = (rel, name) => {
+    const r = normalizeRel(rel);
+    if (!r) { const e = new Error('empty path'); e.code = 'empty'; throw e; }
+    const abs = dirOf(r);
+    if (!fs.existsSync(abs)) { const e = new Error('missing'); e.code = 'not-found'; throw e; }
+    const seg = String(name ?? '').trim();
+    if (!SEG.test(seg) || seg === '.' || seg === '..') { const e = new Error('bad name'); e.code = 'bad-path'; throw e; }
+    const parent = r.includes('/') ? r.slice(0, r.lastIndexOf('/')) : '';
+    const next = parent ? `${parent}/${seg}` : seg;
+    if (next === r) return r;
+    const to = dirOf(next);
+    if (fs.existsSync(to)) { const e = new Error('exists'); e.code = 'exists'; throw e; }
+    fs.renameSync(abs, to);
+    return next;
+  };
+
+  // 记录的显示标题；空标题清除该字段，回退显示 curl 原文。文件名（哈希）不变。
+  const setRecordTitle = (id, title) => {
+    let file;
+    try { file = resolveRecord(id); } catch { return false; }
+    let rec;
+    try { rec = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return false; }
+    const name = String(title ?? '').trim();
+    if (name) rec.title = name; else delete rec.title;
+    try { fs.writeFileSync(file, `${JSON.stringify(rec, null, 2)}\n`, 'utf8'); return true; } catch { return false; }
+  };
+
+  return { dir, record, list, listFolders, remove, createFolder, removeFolder, move, renameFolder, setRecordTitle };
 }

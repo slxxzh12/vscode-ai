@@ -112,3 +112,34 @@ test('removeFolder：递归删除目录及其记录', () => {
   assert.deepEqual(h.list(), []);
   assert.equal(h.removeFolder('foo'), false);
 });
+
+test('renameFolder：改目录名并返回新路径；重名/非法名/不存在报错', () => {
+  const dir = tmpDir();
+  const h = createPostmanHistory({ dir });
+  h.createFolder('foo/bar');
+  h.record('curl https://a.com', RESULT, { folder: 'foo' });
+  assert.equal(h.renameFolder('foo', 'baz'), 'baz');
+  assert.deepEqual(h.listFolders().sort(), ['baz', 'baz/bar']);
+  assert.equal(h.renameFolder('baz', 'baz'), 'baz');
+  h.createFolder('other');
+  assert.throws(() => h.renameFolder('baz', 'other'), (e) => e.code === 'exists');
+  assert.throws(() => h.renameFolder('baz', '../evil'), (e) => e.code === 'bad-path');
+  assert.throws(() => h.renameFolder('baz', 'a b'), (e) => e.code === 'bad-path');
+  assert.throws(() => h.renameFolder('nope', 'x'), (e) => e.code === 'not-found');
+});
+
+test('setRecordTitle：设置/清空标题；重跑同 curl 保留标题', () => {
+  const dir = tmpDir();
+  const h = createPostmanHistory({ dir });
+  const id = postmanRecordName('curl https://a.com');
+  h.record('curl https://a.com', RESULT);
+  assert.equal(h.setRecordTitle(id, '  My A  '), true);
+  assert.equal(h.list()[0].title, 'My A');
+  h.record('curl https://a.com', { ...RESULT, stdout: 'again' });
+  const kept = h.list()[0];
+  assert.equal(kept.title, 'My A');
+  assert.equal(kept.result.stdout, 'again');
+  assert.equal(h.setRecordTitle(id, ''), true);
+  assert.equal(h.list()[0].title, undefined);
+  assert.equal(h.setRecordTitle('../evil.json', 'x'), false);
+});
