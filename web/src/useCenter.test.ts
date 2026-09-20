@@ -26,6 +26,14 @@ test('activateSession 对不存在的会话兜底创建页签并激活', () => {
   expect(c.activeId.value).toBe('s:z');
 });
 
+test('hasSession 只对已打开的会话页签返回 true', () => {
+  const c = useCenter();
+  c.ensureSession('a', 'A', 'running');
+  c.openFile('p', 'x.ts', 'x.ts');
+  expect(c.hasSession('a')).toBe(true);
+  expect(c.hasSession('b')).toBe(false);
+});
+
 test('ensureSession 已存在时只更新 label/sub', () => {
   const c = useCenter();
   c.ensureSession('a', 'A', 'running');

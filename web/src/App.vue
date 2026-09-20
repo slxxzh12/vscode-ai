@@ -217,7 +217,12 @@ const liveProjectBySession = computed(() => {
   return out;
 });
 const liveSessionIds = computed(() => terminal.state.sessions.filter((s) => s.state === 'running').map((s) => s.id));
-async function openHistorySession(sid: string, name?: string) {
+async function openHistorySession(sid: string, name?: string): Promise<{ id: string } | null> {
+  // 会话已作为中心页签打开：只选中该页签，不再向服务端 RESTORE（避免重复重建/回放终端）。
+  if (center.hasSession(sid)) {
+    center.activateSession(sid);
+    return { id: sid };
+  }
   return openRestoredSession(sid, {
     restore: (id) => terminal.restoreSession(id, { name }),
     activate: (id) => center.activateSession(id),

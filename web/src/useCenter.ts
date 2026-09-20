@@ -31,6 +31,9 @@ export function useCenter() {
     const t: CenterTab = { id: sid(sessionId), kind: 'session', label, sub: state };
     upsert(t);
   }
+  function hasSession(sessionId: string) {
+    return tabs.value.some((t) => t.id === sid(sessionId));
+  }
   function removeSession(sessionId: string) {
     const id = sid(sessionId);
     tabs.value = tabs.value.filter((t) => t.id !== id);
@@ -68,5 +71,5 @@ export function useCenter() {
     if (activeId.value === id) { const s = activeSessionTab.value; setActive(s ? s.id : null); }
   }
 
-  return { tabs, activeId, active, activeKind, ensureSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab };
+  return { tabs, activeId, active, activeKind, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab };
 }
