@@ -69,6 +69,7 @@
 ## 目录速览
 
 - `shared/` — WS 协议常量/类型（唯一事实源）；`server/` — Node ESM 后端（ws + node-pty，测试在 `server/test/`，`node --test`）；`web/` — Vue3+Vite+TS+xterm（vitest + vue-tsc）。
+- Postman 小工具：`server/postman-history.js`（curl 记录/目录树，存 `<端口数据目录>/tools/postman/`）；前端 `web/src/tools/postman/`（`usePostmanHistory.ts` 数据层 + `PostmanTree.vue` 目录树 + `PostmanTool.vue` 面板），由 `web/src/components/MiniTools.vue` 挂载。
 - 手机遥控（remote_coder）：`server/remote-coder-store.js`（`remote_coder/` 文件层：`messages.jsonc` 收发、`screen.png` 覆盖写、commit+push）+ `server/remote-coder-mount.js`（`/api/remote-coder/*` 端点）；前端在 `web/src/remote-coder/`（`PhoneView.vue` 手机页、`useRemoteCoder.ts` 手机侧、`useDesktopRemoteCoder.ts` 桌面侧取件）。顶栏 `📱` 新标签打开 `/?phone=1`；桌面端每 2s 拉 `/inbox`（拿到即 ack）→ 截图或把消息送进当前活动会话。
 - 数据按端口隔离在 `%USERPROFILE%\.local\share\void\ports\<端口>\`；宿主端口文件在仓库根/绿色包根的 `data/port.txt`。
 - 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`；代码行统计：`npm.cmd run count:code`（去注释/空行/纯括号/无英文行，输出每文件实际代码行）。
