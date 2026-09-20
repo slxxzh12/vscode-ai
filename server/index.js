@@ -66,6 +66,11 @@ import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
 import { VERSION } from './version.js';
 import { createNotice } from './notice.js';
 import { createPostmanHistory } from './postman-history.js';
+import { createNavicatCrypto } from './navicat-crypto.js';
+import { createNavicatStore } from './navicat-store.js';
+import { createNavicatExec } from './navicat-exec.js';
+import { createNavicatMount } from './navicat-mount.js';
+import { buildNcx, connectionString } from './navicat-ncx.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -394,6 +399,14 @@ function buildWorkspace({ paths, port }) {
 
   const postmanHistory = createPostmanHistory({ dir: paths.postmanDir });
   const notepadStore = createNotepadStore({ dir: paths.notepadDir });
+  const navicatCrypto = createNavicatCrypto({ keyFile: path.join(paths.navicatDir, '.key') });
+  const navicatStore = createNavicatStore({ file: path.join(paths.navicatDir, 'profiles.json'), crypto: navicatCrypto });
+  const navicatMount = createNavicatMount({
+    store: navicatStore,
+    exec: createNavicatExec({}),
+    ncx: { buildNcx, connectionString },
+    logger: log,
+  });
   const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger, postmanHistory, notepadStore });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
@@ -405,7 +418,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById };
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, navicatMount };
 }
 
 // ---- 工作区（端口档案）----
@@ -785,6 +798,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/usage/')) { await ws.usageMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/scheduler')) { await ws.scheduler.mount(req, res); return; }
+  if (url.pathname.startsWith('/api/navicat')) { await ws.navicatMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/')) {
     await ws.httpApi(req, res);
     return;
