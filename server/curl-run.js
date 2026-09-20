@@ -64,8 +64,44 @@ export function buildCurlArgs(text) {
   throw e;
 }
 
+// 把 curl 输出拆成「响应头 / 响应体 / 状态码」：-D - 会把响应头打到 stdout（可能因重定向出现多段），
+// 逐段吞掉以 HTTP/ 开头的头部块，最后一段的状态行即最终状态码，其余为响应体。
+export function splitResponse(text) {
+  const statusRe = /^HTTP\/\d(?:\.\d)?\s+(\d{3})/;
+  let rest = String(text ?? '');
+  let headers = '';
+  let status = 0;
+  for (;;) {
+    const start = rest.replace(/^[\r\n]+/, '');
+    const m = statusRe.exec(start);
+    if (!m) break;
+    status = Number(m[1]);
+    const crlf = start.indexOf('\r\n\r\n');
+    const lf = start.indexOf('\n\n');
+    let end;
+    if (crlf >= 0 && (lf < 0 || crlf < lf)) end = crlf + 4;
+    else if (lf >= 0) end = lf + 2;
+    else end = start.length;
+    headers += start.slice(0, end);
+    if (end >= start.length) { rest = ''; break; }
+    rest = start.slice(end);
+  }
+  return { status, headers: headers.trimEnd(), body: rest };
+}
+
+// 补上运行时才需要的参数：-s -S 去掉进度条但保留报错，-D - 把响应头一并带出（用户已给则不覆盖）
+function extraArgs(argv) {
+  const long = (n) => argv.includes(n);
+  const shortHas = (ch) => argv.some((a) => /^-[A-Za-z]+$/.test(a) && a.slice(1).includes(ch));
+  const extra = [];
+  if (!long('--silent') && !long('--verbose') && !shortHas('s') && !shortHas('v')) extra.push('-s', '-S');
+  if (!long('--dump-header') && !argv.some((a) => a.startsWith('--dump-header=')) && !shortHas('D')) extra.push('-D', '-');
+  return extra;
+}
+
 export function runCurl(text, { timeoutMs = CURL_TIMEOUT_MS, cwd = process.cwd() } = {}) {
-  const args = buildCurlArgs(text);
+  const base = buildCurlArgs(text);
+  const args = [...base, ...extraArgs(base)];
   return new Promise((resolve) => {
     execFile('curl', args, { timeout: timeoutMs, maxBuffer: CURL_MAX_OUTPUT, windowsHide: true, cwd }, (err, stdout, stderr) => {
       let code = 0;
@@ -76,12 +112,16 @@ export function runCurl(text, { timeoutMs = CURL_TIMEOUT_MS, cwd = process.cwd()
         else if (err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') { code = -1; error = 'output-too-large'; }
         else { code = -1; error = String(err.code || err.message); }
       }
+      const { status, headers, body } = splitResponse(stdout);
       resolve({
         ok: !err,
         code,
         error,
         timedOut: !!(err && err.killed),
-        stdout: String(stdout ?? ''),
+        status,
+        headers,
+        body,
+        stdout: body,
         stderr: String(stderr ?? ''),
       });
     });

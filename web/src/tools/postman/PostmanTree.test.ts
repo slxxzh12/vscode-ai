@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { nextTick } from 'vue';
+import { flushPromises } from '@vue/test-utils';
 import { mountC } from '../../test-utils';
 import PostmanTree from './PostmanTree.vue';
 
@@ -78,6 +79,47 @@ describe('PostmanTree', () => {
     await input.trigger('keydown.enter');
     await nextTick();
     expect(a.createFolder).toHaveBeenCalledWith('foo', 'bar');
+    expect(w.find('.pmedit').exists()).toBe(false);
+  });
+
+  it('新建文件夹空名称点击其他位置退出编辑且不创建', async () => {
+    const a = actions();
+    const w = mount({ actions: a, folders: ['foo'] });
+    await w.find('.pmrow.folder .pmnew').trigger('click');
+    expect(w.find('.pmedit').exists()).toBe(true);
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await nextTick();
+    expect(w.find('.pmedit').exists()).toBe(false);
+    expect(a.createFolder).not.toHaveBeenCalled();
+  });
+
+  it('新建文件夹输入名称后点击其他位置会保存', async () => {
+    const a = actions();
+    const w = mount({ actions: a });
+    await w.find('.pmroot .pmnew').trigger('click');
+    await w.find('.pmedit').setValue('bar');
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushPromises();
+    expect(a.createFolder).toHaveBeenCalledWith('', 'bar');
+    expect(w.find('.pmedit').exists()).toBe(false);
+  });
+
+  it('执行按钮：记录发出 run-record，文件夹发出 run-folder', async () => {
+    const w = mount({ folders: ['foo'], records: [REC('foo/a.json', 'curl A', 'foo')] });
+    await w.find('.pmrow.record .pmexec').trigger('click');
+    expect(w.emitted('run-record')?.[0]?.[0]).toMatchObject({ id: 'foo/a.json' });
+    await w.find('.pmrow.folder .pmexec').trigger('click');
+    expect(w.emitted('run-folder')?.[0]).toEqual(['foo']);
+  });
+
+  it('statuses 渲染通过/未通过圆圈', () => {
+    const w = mount({
+      folders: ['foo'],
+      records: [REC('foo/a.json', 'curl A', 'foo'), REC('foo/b.json', 'curl B', 'foo')],
+      statuses: { 'foo/a.json': 'pass', 'foo/b.json': 'fail' },
+    });
+    expect(w.findAll('.pmstatus.pass').length).toBe(1);
+    expect(w.findAll('.pmstatus.fail').length).toBe(1);
   });
 
   it('记录重命名：Enter 调 actions.renameRecord', async () => {

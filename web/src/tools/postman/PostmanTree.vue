@@ -9,10 +9,13 @@ const props = defineProps<{
   activeFolder: string;
   activeId: string;
   actions: PostmanActions;
+  statuses?: Record<string, 'pass' | 'fail'>;
 }>();
 const emit = defineEmits<{
   (e: 'select-folder', path: string): void;
   (e: 'select-record', record: PostmanRecord): void;
+  (e: 'run-folder', path: string): void;
+  (e: 'run-record', record: PostmanRecord): void;
 }>();
 
 type EditingMeta =
@@ -98,6 +101,7 @@ const rows = computed<Row[]>(() => {
 function isFolderEditing(path: string) { const ed = editing.value; return !!ed && ed.kind === 'folder' && ed.path === path; }
 function isRecordEditing(id: string) { const ed = editing.value; return !!ed && ed.kind === 'record' && ed.id === id; }
 function recordLabel(rec: PostmanRecord) { return (rec.title && rec.title.trim()) || rec.command; }
+function recordStatus(id: string) { return props.statuses?.[id] || ''; }
 function fmtTime(iso?: string) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -106,6 +110,8 @@ function fmtTime(iso?: string) {
 
 function selectFolder(path: string) { emit('select-folder', path); }
 function selectRecord(rec: PostmanRecord) { emit('select-record', rec); }
+function runFolder(path: string) { menu.value = null; emit('run-folder', path); }
+function runRecord(rec: PostmanRecord) { menu.value = null; emit('run-record', rec); }
 
 function startNew(parent: string) { menu.value = null; editing.value = { kind: 'new', parent }; draft.value = ''; editError.value = ''; }
 function startRenameFolder(path: string) { menu.value = null; editing.value = { kind: 'folder', path }; draft.value = path.slice(path.lastIndexOf('/') + 1); editError.value = ''; }
@@ -168,15 +174,23 @@ function onDropRow(row: Row) {
   else if (row.kind === 'record') onDrop(row.record.folder || '');
 }
 
+function onDocClick(e: MouseEvent) {
+  closeMenu();
+  if (!editing.value) return;
+  const target = e.target as HTMLElement | null;
+  if (target && target.closest('.pmedit')) return;
+  if (editError.value) { cancelEdit(); return; }
+  void commitEdit();
+}
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') { closeMenu(); if (editing.value) cancelEdit(); }
 }
 onMounted(() => {
-  document.addEventListener('click', closeMenu);
+  document.addEventListener('click', onDocClick);
   document.addEventListener('keydown', onKeydown);
 });
 onBeforeUnmount(() => {
-  document.removeEventListener('click', closeMenu);
+  document.removeEventListener('click', onDocClick);
   document.removeEventListener('keydown', onKeydown);
 });
 </script>
@@ -190,6 +204,7 @@ onBeforeUnmount(() => {
       <span class="pmicon">🏠</span>
       <span class="pmname">{{ $t('tools.pm_root') }}</span>
       <span class="pmacts">
+        <button class="pmact pmexec" :title="$t('tools.pm_run_folder')" @click.stop="runFolder('')">▶</button>
         <button class="pmact pmnew" :title="$t('tools.pm_new_folder')" @click.stop="startNew('')">＋</button>
       </span>
     </div>
@@ -223,6 +238,7 @@ onBeforeUnmount(() => {
           <template v-else>
             <span class="pmname" @click="selectFolder(row.path)" @dblclick="toggle(row.path)">{{ row.name }}</span>
             <span class="pmacts">
+              <button class="pmact pmexec" :title="$t('tools.pm_run_folder')" @click.stop="runFolder(row.path)">▶</button>
               <button class="pmact pmnew" :title="$t('tools.pm_new_subfolder')" @click.stop="startNew(row.path)">＋</button>
               <button class="pmact pmrename" :title="$t('tools.pm_rename')" @click.stop="startRenameFolder(row.path)">✎</button>
               <button class="pmact pmdel" :title="$t('tools.pm_delete')" @click.stop="removeFolder(row.path)">×</button>
@@ -232,6 +248,7 @@ onBeforeUnmount(() => {
         </template>
 
         <template v-else>
+          <span class="pmstatus" :class="recordStatus(row.record.id)" />
           <span class="pmchev invisible">▸</span>
           <span class="pmicon">📄</span>
           <template v-if="isRecordEditing(row.record.id)">
@@ -243,6 +260,7 @@ onBeforeUnmount(() => {
             <span class="pmname" @click="selectRecord(row.record)">{{ recordLabel(row.record) }}</span>
             <span class="pmtime">{{ fmtTime(row.record.updatedAt) }}</span>
             <span class="pmacts">
+              <button class="pmact pmexec" :title="$t('tools.pm_run_record')" @click.stop="runRecord(row.record)">▶</button>
               <button class="pmact pmrename" :title="$t('tools.pm_rename')" @click.stop="startRenameRecord(row.record)">✎</button>
               <button class="pmact pmdel" :title="$t('tools.pm_delete')" @click.stop="removeRecord(row.record.id)">×</button>
             </span>
@@ -274,6 +292,10 @@ onBeforeUnmount(() => {
 .pmchev.invisible { visibility: hidden; }
 .pmchev.collapsed { transform: rotate(-90deg); }
 .pmicon { flex: none; }
+.pmstatus { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.pmstatus.pass { background: #2e7d32; }
+.pmstatus.fail { background: #c62828; }
+.pmexec { font-size: 10px; }
 .pmname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pmtime { flex: none; color: var(--tx4); font-size: 11px; }
 .pmacts { display: none; flex: none; gap: 2px; }

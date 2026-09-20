@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenizeCurl, buildCurlArgs, runCurl } from '../curl-run.js';
+import { tokenizeCurl, buildCurlArgs, runCurl, splitResponse } from '../curl-run.js';
 
 test('tokenizeCurl：空格分词与引号', () => {
   assert.deepEqual(tokenizeCurl('curl -X GET https://a.com'), ['curl', '-X', 'GET', 'https://a.com']);
@@ -30,6 +30,24 @@ test('buildCurlArgs：支持 curl / curl.exe / 纯选项', () => {
 test('buildCurlArgs：拒绝非 curl 与空命令', () => {
   assert.throws(() => buildCurlArgs('wget https://a.com'), (e) => e.code === 'not-curl');
   assert.throws(() => buildCurlArgs('   '), (e) => e.code === 'empty');
+});
+
+test('splitResponse：拆出状态码 / 响应头 / 响应体', () => {
+  const raw = 'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nhello';
+  assert.deepEqual(splitResponse(raw), { status: 200, headers: 'HTTP/1.1 200 OK\r\nContent-Type: text/plain', body: 'hello' });
+});
+
+test('splitResponse：没有响应头时整段算响应体', () => {
+  assert.deepEqual(splitResponse('curl 8.0.0'), { status: 0, headers: '', body: 'curl 8.0.0' });
+});
+
+test('splitResponse：重定向多段头取最后状态码', () => {
+  const raw = 'HTTP/1.1 301 Moved\r\nLocation: /x\r\n\r\nHTTP/1.1 404 Not Found\r\nX: 1\r\n\r\nbody';
+  const r = splitResponse(raw);
+  assert.equal(r.status, 404);
+  assert.equal(r.body, 'body');
+  assert.match(r.headers, /301/);
+  assert.match(r.headers, /404/);
 });
 
 test('runCurl：真跑一次 curl --version', async () => {

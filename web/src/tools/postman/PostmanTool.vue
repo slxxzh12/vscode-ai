@@ -1,19 +1,32 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { t } from '../../i18n';
-import { usePostmanHistory, type PostmanActions, type PostmanRecord } from './usePostmanHistory';
+import { usePostmanHistory, type CurlResult, type PostmanActions, type PostmanRecord } from './usePostmanHistory';
 import PostmanTree from './PostmanTree.vue';
 
 const { history, folders, load, createFolder, renameFolder, renameRecord, removeFolder, removeRecord, moveRecord, runCurl } = usePostmanHistory();
 
 const curlCmd = ref('');
-const output = ref('');
+const respHeaders = ref('');
+const respBody = ref('');
+const respStderr = ref('');
+const status = ref(0);
+const failed = ref(false);
 const busy = ref(false);
 const msg = ref('');
 const copied = ref(false);
 const activeId = ref('');
 const activeFolder = ref('');
+const runStatus = ref<Record<string, 'pass' | 'fail'>>({});
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+const hasOutput = computed(() => !!(respHeaders.value || respBody.value || respStderr.value));
+const respState = computed(() => {
+  if (status.value >= 400) return 'err';
+  if (status.value >= 200 && status.value < 300) return 'ok';
+  if (status.value > 0) return 'neutral';
+  return failed.value ? 'warn' : 'neutral';
+});
 
 const actions: PostmanActions = {
   createFolder: (parent, name) => createFolder(parent, name),
@@ -41,29 +54,93 @@ const actions: PostmanActions = {
 
 const saveTo = computed(() => (activeFolder.value ? `/${activeFolder.value}` : '/'));
 
+function clearResult() { respHeaders.value = ''; respBody.value = ''; respStderr.value = ''; status.value = 0; failed.value = false; }
+
 function selectFolder(path: string) { activeFolder.value = path; }
-function selectRecord(r: PostmanRecord) { curlCmd.value = r.command; activeId.value = r.id; output.value = ''; msg.value = ''; }
+function selectRecord(r: PostmanRecord) { curlCmd.value = r.command; activeId.value = r.id; clearResult(); msg.value = ''; }
+
+function setStatus(id: string, pass: boolean) { runStatus.value = { ...runStatus.value, [id]: pass ? 'pass' : 'fail' }; }
+function clearStatuses(ids: string[]) {
+  const next = { ...runStatus.value };
+  for (const id of ids) delete next[id];
+  runStatus.value = next;
+}
+function isPass(j: CurlResult) { return !!j.ok && !j.error && !j.timedOut && (Number(j.status) || 0) < 400; }
+
+async function execCurl(command: string, folder: string): Promise<CurlResult> {
+  const j = await runCurl(command, folder);
+  status.value = Number(j.status) || 0;
+  respHeaders.value = j.headers ?? '';
+  respBody.value = j.body ?? j.stdout ?? '';
+  respStderr.value = j.stderr ?? '';
+  failed.value = !j.ok || !!j.error || (status.value === 0 && j.code !== 0);
+  msg.value = j.timedOut ? t('tools.pm_timeout') : t('tools.pm_exit', { code: j.code });
+  return j;
+}
 
 async function runCurlCmd() {
   if (busy.value) return;
   if (!curlCmd.value.trim()) { msg.value = t('et.empty'); return; }
-  busy.value = true; msg.value = ''; output.value = '';
-  try {
-    const j = await runCurl(curlCmd.value, activeFolder.value);
-    output.value = [j.stdout, j.stderr ? `--- stderr ---\n${j.stderr}` : ''].filter(Boolean).join(j.stdout ? '\n' : '');
-    msg.value = j.timedOut ? t('tools.pm_timeout') : t('tools.pm_exit', { code: j.code });
-  } catch (e) {
+  busy.value = true; msg.value = ''; clearResult();
+  try { await execCurl(curlCmd.value, activeFolder.value); }
+  catch (e) {
+    failed.value = true;
     msg.value = t('tools.failed', { msg: (e as Error)?.message || String(e) });
   } finally { busy.value = false; }
 }
 
+async function runRecord(rec: PostmanRecord) {
+  if (busy.value) return;
+  curlCmd.value = rec.command; activeId.value = rec.id;
+  busy.value = true; msg.value = ''; clearResult();
+  try { setStatus(rec.id, isPass(await execCurl(rec.command, rec.folder || ''))); }
+  catch (e) {
+    setStatus(rec.id, false);
+    failed.value = true;
+    msg.value = t('tools.failed', { msg: (e as Error)?.message || String(e) });
+  } finally { busy.value = false; }
+}
+
+function folderRecords(path: string) {
+  return history.value.filter((r) => { const f = r.folder || ''; return f === path || f.startsWith(`${path}/`); });
+}
+
+async function runFolder(path: string) {
+  if (busy.value) return;
+  const list = folderRecords(path);
+  if (!list.length) { msg.value = t('tools.pm_folder_empty'); return; }
+  clearStatuses(list.map((r) => r.id));
+  busy.value = true; msg.value = ''; clearResult();
+  try {
+    for (let i = 0; i < list.length; i += 1) {
+      const r = list[i];
+      activeId.value = r.id;
+      msg.value = t('tools.pm_run_progress', { i: i + 1, total: list.length });
+      setStatus(r.id, isPass(await execCurl(r.command, r.folder || '')));
+    }
+    msg.value = t('tools.pm_run_done', { n: list.length });
+  } catch (e) {
+    failed.value = true;
+    msg.value = t('tools.failed', { msg: (e as Error)?.message || String(e) });
+  } finally { busy.value = false; }
+}
+
+function allOutput() {
+  const parts: string[] = [];
+  if (respHeaders.value) parts.push(respHeaders.value);
+  if (respBody.value) parts.push(respBody.value);
+  if (respStderr.value) parts.push(respStderr.value);
+  return parts.join('\n');
+}
+
 async function copyOut() {
-  if (!output.value) return;
-  try { await navigator.clipboard.writeText(output.value); }
+  if (!hasOutput.value) return;
+  const text = allOutput();
+  try { await navigator.clipboard.writeText(text); }
   catch {
     try {
       const ta = document.createElement('textarea');
-      ta.value = output.value;
+      ta.value = text;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand('copy');
@@ -91,15 +168,18 @@ onMounted(() => { void load(); });
         :active-folder="activeFolder"
         :active-id="activeId"
         :actions="actions"
+        :statuses="runStatus"
         @select-folder="selectFolder"
         @select-record="selectRecord"
+        @run-folder="runFolder"
+        @run-record="runRecord"
       />
     </aside>
 
     <section class="pmmain">
       <div class="pmactsbar">
         <button class="pmbtn primary pmrun" :disabled="busy" @click="runCurlCmd">{{ busy ? $t('tools.pm_running') : $t('tools.run') }}</button>
-        <button class="pmbtn" @click="curlCmd = ''; output = ''; msg = ''">{{ $t('tools.clear') }}</button>
+        <button class="pmbtn" @click="curlCmd = ''; clearResult(); msg = ''">{{ $t('tools.clear') }}</button>
         <span class="pmsave">{{ $t('tools.pm_saveto', { path: saveTo }) }}</span>
       </div>
 
@@ -111,10 +191,21 @@ onMounted(() => { void load(); });
       </div>
 
       <label class="pmlabel">{{ $t('tools.pm_resp') }}</label>
-      <div class="pmoutwrap">
-        <textarea v-model="output" class="pmout" :placeholder="$t('tools.output')" spellcheck="false" readonly />
+      <div class="pmresp" :class="respState">
+        <div class="pmfieldbox">
+          <div class="pmfieldlabel">{{ $t('tools.pm_headers') }}</div>
+          <textarea v-model="respHeaders" class="pmfield pmheaders" :placeholder="$t('tools.pm_noheaders')" spellcheck="false" readonly />
+        </div>
+        <div class="pmfieldbox pmgrow">
+          <div class="pmfieldlabel">{{ $t('tools.pm_body') }}</div>
+          <textarea v-model="respBody" class="pmfield pmout" :placeholder="$t('tools.output')" spellcheck="false" readonly />
+        </div>
+        <div class="pmfieldbox pmgrow">
+          <div class="pmfieldlabel">{{ $t('tools.pm_stderr') }}</div>
+          <textarea v-model="respStderr" class="pmfield pmstderr" :placeholder="$t('tools.pm_nostderr')" spellcheck="false" readonly />
+        </div>
         <div class="pmoutacts">
-          <button class="pmmini" :disabled="!output" @click="copyOut">{{ copied ? $t('tools.copied') : $t('tools.copy') }}</button>
+          <button class="pmmini" :disabled="!hasOutput" @click="copyOut">{{ copied ? $t('tools.copied') : $t('tools.copy') }}</button>
         </div>
       </div>
     </section>
@@ -141,9 +232,16 @@ onMounted(() => { void load(); });
 .pmcurltip { color: var(--tx4); font-size: 11px; }
 .pmcurl { flex: none; min-height: 120px; resize: none; border: none; background: transparent; color: var(--tx); padding: 10px 12px; font-size: 13px; line-height: 1.6; font-family: ui-monospace, Consolas, monospace; box-sizing: border-box; }
 .pmcurl:focus { outline: none; }
-.pmoutwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
-.pmout { flex: 1; min-height: 120px; resize: none; background: var(--bg2); color: var(--tx); border: 1px solid var(--bd); border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.6; font-family: ui-monospace, Consolas, monospace; box-sizing: border-box; }
-.pmout:focus { outline: none; border-color: var(--ac2); }
+.pmresp { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.pmfieldbox { display: flex; flex-direction: column; gap: 4px; }
+.pmfieldbox.pmgrow { flex: 1; min-height: 0; }
+.pmfieldlabel { color: var(--tx4); font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+.pmfield { min-height: 96px; resize: none; background: var(--bg2); color: var(--tx); border: 1px solid var(--bd); border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.6; font-family: ui-monospace, Consolas, monospace; box-sizing: border-box; }
+.pmgrow .pmfield { flex: 1; min-height: 120px; }
+.pmfield:focus { outline: none; }
+.pmresp.ok .pmfield { border-color: #2e7d32; }
+.pmresp.err .pmfield { border-color: #c62828; }
+.pmresp.warn .pmfield { border-color: #f9a825; }
 .pmoutacts { display: flex; gap: 8px; justify-content: flex-end; }
 .pmmini { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
 .pmmini:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }

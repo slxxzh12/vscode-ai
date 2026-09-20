@@ -24,6 +24,9 @@ export type PostmanActions = {
 export type CurlResult = {
   ok: boolean;
   code: number;
+  status: number;
+  headers: string;
+  body: string;
   stdout: string;
   stderr: string;
   timedOut: boolean;
