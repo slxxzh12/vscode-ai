@@ -112,7 +112,7 @@ watch(locale, loadNotice);
 
     <div class="col col-main">
       <section class="block tools-block">
-        <h3 class="btitle">🧰 {{ $t('market.tools') }}</h3>
+        <h3 class="btitle">🛠️ {{ $t('market.tools') }}</h3>
         <MiniTools />
       </section>
 
