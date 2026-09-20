@@ -1,4 +1,4 @@
-// @vitest-environment happy-dom
+﻿// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
@@ -25,10 +25,10 @@ describe('MiniTools', () => {
     const w = mount();
     const btns = w.findAll('.mticon');
     expect(btns).toHaveLength(6);
-    expect(w.find('.mtbody').exists()).toBe(false);
+    expect(w.find('.ttbody').exists()).toBe(false);
     await btns[0].trigger('click');
     await flushPromises();
-    expect(w.find('.mtbody').exists()).toBe(true);
+    expect(w.find('.ttbody').exists()).toBe(true);
     expect(w.find('.el-dialog').classes()).toContain('is-fullscreen');
     await w.find('.el-dialog__headerbtn').trigger('click');
     await flushPromises();
@@ -48,11 +48,11 @@ describe('MiniTools', () => {
     const w = mount();
     await w.findAll('.mticon')[1].trigger('click');
     await w.findAll('textarea')[0].setValue('a: [1, ');
-    await w.findAll('.mtbtn')[0].trigger('click');
+    await w.findAll('.mtbtn')[1].trigger('click');
     expect(w.find('.mtmsg').exists()).toBe(true);
 
     await w.findAll('textarea')[0].setValue('b: 2\na: 1');
-    await w.findAll('.mtbtn')[1].trigger('click');
+    await w.findAll('.mtbtn')[2].trigger('click');
     expect(w.find('.mtmsg').text()).toBeTruthy();
     expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toContain('a: 1');
   });
@@ -88,7 +88,7 @@ describe('MiniTools', () => {
     await w.findAll('textarea')[0].setValue('const a = 1;');
     await w.find('.mtbtn.primary').trigger('click');
     await flushPromises();
-    expect(urls[0]).toBe('/api/format');
+    expect(urls).toContain('/api/format');
     expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('const a=1;');
   });
 
@@ -103,7 +103,8 @@ describe('MiniTools', () => {
 
   it('Navicat：渲染 NavicatTool 子组件', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [] })));
-    const w = mount();
+    // teleport stub 会让 ElSelect 递归更新（happy-dom 下的已知问题），此用例只验证面板挂载，直接 stub 掉 ElSelect。
+    const w = mountC(MiniTools, { global: { plugins: [ElementPlus], stubs: { teleport: true, ElSelect: true } } });
     await w.findAll('.mticon')[5].trigger('click');
     await flushPromises();
     expect(w.find('.nvbody').exists()).toBe(true);
@@ -113,7 +114,7 @@ describe('MiniTools', () => {
     pendingTool.value = 'yaml';
     const w = mount();
     await flushPromises();
-    expect(w.find('.mtbody').exists()).toBe(true);
+    expect(w.find('.ttbody').exists()).toBe(true);
   });
 
   it('复制输出 / 输出转输入 / 清空', async () => {

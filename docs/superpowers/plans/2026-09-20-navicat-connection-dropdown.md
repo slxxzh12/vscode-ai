@@ -617,3 +617,13 @@ Expected: 敏感扫描无命中；`git ls-files env` 为空。
 **Placeholder scan：** 无 TBD/TODO；所有代码步骤含完整代码。
 
 **Type consistency：** `mode: 'edit'|'new'`、`selectedId`、`NEW_SENTINEL`、`selectPlaceholder`/`sentinelLabel`/`showActions`、`onSelectChange`/`selectProfile`/`newProfile`/`cancelNew`/`applyTemplate` 在各 Task 中命名一致；测试选择器 `.nv-conn`/`.nv-rename`/`.nv-del`/`.nv-pw input`/`.nv-name-input input`/`.nv-host input`/`.nv-sql`/`.nv-run`/`.nv-save`/`.nv-meta` 与组件模板一致。
+
+---
+
+## 实现偏差（执行时发现）
+
+1. **ElSelect + `stubs: { teleport: true }` 会触发 `Maximum recursive updates exceeded`**（happy-dom 下已最小复现，与 `el-dialog` 断言需要的 teleport stub 冲突）。
+   - `NavicatTool.test.ts` 的 `mount()` 去掉 `stubs: { teleport: true }`（ElSelect 只有展开下拉才 teleport，测试不展开）。
+   - `MiniTools.test.ts` 的「Navicat：渲染 NavicatTool 子组件」用例保留 teleport stub，同时加 `ElSelect: true` stub（该用例只验证面板挂载）。
+   - 因此影响文件增加 `web/src/components/MiniTools.test.ts`。
+2. `pick()` 同时发 `update:modelValue` 与 `change`，更贴近 ElSelect 真实事件序列（最终仍以去掉 teleport stub 为解决根因）。
