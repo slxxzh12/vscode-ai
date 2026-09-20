@@ -176,10 +176,44 @@ export function createNavicatExec({ connectTimeoutMs = 10000, statementTimeoutMs
     return { ...out, durationMs: Date.now() - start };
   }
 
+  async function listDatabases(profile, password) {
+    if (profile.type === 'redis') return Array.from({ length: 16 }, (_, i) => String(i));
+    if (profile.type === 'sqlite') return [];
+    const sql = profile.type === 'mysql'
+      ? 'SELECT schema_name FROM information_schema.schemata ORDER BY schema_name'
+      : 'SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname';
+    try {
+      const out = await withTimeout(run(profile, password, sql), connectTimeoutMs + statementTimeoutMs);
+      return (out.rows || []).map((r) => String(r[0]));
+    } catch (e) {
+      if (e && !e.code) e.code = 'connect';
+      throw e;
+    }
+  }
+
+  async function listTables(profile, password, database) {
+    if (profile.type === 'redis') return [];
+    const p = { ...profile, database: database || profile.database };
+    const sql = profile.type === 'mysql'
+      ? `SELECT table_name FROM information_schema.tables WHERE table_schema = '${String(database || '').replace(/'/g, "''")}' ORDER BY table_name`
+      : profile.type === 'postgres'
+        ? 'SELECT tablename FROM pg_tables WHERE schemaname = ' + "'public'" + ' ORDER BY tablename'
+        : "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name";
+    try {
+      const out = await withTimeout(run(p, password, sql), connectTimeoutMs + statementTimeoutMs);
+      return (out.rows || []).map((r) => String(r[0]));
+    } catch (e) {
+      if (e && !e.code) e.code = 'connect';
+      throw e;
+    }
+  }
+
   return {
     isWriteSql,
     isWriteRedis,
     tokenizeRedis,
+    listDatabases,
+    listTables,
     isWrite(profile, sql) {
       return profile.type === 'redis' ? isWriteRedis(tokenizeRedis(sql)) : isWriteSql(sql);
     },

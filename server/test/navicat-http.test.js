@@ -15,10 +15,12 @@ function fakeExec() {
     calls,
     isWrite: (p, s) => String(s).trim().toUpperCase().startsWith('INSERT'),
     exec: async (p, pw, sql) => {
-      calls.push({ type: p.type, password: pw, sql });
+      calls.push({ type: p.type, password: pw, sql, database: p.database });
       return { columns: ['a'], rows: [[1]], affected: null, truncated: false, durationMs: 3 };
     },
     test: async (p, pw) => { calls.push({ test: p.type, password: pw }); return { ok: true }; },
+    listDatabases: async (p) => { calls.push({ schema: 'databases', type: p.type }); return ['db1', 'db2']; },
+    listTables: async (p, pw, db) => { calls.push({ schema: 'tables', db }); return ['t1', 't2']; },
   };
 }
 
@@ -109,4 +111,24 @@ test('错误：404 / 400 bad-type / 未知路径', async (t) => {
   assert.equal((await call(A.port, 'POST', '/api/navicat/reveal', { id: 'nope' })).status, 404);
   assert.equal((await call(A.port, 'POST', '/api/navicat/profiles', { ...PROFILE, type: 'oracle' })).status, 400);
   assert.equal((await call(A.port, 'GET', '/api/navicat/unknown')).status, 404);
+});
+
+test('schema：databases/tables 端点', async (t) => {
+  const A = await start();
+  t.after(() => A.server.close());
+  const id = (await call(A.port, 'POST', '/api/navicat/profiles', PROFILE)).body.item.id;
+  const dbs = await call(A.port, 'GET', `/api/navicat/schema/databases?id=${id}`);
+  assert.equal(dbs.status, 200);
+  assert.deepEqual(dbs.body.items, ['db1', 'db2']);
+  const tbs = await call(A.port, 'GET', `/api/navicat/schema/tables?id=${id}&database=db2`);
+  assert.deepEqual(tbs.body.items, ['t1', 't2']);
+  assert.equal(A.exec.calls.find((c) => c.schema === 'tables').db, 'db2');
+});
+
+test('exec：database 覆盖档案并传给执行层', async (t) => {
+  const A = await start();
+  t.after(() => A.server.close());
+  const id = (await call(A.port, 'POST', '/api/navicat/profiles', PROFILE)).body.item.id;
+  await call(A.port, 'POST', '/api/navicat/exec', { id, sql: 'SELECT 1', database: 'other' });
+  assert.equal(A.exec.calls.find((c) => c.sql === 'SELECT 1').database, 'other');
 });

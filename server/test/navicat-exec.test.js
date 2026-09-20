@@ -55,3 +55,17 @@ test('exec：SQLite 不存在的目录/文件报错', async () => {
   const exec = createNavicatExec({});
   await assert.rejects(() => exec.exec({ type: 'sqlite', database: '' }, '', 'SELECT 1'));
 });
+
+test('schema：SQLite 列库/列表，Redis 数字库', async () => {
+  const dbFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-nvschema-')), 'a.db');
+  const exec = createNavicatExec({});
+  const sqlite = { type: 'sqlite', database: dbFile };
+  await exec.exec(sqlite, '', 'CREATE TABLE users(a INTEGER)');
+  await exec.exec(sqlite, '', 'CREATE VIEW v_users AS SELECT * FROM users');
+  assert.deepEqual(await exec.listDatabases(sqlite, ''), []);
+  assert.deepEqual(await exec.listTables(sqlite, '', dbFile), ['users', 'v_users']);
+
+  const redis = { type: 'redis', host: '127.0.0.1', port: '6379' };
+  assert.deepEqual(await exec.listDatabases(redis, ''), ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15']);
+  assert.deepEqual(await exec.listTables(redis, '', '0'), []);
+});

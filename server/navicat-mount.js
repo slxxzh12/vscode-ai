@@ -47,6 +47,19 @@ export function createNavicatMount({ store, exec, ncx, logger = console }) {
       return sendJson(res, 405, { error: 'method' });
     }
 
+    if (head === 'schema' && seg[1] === 'databases' && m === 'GET') {
+      const p = store.get(String(url.searchParams.get('id') || ''));
+      const items = await exec.listDatabases(p, store.password(p.id));
+      return sendJson(res, 200, { items });
+    }
+
+    if (head === 'schema' && seg[1] === 'tables' && m === 'GET') {
+      const p = store.get(String(url.searchParams.get('id') || ''));
+      const database = url.searchParams.get('database') || '';
+      const items = await exec.listTables(p, store.password(p.id), database || p.database);
+      return sendJson(res, 200, { items });
+    }
+
     if (head === 'reveal' && m === 'POST') {
       return sendJson(res, 200, { password: store.password(String(body.id || '')) });
     }
@@ -74,7 +87,10 @@ export function createNavicatMount({ store, exec, ncx, logger = console }) {
     }
 
     if (head === 'exec' && m === 'POST') {
-      const p = store.get(String(body.id || ''));
+      const base = store.get(String(body.id || ''));
+      const p = body.database !== undefined && body.database !== null && String(body.database) !== ''
+        ? { ...base, database: String(body.database) }
+        : base;
       const sql = String(body.sql || '');
       if (!sql.trim()) return sendErr(res, 'bad-request');
       if (exec.isWrite(p, sql) && body.confirm !== true) {

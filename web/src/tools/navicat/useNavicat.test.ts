@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { useNavicat } from './useNavicat';
+import { useNavicat, quoteIdent } from './useNavicat';
 
 function okJson(body: unknown) { return { ok: true, status: 200, json: async () => body }; }
 function errJson(status: number, body: unknown) { return { ok: false, status, json: async () => body }; }
@@ -39,8 +39,39 @@ describe('useNavicat', () => {
     const s = useNavicat();
     const a = await s.exec('1', 'INSERT INTO t VALUES (1)');
     expect(a.needConfirm).toBe(true);
-    const b = await s.exec('1', 'INSERT INTO t VALUES (1)', true);
+    const b = await s.exec('1', 'INSERT INTO t VALUES (1)', '', true);
     expect(b.result?.rows).toEqual([[1]]);
+  });
+
+  it('exec：database 写入请求体', async () => {
+    const bodies: any[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init?: RequestInit) => {
+      bodies.push(init?.body ? JSON.parse(String(init.body)) : {});
+      return okJson({ ok: true, result: { columns: [], rows: [], affected: 1, truncated: false, durationMs: 1 } });
+    }));
+    const s = useNavicat();
+    await s.exec('1', 'SELECT 1', 'db2');
+    expect(bodies[0].database).toBe('db2');
+  });
+
+  it('listDatabases / listTables 打 schema 端点', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => {
+      urls.push(String(u));
+      if (String(u).startsWith('/api/navicat/schema/databases')) return okJson({ items: ['db1'] });
+      return okJson({ items: ['t1'] });
+    }));
+    const s = useNavicat();
+    expect(await s.listDatabases('1')).toEqual(['db1']);
+    expect(await s.listTables('1', 'db2')).toEqual(['t1']);
+    expect(urls[0]).toBe('/api/navicat/schema/databases?id=1');
+    expect(urls[1]).toBe('/api/navicat/schema/tables?id=1&database=db2');
+  });
+
+  it('quoteIdent：mysql 反引号，pg/sqlite 双引号并转义', () => {
+    expect(quoteIdent('mysql', 'a`b')).toBe('`a``b`');
+    expect(quoteIdent('postgres', 'a"b')).toBe('"a""b"');
+    expect(quoteIdent('sqlite', 'users')).toBe('"users"');
   });
 
   it('exec：失败抛 message', async () => {

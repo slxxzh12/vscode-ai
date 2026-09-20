@@ -36,6 +36,11 @@ async function jfetch(url: string, opt: RequestInit = {}): Promise<any> {
   return j;
 }
 
+export function quoteIdent(type: NavicatType, name: string): string {
+  const q = type === 'mysql' ? '`' : '"';
+  return q + String(name ?? '').split(q).join(q + q) + q;
+}
+
 export function useNavicat(): {
   profiles: Ref<NavicatProfile[]>;
   load: () => Promise<void>;
@@ -43,10 +48,12 @@ export function useNavicat(): {
   remove: (id: string) => Promise<void>;
   rename: (id: string, name: string) => Promise<void>;
   test: (p: { id?: string } | { profile: NavicatProfile }) => Promise<void>;
-  exec: (id: string, sql: string, confirm?: boolean) => Promise<ExecOutcome>;
+  exec: (id: string, sql: string, database?: string, confirm?: boolean) => Promise<ExecOutcome>;
   reveal: (id: string) => Promise<string>;
   connstr: (id: string, withPassword: boolean) => Promise<string>;
   exportNcx: (ids: string[]) => Promise<string>;
+  listDatabases: (id: string) => Promise<string[]>;
+  listTables: (id: string, database: string) => Promise<string[]>;
 } {
   const profiles = ref<NavicatProfile[]>([]);
 
@@ -81,8 +88,8 @@ export function useNavicat(): {
     await jfetch('/api/navicat/test', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(p) });
   }
 
-  async function exec(id: string, sql: string, confirm = false): Promise<ExecOutcome> {
-    const j = await jfetch('/api/navicat/exec', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ id, sql, confirm }) });
+  async function exec(id: string, sql: string, database = '', confirm = false): Promise<ExecOutcome> {
+    const j = await jfetch('/api/navicat/exec', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ id, sql, database, confirm }) });
     if (j.needConfirm) return { needConfirm: true };
     return { needConfirm: false, result: j.result as ExecResult };
   }
@@ -102,5 +109,16 @@ export function useNavicat(): {
     return String(j.xml || '');
   }
 
-  return { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx };
+  async function listDatabases(id: string): Promise<string[]> {
+    const j = await jfetch(`/api/navicat/schema/databases?id=${encodeURIComponent(id)}`);
+    return Array.isArray(j.items) ? j.items.map(String) : [];
+  }
+
+  async function listTables(id: string, database: string): Promise<string[]> {
+    const q = new URLSearchParams({ id, database: database || '' });
+    const j = await jfetch(`/api/navicat/schema/tables?${q.toString()}`);
+    return Array.isArray(j.items) ? j.items.map(String) : [];
+  }
+
+  return { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx, listDatabases, listTables };
 }
