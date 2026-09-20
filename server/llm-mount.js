@@ -5,7 +5,7 @@ import path from 'node:path';
 import { signJwt } from './llm-jwt.js';
 import { listProviders, getProvider, buildOpencodeConfigMulti, opencodeConfigDir } from './llm-config.js';
 import { readActiveConfig, mergeAndWrite } from './llm-opencode-config.js';
-import { validateSelections, mergePresetProviders } from './llm-provider-presets.js';
+import { validateSelections, mergeConfiguredProviders } from './llm-provider-presets.js';
 import { createProxyHandler } from './llm-proxy.js';
 import { createCache } from './llm-cache.js';
 import { loadPlugins, EXAMPLE_PLUGIN, writeExamplePlugin } from './relay-plugins.js';
@@ -158,8 +158,9 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
         const b = await readJson(req);
         const selections = Array.isArray(b.providers) ? b.providers : [];
         validateSelections(selections);
+        const remove = Array.isArray(b.remove) ? b.remove : [];
         const current = readActiveConfig({ dir: opencodeDir }).config?.provider || {};
-        const { provider, skipped } = mergePresetProviders({ current, selections });
+        const { provider, skipped } = mergeConfiguredProviders({ current, selections, remove });
         const saved = mergeAndWrite({
           dir: opencodeDir,
           provider,

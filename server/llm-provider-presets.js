@@ -42,13 +42,13 @@ function existingKeys(options) {
   return out;
 }
 
-export function mergePresetProviders({ current = {}, selections = [], presets = LLM_PROVIDER_PRESETS } = {}) {
+export function mergeConfiguredProviders({ current = {}, selections = [], remove = [], presets = LLM_PROVIDER_PRESETS } = {}) {
   const out = { ...current };
+  for (const id of remove) if (typeof id === 'string' && id) delete out[id];
   const skipped = [];
   const presetMap = new Map(presets.map((p) => [p.id, p]));
   for (const sel of selections) {
     const preset = presetMap.get(sel.id);
-    if (!preset) continue;
     const existing = current[sel.id] && typeof current[sel.id] === 'object' && !Array.isArray(current[sel.id])
       ? current[sel.id]
       : {};
@@ -56,7 +56,9 @@ export function mergePresetProviders({ current = {}, selections = [], presets = 
     const keys = incoming ? [incoming] : existingKeys(existing.options);
     if (!keys.length) { skipped.push(sel.id); continue; }
 
-    const opts = { ...(existing.options || {}), baseURL: preset.baseURL };
+    const baseURL = preset ? preset.baseURL : sel.baseURL;
+    const name = preset ? preset.name : (sel.name || sel.id);
+    const opts = { ...(existing.options || {}), baseURL };
     delete opts.apiKey;
     delete opts.apiKeys;
     if (keys.length === 1) opts.apiKey = keys[0]; else opts.apiKeys = keys;
@@ -75,7 +77,7 @@ export function mergePresetProviders({ current = {}, selections = [], presets = 
       models[id] = entry;
     }
 
-    out[sel.id] = { ...existing, name: preset.name, options: opts, models };
+    out[sel.id] = { ...existing, name, options: opts, models };
   }
   return { provider: out, skipped };
 }

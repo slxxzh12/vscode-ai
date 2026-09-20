@@ -370,4 +370,39 @@ test('opencode 配置 POST 非法体 400、坏文件 400', async (t) => {
   t.after(() => server.close());
   assert.equal((await jpost(server, '/api/llm-admin/opencode', { providers: 'x', model: '' })).status, 400);
   assert.equal((await jpost(server, '/api/llm-admin/opencode', { providers: [{ id: 'nope', models: [] }], model: '' })).status, 400);
+  assert.equal((await jpost(server, '/api/llm-admin/opencode', { providers: [{ id: 'my-ai', models: [] }], model: '' })).status, 400);
+});
+
+test('opencode 配置 POST：写自定义 provider、按 remove 删除', async (t) => {
+  const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
+  fs.writeFileSync(path.join(oc, 'opencode.json'), JSON.stringify({
+    provider: {
+      corp: { options: { baseURL: 'https://gw/v1', apiKey: 'K' }, models: { m1: {} } },
+      dead: { options: { baseURL: 'https://dead/v1', apiKey: 'D' }, models: { x: {} } },
+    },
+    model: '',
+  }));
+  const vault = tmpVault();
+  vault.init('pw');
+  vault.lock();
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234, opencodeDir: oc });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+
+  const r = await jpost(server, '/api/llm-admin/opencode', {
+    providers: [{ id: 'my-ai', name: 'MyAI', baseURL: 'https://my.ai/v1', apiKey: 'MK', models: ['my-model', 'my-vl'] }],
+    remove: ['dead'],
+    model: '',
+  });
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body).skipped, []);
+
+  const saved = JSON.parse(fs.readFileSync(path.join(oc, 'opencode.json'), 'utf8'));
+  assert.deepEqual(Object.keys(saved.provider).sort(), ['corp', 'my-ai']);
+  assert.equal(saved.provider['my-ai'].name, 'MyAI');
+  assert.equal(saved.provider['my-ai'].options.baseURL, 'https://my.ai/v1');
+  assert.equal(saved.provider['my-ai'].options.apiKey, 'MK');
+  assert.equal(saved.provider['my-ai'].models['my-vl'].attachment, true);
+  assert.equal(saved.provider.corp.options.apiKey, 'K');
 });
