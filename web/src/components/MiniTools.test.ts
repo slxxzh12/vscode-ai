@@ -4,6 +4,7 @@ import { flushPromises } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
 import MiniTools from './MiniTools.vue';
+import PostmanTool from '../tools/postman/PostmanTool.vue';
 
 const writeText = vi.fn(async () => {});
 Object.defineProperty(window.navigator, 'clipboard', { value: { writeText }, configurable: true });
@@ -94,77 +95,13 @@ describe('MiniTools', () => {
     expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('const a=1;');
   });
 
-  it('Postman：执行 curl 命令并显示输出', async () => {
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
-      urls.push(u);
-      if (u === '/api/postman/history') return okJson({ items: [] });
-      expect(JSON.parse(String(init?.body))).toEqual({ command: 'curl -s https://a.com', folder: '' });
-      return okJson({ ok: true, code: 0, stdout: 'hi', stderr: '', timedOut: false });
-    }));
+  it('Postman：渲染 PostmanTool 子组件', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [], folders: [] })));
     const w = mount();
     await w.findAll('.mticon')[4].trigger('click');
     await flushPromises();
-    await w.find('.mtcurl').setValue('curl -s https://a.com');
-    await w.find('.mtbtn.primary').trigger('click');
-    await flushPromises();
-    expect(urls).toContain('/api/curl');
-    expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('hi');
-    expect(w.find('.mtmsg').exists()).toBe(true);
-  });
-
-  it('Postman：左侧记录按时间倒序，点击载入，删除移除', async () => {
-    const items = [
-      { id: 'a.json', command: 'curl old', result: {}, updatedAt: '2026-01-01T00:00:00.000Z' },
-      { id: 'b.json', command: 'curl new', result: {}, updatedAt: '2026-09-01T00:00:00.000Z' },
-    ];
-    vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
-      if (init?.method === 'DELETE') return okJson({ ok: true });
-      return okJson({ items });
-    }));
-    const w = mount();
-    await w.findAll('.mticon')[4].trigger('click');
-    await flushPromises();
-    expect(w.findAll('.mtpmcmd').map((n) => n.text())).toEqual(['curl new', 'curl old']);
-
-    await w.findAll('.mtpmitem')[1].trigger('click');
-    expect((w.find('.mtcurl').element as HTMLTextAreaElement).value).toBe('curl old');
-
-    await w.findAll('.mtpmdel')[0].trigger('click');
-    await flushPromises();
-    expect(w.findAll('.mtpmitem')).toHaveLength(1);
-  });
-
-  it('Postman：新建文件夹走 /api/postman/folder', async () => {
-    const calls: Array<{ url: string; method?: string; body?: any }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
-      calls.push({ url: String(u), method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-      if (init?.method === 'POST') return okJson({ ok: true, folder: 'foo' });
-      return okJson({ items: [], folders: [] });
-    }));
-    const w = mount();
-    await w.findAll('.mticon')[4].trigger('click');
-    await flushPromises();
-    await w.find('.mtpminput').setValue('foo');
-    await w.find('.mtpmkfolder .mtmini').trigger('click');
-    await flushPromises();
-    expect(calls.some((c) => c.url === '/api/postman/folder' && c.method === 'POST' && c.body?.path === 'foo')).toBe(true);
-  });
-
-  it('Postman：文件夹树展示，记录在目录内按时间倒序', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => okJson({
-      folders: ['foo'],
-      items: [
-        { id: 'foo/a.json', name: 'a.json', command: 'curl A', folder: 'foo', result: {}, updatedAt: '2026-01-01T00:00:00.000Z' },
-        { id: 'foo/b.json', name: 'b.json', command: 'curl B', folder: 'foo', result: {}, updatedAt: '2026-09-01T00:00:00.000Z' },
-        { id: 'root.json', name: 'root.json', command: 'curl R', folder: '', result: {}, updatedAt: '2026-05-01T00:00:00.000Z' },
-      ],
-    })));
-    const w = mount();
-    await w.findAll('.mticon')[4].trigger('click');
-    await flushPromises();
-    expect(w.find('.mtpmfname').text()).toContain('foo');
-    expect(w.findAll('.mtpmcmd').map((n) => n.text())).toEqual(['curl B', 'curl A', 'curl R']);
+    expect(w.findComponent(PostmanTool).exists()).toBe(true);
+    expect(w.find('.pmbody').exists()).toBe(true);
   });
 
   it('复制输出 / 输出转输入 / 清空', async () => {
