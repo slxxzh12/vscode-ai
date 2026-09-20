@@ -143,6 +143,30 @@ test('打开插件目录调用 reveal；无目录 400', async (t) => {
   assert.equal((await jpost(server2, '/api/llm-admin/plugins/reveal', {})).status, 400);
 });
 
+test('provider-keys 返回指定 provider 的明文 key（单个/轮询）', async (t) => {
+  const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfpk-'));
+  fs.writeFileSync(path.join(oc, 'opencode.json'), JSON.stringify({
+    provider: {
+      corp: { options: { baseURL: 'https://gw/v1', apiKey: 'SECRET-KEY' } },
+      rot: { options: { baseURL: 'https://rot/v1', apiKeys: ['A', 'B'] } },
+    },
+  }));
+  const prev = process.env.DEVFLOW_OPENCODE_CONFIG;
+  process.env.DEVFLOW_OPENCODE_CONFIG = oc;
+  t.after(() => { if (prev === undefined) delete process.env.DEVFLOW_OPENCODE_CONFIG; else process.env.DEVFLOW_OPENCODE_CONFIG = prev; });
+  const vault = tmpVault();
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 1234, opencodeDir: oc });
+  await mount.ready;
+  const server = await startMount(mount);
+  t.after(() => server.close());
+  const one = JSON.parse((await jget(server, '/api/llm-admin/provider-keys?provider=corp')).body);
+  assert.equal(one.apiKey, 'SECRET-KEY');
+  assert.deepEqual(one.apiKeys, ['SECRET-KEY']);
+  const rot = JSON.parse((await jget(server, '/api/llm-admin/provider-keys?provider=rot')).body);
+  assert.deepEqual(rot.apiKeys, ['A', 'B']);
+  assert.equal((await jget(server, '/api/llm-admin/provider-keys?provider=nope')).status, 404);
+});
+
 test('opencode-config 支持 pid/model 过滤（多 provider）', async (t) => {
   const oc = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
   fs.writeFileSync(path.join(oc, 'opencode.json'), JSON.stringify({
