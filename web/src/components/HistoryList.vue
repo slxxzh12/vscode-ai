@@ -12,6 +12,7 @@ const props = withDefaults(defineProps<{
   filter?: boolean; liveSessionIds?: string[]; sessions?: SessionExtra[];
   projectId?: string | null; activePath?: string | null;
   sessionNames?: Record<string, string>;
+  allStyle?: 'flat' | 'tree';
 }>(), {
   filter: true,
   liveSessionIds: () => [],
@@ -19,10 +20,12 @@ const props = withDefaults(defineProps<{
   projectId: null,
   activePath: null,
   sessionNames: () => ({}),
+  allStyle: 'flat',
 });
 const emit = defineEmits<{
   (e: 'update:tab', tab: SideTab): void;
   (e: 'update:filter', v: boolean): void;
+  (e: 'update:all-style', v: 'flat' | 'tree'): void;
   (e: 'open', it: HistoryEntry): void;
   (e: 'remove', projectId: string, path: string): void;
   (e: 'clear'): void;
@@ -48,6 +51,10 @@ const query = ref('');
 watch(() => props.tab, () => { fileLimit.value = PAGE; msgLimit.value = PAGE; });
 watch(query, () => { fileLimit.value = PAGE; msgLimit.value = PAGE; });
 
+// 全部会话的展示样式：tree=会话树；其余（含 filter=true）走平铺
+const treeView = computed(() => !props.filter && props.allStyle === 'tree');
+watch(() => props.allStyle, () => { msgLimit.value = PAGE; });
+
 function match(text: string, q: string) { return text.toLowerCase().includes(q); }
 
 const sortedItems = computed(() => [...props.items].sort((a, b) => b.ts - a.ts));
@@ -66,14 +73,13 @@ const shownItems = computed(() => filteredItems.value.slice(0, fileLimit.value))
 const shownMessages = computed(() => filteredMessages.value.slice(0, msgLimit.value));
 const hasMore = computed(() => props.tab === 'files'
   ? fileLimit.value < filteredItems.value.length
-  : msgLimit.value < (props.filter ? filteredMessages.value.length : treeTotal.value));
+  : msgLimit.value < (treeView.value ? treeTotal.value : filteredMessages.value.length));
 const searching = computed(() => query.value.trim().length > 0);
 const noMatch = computed(() => {
   if (!searching.value) return false;
   if (props.tab === 'files') return props.items.length > 0 && filteredItems.value.length === 0;
-  return props.filter
-    ? (props.messages.length > 0 && filteredMessages.value.length === 0)
-    : ((props.messages.length > 0 || props.sessions.length > 0) && treeNodes.value.length === 0);
+  if (treeView.value) return (props.messages.length > 0 || props.sessions.length > 0) && treeNodes.value.length === 0;
+  return props.messages.length > 0 && filteredMessages.value.length === 0;
 });
 
 const grouped = computed(() => {
@@ -92,7 +98,7 @@ function onScroll(e: Event) {
   if (el.scrollTop + el.clientHeight < el.scrollHeight - 40) return;
   if (props.tab === 'files') {
     if (fileLimit.value < filteredItems.value.length) fileLimit.value += PAGE;
-  } else if (msgLimit.value < filteredMessages.value.length) {
+  } else if (msgLimit.value < (treeView.value ? treeTotal.value : filteredMessages.value.length)) {
     msgLimit.value += PAGE;
   }
 }
@@ -190,6 +196,11 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
     <div v-if="tab === 'messages'" class="filterbar" :title="$t('hist.filter.title')">
       <button class="filterbtn" :class="{ on: filter }" @click="emit('update:filter', true)">{{ $t('hist.filter.on') }}</button>
       <button class="filterbtn" :class="{ on: !filter }" @click="emit('update:filter', false)">{{ $t('hist.filter.off') }}</button>
+      <template v-if="!filter">
+        <span class="filtergap" />
+        <button class="stylebtn" :class="{ on: allStyle === 'flat' }" :title="$t('hist.style.title')" @click="emit('update:all-style', 'flat')">{{ $t('hist.style.flat') }}</button>
+        <button class="stylebtn" :class="{ on: allStyle === 'tree' }" :title="$t('hist.style.title')" @click="emit('update:all-style', 'tree')">{{ $t('hist.style.tree') }}</button>
+      </template>
     </div>
     <div class="searchbar">
       <input v-model="query" class="searchinput" type="search" :placeholder="$t('hist.search')" spellcheck="false" />
@@ -218,7 +229,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
       </template>
 
       <template v-else>
-        <template v-if="!filter">
+        <template v-if="treeView">
           <div v-if="treeNodes.length === 0" class="empty">{{ $t('hist.empty_messages') }}</div>
           <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
           <template v-else>
@@ -268,7 +279,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
       </template>
 
       <div v-if="hasMore" class="more">{{ $t('hist.more') }}</div>
-      <div v-else-if="(tab === 'files' ? filteredItems.length : (filter ? filteredMessages.length : treeTotal)) > 0" class="foot">{{ $t('hist.foot') }}</div>
+      <div v-else-if="(tab === 'files' ? filteredItems.length : (treeView ? treeTotal : filteredMessages.length)) > 0" class="foot">{{ $t('hist.foot') }}</div>
     </div>
     </template>
   </div>
@@ -287,9 +298,10 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
 .hltabs :deep(.el-tabs__content) { display: none; }
 .clear { flex: none; background: none; border: 1px solid var(--bd); color: var(--tx3); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; }
 .filterbar { display: flex; gap: 6px; padding: 6px 10px 0; flex: none; }
-.filterbtn { background: none; border: 1px solid var(--bd); color: var(--tx5); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
-.filterbtn:hover { border-color: var(--ac2); color: var(--ac2); }
-.filterbtn.on { color: var(--ac2); border-color: var(--ac2); }
+.filterbtn, .stylebtn { background: none; border: 1px solid var(--bd); color: var(--tx5); border-radius: 4px; padding: 1px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.filterbtn:hover, .stylebtn:hover { border-color: var(--ac2); color: var(--ac2); }
+.filterbtn.on, .stylebtn.on { color: var(--ac2); border-color: var(--ac2); }
+.filtergap { flex: 1 1 auto; }
 .searchbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--bd2); }
 .searchinput { flex: 1 1 auto; min-width: 0; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; font-size: 12px; font-family: inherit; }
 .searchinput:focus { outline: none; border-color: var(--ac2); }

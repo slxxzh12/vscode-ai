@@ -89,6 +89,14 @@ describe('planRestore', () => {
     const plan = planRestore({ historyTab: 'files' }, { projectIds: [], hashRail: null, hashHistoryTab: 'tree', deepLinkOpened: false, newWindow: true });
     expect(plan.historyTab).toBeUndefined();
   });
+
+  it('恢复合法的 msgAllStyle，忽略非法值', () => {
+    const opts = { projectIds: [], hashRail: null, hashHistoryTab: null, deepLinkOpened: false };
+    expect(planRestore({ msgAllStyle: 'flat' }, opts).msgAllStyle).toBe('flat');
+    expect(planRestore({ msgAllStyle: 'tree' }, opts).msgAllStyle).toBe('tree');
+    expect(planRestore({ msgAllStyle: 'nope' } as unknown as WindowState, opts).msgAllStyle).toBeUndefined();
+    expect(planRestore({}, opts).msgAllStyle).toBeUndefined();
+  });
 });
 
 describe('saveWindowState / flushWindowState', () => {

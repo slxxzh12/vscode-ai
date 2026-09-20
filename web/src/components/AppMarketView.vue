@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { locale, t } from '../i18n';
 import { renderRemoteMarkdown } from '../markdown';
 import MiniTools from './MiniTools.vue';
+import { requestStartAgent } from '../uiIntents';
 import { useCollab } from '../collaboration/useCollab';
 import { useVersion } from '../useVersion';
 import {
@@ -68,6 +69,12 @@ function whenLabel(ms: number): string {
   try { return new Date(Number(ms) || 0).toLocaleDateString(); } catch { return ''; }
 }
 
+// 顶栏「新建 Agent」：请求待办意图并切回终端视图，由 TerminalView 挂载后统一处理（无项目时打开「添加目录」）
+function startAgentNow() {
+  requestStartAgent();
+  window.location.hash = '#explorer/tree';
+}
+
 onMounted(() => { void loadNotice(); void loadVersion(); void loadFiles(); });
 watch(locale, loadNotice);
 </script>
@@ -111,6 +118,10 @@ watch(locale, loadNotice);
     </div>
 
     <div class="col col-main">
+      <section class="block newagent-block">
+        <button class="newagent" @click="startAgentNow">＋ {{ $t('welcome.new_agent') }}</button>
+      </section>
+
       <section class="block tools-block">
         <h3 class="btitle">🛠️ {{ $t('market.tools') }}</h3>
         <MiniTools />
@@ -197,6 +208,10 @@ watch(locale, loadNotice);
 /* 小工具：加边框底色与更大标题，作为应用市场的主入口 */
 .tools-block { border: 1px solid var(--ac2); border-radius: 14px; padding: 14px 16px; background: color-mix(in srgb, var(--ac2) 7%, var(--bg2)); }
 .tools-block .btitle { font-size: 17px; margin-bottom: 14px; }
+/* 新建 Agent：最显眼的推荐入口 */
+.newagent-block { border: 1px solid var(--ac); border-radius: 14px; padding: 12px; background: color-mix(in srgb, var(--ac) 12%, var(--bg2)); }
+.newagent { width: 100%; background: var(--ac); color: var(--onac); border: none; border-radius: 10px; padding: 12px 18px; font-size: 15px; font-weight: 700; cursor: pointer; }
+.newagent:hover { filter: brightness(1.08); }
 @media (max-width: 760px) {
   .market { grid-template-columns: 1fr; overflow: auto; }
   .col { overflow: visible; }

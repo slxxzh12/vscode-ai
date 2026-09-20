@@ -131,7 +131,7 @@ describe('HistoryList', () => {
       { text: 'm1', ts: 100, sessionId: 's1', tabName: 'A' },
       { text: 'm2', ts: 200, sessionId: 's2', tabName: 'B' },
     ];
-    const w = mount({ tab: 'messages', filter: false, messages, liveSessionIds: ['s2'] });
+    const w = mount({ tab: 'messages', filter: false, allStyle: 'tree', messages, liveSessionIds: ['s2'] });
     await w.vm.$nextTick();
     const nodes = w.findAll('.tnode');
     expect(nodes).toHaveLength(2);
@@ -146,7 +146,7 @@ describe('HistoryList', () => {
   });
 
   it('全部会话：账本/运行中的空会话也展示且可打开', async () => {
-    const w = mount({ tab: 'messages', filter: false, messages: [], sessions: [{ id: 's9', name: '空会话' }] });
+    const w = mount({ tab: 'messages', filter: false, allStyle: 'tree', messages: [], sessions: [{ id: 's9', name: '空会话' }] });
     await w.vm.$nextTick();
     expect(w.findAll('.tnode')).toHaveLength(1);
     expect(w.find('.tname').text()).toBe('空会话');
@@ -156,7 +156,7 @@ describe('HistoryList', () => {
   });
 
   it('全部会话：无 sessionId 的组禁用打开', async () => {
-    const w = mount({ tab: 'messages', filter: false, messages: [{ text: 'x', ts: 1, tabName: 'only' }] });
+    const w = mount({ tab: 'messages', filter: false, allStyle: 'tree', messages: [{ text: 'x', ts: 1, tabName: 'only' }] });
     await w.vm.$nextTick();
     expect(w.findAll('.tnode')).toHaveLength(1);
     expect(w.find('.topen').exists()).toBe(false);
@@ -166,7 +166,7 @@ describe('HistoryList', () => {
   it('全部会话：自定义页签名覆盖节点标签（含账本空会话）', async () => {
     const messages = [{ text: 'm1', ts: 100, sessionId: 's1', tabName: '旧名' }];
     const w = mount({
-      tab: 'messages', filter: false, messages,
+      tab: 'messages', filter: false, allStyle: 'tree', messages,
       sessions: [{ id: 's1', name: '服务端旧名' }, { id: 's2', name: '服务端B' }],
       sessionNames: { s1: '自定义A', s2: '自定义B' },
     });
@@ -180,5 +180,45 @@ describe('HistoryList', () => {
     await w.vm.$nextTick();
     expect(w.findAll('.tnode')).toHaveLength(0);
     expect(w.findAll('.mrow')).toHaveLength(1);
+  });
+
+  it('全部会话：默认平铺，不渲染会话树', async () => {
+    const messages = [
+      { text: 'm1', ts: 100, sessionId: 's1', tabName: 'A' },
+      { text: 'm2', ts: 200, sessionId: 's2', tabName: 'B' },
+    ];
+    const w = mount({ tab: 'messages', filter: false, messages });
+    await w.vm.$nextTick();
+    expect(w.findAll('.tnode')).toHaveLength(0);
+    expect(w.findAll('.mrow')).toHaveLength(2);
+    expect(w.findAll('.mtab').map((x) => x.text())).toEqual(['A', 'B']);
+  });
+
+  it('全部会话：显式 allStyle=tree 时渲染会话树', async () => {
+    const messages = [{ text: 'm1', ts: 100, sessionId: 's1', tabName: 'A' }];
+    const w = mount({ tab: 'messages', filter: false, allStyle: 'tree', messages });
+    await w.vm.$nextTick();
+    expect(w.findAll('.tnode')).toHaveLength(1);
+    expect(w.findAll('.mrow')).toHaveLength(0);
+  });
+
+  it('样式子切换仅在全部会话出现，点击 emit update:all-style', async () => {
+    const cur = mount({ tab: 'messages', filter: true });
+    expect(cur.find('.stylebtn').exists()).toBe(false);
+
+    const off = mount({ tab: 'messages', filter: false });
+    const btns = off.findAll('.stylebtn');
+    expect(btns).toHaveLength(2);
+    expect(btns[0].text()).toBe(t('hist.style.flat'));
+    expect(btns[1].text()).toBe(t('hist.style.tree'));
+    expect(btns[0].classes()).toContain('on');
+    expect(btns[1].classes()).not.toContain('on');
+    await btns[1].trigger('click');
+    expect(off.emitted('update:all-style')?.[0]).toEqual(['tree']);
+    await btns[0].trigger('click');
+    expect(off.emitted('update:all-style')?.[1]).toEqual(['flat']);
+
+    const files = mount({ tab: 'files' });
+    expect(files.find('.stylebtn').exists()).toBe(false);
   });
 });

@@ -20,7 +20,7 @@ import { startDesktopRemoteCoder } from './remote-coder/useDesktopRemoteCoder';
 import { useVersion } from './useVersion';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
 import { useSessionProjects } from './sessionProjects';
-import { fetchWindowState, planRestore, saveWindowState, flushWindowState, toSavedTabs, type HistoryTab, type Rail } from './windowState';
+import { fetchWindowState, planRestore, saveWindowState, flushWindowState, toSavedTabs, type HistoryTab, type Rail, type AllStyle } from './windowState';
 import { filterMessages, sessionOfActiveTab } from './msgFilter';
 import { openRestoredSession } from './sessionRestore';
 import { useLedgerSessions } from './ledgerSessions';
@@ -191,6 +191,7 @@ const msgHistory = useMessageHistory();
 
 // —— 窗口状态：上次页签/激活页签/左侧栏位/消息筛选 ——
 const msgFilter = ref(true);
+const msgAllStyle = ref<AllStyle>('flat');   // 「全部会话」的展示样式：flat=平铺（默认），tree=会话树
 const { map: sessionProjectMap, load: loadSessionProjects } = useSessionProjects();
 const { sessions: ledgerSessions, load: loadLedgerSessions } = useLedgerSessions();
 // 历史面板「全部会话」的会话来源：账本（含已关闭）∪ 运行中；历史消息里的会话由 sessionTree 合并
@@ -256,6 +257,7 @@ function currentWindowState() {
     rail: rail.value === 'mobile' ? undefined : (rail.value as Rail),
     historyTab: historyTab.value as HistoryTab,
     msgFilter: msgFilter.value,
+    msgAllStyle: msgAllStyle.value,
     tabs: toSavedTabs(center.tabs.value),
     activeTab: center.activeId.value,
   };
@@ -273,6 +275,7 @@ async function restoreWindowState(projectsReady: Promise<void>) {
   if (plan.rail && RAILS.includes(plan.rail)) rail.value = plan.rail;
   if (plan.historyTab) historyTab.value = plan.historyTab;
   if (typeof plan.msgFilter === 'boolean') msgFilter.value = plan.msgFilter;
+  if (plan.msgAllStyle) msgAllStyle.value = plan.msgAllStyle;
   const tabs = bootAllowed ? plan.tabs.filter((t) => bootAllowed.has(`f:${t.projectId}|${t.path}`)) : plan.tabs;
   const opened = tabs.map((t) => `f:${t.projectId}|${t.path}`);
   for (const t of tabs) center.openFile(t.projectId, t.path, t.label);
@@ -291,7 +294,7 @@ async function restoreWindowState(projectsReady: Promise<void>) {
   windowRestored = true;
 }
 watch(
-  [() => center.tabs.value.map((t) => `${t.id}|${t.label}`).join(','), center.activeId, rail, historyTab, msgFilter],
+  [() => center.tabs.value.map((t) => `${t.id}|${t.label}`).join(','), center.activeId, rail, historyTab, msgFilter, msgAllStyle],
   () => { if (windowRestored) saveWindowState(currentWindowState()); },
 );
 // 记录最近点击的页签顺序（会话+文件合并），刷新时据此只恢复最近 N 个
@@ -592,6 +595,7 @@ onMounted(async () => {
   window.addEventListener('hashchange', applyHash);
   window.addEventListener('df-open-history', onOpenHistory);
   window.addEventListener('df-settings-closed', onSettingsClosed);
+  window.addEventListener('df-add-folder', openAddFolder);
   window.addEventListener('beforeunload', persistFileHistory);
   window.addEventListener('beforeunload', releaseWindowColor);
   window.addEventListener('beforeunload', persistWindowState);
@@ -606,6 +610,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('hashchange', applyHash);
   window.removeEventListener('df-open-history', onOpenHistory);
   window.removeEventListener('df-settings-closed', onSettingsClosed);
+  window.removeEventListener('df-add-folder', openAddFolder);
   window.removeEventListener('beforeunload', persistFileHistory);
   window.removeEventListener('beforeunload', releaseWindowColor);
   window.removeEventListener('beforeunload', persistWindowState);
@@ -639,7 +644,7 @@ onBeforeUnmount(() => {
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
-        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🏪</button>
+        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🧰</button>
         <button class="a-btn" :class="{ on: rail === 'proxy' }" :title="$t('nav.proxy')" @click="rail = 'proxy'">🔀</button>
         <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
         <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings()">⚙</button>
@@ -671,11 +676,11 @@ onBeforeUnmount(() => {
       </template>
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
-          <HistoryList :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter"
+          <HistoryList :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter" :all-style="msgAllStyle"
             :live-session-ids="liveSessionIds" :sessions="sessionExtras" :session-names="sessionNames" :project-id="currentProject" :active-path="activeFilePath"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
             @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
-            @update:filter="msgFilter = $event" @open-session="openHistorySession" @edit-session="editHistorySession"
+            @update:filter="msgFilter = $event" @update:all-style="msgAllStyle = $event" @open-session="openHistorySession" @edit-session="editHistorySession"
             @open-file="openFile" @detail-file="onDetailFile" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />

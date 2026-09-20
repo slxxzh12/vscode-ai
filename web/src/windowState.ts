@@ -3,12 +3,14 @@ import type { CenterTab } from './useCenter';
 // 窗口状态（服务端 <端口数据目录>/window-state.json，一个端口一份，多端共享一份）。
 export type Rail = 'explorer' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile';
 export type HistoryTab = 'files' | 'messages' | 'tree';
+export type AllStyle = 'flat' | 'tree';
 
 export interface SavedTab { projectId: string; path: string; label: string }
 export interface WindowState {
   rail?: Rail;
   historyTab?: HistoryTab;
   msgFilter?: boolean;
+  msgAllStyle?: AllStyle;
   tabs?: SavedTab[];
   activeTab?: string | null;
 }
@@ -18,6 +20,7 @@ export interface RestorePlan {
   rail?: Rail;                 // 仅当 URL hash 未指定栏位
   historyTab?: HistoryTab;     // 仅当 URL hash 未指定子页
   msgFilter?: boolean;
+  msgAllStyle?: AllStyle;
   activeFileTab?: string;      // `f:<projectId>|<path>`；深链优先或指不到时 undefined
 }
 
@@ -66,6 +69,7 @@ export function planRestore(state: WindowState | null, opts: {
   if (!state) return plan;                                   // 无存档：不覆盖任何默认值
   if (!opts.hashRail && state.rail) plan.rail = state.rail;
   if (typeof state.msgFilter === 'boolean') plan.msgFilter = state.msgFilter;
+  if (state.msgAllStyle === 'flat' || state.msgAllStyle === 'tree') plan.msgAllStyle = state.msgAllStyle;
   if (opts.deepLinkOpened) return plan;                       // ?open= 深链优先于存档的激活项
   const active = state.activeTab;
   if (typeof active === 'string' && tabs.some((t) => fileTabId(t.projectId, t.path) === active)) {

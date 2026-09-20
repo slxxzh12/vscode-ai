@@ -24,6 +24,9 @@ import { isAgentSession, phoneHintKey } from '../remote-coder/phoneMode';
 import { createReadyGate } from './sessionNaming';
 import TabRenameDialog from './TabRenameDialog.vue';
 import { setTabDescription } from './tabDescriptions';
+import WelcomeView from './WelcomeView.vue';
+import { pendingStartAgent, clearPendingStartAgent, requestTool } from '../uiIntents';
+import type { ToolId } from '../tools/catalog';
 
 const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
@@ -526,6 +529,22 @@ watch(() => props.projectId, (nid, oid) => {
   if (agentProjectId.value === nid) return;
   void restartAgentForProject();
 });
+// —— 空白首页：无页签时显示欢迎页（不再自动强开 Agent）——
+const showWelcome = computed(() => !props.phone && props.center.tabs.value.length === 0);
+function onWelcomeNewAgent() {
+  if (props.phone) return;
+  if (!props.projectId) { window.dispatchEvent(new CustomEvent('df-add-folder')); return; }
+  void startAgent();
+}
+function onWelcomeOpenTool(id: ToolId) {
+  requestTool(id);
+  window.location.hash = '#mobile';
+}
+watch(pendingStartAgent, () => {
+  if (!pendingStartAgent.value) return;
+  clearPendingStartAgent();
+  onWelcomeNewAgent();
+}, { immediate: true });
 function sendAgentText(text: string) {
   if (!agentSid.value || !agentActive()) return;
   props.terminal.input(text);
@@ -879,7 +898,7 @@ function init() {
       agentProjectId.value = existing.projectId ?? null;
       props.terminal.switchTo(existing.id);               // 复用已存在的 Agent 会话
       if (props.projectId && existing.projectId !== props.projectId) void restartAgentForProject();   // 项目已切换：换到当前目录
-    } else startAgent();                                  // 默认先开一个默认 Agent 会话
+    }
   });
   unsubCfg = props.terminal.on(S2C.CONFIG_CHANGED, async () => {
     await loadAgents();
@@ -1165,6 +1184,8 @@ onBeforeUnmount(() => {
       <button v-if="!phone" class="new" @click="openNew">{{ $t('term.new_session_btn') }}</button>
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
     </div>
+
+    <WelcomeView v-if="showWelcome" @new-agent="onWelcomeNewAgent" @open-tool="onWelcomeOpenTool" />
 
     <div v-show="isSessionView" class="term-wrap">
       <div class="term-layer" ref="hostRef" />
