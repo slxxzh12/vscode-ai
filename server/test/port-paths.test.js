@@ -39,6 +39,9 @@ test('portPaths 全部落在 ports/<端口> 下', () => {
   assert.equal(p.toolsDir, path.join(base, 'tools'));
   assert.equal(p.postmanDir, path.join(base, 'tools', 'postman'));
   assert.equal(p.notepadDir, path.join(base, 'tools', 'notepad'));
+  assert.equal(p.yamlDir, path.join(base, 'tools', 'yaml'));
+  assert.equal(p.jsDir, path.join(base, 'tools', 'js'));
+  assert.equal(p.translateDir, path.join(base, 'tools', 'translate'));
   assert.equal(p.navicatDir, path.join(base, 'tools', 'navicat'));
   assert.equal(portRoot(44444, root), base);
 });
@@ -52,7 +55,7 @@ test('同端口推导稳定，不同端口互不重叠', () => {
 test('ensurePortDirs 幂等创建必需子目录', () => {
   const root = tmpRoot();
   const p = ensurePortDirs(portPaths(22222, { root }));
-  for (const d of [p.dir, p.schedulerDir, p.collabDir, p.uploadDir, p.downloadDir, p.downloadsDir, p.skillsRoot, p.sessionLogsDir, p.postmanDir, p.notepadDir, p.navicatDir]) {
+  for (const d of [p.dir, p.schedulerDir, p.collabDir, p.uploadDir, p.downloadDir, p.downloadsDir, p.skillsRoot, p.sessionLogsDir, p.postmanDir, p.notepadDir, p.yamlDir, p.jsDir, p.translateDir, p.navicatDir]) {
     assert.ok(fs.existsSync(d), d + ' 应存在');
   }
   ensurePortDirs(p);   // 第二次不抛

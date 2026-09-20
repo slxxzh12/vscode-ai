@@ -9,10 +9,10 @@ import { createNotepadStore } from '../notepad-store.js';
 
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'df-np-http-')); }
 
-async function start() {
+async function start(fileStores) {
   const notepadStore = createNotepadStore({ dir: tmpDir() });
   const projects = { listProjects: () => [], resolveAbsolute: () => ({ project: 'p', rel: 'r' }) };
-  const api = createHttpApi({ projects, notepadStore });
+  const api = createHttpApi({ projects, notepadStore, fileStores });
   const server = http.createServer(api);
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   return { store: notepadStore, port: server.address().port, server };
@@ -59,4 +59,21 @@ test('notepad：已存在 → 409，非法路径 → 400，不存在 → 404', a
   assert.equal(bad.status, 400);
   const missing = await call(A.port, 'GET', '/api/notepad/file?id=nope.txt');
   assert.equal(missing.status, 404);
+});
+
+test('files：每个 tool 独立目录，互不可见，未知 tool 404', async (t) => {
+  const stores = {
+    notepad: createNotepadStore({ dir: tmpDir() }),
+    yaml: createNotepadStore({ dir: tmpDir() }),
+    js: createNotepadStore({ dir: tmpDir() }),
+  };
+  const A = await start(stores);
+  t.after(() => A.server.close());
+  await call(A.port, 'POST', '/api/files/yaml/file', { folder: '', name: 'a.yaml' });
+  const yamlTree = await call(A.port, 'GET', '/api/files/yaml/tree');
+  assert.equal(yamlTree.body.items.length, 1);
+  const jsTree = await call(A.port, 'GET', '/api/files/js/tree');
+  assert.equal(jsTree.body.items.length, 0);
+  const unknown = await call(A.port, 'GET', '/api/files/nope/tree');
+  assert.equal(unknown.status, 404);
 });

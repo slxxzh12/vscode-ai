@@ -10,8 +10,8 @@ afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
 describe('NotepadTool', () => {
   it('打开文件载入内容，排序按钮就地变换', async () => {
     vi.stubGlobal('fetch', vi.fn(async (u: string) => {
-      if (u.startsWith('/api/notepad/tree')) return okJson({ items: [{ id: 'a.txt', folder: '', name: 'a.txt' }], folders: [] });
-      if (u.startsWith('/api/notepad/file?id=')) return okJson({ content: 'b\na' });
+      if (u.startsWith('/api/files/notepad/tree')) return okJson({ items: [{ id: 'a.txt', folder: '', name: 'a.txt' }], folders: [] });
+      if (u.startsWith('/api/files/notepad/file?id=')) return okJson({ content: 'b\na' });
       return okJson({ ok: true });
     }));
     const w = mountC(NotepadTool);

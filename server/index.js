@@ -399,6 +399,13 @@ function buildWorkspace({ paths, port }) {
 
   const postmanHistory = createPostmanHistory({ dir: paths.postmanDir });
   const notepadStore = createNotepadStore({ dir: paths.notepadDir });
+  // 左侧文件树：每个小工具各用一份独立目录，复用同一套 store/路由逻辑
+  const fileStores = {
+    notepad: notepadStore,
+    yaml: createNotepadStore({ dir: paths.yamlDir }),
+    js: createNotepadStore({ dir: paths.jsDir }),
+    translate: createNotepadStore({ dir: paths.translateDir }),
+  };
   const navicatCrypto = createNavicatCrypto({ keyFile: path.join(paths.navicatDir, '.key') });
   const navicatStore = createNavicatStore({ file: path.join(paths.navicatDir, 'profiles.json'), crypto: navicatCrypto });
   const navicatMount = createNavicatMount({
@@ -407,7 +414,7 @@ function buildWorkspace({ paths, port }) {
     ncx: { buildNcx, connectionString },
     logger: log,
   });
-  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger, postmanHistory, notepadStore });
+  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger, postmanHistory, notepadStore, fileStores });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });

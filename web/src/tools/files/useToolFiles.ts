@@ -1,7 +1,10 @@
 import { ref, type Ref } from 'vue';
 import type { FileTreeActionResult } from '../../fileTree';
 
-export type NotepadFile = { id: string; folder: string; name: string; updatedAt?: string };
+export type ToolFile = { id: string; folder: string; name: string; updatedAt?: string };
+
+// 拥有左侧文件树的小工具，各自一份独立目录（服务端 /api/files/<tool>/*）
+export type FileTool = 'notepad' | 'yaml' | 'js' | 'translate';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
@@ -12,9 +15,9 @@ async function jfetch(url: string, opt: RequestInit = {}): Promise<any> {
   return j;
 }
 
-export function useNotepadFiles(): {
+export function useToolFiles(tool: FileTool): {
   folders: Ref<string[]>;
-  items: Ref<NotepadFile[]>;
+  items: Ref<ToolFile[]>;
   load: () => Promise<void>;
   read: (id: string) => Promise<string>;
   save: (id: string, content: string) => Promise<void>;
@@ -26,28 +29,29 @@ export function useNotepadFiles(): {
   removeItem: (id: string) => Promise<FileTreeActionResult>;
   moveItem: (id: string, folder: string) => Promise<FileTreeActionResult>;
 } {
+  const base = `/api/files/${tool}`;
   const folders = ref<string[]>([]);
-  const items = ref<NotepadFile[]>([]);
+  const items = ref<ToolFile[]>([]);
 
   async function load(): Promise<void> {
     try {
-      const j = await jfetch('/api/notepad/tree');
+      const j = await jfetch(`${base}/tree`);
       items.value = Array.isArray(j.items) ? j.items : [];
       folders.value = Array.isArray(j.folders) ? j.folders : [];
     } catch { /* 列表失败不影响编辑 */ }
   }
 
   async function read(id: string): Promise<string> {
-    const j = await jfetch(`/api/notepad/file?id=${encodeURIComponent(id)}`);
+    const j = await jfetch(`${base}/file?id=${encodeURIComponent(id)}`);
     return typeof j.content === 'string' ? j.content : '';
   }
 
   async function save(id: string, content: string): Promise<void> {
-    await jfetch('/api/notepad/file', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ id, content }) });
+    await jfetch(`${base}/file`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ id, content }) });
   }
 
   async function createFile(folder: string, name: string): Promise<string> {
-    const j = await jfetch('/api/notepad/file', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ folder, name }) });
+    const j = await jfetch(`${base}/file`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ folder, name }) });
     await load();
     return String(j.id || '');
   }
@@ -58,12 +62,12 @@ export function useNotepadFiles(): {
       .catch((e) => ({ ok: false, error: (e as Error)?.message || 'failed' }));
   }
 
-  const createFolder = (parent: string, name: string) => wrap(() => jfetch('/api/notepad/folder', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ path: parent ? `${parent}/${name}` : name }) }));
-  const renameFolder = (path: string, name: string) => wrap(() => jfetch('/api/notepad/folder', { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ path, name }) }));
-  const removeFolder = (path: string) => wrap(() => jfetch(`/api/notepad/folder?path=${encodeURIComponent(path)}`, { method: 'DELETE' }));
-  const renameItem = (id: string, name: string) => wrap(() => jfetch('/api/notepad/file', { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ id, name }) }));
-  const removeItem = (id: string) => wrap(() => jfetch(`/api/notepad/file?id=${encodeURIComponent(id)}`, { method: 'DELETE' }));
-  const moveItem = (id: string, folder: string) => wrap(() => jfetch('/api/notepad/move', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ id, folder }) }));
+  const createFolder = (parent: string, name: string) => wrap(() => jfetch(`${base}/folder`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ path: parent ? `${parent}/${name}` : name }) }));
+  const renameFolder = (path: string, name: string) => wrap(() => jfetch(`${base}/folder`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ path, name }) }));
+  const removeFolder = (path: string) => wrap(() => jfetch(`${base}/folder?path=${encodeURIComponent(path)}`, { method: 'DELETE' }));
+  const renameItem = (id: string, name: string) => wrap(() => jfetch(`${base}/file`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ id, name }) }));
+  const removeItem = (id: string) => wrap(() => jfetch(`${base}/file?id=${encodeURIComponent(id)}`, { method: 'DELETE' }));
+  const moveItem = (id: string, folder: string) => wrap(() => jfetch(`${base}/move`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ id, folder }) }));
 
   return { folders, items, load, read, save, createFile, createFolder, renameFolder, removeFolder, renameItem, removeItem, moveItem };
 }

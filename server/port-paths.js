@@ -39,12 +39,15 @@ export function portPaths(port, { root = dataHome() } = {}) {
     toolsDir: path.join(dir, 'tools'),
     postmanDir: path.join(dir, 'tools', 'postman'),
     notepadDir: path.join(dir, 'tools', 'notepad'),
+    yamlDir: path.join(dir, 'tools', 'yaml'),
+    jsDir: path.join(dir, 'tools', 'js'),
+    translateDir: path.join(dir, 'tools', 'translate'),
     navicatDir: path.join(dir, 'tools', 'navicat'),
   };
 }
 
 export function ensurePortDirs(paths) {
-  for (const d of [paths.dir, paths.schedulerDir, paths.collabDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.skillsRoot, paths.sessionLogsDir, paths.postmanDir, paths.notepadDir, paths.navicatDir]) {
+  for (const d of [paths.dir, paths.schedulerDir, paths.collabDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.skillsRoot, paths.sessionLogsDir, paths.postmanDir, paths.notepadDir, paths.yamlDir, paths.jsDir, paths.translateDir, paths.navicatDir]) {
     fs.mkdirSync(d, { recursive: true });
   }
   return paths;

@@ -43,7 +43,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -64,6 +64,63 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       });
       req.on('error', reject);
     });
+  const treeStatusOf = (code) => (code === 'exists' ? 409 : code === 'not-found' ? 404 : code === 'too-large' ? 413 : code === 'bad-path' || code === 'bad-id' || code === 'empty' ? 400 : 500);
+  // 通用左侧文件树路由：notepad / yaml / js / translate 各用一份独立目录，逻辑一致。
+  // sub 形如 /tree、/file、/folder、/move（已去掉 /api/notepad 或 /api/files/<tool> 前缀）。
+  const handleFiles = async (store, sub, url, req, res) => {
+    try {
+      if (sub === '/tree' && req.method === 'GET') {
+        sendJson(res, 200, store?.list?.() ?? { items: [], folders: [] });
+        return;
+      }
+      if (sub === '/file' && req.method === 'GET') {
+        sendJson(res, 200, store.read(url.searchParams.get('id') || ''));
+        return;
+      }
+      if (sub === '/file' && req.method === 'PUT') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, { ok: true, ...store.write(String(body.id ?? ''), body.content) });
+        return;
+      }
+      if (sub === '/file' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, { ok: true, ...store.createFile(String(body.folder ?? ''), String(body.name ?? '')) });
+        return;
+      }
+      if (sub === '/file' && req.method === 'PATCH') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, { ok: true, id: store.renameItem(String(body.id ?? ''), String(body.name ?? '')) });
+        return;
+      }
+      if (sub === '/file' && req.method === 'DELETE') {
+        const ok = store.removeItem(url.searchParams.get('id') || '');
+        sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
+        return;
+      }
+      if (sub === '/folder' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, { ok: true, path: store.createFolder(String(body.path ?? '')) });
+        return;
+      }
+      if (sub === '/folder' && req.method === 'PATCH') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, { ok: true, path: store.renameFolder(String(body.path ?? ''), String(body.name ?? '')) });
+        return;
+      }
+      if (sub === '/folder' && req.method === 'DELETE') {
+        const ok = store.removeFolder(url.searchParams.get('path') || '');
+        sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
+        return;
+      }
+      if (sub === '/move' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const ok = store.moveItem(String(body.id ?? ''), String(body.folder ?? ''));
+        sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
+        return;
+      }
+      sendJson(res, 404, { error: 'not-found' });
+    } catch (e) { sendJson(res, treeStatusOf(e?.code), { error: e?.code || 'failed' }); }
+  };
   return async (req, res) => {
     if (!(await requireAuthHttp(req, res))) { sendJson(res, 401, { error: 'unauthorized' }); return; }
     const url = new URL(req.url, 'http://localhost');
@@ -267,60 +324,15 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         return;
       }
       if (url.pathname.startsWith('/api/notepad/')) {
-        const statusOf = (code) => (code === 'exists' ? 409 : code === 'not-found' ? 404 : code === 'too-large' ? 413 : code === 'bad-path' || code === 'bad-id' || code === 'empty' ? 400 : 500);
-        try {
-          if (url.pathname === '/api/notepad/tree' && req.method === 'GET') {
-            sendJson(res, 200, notepadStore?.list?.() ?? { items: [], folders: [] });
-            return;
-          }
-          if (url.pathname === '/api/notepad/file' && req.method === 'GET') {
-            sendJson(res, 200, notepadStore.read(url.searchParams.get('id') || ''));
-            return;
-          }
-          if (url.pathname === '/api/notepad/file' && req.method === 'PUT') {
-            const body = await readJsonBody(req);
-            sendJson(res, 200, { ok: true, ...notepadStore.write(String(body.id ?? ''), body.content) });
-            return;
-          }
-          if (url.pathname === '/api/notepad/file' && req.method === 'POST') {
-            const body = await readJsonBody(req);
-            sendJson(res, 200, { ok: true, ...notepadStore.createFile(String(body.folder ?? ''), String(body.name ?? '')) });
-            return;
-          }
-          if (url.pathname === '/api/notepad/file' && req.method === 'PATCH') {
-            const body = await readJsonBody(req);
-            sendJson(res, 200, { ok: true, id: notepadStore.renameItem(String(body.id ?? ''), String(body.name ?? '')) });
-            return;
-          }
-          if (url.pathname === '/api/notepad/file' && req.method === 'DELETE') {
-            const ok = notepadStore.removeItem(url.searchParams.get('id') || '');
-            sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
-            return;
-          }
-          if (url.pathname === '/api/notepad/folder' && req.method === 'POST') {
-            const body = await readJsonBody(req);
-            sendJson(res, 200, { ok: true, path: notepadStore.createFolder(String(body.path ?? '')) });
-            return;
-          }
-          if (url.pathname === '/api/notepad/folder' && req.method === 'PATCH') {
-            const body = await readJsonBody(req);
-            sendJson(res, 200, { ok: true, path: notepadStore.renameFolder(String(body.path ?? ''), String(body.name ?? '')) });
-            return;
-          }
-          if (url.pathname === '/api/notepad/folder' && req.method === 'DELETE') {
-            const ok = notepadStore.removeFolder(url.searchParams.get('path') || '');
-            sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
-            return;
-          }
-          if (url.pathname === '/api/notepad/move' && req.method === 'POST') {
-            const body = await readJsonBody(req);
-            const ok = notepadStore.moveItem(String(body.id ?? ''), String(body.folder ?? ''));
-            sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
-            return;
-          }
-          sendJson(res, 404, { error: 'not-found' });
-          return;
-        } catch (e) { sendJson(res, statusOf(e?.code), { error: e?.code || 'failed' }); return; }
+        await handleFiles(notepadStore, url.pathname.slice('/api/notepad'.length), url, req, res);
+        return;
+      }
+      const filesMatch = url.pathname.match(/^\/api\/files\/([a-z]+)(\/.*)$/);
+      if (filesMatch) {
+        const store = fileStores?.[filesMatch[1]];
+        if (!store) { sendJson(res, 404, { error: 'unknown-tool' }); return; }
+        await handleFiles(store, filesMatch[2], url, req, res);
+        return;
       }
       if (url.pathname === '/api/raw' && req.method === 'GET') {
         const project = url.searchParams.get('project');
