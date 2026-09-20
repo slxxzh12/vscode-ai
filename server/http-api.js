@@ -239,8 +239,24 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         }
         return;
       }
+      if (url.pathname === '/api/postman/folder' && req.method === 'PATCH') {
+        const body = await readJsonBody(req);
+        try {
+          const folder = postmanHistory?.renameFolder?.(String(body.path ?? ''), String(body.name ?? '')) ?? '';
+          sendJson(res, 200, { ok: true, path: folder });
+        } catch (e) {
+          sendJson(res, 400, { error: e?.code || 'bad-path' });
+        }
+        return;
+      }
       if (url.pathname === '/api/postman/folder' && req.method === 'DELETE') {
         const ok = postmanHistory?.removeFolder?.(url.searchParams.get('path') || '') ?? false;
+        sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
+        return;
+      }
+      if (url.pathname === '/api/postman/history' && req.method === 'PATCH') {
+        const body = await readJsonBody(req);
+        const ok = postmanHistory?.setRecordTitle?.(String(body.id ?? ''), String(body.title ?? '')) ?? false;
         sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
         return;
       }

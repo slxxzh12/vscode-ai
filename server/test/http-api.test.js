@@ -51,6 +51,23 @@ function del(server, url) {
   });
 }
 
+function patch(server, url, obj) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(obj);
+    const req = http.request({ host: '127.0.0.1', port: server.address().port, path: url, method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => {
+      const chunks = [];
+      res.on('data', (d) => chunks.push(d));
+      res.on('end', () => {
+        const buf = Buffer.concat(chunks);
+        resolve({ status: res.statusCode, body: buf.toString('utf8'), buf });
+      });
+    });
+    req.on('error', reject);
+    req.end(data);
+  });
+}
+
 function postRaw(server, url, raw) {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port: server.address().port, path: url, method: 'POST',
@@ -729,4 +746,32 @@ test('POST/DELETE /api/postman/folder 与 /api/postman/move', async (t) => {
   const removed = await del(server, '/api/postman/folder?path=foo');
   assert.equal(removed.status, 200);
   assert.equal((await del(server, '/api/postman/folder?path=foo')).status, 404);
+});
+
+test('PATCH /api/postman/folder 重命名；PATCH /api/postman/history 改标题', async (t) => {
+  const { createPostmanHistory } = await import('../postman-history.js');
+  const dir = tmpDir();
+  const postmanHistory = createPostmanHistory({ dir });
+  const result = { ok: true, code: 0, error: '', timedOut: false, stdout: 'ok', stderr: '' };
+  const server = await start(new Projects({ projects: [] }), { runCurlFn: async () => result, postmanHistory });
+  t.after(() => server.close());
+
+  await post(server, '/api/postman/folder', { path: 'foo' });
+  const renamed = await patch(server, '/api/postman/folder', { path: 'foo', name: 'bar' });
+  assert.equal(renamed.status, 200);
+  assert.deepEqual(JSON.parse(renamed.body), { ok: true, path: 'bar' });
+  assert.equal(fs.existsSync(path.join(dir, 'bar')), true);
+
+  await post(server, '/api/curl', { command: 'curl https://a.com', folder: 'bar' });
+  const items = JSON.parse((await request(server, '/api/postman/history')).body).items;
+  const rec = await patch(server, '/api/postman/history', { id: items[0].id, title: 'My A' });
+  assert.equal(rec.status, 200);
+  const after = JSON.parse((await request(server, '/api/postman/history')).body).items;
+  assert.equal(after[0].title, 'My A');
+
+  await post(server, '/api/postman/folder', { path: 'other' });
+  const conflict = await patch(server, '/api/postman/folder', { path: 'bar', name: 'other' });
+  assert.equal(conflict.status, 400);
+  assert.equal(JSON.parse(conflict.body).error, 'exists');
+  assert.equal((await patch(server, '/api/postman/history', { id: '../evil.json', title: 'x' })).status, 404);
 });
