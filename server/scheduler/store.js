@@ -113,6 +113,24 @@ export class SchedulerStore {
     if (!task.cwd) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
   }
   syncManifest(id) { const t = this.getTask(id); if (t) this._syncManifest(t); }
+  importManifestDir(root) {
+    const summary = { imported: 0, overwritten: 0, failed: [] };
+    for (const file of scanManifests(root)) {
+      const dir = path.dirname(file);
+      let input;
+      try {
+        input = fromManifest(JSON.parse(fs.readFileSync(file, 'utf8')), dir);
+      } catch (e) {
+        summary.failed.push({ path: file, error: String(e && e.code || e && e.message || e) });
+        continue;
+      }
+      const existing = this.tasks.find((t) => this._key(this._dirOf(t)) === this._key(dir));
+      const r = existing ? this.replaceTask(existing.id, input) : this.createTask(input);
+      if (r.error) { summary.failed.push({ path: file, error: r.error }); continue; }
+      if (existing) summary.overwritten += 1; else summary.imported += 1;
+    }
+    return summary;
+  }
   listTasks() { return this.tasks.map((t) => ({ ...t })); }
   getTask(id) { const t = this.tasks.find((x) => x.id === id); return t ? { ...t } : null; }
   createTask(input) {
