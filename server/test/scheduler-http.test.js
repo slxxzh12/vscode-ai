@@ -36,10 +36,10 @@ function call(mount, method, urlStr, body) {
   return Promise.resolve(callP).then(() => p);
 }
 
-function setup(runner = fakeRunner()) {
+function setup(runner = fakeRunner(), pickFolder = undefined) {
   const store = new SchedulerStore({ dir: tmpDir() });
   const engine = createEngine({ store, runner, now: () => 1000 });
-  const mount = createSchedulerMount({ engine, store });
+  const mount = createSchedulerMount({ engine, store, pickFolder });
   return { store, engine, runner, mount };
 }
 
@@ -98,4 +98,39 @@ test('未知路由 404', async () => {
   const { mount } = setup();
   const res = await call(mount, 'GET', '/api/scheduler/nope');
   assert.equal(res.status, 404);
+});
+
+test('POST /pick-folder 返回所选目录', async () => {
+  const { mount } = setup(fakeRunner(), async () => ({ path: 'C:/some/dir' }));
+  const res = await call(mount, 'POST', '/api/scheduler/pick-folder');
+  assert.equal(res.status, 200);
+  assert.equal(JSON.parse(res.body).path, 'C:/some/dir');
+});
+
+test('POST /pick-folder 取消与不支持', async () => {
+  const cancelled = setup(fakeRunner(), async () => ({ cancelled: true }));
+  assert.equal(JSON.parse((await call(cancelled.mount, 'POST', '/api/scheduler/pick-folder')).body).cancelled, true);
+  const unsupported = setup(fakeRunner(), async () => ({ error: 'unsupported' }));
+  assert.equal(JSON.parse((await call(unsupported.mount, 'POST', '/api/scheduler/pick-folder')).body).error, 'unsupported');
+});
+
+test('POST /import 扫描目录导入并汇总', async () => {
+  const { mount, store } = setup();
+  const root = tmpDir();
+  const proj = path.join(root, 'proj');
+  fs.mkdirSync(proj, { recursive: true });
+  fs.writeFileSync(path.join(proj, 'void_manifest.json'), JSON.stringify({
+    format: 'void_manifest', version: 1, name: 'i', type: 'shell', enabled: true,
+    command: 'echo', schedule: { mode: 'interval', interval: { every: 5, unit: 'minute' } },
+  }));
+  const res = await call(mount, 'POST', '/api/scheduler/import', { dir: root });
+  assert.equal(res.status, 200);
+  assert.equal(JSON.parse(res.body).imported, 1);
+  assert.equal(store.listTasks().length, 1);
+});
+
+test('POST /import 非法目录返回 400', async () => {
+  const { mount } = setup();
+  assert.equal((await call(mount, 'POST', '/api/scheduler/import', { dir: '' })).status, 400);
+  assert.equal((await call(mount, 'POST', '/api/scheduler/import', { dir: path.join(tmpDir(), 'nope') })).status, 400);
 });

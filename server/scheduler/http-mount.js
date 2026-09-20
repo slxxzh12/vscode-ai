@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import { listAiCommands } from './ai-commands.js';
-import { pickFile } from '../native-dialog.js';
+import { pickFile, pickFolder as defaultPickFolder } from '../native-dialog.js';
 
 const LOG_TAIL_MAX = 256 * 1024;
 
-export function createSchedulerMount({ engine, store, logger = console }) {
+export function createSchedulerMount({ engine, store, logger = console, pickFolder = defaultPickFolder }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -61,6 +61,7 @@ export function createSchedulerMount({ engine, store, logger = console }) {
           if (r.error === 'not-found') return sendJson(res, 404, { error: 'not-found' });
           if (r.error) return sendJson(res, 400, { error: r.error });
           engine.reschedule(r.task);
+          store.syncManifest(r.task.id);
           engine.notifyTasksChanged();
           return sendJson(res, 200, { task: withNext(r.task) });
         }
@@ -98,6 +99,24 @@ export function createSchedulerMount({ engine, store, logger = console }) {
         let content = null;
         try { if (/\.md$/i.test(r.path)) content = fs.readFileSync(r.path, 'utf8').slice(0, 65536); } catch { /* ignore */ }
         return sendJson(res, 200, { path: r.path, content });
+      }
+      if (p === '/api/scheduler/pick-folder' && req.method === 'POST') {
+        const r = await pickFolder();
+        if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
+        if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
+        return sendJson(res, 200, { path: r.path });
+      }
+      if (p === '/api/scheduler/import' && req.method === 'POST') {
+        const body = await readBody(req);
+        const dir = body && typeof body.dir === 'string' ? body.dir.trim() : '';
+        if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+          return sendJson(res, 400, { error: 'bad-dir' });
+        }
+        const summary = store.importManifestDir(dir);
+        engine.refreshAll();
+        for (const t of store.listTasks()) store.syncManifest(t.id);
+        engine.notifyTasksChanged();
+        return sendJson(res, 200, summary);
       }
       return sendJson(res, 404, { error: 'not found' });
     } catch (err) {
