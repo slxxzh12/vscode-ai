@@ -386,11 +386,19 @@ function buildWorkspace({ paths, port }) {
 
   const scheduler = createScheduler({
     dir: paths.schedulerDir,
+    manifestRoot: path.join(paths.schedulerDir, 'manifests'),
     projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
     logger: log,
     opencodeDataDir: path.join(paths.dir, 'opencode-data'),
   });
+  scheduler.store.setRuntimeProvider((id) => ({
+    nextRunAt: scheduler.engine.nextRunAtOf(id),
+    lastRun: scheduler.store.listRuns({ taskId: id, limit: 1 })[0] || null,
+  }));
   scheduler.engine.onEvent((evt, payload) => {
+    if (evt === 'run-end' && payload && payload.run && payload.run.taskId) {
+      try { scheduler.store.syncManifest(payload.run.taskId); } catch { /* 清单刷新失败不影响运行 */ }
+    }
     const type = evt === 'run-start' ? SchedulerS2C.SCHED_RUN_START
       : evt === 'run-end' ? SchedulerS2C.SCHED_RUN_END
       : SchedulerS2C.SCHED_TASKS_CHANGED;
@@ -425,7 +433,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, navicatMount };
+  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, navicatMount };
 }
 
 // ---- 工作区（端口档案）----
@@ -715,7 +723,7 @@ const server = http.createServer(async (req, res) => {
       }
       const parsed = parseDevflowConfig(xml);
       fs.writeFileSync(configFile, xml, 'utf8');
-      try { workflowSeedStore.update(loadDevflowConfig(configFile).workflows); } catch { /* ignore */ }
+      try { ws?.workflowSeedStore?.update(loadDevflowConfig(configFile).workflows); } catch { /* ignore */ }
       setLocale(parsed.server.language);
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -725,7 +733,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/workflows-seed' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(workflowSeedStore.read()));
+    res.end(JSON.stringify(ws?.workflowSeedStore?.read() || { version: 0, updatedAt: 0, workflows: [] }));
     return;
   }
   if (url.pathname === '/api/workflows' && req.method === 'POST') {
@@ -735,7 +743,7 @@ const server = http.createServer(async (req, res) => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       let saved;
-      try { saved = updateWorkflows(configFile, body.workflows, workflowSeedStore); }
+      try { saved = updateWorkflows(configFile, body.workflows, ws?.workflowSeedStore); }
       catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid workflows', message: String(e && e.message || e) })); return; }
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
