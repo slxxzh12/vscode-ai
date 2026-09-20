@@ -36,3 +36,19 @@ test('无 resume 属性的旧配置仍可解析与序列化', () => {
   const out = serializeDevflowConfig(cfg);
   assert.equal(out.includes('resumeCmd'), false);
 });
+
+test('parseDevflowConfig 解析 resume="opencode"（缺省不产生键）并回写', () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<devflow>
+  <agents default="nga">
+    <agent id="opencode" name="OpenCode" cmd="opencode" />
+    <agent id="nga" name="nga" cmd="nga" resume="opencode" />
+  </agents>
+</devflow>`;
+  const cfg = parseDevflowConfig(xml);
+  assert.equal('resume' in cfg.agents.list.find((a) => a.id === 'opencode'), false);
+  assert.equal(cfg.agents.list.find((a) => a.id === 'nga').resume, 'opencode');
+  const out = serializeDevflowConfig(cfg);
+  assert.ok(out.includes('id="nga" name="nga" cmd="nga" resume="opencode"'));
+  assert.equal(parseDevflowConfig(out).agents.list.find((a) => a.id === 'nga').resume, 'opencode');
+});

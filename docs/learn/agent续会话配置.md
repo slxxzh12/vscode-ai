@@ -15,14 +15,14 @@ DevFlow 在**后端重启**或用户点击历史面板会话树的「打开」�
 
 1. `buildResumeCommand({ agent, agentSessionId })`：
    - 配了 `resumeCmd`：含 `{id}` → 用发现的 id 替换；不含 → 原样执行；缺 id 且含 `{id}` → 不注入。
-   - 未配且是 opencode → `opencode --session <id>`（需要 `agentSessionId`）。
+   - 启用内建 opencode 适配器（`resume="opencode"`，或 agent 的 id/cmd 本身就是 opencode）→ `<cmd> --session <id>`（需要 `agentSessionId`）。
    - 否则 → `null`。
 2. 取不到续会话命令 → 退化为该 agent 的原始 `cmd`（**只重开外壳，不续上下文**）。
 
 `agentSessionId` 的来源：
 
 - `resumeDiscover` 配置的命令，stdout 去空白即 id；
-- 未配且是 opencode → 内建发现：`opencode session list --format json -n 30`，
+- 内建 opencode 发现：`<cmd> session list --format json -n 30`，
   按 `directory === cwd` 且 `created` 落在会话创建时间 ±60s 的项取最接近的 id；
   **会排除已被其它活跃会话认领的 id，且发现串行化**（避免同目录多会话错配）。
 
@@ -31,14 +31,17 @@ DevFlow 在**后端重启**或用户点击历史面板会话树的「打开」�
 在活动配置 `downloads/devflow.xml` 的 `<agents>` 里给对应 agent 加属性：
 
 ```xml
+<!-- 改名的 opencode（同一套 session 库）：加 resume="opencode" 复用内建适配器 -->
+<agent id="nga" name="nga" cmd="nga" resume="opencode" />
+<!-- 其它 agent：按各自 CLI 配置 -->
 <agent id="claudecode" name="ClaudeCode" cmd="claudecode"
        resumeCmd="claudecode --resume {id}"
        resumeDiscover="<列出最近会话 id 的命令>" />
-<agent id="nga" name="nga" cmd="nga" resumeCmd="nga --continue" />
 ```
 
-- opencode 无需配置（内建）。
-- `nga`/`claudecode` 的 `resumeCmd`/`resumeDiscover` 真值取决于各自 CLI，请按本机实际填写。
+- opencode 无需配置（内建，id/cmd 为 opencode 自动生效）。
+- 改名的 opencode（如 `nga`）用 `resume="opencode"`：发现与续接都用该 agent 的 `cmd`（`nga session list` / `nga --session <id>`）。
+- `claudecode` 的 `resumeCmd`/`resumeDiscover` 真值取决于各自 CLI，请按本机实际填写。
 - 改完**重启后端**生效。
 
 ## 验证

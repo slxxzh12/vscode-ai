@@ -1,9 +1,23 @@
 import { exec } from 'node:child_process';
 
-// 按 agent 的续会话适配器：opencode 内建；其它 agent 通过 XML resumeCmd/resumeDiscover 配置。
+// 按 agent 的续会话适配器：opencode 内建（含 resume="opencode" 的改名 opencode）；其它 agent 通过 XML resumeCmd/resumeDiscover 配置。
 const DEFAULT_DISCOVER_MS = 20000;
 
 const normDir = (s) => String(s || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+const baseName = (cmd) => String(cmd || '').trim().replace(/^.*[\\/]/, '').replace(/\.(exe|cmd|bat|ps1)$/i, '').toLowerCase();
+
+// 内建 opencode 适配器适用范围：显式配置 resume="opencode"，或 agent 的 id/cmd 本身就是 opencode。
+// 改名的 opencode（如 cmd="nga"）加 resume="opencode" 即可复用同一套「发现 id + --session 续接」。
+export function isOpencodeAgent(agent) {
+  if (!agent) return false;
+  if (typeof agent.resume === 'string' && agent.resume.trim().toLowerCase() === 'opencode') return true;
+  return agent.id === 'opencode' || baseName(agent.cmd) === 'opencode';
+}
+
+// 续会话/发现命令使用的可执行名：优先 agent.cmd（可能是改名的 opencode），缺省退回 opencode。
+function opencodeBin(agent) {
+  return (typeof agent.cmd === 'string' && agent.cmd.trim()) || 'opencode';
+}
 
 export function buildResumeCommand({ agent, agentSessionId } = {}) {
   if (!agent) return null;
@@ -13,8 +27,8 @@ export function buildResumeCommand({ agent, agentSessionId } = {}) {
     if (configured.includes('{id}')) return id ? configured.replace(/\{id\}/g, id) : null;
     return configured;
   }
-  if (agent.id === 'opencode' || agent.cmd === 'opencode') {
-    return id ? `opencode --session ${id}` : null;
+  if (isOpencodeAgent(agent)) {
+    return id ? `${opencodeBin(agent)} --session ${id}` : null;
   }
   return null;
 }
@@ -60,8 +74,8 @@ export async function discoverAgentSessionId({ agent, cwd, since, run = defaultR
     const id = out == null ? '' : String(out).trim();
     return id || null;
   }
-  if (agent.id === 'opencode' || agent.cmd === 'opencode') {
-    const out = await run('opencode session list --format json -n 30', { cwd });
+  if (isOpencodeAgent(agent)) {
+    const out = await run(`${opencodeBin(agent)} session list --format json -n 30`, { cwd });
     if (out == null) return null;
     return pickOpencodeSession(parseSessionList(out), { cwd, since, exclude });
   }

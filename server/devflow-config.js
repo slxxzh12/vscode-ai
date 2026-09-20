@@ -9,7 +9,7 @@ export const DEFAULT_AGENT = 'opencode';
 export const DEFAULT_AGENTS = [
   { id: 'opencode', name: 'OpenCode', cmd: 'opencode', statsCmd: 'opencode stats --days {days}' },
   { id: 'claudecode', name: 'ClaudeCode', cmd: 'claudecode' },
-  { id: 'nga', name: 'nga', cmd: 'nga', statsCmd: 'nga stats --days {days}' },
+  { id: 'nga', name: 'nga', cmd: 'nga', resume: 'opencode', statsCmd: 'nga stats --days {days}' },
   { id: 'codeagent', name: 'codeagent', cmd: 'codeagent' },
 ];
 
@@ -57,10 +57,12 @@ export function parseDevflowConfig(xml) {
         const agent = { id, name: decode(attr(m[1], 'name')) || id, cmd };
         const resumeCmd = decode(attr(m[1], 'resumeCmd'));
         const resumeDiscover = decode(attr(m[1], 'resumeDiscover'));
+        const resume = decode(attr(m[1], 'resume'));
         const statsCmd = decode(attr(m[1], 'statsCmd'));
         const skillsDir = decode(attr(m[1], 'skillsDir'));
         if (resumeCmd) agent.resumeCmd = resumeCmd;
         if (resumeDiscover) agent.resumeDiscover = resumeDiscover;
+        if (resume) agent.resume = resume;
         if (statsCmd) agent.statsCmd = statsCmd;
         if (skillsDir) agent.skillsDir = skillsDir;
         found.push(agent);
@@ -86,6 +88,7 @@ export function serializeDevflowConfig(cfg) {
       const attrs = [`id="${escXml(a.id)}"`, `name="${escXml(a.name)}"`, `cmd="${escXml(a.cmd)}"`];
       if (a.resumeCmd) attrs.push(`resumeCmd="${escXml(a.resumeCmd)}"`);
       if (a.resumeDiscover) attrs.push(`resumeDiscover="${escXml(a.resumeDiscover)}"`);
+      if (a.resume) attrs.push(`resume="${escXml(a.resume)}"`);
       if (a.statsCmd) attrs.push(`statsCmd="${escXml(a.statsCmd)}"`);
       if (a.skillsDir) attrs.push(`skillsDir="${escXml(a.skillsDir)}"`);
       return `    <agent ${attrs.join(' ')} />`;

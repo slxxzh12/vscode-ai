@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildResumeCommand, parseSessionList, pickOpencodeSession, discoverAgentSessionId,
+  buildResumeCommand, parseSessionList, pickOpencodeSession, discoverAgentSessionId, isOpencodeAgent,
 } from '../agent-resume.js';
 
 const ITEMS = JSON.stringify([
@@ -22,8 +22,7 @@ test('buildResumeCommand：配置模板替换 {id}，无 {id} 原样，缺 id �
   assert.equal(buildResumeCommand({ agent: { id: 'x', cmd: 'x', resumeCmd: 'x --continue' }, agentSessionId: null }), 'x --continue');
 });
 
-test('parseSessionList 容错', () => {
-  assert.equal(parseSessionList(ITEMS).length, 3);
+test('parseSessionList 容错', () => {  assert.equal(parseSessionList(ITEMS).length, 3);
   assert.deepEqual(parseSessionList('nope'), []);
 });
 
@@ -63,4 +62,26 @@ test('discoverAgentSessionId 透传 exclude 给 opencode 发现', async () => {
   const run = async () => ITEMS;
   const id = await discoverAgentSessionId({ agent: { id: 'opencode', cmd: 'opencode' }, cwd: 'C:\\proj', since: 5000, run, exclude: ['ses_b'] });
   assert.equal(id, 'ses_a');
+});
+
+test('isOpencodeAgent：resume="opencode" 让改名的 opencode 也走内建适配器', () => {
+  assert.equal(isOpencodeAgent({ id: 'nga', cmd: 'nga', resume: 'opencode' }), true);
+  assert.equal(isOpencodeAgent({ id: 'opencode', cmd: 'nga' }), true);
+  assert.equal(isOpencodeAgent({ id: 'x', cmd: 'C:\\tools\\opencode.exe' }), true);
+  assert.equal(isOpencodeAgent({ id: 'nga', cmd: 'nga' }), false);
+  assert.equal(isOpencodeAgent(null), false);
+});
+
+test('buildResumeCommand：resume="opencode" 时用 agent.cmd 生成续会话命令', () => {
+  const agent = { id: 'nga', cmd: 'nga', resume: 'opencode' };
+  assert.equal(buildResumeCommand({ agent, agentSessionId: 'ses_x' }), 'nga --session ses_x');
+  assert.equal(buildResumeCommand({ agent, agentSessionId: null }), null);
+});
+
+test('discoverAgentSessionId：resume="opencode" 时用 agent.cmd 执行 session list', async () => {
+  const calls = [];
+  const run = async (cmd) => { calls.push(cmd); return ITEMS; };
+  const id = await discoverAgentSessionId({ agent: { id: 'nga', cmd: 'nga', resume: 'opencode' }, cwd: 'C:\\proj', since: 5000, run });
+  assert.equal(id, 'ses_b');
+  assert.equal(calls[0], 'nga session list --format json -n 30');
 });
