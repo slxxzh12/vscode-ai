@@ -121,7 +121,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <div class="weoverlay" @click.self="close">
+  <div class="weoverlay">
     <div class="webox">
       <header class="weh">
         <span class="wtitle">{{ $t('wfe.title') }}</span>
