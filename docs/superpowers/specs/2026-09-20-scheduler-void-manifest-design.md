@@ -49,7 +49,7 @@
 
 规则：
 
-- **路径一律相对 manifest 所在目录**：写入时把任务里的绝对路径转相对，导入时再拼回绝对路径；manifest 内不出现绝对路径。
+- **路径一律相对 manifest 所在目录**：写入时把任务里的绝对路径转相对（用 `path.relative`，统一成正斜杠），导入时再拼回绝对路径。仅当无法相对化（如 Windows 跨盘符）时保留绝对路径。
 - **不记录 `cwd`**：manifest 所在目录即任务目录；导入时任务的 `cwd` = manifest 所在目录。
 - **不记录 `id` / `projectId` / `createdAt` / `updatedAt`**（本机内部信息，不跨机可移植）。
 - `runtime` 为只读展示信息（`nextRunAt` 由引擎重算、`lastRun` 本机无历史），**导入时忽略**。
