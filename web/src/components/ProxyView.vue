@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue';
-import { useLlm, type LlmStatus, type LlmToken, type LlmPluginEntry } from '../useLlm';
+import { useLlm, type LlmStatus, type LlmToken, type LlmPluginEntry, type LlmProvider } from '../useLlm';
 import ChangePassphraseDialog from './ChangePassphraseDialog.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
 import ModelSetupCard from './ModelSetupCard.vue';
@@ -30,6 +30,30 @@ const allModelKeys = () => (st.value?.providers || []).flatMap((p) => p.models.m
 const configText = ref('');
 const copied = ref(false);
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+// 上游 key 明文：默认打星号，点「查看明文」时才按需向后端取（不常驻前端）
+const MASK_KEY = '••••••••';
+const revealedKeys = ref<Set<string>>(new Set());
+const keyText = ref<Record<string, string>>({});
+const keyBusy = ref<string | null>(null);
+function keyDisplay(p: LlmProvider) {
+  return revealedKeys.value.has(p.id) ? (keyText.value[p.id] || MASK_KEY) : MASK_KEY;
+}
+async function toggleKey(p: LlmProvider) {
+  const next = new Set(revealedKeys.value);
+  if (next.has(p.id)) { next.delete(p.id); revealedKeys.value = next; return; }
+  if (!(p.id in keyText.value)) {
+    keyBusy.value = p.id;
+    try {
+      const r = await api.providerKeys(p.id);
+      const keys = (r.apiKeys && r.apiKeys.length ? r.apiKeys : [r.apiKey]).filter(Boolean);
+      keyText.value = { ...keyText.value, [p.id]: keys.join('  ·  ') };
+    } catch (e: any) { err.value = t('llm.failed', { msg: e?.message || e }); return; }
+    finally { keyBusy.value = null; }
+  }
+  next.add(p.id);
+  revealedKeys.value = next;
+}
 
 // —— 中转接口说明/curl 示例（取默认 provider 生成）——
 const defProvider = computed(() => {
@@ -296,10 +320,19 @@ async function copyConfig() {
     <section class="card">
       <div class="ch">{{ $t('llm.provider.title') }}</div>
       <div v-if="!st?.providers.length" class="muted">{{ $t('llm.provider.none') }}</div>
-      <div v-for="p in st?.providers || []" :key="p.id" class="prow">
-        <b>{{ p.id }}</b><span class="muted">{{ p.baseURL }}</span>
-        <span v-if="!p.baseURL" class="warn">{{ $t('llm.provider.nobase') }}</span>
-        <span v-if="!p.hasKey" class="warn">{{ $t('llm.provider.nokey') }}</span>
+      <div v-for="p in st?.providers || []" :key="p.id" class="pcard">
+        <div class="prow">
+          <b>{{ p.id }}</b><span class="muted">{{ p.baseURL }}</span>
+          <span v-if="!p.baseURL" class="warn">{{ $t('llm.provider.nobase') }}</span>
+          <span v-if="!p.hasKey" class="warn">{{ $t('llm.provider.nokey') }}</span>
+        </div>
+        <div v-if="p.hasKey" class="prow keyrow">
+          <span class="keylabel">{{ $t('llm.provider.key') }}</span>
+          <code class="keyval" :class="{ shown: revealedKeys.has(p.id) }">{{ keyDisplay(p) }}</code>
+          <button class="ghost" :disabled="keyBusy === p.id" @click="toggleKey(p)">
+            {{ keyBusy === p.id ? $t('llm.provider.loading') : (revealedKeys.has(p.id) ? $t('llm.provider.hide') : $t('llm.provider.reveal')) }}
+          </button>
+        </div>
       </div>
     </section>
 
@@ -430,6 +463,11 @@ button:disabled { opacity: .5; cursor: default; }
 .err { color: var(--err); font-size: 12px; }
 .prow, .trow { display: flex; gap: 8px; align-items: center; font-size: 12px; }
 .prow .muted, .trow .muted { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pcard { display: flex; flex-direction: column; gap: 2px; }
+.keyrow { gap: 6px; }
+.keylabel { flex: none; color: var(--tx4); font-size: 12px; }
+.keyval { flex: 0 1 auto; min-width: 0; font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--tx4); background: var(--bg1); border: 1px solid var(--bd); border-radius: 4px; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.keyval.shown { color: var(--tx1); }
 .sw { font-weight: 400; font-size: 12px; display: flex; gap: 4px; align-items: center; }
 .tok { border: 1px solid var(--bd); border-radius: 6px; overflow: hidden; }
 .trow-click { cursor: pointer; padding: 6px 8px; }

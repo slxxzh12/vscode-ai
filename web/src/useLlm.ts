@@ -48,6 +48,7 @@ export function useLlm() {
       return json<{ config: string }>(`/api/llm-admin/opencode-config?${q.toString()}`);
     },
     opencodeConfig: () => json<OpencodeConfigFile>('/api/llm-admin/opencode'),
+    providerKeys: (id: string) => json<{ id: string; baseURL: string; apiKey: string; apiKeys: string[] }>(`/api/llm-admin/provider-keys?provider=${encodeURIComponent(id)}`),
     saveOpencodeConfig: (payload: { providers: ProviderSelection[]; remove: string[]; model: string }) =>
       post<{ ok: boolean; path: string; backups: string[]; config: unknown; skipped: string[] }>('/api/llm-admin/opencode', payload),
   };

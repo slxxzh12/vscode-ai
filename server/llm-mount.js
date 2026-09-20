@@ -168,6 +168,12 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
         });
         return sendJson(res, 200, { ok: true, path: saved.path, backups: saved.backups, config: saved.config, skipped });
       }
+      // 明文读取上游 key（默认前端打星号，用户点「查看明文」才取）；仅本机管理界面使用
+      if (seg[0] === 'provider-keys' && method === 'GET') {
+        const p = getProvider(url.searchParams.get('provider') || '');
+        if (!p) return sendJson(res, 404, { error: 'not-found' });
+        return sendJson(res, 200, { id: p.id, baseURL: p.baseURL, apiKey: p.apiKey, apiKeys: p.apiKeys });
+      }
       if (locked()) return sendJson(res, 423, { error: 'locked' });
       if (seg[0] === 'plugins' && seg[1] === 'reload' && method === 'POST') return sendJson(res, 200, { entries: await reloadPlugins() });
       if (seg[0] === 'plugins' && seg[1] === 'example' && method === 'POST') {

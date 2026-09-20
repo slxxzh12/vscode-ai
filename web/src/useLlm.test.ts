@@ -64,6 +64,13 @@ describe('useLlm', () => {
     expect(calls[0].url).toBe('/api/llm-admin/opencode-config?token=tok&pid=p1&model=m1&pid=p1&model=m2&pid=p2&model=m3');
   });
 
+  it('providerKeys 编码 provider id', async () => {
+    const calls = stub(() => ({ body: { id: 'a/b', apiKey: 'K', apiKeys: ['K'] } }));
+    const r = await llm.providerKeys('a/b');
+    expect(r.apiKey).toBe('K');
+    expect(calls[0].url).toBe('/api/llm-admin/provider-keys?provider=a%2Fb');
+  });
+
   it('非 2xx 抛错：优先 message/error，否则 HTTP 状态', async () => {
     stub(() => ({ ok: false, status: 400, body: { message: 'bad' } }));
     await expect(llm.status()).rejects.toThrow('bad');
