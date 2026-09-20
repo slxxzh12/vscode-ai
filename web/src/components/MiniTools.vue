@@ -17,8 +17,6 @@ const TOOLS: Array<{ id: ToolId; icon: string; label: string; disabled?: boolean
 const SORT_BTNS: Array<{ mode: SortMode; key: string }> = [
   { mode: 'asc', key: 'fp.sort.short.asc' },
   { mode: 'desc', key: 'fp.sort.short.desc' },
-  { mode: 'asc-ci', key: 'fp.sort.short.asc_ci' },
-  { mode: 'desc-ci', key: 'fp.sort.short.desc_ci' },
   { mode: 'num-asc', key: 'fp.sort.short.num_asc' },
   { mode: 'num-desc', key: 'fp.sort.short.num_desc' },
 ];

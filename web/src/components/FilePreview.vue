@@ -344,13 +344,11 @@ async function minifyOneLine() {
 const SORT_ITEMS = computed<Array<{ mode: SortMode; label: string }>>(() => [
   { mode: 'asc', label: t('fp.sort.asc') },
   { mode: 'desc', label: t('fp.sort.desc') },
-  { mode: 'asc-ci', label: t('fp.sort.asc_ci') },
-  { mode: 'desc-ci', label: t('fp.sort.desc_ci') },
   { mode: 'num-asc', label: t('fp.sort.num_asc') },
   { mode: 'num-desc', label: t('fp.sort.num_desc') },
 ]);
 const SORT_KEY: Record<SortMode, string> = {
-  asc: 'fp.sort.short.asc', desc: 'fp.sort.short.desc', 'asc-ci': 'fp.sort.short.asc_ci', 'desc-ci': 'fp.sort.short.desc_ci',
+  asc: 'fp.sort.short.asc', desc: 'fp.sort.short.desc',
   'num-asc': 'fp.sort.short.num_asc', 'num-desc': 'fp.sort.short.num_desc',
 };
 function sortLines(mode: SortMode): string {

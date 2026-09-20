@@ -39,11 +39,11 @@ describe('MiniTools', () => {
     const input = w.findAll('textarea')[0];
     await input.setValue('b\na\nc');
     const btns = w.findAll('.mtbtn');
-    expect(btns).toHaveLength(7);
+    expect(btns).toHaveLength(5);
     await btns[0].trigger('click');   // asc
     expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('a\nb\nc');
     await input.setValue('a\nb\na');
-    await btns[6].trigger('click');   // 去重
+    await btns[4].trigger('click');   // 去重
     expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('a\nb');
   });
 
