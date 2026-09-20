@@ -1,48 +1,70 @@
 import { LLM_PROVIDER_PRESETS, type LlmProviderPreset } from '@devflow/shared/llm-presets';
 import { apiKeysOf, type OpencodeConfigJson } from './opencodeConfig';
+import type { ProviderSelection } from './useLlm';
 
-export interface ProviderState {
+export interface ConfiguredProvider {
   id: string;
   name: string;
   baseURL: string;
+  custom: boolean;
   hasKey: boolean;
   apiKey: string;
-  selected: string[];
-  manual: string;
+  models: string[];
+  extraModels: string;
 }
 
-export function stateFromConfig(
+export function providersFromConfig(
   config: OpencodeConfigJson | null,
   presets: LlmProviderPreset[] = LLM_PROVIDER_PRESETS,
-): ProviderState[] {
+): ConfiguredProvider[] {
   const prov = config?.provider || {};
-  return presets.map((p) => {
-    const existing = prov[p.id];
-    const hasKey = apiKeysOf(existing?.options).length > 0;
-    const ids = Object.keys(existing?.models || {});
-    const presetIds = p.models.map((m) => m.id);
-    const selected = presetIds.filter((m) => ids.includes(m));
-    const manual = ids.filter((m) => !presetIds.includes(m)).join(', ');
-    return { id: p.id, name: p.name, baseURL: p.baseURL, hasKey, apiKey: '', selected, manual };
+  const presetMap = new Map(presets.map((p) => [p.id, p]));
+  return Object.entries(prov).map(([id, p]) => {
+    const preset = presetMap.get(id);
+    const options = p?.options || {};
+    const ids = Object.keys(p?.models || {});
+    const presetIds = preset ? preset.models.map((m) => m.id) : [];
+    const selected = preset ? ids.filter((m) => presetIds.includes(m)) : [];
+    const extra = preset ? ids.filter((m) => !presetIds.includes(m)) : ids;
+    return {
+      id,
+      name: (typeof p?.name === 'string' && p.name) || preset?.name || id,
+      baseURL: (typeof options.baseURL === 'string' && options.baseURL) || preset?.baseURL || '',
+      custom: !preset,
+      hasKey: apiKeysOf(options).length > 0,
+      apiKey: '',
+      models: selected,
+      extraModels: extra.join(', '),
+    };
   });
 }
 
-export function buildSelections(states: ProviderState[]): { id: string; apiKey: string; models: string[] }[] {
-  const out: { id: string; apiKey: string; models: string[] }[] = [];
-  for (const s of states) {
-    const manualIds = s.manual.split(',').map((t) => t.trim()).filter(Boolean);
-    const models = [...new Set([...s.selected.map((m) => m.trim()).filter(Boolean), ...manualIds])];
-    if (!s.apiKey.trim() && !s.hasKey && !models.length) continue;
-    out.push({ id: s.id, apiKey: s.apiKey.trim(), models });
+export function addablePresets(
+  list: ConfiguredProvider[],
+  presets: LlmProviderPreset[] = LLM_PROVIDER_PRESETS,
+): LlmProviderPreset[] {
+  const ids = new Set(list.map((p) => p.id));
+  return presets.filter((p) => !ids.has(p.id));
+}
+
+function splitIds(text: string): string[] {
+  return text.split(',').map((t) => t.trim()).filter(Boolean);
+}
+
+export function buildProviders(list: ConfiguredProvider[]): ProviderSelection[] {
+  const out: ProviderSelection[] = [];
+  for (const s of list) {
+    const models = [...new Set([...s.models.map((m) => m.trim()).filter(Boolean), ...splitIds(s.extraModels)])];
+    out.push({ id: s.id.trim(), name: s.name.trim(), baseURL: s.baseURL.trim(), apiKey: s.apiKey.trim(), models });
   }
   return out;
 }
 
-export function modelOptions(states: ProviderState[]): string[] {
+export function modelOptions(list: ConfiguredProvider[]): string[] {
   const out: string[] = [];
-  for (const s of states) {
-    const manualIds = s.manual.split(',').map((t) => t.trim()).filter(Boolean);
-    for (const m of new Set([...s.selected.map((x) => x.trim()).filter(Boolean), ...manualIds])) {
+  for (const s of list) {
+    if (!s.id.trim()) continue;
+    for (const m of new Set([...s.models.map((x) => x.trim()).filter(Boolean), ...splitIds(s.extraModels)])) {
       out.push(`${s.id}/${m}`);
     }
   }
