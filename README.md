@@ -71,7 +71,7 @@ node server/index.js   # 访问 http://127.0.0.1:22222
 - **鉴权**：请求头 `Authorization: Bearer <签发的 JWT>`（或 `x-api-key`）。
 - **请求体**：与上游 OpenAI 兼容接口一致；**模型放在 JSON body 的 `model` 字段，不要放进 URL**。
 - **上游 baseURL**：取 `provider.<id>.options.baseURL`；未配置时对已知 provider 用内置兜底（如 `deepseek` → `https://api.deepseek.com/v1`）。**路径版本段（如 `/v1`）由 baseURL 提供**，中转只做原样透传。
-- **本机 provider 配置**：面板「极简配置（本机）」给 `deepseek`/`glm`/`qwen`/`minimax` 各填一个上游 API key 并勾选模型，保存即写入本机 `~/.config/opencode/opencode.json`（内置 baseURL 与常用模型；多模态模型自动带 `attachment: true`）。文件里其余 provider 与 `plugin`/`skills`/`agent`/`mcp`/`command` 等字段原样保留。
+- **本机 provider 配置**：面板「极简配置（本机）」顶部下拉可「添加 Provider」——选中 `deepseek`/`glm`/`qwen`/`minimax` 会自动带出内置 baseURL 与常用模型清单，只需填一个上游 API key 并勾选模型；选「其他（自定义）」可手填 `Provider ID`/`Base URL`/模型名。卡片会回显本机 `~/.config/opencode/opencode.json` 里**全部**已配置 provider（含非预设），每张卡可「移除」。保存即写回该文件（多模态模型自动带 `attachment: true`；文件里 `plugin`/`skills`/`agent`/`mcp`/`command` 等其余字段原样保留）。
 
 ```bash
 # 非流式
