@@ -122,6 +122,17 @@ function dayClass(ts: number) {
   return `d-${h % 4}`;
 }
 
+// 全部会话：按 session/页签名散列到不同背景色，一眼区分消息/会话归属
+const SESSION_PALETTE = 8;
+function sessionClass(key: string) {
+  if (!key) return '';
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return `sc-${h % SESSION_PALETTE}`;
+}
+function msgSessionClass(m: HistoryMessage) { return sessionClass(m.sessionId || m.tabName || ''); }
+function nodeSessionClass(n: SessionNode) { return sessionClass(n.sessionId || n.label || ''); }
+
 // 按天插入明显隔断：返回 [{sep:日期} | {item}]
 type DayRow<T> = { sep: string } | { item: T };
 function withDaySeps<T>(items: T[], getTs: (x: T) => number): DayRow<T>[] {
@@ -237,7 +248,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
               <button class="tnode" @click="toggleNode(n.key)">
                 <span class="tcaret">{{ n.messages.length ? (expanded.has(n.key) ? '▾' : '▸') : '' }}</span>
                 <span class="tdot" :class="{ live: !!n.sessionId && liveSet.has(n.sessionId) }" />
-                <span class="tname">{{ n.label }}</span>
+                <span class="tname" :class="nodeSessionClass(n)">{{ n.label }}</span>
                 <span v-if="n.messages.length" class="tcount">{{ $t('hist.tree.count', { n: n.messages.length }) }}</span>
                 <span v-if="n.sessionId" class="topen" :title="$t('hist.tree.open_title')" @click.stop="openNode(n)">{{ $t('hist.tree.open') }}</span>
                 <span v-if="n.sessionId" class="tedit" :title="$t('hist.tree.edit_title')" @click.stop="editNode(n)">{{ $t('hist.tree.edit') }}</span>
@@ -268,7 +279,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
               <span class="mbody">
                 <span class="mtext">{{ row.item.text }}</span>
                 <span class="mmeta">
-                  <span v-if="row.item.tabName" class="mtab">{{ row.item.tabName }}</span>
+                  <span v-if="row.item.tabName" class="mtab" :class="msgSessionClass(row.item)">{{ row.item.tabName }}</span>
                   <span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span>
                 </span>
               </span>
@@ -324,7 +335,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
 .mbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .mtext { color: var(--tx1); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .mmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.mtab { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ac2); background: color-mix(in srgb, var(--ac2) 14%, transparent); border-radius: 8px; padding: 0 8px; font-size: 10px; line-height: 16px; }
+.mtab { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sc, var(--ac2)); background: color-mix(in srgb, var(--sc, var(--ac2)) 20%, transparent); border-radius: 8px; padding: 0 8px; font-size: 10px; line-height: 16px; }
 .more { color: var(--tx5); font-size: 11px; text-align: center; padding: 10px; }
 .foot { color: var(--tx6); font-size: 11px; text-align: center; padding: 10px; }
 .row:hover, .mrow:hover { background: var(--bg3); }
@@ -332,13 +343,22 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
 .d-1 { background: color-mix(in srgb, var(--ac) 6%, transparent); }
 .d-2 { background: color-mix(in srgb, var(--bg4) 70%, transparent); }
 .d-3 { background: color-mix(in srgb, var(--ac2) 6%, transparent); }
+/* 全部会话：session/页签名 → 不同色板（背景淡色 + 文本/描边同色） */
+.sc-0 { --sc: #e57373; }
+.sc-1 { --sc: #ffb74d; }
+.sc-2 { --sc: #ba68c8; }
+.sc-3 { --sc: #4fc3f7; }
+.sc-4 { --sc: #81c784; }
+.sc-5 { --sc: #f06292; }
+.sc-6 { --sc: #9575cd; }
+.sc-7 { --sc: #4db6ac; }
 .tgroup { border-bottom: 1px solid var(--bd2); }
 .tnode { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; text-align: left; padding: 6px 10px; cursor: pointer; }
 .tnode:hover { background: var(--bg3); }
 .tcaret { color: var(--tx5); font-size: 10px; width: 10px; flex: none; }
 .tdot { width: 7px; height: 7px; border-radius: 50%; background: var(--tx6); flex: none; }
 .tdot.live { background: var(--ac2); }
-.tname { flex: 1; min-width: 0; color: var(--tx1); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tname { flex: 1; min-width: 0; color: var(--tx1); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; padding: 0 6px; background: color-mix(in srgb, var(--sc, transparent) 16%, transparent); }
 .tcount { color: var(--tx6); font-size: 10px; flex: none; }
 .topen, .tedit { flex: none; color: var(--tx5); border: 1px solid var(--bd); border-radius: 4px; padding: 0 8px; font-size: 11px; line-height: 16px; }
 .topen:hover, .tedit:hover { color: var(--ac2); border-color: var(--ac2); }

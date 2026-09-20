@@ -202,6 +202,25 @@ describe('HistoryList', () => {
     expect(w.findAll('.mrow')).toHaveLength(0);
   });
 
+  it('全部会话：不同 session 的页签名带不同背景色类', async () => {
+    const messages = [
+      { text: 'm1', ts: 100, sessionId: 's1', tabName: 'A' },
+      { text: 'm2', ts: 200, sessionId: 's2', tabName: 'B' },
+    ];
+    const flat = mount({ tab: 'messages', filter: false, messages });
+    await flat.vm.$nextTick();
+    const cls = flat.findAll('.mtab').map((x) => x.classes().find((c) => c.startsWith('sc-')));
+    expect(cls[0]).toBeTruthy();
+    expect(cls[1]).toBeTruthy();
+    expect(cls[0]).not.toBe(cls[1]);   // 不同会话 → 不同色
+
+    const tree = mount({ tab: 'messages', filter: false, allStyle: 'tree', messages });
+    await tree.vm.$nextTick();
+    const nodeCls = tree.findAll('.tname').map((x) => x.classes().find((c) => c.startsWith('sc-')));
+    expect(nodeCls[0]).toBeTruthy();
+    expect(nodeCls[0]).not.toBe(nodeCls[1]);
+  });
+
   it('样式子切换仅在全部会话出现，点击 emit update:all-style', async () => {
     const cur = mount({ tab: 'messages', filter: true });
     expect(cur.find('.stylebtn').exists()).toBe(false);
