@@ -6,7 +6,10 @@
   "main": "index.js",
   "dependencies": {
     "esbuild": "^0.21.5",
+    "mysql2": "^3.11.0",
     "node-pty": "^1.1.0",
+    "pg": "^8.13.0",
+    "redis": "^4.7.0",
     "ws": "^8.18.0"
   }
 }
