@@ -3,25 +3,31 @@ import { ref, computed, onMounted } from 'vue';
 import { useLlm } from '../useLlm';
 import { LLM_PROVIDER_PRESETS, isVisionModel } from '@devflow/shared/llm-presets';
 import type { OpencodeConfigFile } from '../opencodeConfig';
-import { stateFromConfig, buildSelections, modelOptions, type ProviderState } from '../llmPresets';
+import { providersFromConfig, addablePresets, buildProviders, modelOptions, type ConfiguredProvider } from '../llmPresets';
 
 const emit = defineEmits<{ (e: 'saved'): void }>();
 const api = useLlm();
 const file = ref<OpencodeConfigFile | null>(null);
-const states = ref<ProviderState[]>([]);
+const providers = ref<ConfiguredProvider[]>([]);
+const originalIds = ref<Set<string>>(new Set());
+const removed = ref<string[]>([]);
 const model = ref('');
 const err = ref('');
 const saved = ref(false);
 const skipped = ref<string[]>([]);
 
 const presets = LLM_PROVIDER_PRESETS;
-const options = computed(() => modelOptions(states.value));
+const options = computed(() => modelOptions(providers.value));
 const invalid = computed(() => !!file.value && file.value.exists && file.value.config === null);
+const addable = computed(() => addablePresets(providers.value, presets));
+const isPreset = (id: string) => !!presets.find((p) => p.id === id);
 const presetModels = (id: string) => presets.find((p) => p.id === id)?.models || [];
 
 function applyFile(f: OpencodeConfigFile) {
   file.value = f;
-  states.value = stateFromConfig(f.config);
+  providers.value = providersFromConfig(f.config, presets);
+  originalIds.value = new Set(providers.value.map((p) => p.id));
+  removed.value = [];
   model.value = f.config && typeof f.config.model === 'string' ? f.config.model : '';
 }
 async function load() {
@@ -32,14 +38,32 @@ async function load() {
 }
 onMounted(load);
 
-function toggle(s: ProviderState, mid: string) {
-  const i = s.selected.indexOf(mid);
-  if (i >= 0) s.selected.splice(i, 1); else s.selected.push(mid);
+function onAdd(e: Event) {
+  const el = e.target as HTMLSelectElement;
+  const v = el.value;
+  el.value = '';
+  if (!v) return;
+  const preset = presets.find((p) => p.id === v);
+  if (preset) {
+    providers.value.push({ id: preset.id, name: preset.name, baseURL: preset.baseURL, custom: false, hasKey: false, apiKey: '', models: [], extraModels: '' });
+  } else {
+    providers.value.push({ id: '', name: '', baseURL: '', custom: true, hasKey: false, apiKey: '', models: [], extraModels: '' });
+  }
+}
+function removeProvider(i: number) {
+  const p = providers.value[i];
+  if (originalIds.value.has(p.id)) removed.value.push(p.id);
+  providers.value.splice(i, 1);
+  if (p.id && model.value.startsWith(`${p.id}/`)) model.value = '';
+}
+function toggle(s: ConfiguredProvider, mid: string) {
+  const i = s.models.indexOf(mid);
+  if (i >= 0) s.models.splice(i, 1); else s.models.push(mid);
 }
 async function save() {
   err.value = '';
   try {
-    const r = await api.saveOpencodeConfig({ providers: buildSelections(states.value), model: model.value.trim() });
+    const r = await api.saveOpencodeConfig({ providers: buildProviders(providers.value), remove: removed.value, model: model.value.trim() });
     skipped.value = r.skipped || [];
     await load();
     saved.value = true;
@@ -72,19 +96,38 @@ async function save() {
       <input v-model="model" :placeholder="$t('llm.setup.model_manual')" />
     </div>
 
-    <div v-for="s in states" :key="s.id" class="prov">
-      <div class="phead"><b>{{ s.name }}</b><span class="muted">{{ s.id }} · {{ s.baseURL }}</span></div>
+    <div class="row">
+      <span class="muted">{{ $t('llm.setup.add') }}</span>
+      <select data-test="add" @change="onAdd">
+        <option value="">—</option>
+        <option v-for="p in addable" :key="p.id" :value="p.id">{{ p.name }}</option>
+        <option value="__custom__">{{ $t('llm.setup.custom') }}</option>
+      </select>
+    </div>
+    <div v-if="!providers.length" class="muted">{{ $t('llm.setup.none') }}</div>
+
+    <div v-for="(s, i) in providers" :key="i" class="prov">
+      <div class="phead">
+        <input v-if="s.custom" v-model="s.name" :placeholder="$t('llm.setup.name')" />
+        <b v-else>{{ s.name }}</b>
+        <span class="muted">{{ s.id }} · {{ s.baseURL }}</span>
+        <button class="ghost rm" @click="removeProvider(i)">{{ $t('llm.setup.remove') }}</button>
+      </div>
+      <div v-if="s.custom" class="row">
+        <input v-model="s.id" :placeholder="$t('llm.setup.provider_id')" />
+        <input v-model="s.baseURL" :placeholder="$t('llm.setup.baseurl')" />
+      </div>
       <div class="row">
         <input v-model="s.apiKey" type="password" :placeholder="s.hasKey ? $t('llm.setup.key_set') : $t('llm.setup.key')" />
       </div>
-      <div class="models">
+      <div v-if="isPreset(s.id)" class="models">
         <label v-for="m in presetModels(s.id)" :key="m.id" class="mchk">
-          <input type="checkbox" :checked="s.selected.includes(m.id)" @change="toggle(s, m.id)" />
+          <input type="checkbox" :checked="s.models.includes(m.id)" @change="toggle(s, m.id)" />
           {{ m.id }}<span v-if="isVisionModel(s.id, m.id)" class="vtag">{{ $t('llm.setup.vision') }}</span>
         </label>
       </div>
       <div class="row">
-        <input v-model="s.manual" :placeholder="$t('llm.setup.manual')" />
+        <input v-model="s.extraModels" :placeholder="isPreset(s.id) ? $t('llm.setup.manual') : $t('llm.setup.custom_models')" />
       </div>
     </div>
   </section>
@@ -102,8 +145,10 @@ button:disabled { opacity: .5; cursor: default; }
 .warn { color: var(--warn); font-size: 12px; }
 .err { color: var(--err); font-size: 12px; }
 .prov { border: 1px solid var(--bd); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.phead { display: flex; gap: 8px; align-items: baseline; }
+.phead { display: flex; gap: 8px; align-items: center; }
+.phead input { background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 6px; font-size: 12px; }
 .phead .muted { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phead .rm { margin-left: auto; }
 .models { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; }
 .mchk { display: flex; gap: 4px; align-items: center; color: var(--tx2); cursor: pointer; }
 .vtag { color: var(--ac2); border: 1px solid var(--ac2); border-radius: 8px; padding: 0 5px; font-size: 10px; }
