@@ -20,7 +20,7 @@ describe('WelcomeView', () => {
 
   it('点工具卡片 emit open-tool 带 id', async () => {
     const w = mount();
-    await w.findAll('.tcard')[1].trigger('click');
+    await w.findAll('.tcard')[4].trigger('click');
     expect(w.emitted('open-tool')?.[0]).toEqual(['yaml']);
   });
 });

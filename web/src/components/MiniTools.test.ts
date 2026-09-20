@@ -26,7 +26,7 @@ describe('MiniTools', () => {
     const btns = w.findAll('.mticon');
     expect(btns).toHaveLength(6);
     expect(w.find('.ttbody').exists()).toBe(false);
-    await btns[0].trigger('click');
+    await btns[3].trigger('click');   // 翻译（catalog 顺序：记事本/Postman/Navicat/翻译/YAML/JS）
     await flushPromises();
     expect(w.find('.ttbody').exists()).toBe(true);
     expect(w.find('.el-dialog').classes()).toContain('is-fullscreen');
@@ -38,7 +38,7 @@ describe('MiniTools', () => {
   it('记事本：渲染 NotepadTool 子组件', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [], folders: [] })));
     const w = mount();
-    await w.findAll('.mticon')[3].trigger('click');
+    await w.findAll('.mticon')[0].trigger('click');
     await flushPromises();
     expect(w.findComponent(NotepadTool).exists()).toBe(true);
     expect(w.find('.npbody').exists()).toBe(true);
@@ -46,7 +46,7 @@ describe('MiniTools', () => {
 
   it('YAML 校验/格式化与错误提示', async () => {
     const w = mount();
-    await w.findAll('.mticon')[1].trigger('click');
+    await w.findAll('.mticon')[4].trigger('click');
     await w.findAll('textarea')[0].setValue('a: [1, ');
     await w.findAll('.mtbtn')[1].trigger('click');
     expect(w.find('.mtmsg').exists()).toBe(true);
@@ -59,7 +59,7 @@ describe('MiniTools', () => {
 
   it('翻译：空输入提示；成功后写入输出', async () => {
     const w = mount();
-    await w.findAll('.mticon')[0].trigger('click');
+    await w.findAll('.mticon')[3].trigger('click');
     await w.find('.mtbtn.primary').trigger('click');
     expect(w.find('.mtmsg').text()).toBeTruthy();
 
@@ -73,7 +73,7 @@ describe('MiniTools', () => {
   it('翻译失败显示错误', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => errJson(400, { message: 'bad input' })));
     const w = mount();
-    await w.findAll('.mticon')[0].trigger('click');
+    await w.findAll('.mticon')[3].trigger('click');
     await w.findAll('textarea')[0].setValue('x');
     await w.find('.mtbtn.primary').trigger('click');
     await flushPromises();
@@ -84,7 +84,7 @@ describe('MiniTools', () => {
     const urls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return okJson({ content: 'const a=1;' }); }));
     const w = mount();
-    await w.findAll('.mticon')[2].trigger('click');
+    await w.findAll('.mticon')[5].trigger('click');
     await w.findAll('textarea')[0].setValue('const a = 1;');
     await w.find('.mtbtn.primary').trigger('click');
     await flushPromises();
@@ -95,7 +95,7 @@ describe('MiniTools', () => {
   it('Postman：渲染 PostmanTool 子组件', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [], folders: [] })));
     const w = mount();
-    await w.findAll('.mticon')[4].trigger('click');
+    await w.findAll('.mticon')[1].trigger('click');
     await flushPromises();
     expect(w.findComponent(PostmanTool).exists()).toBe(true);
     expect(w.find('.pmbody').exists()).toBe(true);
@@ -105,7 +105,7 @@ describe('MiniTools', () => {
     vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [] })));
     // teleport stub 会让 ElSelect 递归更新（happy-dom 下的已知问题），此用例只验证面板挂载，直接 stub 掉 ElSelect。
     const w = mountC(MiniTools, { global: { plugins: [ElementPlus], stubs: { teleport: true, ElSelect: true } } });
-    await w.findAll('.mticon')[5].trigger('click');
+    await w.findAll('.mticon')[2].trigger('click');
     await flushPromises();
     expect(w.find('.nvbody').exists()).toBe(true);
   });
@@ -120,7 +120,7 @@ describe('MiniTools', () => {
   it('复制输出 / 输出转输入 / 清空', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => okJson({ content: 'a\nb' })));
     const w = mount();
-    await w.findAll('.mticon')[2].trigger('click');   // JS 压缩
+    await w.findAll('.mticon')[5].trigger('click');   // JS 压缩
     await w.findAll('textarea')[0].setValue('b\na');
     await w.find('.mtbtn.primary').trigger('click');
     await flushPromises();
