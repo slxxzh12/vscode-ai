@@ -451,6 +451,7 @@ export class CollabEngine {
       case CollabPeer.UPDATE_CHECK: return this._inUpdateCheck(env);
       case CollabPeer.LIST_DOWNLOADS: return this._inListDownloads(env);
       case CollabPeer.PKG_UPLOAD: return this._inPkgUpload(env);
+      case CollabPeer.USAGE_PULL: return this._inUsagePull(env);
       default: return { ok: false, error: 'unknown-type' };
     }
   }
@@ -740,6 +741,20 @@ export class CollabEngine {
       this._emit('heartbeat', {});
       return { code: 'ok', files: (data.files || []).map((f) => f.name) };
     });
+  }
+  pullUsageFrom(masterId = null) {
+    const hit = this._hubFor(masterId);
+    if (!hit) return Promise.resolve({ code: 'no-master' });
+    return this._post(hit.hub.host, hit.hub.port, this._sign(CollabPeer.USAGE_PULL, {})).then((res) => {
+      if (!res.ok) return { code: 'unreachable', error: res.error };
+      const data = res.data || {};
+      return { code: 'ok', updatedAt: data.updatedAt || 0, members: data.members || {} };
+    });
+  }
+  _inUsagePull(env) {
+    const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();
+    if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
+    return { ok: true, data: { updatedAt: Date.now(), members: (this.peers && this.peers.list) ? this.peers.list() : {} } };
   }
   _inPullDownloads(env) {
     const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();
