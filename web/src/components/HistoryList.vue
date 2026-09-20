@@ -132,6 +132,8 @@ function sessionClass(key: string) {
 }
 function msgSessionClass(m: HistoryMessage) { return sessionClass(m.sessionId || m.tabName || ''); }
 function nodeSessionClass(n: SessionNode) { return sessionClass(n.sessionId || n.label || ''); }
+// 平铺视图点会话名：复用会话树的「打开」能力（已打开则激活页签，否则恢复会话）
+function openMsgSession(m: HistoryMessage) { if (m.sessionId) emit('open-session', m.sessionId, m.tabName || m.sessionId); }
 
 // 按天插入明显隔断：返回 [{sep:日期} | {item}]
 type DayRow<T> = { sep: string } | { item: T };
@@ -196,8 +198,8 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
     <header class="hh">
       <el-tabs v-model="activeTab" class="hltabs">
         <el-tab-pane :label="$t('hist.tab.messages')" name="messages" />
-        <el-tab-pane :label="$t('hist.tab.files')" name="files" />
         <el-tab-pane :label="$t('hist.tab.tree')" name="tree" />
+        <el-tab-pane :label="$t('hist.tab.files')" name="files" />
       </el-tabs>
     </header>
     <FileTree v-if="tab === 'tree'" class="hltree" :key="projectId || 'none'" :project-id="projectId" :active-path="activePath"
@@ -279,7 +281,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
               <span class="mbody">
                 <span class="mtext">{{ row.item.text }}</span>
                 <span class="mmeta">
-                  <span v-if="row.item.tabName" class="mtab" :class="msgSessionClass(row.item)">{{ row.item.tabName }}</span>
+                  <span v-if="row.item.tabName" class="mtab" :class="[msgSessionClass(row.item), { clickable: !!row.item.sessionId }]" :title="row.item.sessionId ? $t('hist.tree.open_title') : ''" @click.stop="openMsgSession(row.item)">{{ row.item.tabName }}</span>
                   <span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span>
                 </span>
               </span>
@@ -336,6 +338,8 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
 .mtext { color: var(--tx1); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .mmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mtab { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sc, var(--ac2)); background: color-mix(in srgb, var(--sc, var(--ac2)) 20%, transparent); border-radius: 8px; padding: 0 8px; font-size: 10px; line-height: 16px; }
+.mtab.clickable { cursor: pointer; }
+.mtab.clickable:hover { text-decoration: underline; }
 .more { color: var(--tx5); font-size: 11px; text-align: center; padding: 10px; }
 .foot { color: var(--tx6); font-size: 11px; text-align: center; padding: 10px; }
 .row:hover, .mrow:hover { background: var(--bg3); }

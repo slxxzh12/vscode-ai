@@ -51,16 +51,16 @@ describe('HistoryList', () => {
     expect(w.emitted('clear')).toHaveLength(1);
   });
 
-  it('页签切换 emit update:tab（消息 / 最近文件 / 目录 三个页签）', async () => {
+  it('页签切换 emit update:tab（消息 / 目录 / 最近文件 三个页签）', async () => {
     const w = mount();
     const items = w.findAll('.el-tabs__item');
     expect(items).toHaveLength(3);
     await items[0].trigger('click');
     expect(w.emitted('update:tab')?.[0]).toEqual(['messages']);
     await items[1].trigger('click');
-    expect(w.emitted('update:tab')?.[1]).toEqual(['files']);
+    expect(w.emitted('update:tab')?.[1]).toEqual(['tree']);
     await items[2].trigger('click');
-    expect(w.emitted('update:tab')?.[2]).toEqual(['tree']);
+    expect(w.emitted('update:tab')?.[2]).toEqual(['files']);
   });
 
   it('目录页签渲染文件树（无项目时显示空态，不请求）', async () => {
@@ -192,6 +192,27 @@ describe('HistoryList', () => {
     expect(w.findAll('.tnode')).toHaveLength(0);
     expect(w.findAll('.mrow')).toHaveLength(2);
     expect(w.findAll('.mtab').map((x) => x.text())).toEqual(['A', 'B']);
+  });
+
+  it('全部会话：平铺点会话名 emit open-session 恢复会话，不触发 open-message', async () => {
+    const messages = [{ text: 'm1', ts: 100, sessionId: 's1', tabName: 'A' }];
+    const w = mount({ tab: 'messages', filter: false, messages });
+    await w.vm.$nextTick();
+    const badge = w.find('.mtab');
+    expect(badge.classes()).toContain('clickable');
+    await badge.trigger('click');
+    expect(w.emitted('open-session')?.[0]).toEqual(['s1', 'A']);
+    expect(w.emitted('open-message')).toBeUndefined();
+  });
+
+  it('全部会话：无 sessionId 的会话名不可点', async () => {
+    const messages = [{ text: 'm1', ts: 100, tabName: 'only' }];
+    const w = mount({ tab: 'messages', filter: false, messages });
+    await w.vm.$nextTick();
+    const badge = w.find('.mtab');
+    expect(badge.classes()).not.toContain('clickable');
+    await badge.trigger('click');
+    expect(w.emitted('open-session')).toBeUndefined();
   });
 
   it('全部会话：显式 allStyle=tree 时渲染会话树', async () => {

@@ -1179,7 +1179,7 @@ onBeforeUnmount(() => {
         <span v-if="t.kind === 'session'" :class="['dot', sessionState(t.id.slice(2))]" />
         <span v-else class="file-ic">▤</span>
         <span class="nm" :title="t.kind === 'file' ? t.path : (t.label + ' — ' + $t('term.tab_rename'))">{{ t.label }}</span>
-        <span v-if="t.id !== 's:' + agentSid" class="x" @click="onTabClose(t.id, $event)" @dblclick.stop>×</span>
+        <span class="x" @click="onTabClose(t.id, $event)" @dblclick.stop>×</span>
       </div>
       <button v-if="!phone" class="new" @click="openNew">{{ $t('term.new_session_btn') }}</button>
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>

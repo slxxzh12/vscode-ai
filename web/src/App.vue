@@ -222,6 +222,7 @@ async function openHistorySession(sid: string, name?: string): Promise<{ id: str
   // 会话已作为中心页签打开：只选中该页签，不再向服务端 RESTORE（避免重复重建/回放终端）。
   if (center.hasSession(sid)) {
     center.activateSession(sid);
+    terminal.switchTo(sid);   // 同步终端输出到该会话，否则只高亮页签、终端仍停在旧会话
     return { id: sid };
   }
   return openRestoredSession(sid, {
