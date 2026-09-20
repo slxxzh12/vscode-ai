@@ -63,6 +63,15 @@ describe('useScheduler', () => {
     expect(calls.some((c) => c.method === 'POST' && c.url === '/api/scheduler/pick-file')).toBe(true);
   });
 
+  it('pickFolder/importManifests 走对应路由并刷新', async () => {
+    const s = useScheduler();
+    await s.pickFolder();
+    expect(calls.some((c) => c.method === 'POST' && c.url === '/api/scheduler/pick-folder')).toBe(true);
+    const r = await s.importManifests('C:/x');
+    expect(calls.some((c) => c.method === 'POST' && c.url === '/api/scheduler/import')).toBe(true);
+    expect(r).toBeTruthy();
+  });
+
   it('loadAiCommands 成功写入 / 失败清空', async () => {
     const s = useScheduler();
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, text: async () => JSON.stringify({ commands: [{ name: 'c' }] }) })));

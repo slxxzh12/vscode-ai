@@ -69,6 +69,29 @@ async function pickCommandFile() {
     }
   } catch (e: any) { state.error = String(e?.message || e); }
 }
+const showImport = ref(false);
+const importDir = ref('');
+const importMsg = ref('');
+async function browseImportDir() {
+  state.error = '';
+  try {
+    const r = await sched.pickFolder();
+    if (r.error) { state.error = r.error === 'unsupported' ? t('sched.import.unsupported') : t('sched.import.pick_failed', { msg: r.message || r.error }); return; }
+    if (r.cancelled || !r.path) return;
+    importDir.value = r.path;
+  } catch (e: any) { state.error = String(e?.message || e); }
+}
+async function doImport() {
+  state.error = '';
+  importMsg.value = '';
+  const dir = importDir.value.trim();
+  if (!dir) { state.error = t('sched.import.bad_dir'); return; }
+  try {
+    const r = await sched.importManifests(dir);
+    importMsg.value = t('sched.import.result', { imported: r.imported || 0, overwritten: r.overwritten || 0, failed: (r.failed || []).length });
+    showImport.value = false;
+  } catch (e: any) { state.error = String(e?.message || e); }
+}
 async function save() {
   const body = JSON.parse(JSON.stringify(form.value));
   if (!body.cwd) body.cwd = null;
@@ -142,6 +165,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
       <div class="spacer" />
       <button @click="sched.refresh()">{{ $t('sched.refresh') }}</button>
       <button class="primary" @click="openCreate">{{ $t('sched.create') }}</button>
+      <button @click="showImport = true">{{ $t('sched.import') }}</button>
     </header>
 
     <div class="body">
@@ -276,6 +300,21 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
           <pre class="logview">{{ logText || $t('sched.runs.select') }}</pre>
         </div>
         <div class="modalacts"><button @click="closeRuns">{{ $t('sched.close') }}</button></div>
+      </div>
+    </div>
+
+    <div v-if="showImport" class="overlay" @click.self="showImport = false">
+      <div class="modal">
+        <h3>{{ $t('sched.import.title') }}</h3>
+        <label>{{ $t('sched.import.dir') }}
+          <input v-model="importDir" :placeholder="$t('sched.import.dir_placeholder')" />
+        </label>
+        <button class="pickfile" @click="browseImportDir">{{ $t('sched.import.browse') }}</button>
+        <div v-if="importMsg" class="dim">{{ importMsg }}</div>
+        <div class="modalacts">
+          <button @click="showImport = false">{{ $t('sched.cancel') }}</button>
+          <button class="primary" @click="doImport">{{ $t('sched.import.run') }}</button>
+        </div>
       </div>
     </div>
   </div>

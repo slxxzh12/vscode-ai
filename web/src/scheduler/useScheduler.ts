@@ -77,6 +77,14 @@ export function useScheduler(terminal?: TerminalLike) {
   function pickFile(): Promise<{ path?: string; content?: string | null; cancelled?: boolean; error?: string; message?: string }> {
     return api('POST', '/api/scheduler/pick-file');
   }
+  function pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
+    return api('POST', '/api/scheduler/pick-folder');
+  }
+  async function importManifests(dir: string): Promise<{ imported: number; overwritten: number; failed: { path: string; error: string }[] }> {
+    const d = await api('POST', '/api/scheduler/import', { dir });
+    await refresh();
+    return d;
+  }
 
   const unsubs: Array<() => void> = [];
   if (terminal) {
@@ -86,5 +94,5 @@ export function useScheduler(terminal?: TerminalLike) {
     unsubs.push(terminal.on(SchedulerS2C.SCHED_RUN_END, onAny));
   }
 
-  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadRuns, loadLog, loadAiCommands, pickFile, dispose: () => unsubs.forEach((u) => u()) };
+  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadRuns, loadLog, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
 }
