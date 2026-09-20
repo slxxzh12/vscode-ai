@@ -13,6 +13,14 @@ test('tokenizeCurl：反斜杠转义与未闭合引号', () => {
   assert.throws(() => tokenizeCurl('curl "abc'), (e) => e.code === 'unbalanced-quote');
 });
 
+test('tokenizeCurl：反斜杠换行续行（Chrome Copy as cURL）', () => {
+  const lf = "curl --url 'https://a.com/x' \\\n  -X 'OPTIONS' \\\n  -H 'accept: */*'";
+  assert.deepEqual(tokenizeCurl(lf), ['curl', '--url', 'https://a.com/x', '-X', 'OPTIONS', '-H', 'accept: */*']);
+  const crlf = "curl -H 'a: 1' \\\r\n  -H 'b: 2'";
+  assert.deepEqual(tokenizeCurl(crlf), ['curl', '-H', 'a: 1', '-H', 'b: 2']);
+  assert.deepEqual(tokenizeCurl('curl "a\\\nb"'), ['curl', 'ab']);
+});
+
 test('buildCurlArgs：支持 curl / curl.exe / 纯选项', () => {
   assert.deepEqual(buildCurlArgs('curl -I https://a.com'), ['-I', 'https://a.com']);
   assert.deepEqual(buildCurlArgs('curl.exe --version'), ['--version']);

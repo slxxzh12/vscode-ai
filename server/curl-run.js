@@ -4,7 +4,15 @@ import { execFile } from 'node:child_process';
 export const CURL_TIMEOUT_MS = 60_000;
 export const CURL_MAX_OUTPUT = 4 * 1024 * 1024;
 
-// 把一条 curl 命令切成 argv：支持单/双引号、反斜杠转义；不经过 shell，避免命令注入
+// 反斜杠 + 换行是 shell 续行（Chrome「Copy as cURL」就是这种写法），应整段吞掉而不是当作参数
+function lineSpliceLen(s, i) {
+  const nx = s[i + 1];
+  if (nx === '\n') return 2;
+  if (nx === '\r') return s[i + 2] === '\n' ? 3 : 2;
+  return 0;
+}
+
+// 把一条 curl 命令切成 argv：支持单/双引号、反斜杠转义与续行；不经过 shell，避免命令注入
 export function tokenizeCurl(text) {
   const s = String(text ?? '');
   const args = [];
@@ -17,6 +25,8 @@ export function tokenizeCurl(text) {
     if (quote) {
       if (ch === quote) { quote = null; continue; }
       if (quote === '"' && ch === '\\' && i + 1 < s.length) {
+        const splice = lineSpliceLen(s, i);
+        if (splice) { i += splice - 1; continue; }
         const nx = s[i + 1];
         if ('"\\$`'.includes(nx)) { cur += nx; i += 1; continue; }
       }
@@ -24,7 +34,11 @@ export function tokenizeCurl(text) {
       continue;
     }
     if (ch === "'" || ch === '"') { quote = ch; has = true; continue; }
-    if (ch === '\\' && i + 1 < s.length) { cur += s[i + 1]; i += 1; has = true; continue; }
+    if (ch === '\\' && i + 1 < s.length) {
+      const splice = lineSpliceLen(s, i);
+      if (splice) { i += splice - 1; continue; }
+      cur += s[i + 1]; i += 1; has = true; continue;
+    }
     if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') { push(); continue; }
     cur += ch;
     has = true;
