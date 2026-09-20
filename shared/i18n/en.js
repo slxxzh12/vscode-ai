@@ -134,6 +134,7 @@ export const messages = {
   'usage.bad_link': 'Invalid link; paste the full access link from the master',
   'usage.next_at': 'Next report: {time}',
   'usage.not_configured': 'Not configured',
+  'usage.pull_failed': 'Could not fetch the latest usage from the group owner; showing cached data',
   'collab.downloads.title': 'Sync config to Slave group members',
   'collab.downloads.sync': 'Sync from master',
   'collab.downloads.empty': 'No shared files yet. Click sync to pull from master',

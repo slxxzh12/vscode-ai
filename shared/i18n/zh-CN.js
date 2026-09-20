@@ -134,6 +134,7 @@ export const messages = {
   'usage.bad_link': '链接不合法，请粘贴 master 的完整访问链接',
   'usage.next_at': '下次上报：{time}',
   'usage.not_configured': '未配置',
+  'usage.pull_failed': '未能从群主获取最新用量，当前显示的是缓存数据',
   'collab.downloads.title': '同步配置到 Slave 群成员',
   'collab.downloads.sync': '同步 master',
   'collab.downloads.empty': '暂无共享文件，点击同步从 master 拉取',

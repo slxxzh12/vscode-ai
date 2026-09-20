@@ -119,11 +119,19 @@ const isMaster = computed(() => !!group.value && group.value.hubId === me.value)
 const mtab = ref<'members' | 'trend'>('members');
 // —— 用量上报快照（成员表与趋势图共用）——
 const peers = ref<Record<string, import('./types').CollabUsage>>({});
+const peersStale = ref(false);
 async function loadPeers() {
-  try { const r = await fetch('/api/usage/peers').then((x) => x.json()); peers.value = r.peers || {}; } catch { /* ignore */ }
+  const mid = group.value?.hubId || '';
+  const q = mid ? `?fresh=1&masterId=${encodeURIComponent(mid)}` : '?fresh=1';
+  try {
+    const r = await fetch(`/api/usage/peers${q}`).then((x) => x.json());
+    peers.value = r.peers || {};
+    peersStale.value = !!r.stale;
+  } catch { /* ignore */ }
 }
 onMounted(loadPeers);
-watch(() => snap.value, loadPeers);
+watch(() => group.value?.id, loadPeers);
+watch(mtab, loadPeers);
 // —— 群公告：仅群主可编辑，改后随 member-sync 下发给成员 ——
 const editAnnounce = ref(false);
 const announceText = ref('');
@@ -317,6 +325,7 @@ onMounted(async () => {
           <button :class="{ on: mtab === 'trend' }" @click="mtab = 'trend'">{{ $t('usage.trend') }}</button>
         </nav>
         <div class="mbody">
+          <div v-if="peersStale" class="cfghint">{{ $t('usage.pull_failed') }}</div>
           <MemberUsageTable v-if="mtab === 'members'" class="mtable" :collab="collab" :peers="peers" :group="group" />
           <UsageTrendChart v-else :collab="collab" :peers="peers" />
         </div>
