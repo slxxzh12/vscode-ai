@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { manifestDirOf, writeManifest, removeManifest, scanManifests, fromManifest, isDir } from './manifest.js';
 
 const TYPES = new Set(['shell', 'ai', 'script']);
 const UNITS = new Set(['second', 'minute', 'hour', 'day']);
@@ -55,10 +56,12 @@ export function validateTask(input) {
 }
 
 export class SchedulerStore {
-  constructor({ dir, logger = console, runLimit = DEFAULT_RUN_LIMIT }) {
+  constructor({ dir, logger = console, runLimit = DEFAULT_RUN_LIMIT, manifestRoot = path.join(dir, 'manifests') }) {
     this.dir = dir;
     this.log = logger;
     this.runLimit = runLimit;
+    this.manifestRoot = manifestRoot;
+    this.runtimeProvider = null;
     this.tasksFile = path.join(dir, 'tasks.json');
     this.runsFile = path.join(dir, 'runs.json');
     this.logsDir = path.join(dir, 'logs');
@@ -67,16 +70,23 @@ export class SchedulerStore {
     this.tasks = Array.isArray(tasks) ? tasks : [];
     this.runs = Array.isArray(runs) ? runs : [];
   }
+  setRuntimeProvider(fn) { this.runtimeProvider = fn; }
   saveTasks() { atomicWriteJson(this.tasksFile, this.tasks); }
   saveRuns() { atomicWriteJson(this.runsFile, this.runs); }
-  listTasks() { return this.tasks.map((t) => ({ ...t })); }
-  getTask(id) { const t = this.tasks.find((x) => x.id === id); return t ? { ...t } : null; }
-  createTask(input) {
-    const v = validateTask(input);
-    if (v.error) return { error: v.error };
+  _key(p) {
+    const r = path.resolve(p);
+    return process.platform === 'win32' ? r.toLowerCase() : r;
+  }
+  _dirOf(task) { return path.resolve(manifestDirOf(task, this.manifestRoot)); }
+  _sameDir(a, b) { return this._key(this._dirOf(a)) === this._key(this._dirOf(b)); }
+  _dirConflict(task) {
+    return this.tasks.some((t) => t.id !== task.id && this._key(this._dirOf(t)) === this._key(this._dirOf(task)));
+  }
+  _cwdMissing(task) { return !!(task.cwd && !isDir(task.cwd)); }
+  _buildTask(input, base = {}) {
     const now = Date.now();
-    const task = {
-      id: 't_' + crypto.randomBytes(4).toString('hex'),
+    return {
+      id: base.id || 't_' + crypto.randomBytes(4).toString('hex'),
       name: String(input.name).trim(),
       enabled: input.enabled !== false,
       projectId: input.projectId || null,
@@ -87,30 +97,74 @@ export class SchedulerStore {
       ai: input.type === 'ai' ? { ...input.ai } : undefined,
       script: input.type === 'script' ? { ...input.script, path: toAbs(input.script.path, input.cwd) } : undefined,
       schedule: { ...input.schedule },
-      createdAt: now,
+      createdAt: base.createdAt || now,
       updatedAt: now,
     };
+  }
+  _syncManifest(task) {
+    try {
+      const runtime = this.runtimeProvider ? this.runtimeProvider(task.id) : null;
+      writeManifest(this._dirOf(task), task, runtime);
+    } catch (e) { this.log?.error?.('scheduler manifest write failed', e); }
+  }
+  _removeManifest(task) {
+    const dir = this._dirOf(task);
+    removeManifest(dir);
+    if (!task.cwd) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
+  }
+  syncManifest(id) { const t = this.getTask(id); if (t) this._syncManifest(t); }
+  listTasks() { return this.tasks.map((t) => ({ ...t })); }
+  getTask(id) { const t = this.tasks.find((x) => x.id === id); return t ? { ...t } : null; }
+  createTask(input) {
+    const v = validateTask(input);
+    if (v.error) return { error: v.error };
+    const task = this._buildTask(input);
+    if (this._cwdMissing(task)) return { error: 'cwd-missing' };
+    if (this._dirConflict(task)) return { error: 'dir-taken' };
     this.tasks.push(task);
     this.saveTasks();
+    this._syncManifest(task);
     return { task: { ...task } };
   }
   updateTask(id, patch) {
     const i = this.tasks.findIndex((x) => x.id === id);
     if (i < 0) return { error: 'not-found' };
-    const merged = { ...this.tasks[i], ...patch, id, createdAt: this.tasks[i].createdAt, updatedAt: Date.now() };
+    const prev = this.tasks[i];
+    const merged = { ...prev, ...patch, id, createdAt: prev.createdAt, updatedAt: Date.now() };
     merged.filePath = toAbs(merged.filePath, merged.cwd);
     if (merged.type === 'script' && merged.script) merged.script = { ...merged.script, path: toAbs(merged.script.path, merged.cwd) };
     const v = validateTask(merged);
     if (v.error) return { error: v.error };
+    if (this._cwdMissing(merged)) return { error: 'cwd-missing' };
+    if (this._dirConflict(merged)) return { error: 'dir-taken' };
+    const moved = !this._sameDir(prev, merged);
     this.tasks[i] = merged;
     this.saveTasks();
+    if (moved) this._removeManifest(prev);
+    this._syncManifest(merged);
     return { task: { ...merged } };
+  }
+  replaceTask(id, input) {
+    const i = this.tasks.findIndex((x) => x.id === id);
+    if (i < 0) return { error: 'not-found' };
+    const v = validateTask(input);
+    if (v.error) return { error: v.error };
+    const prev = this.tasks[i];
+    const task = this._buildTask(input, { id, createdAt: prev.createdAt });
+    if (this._cwdMissing(task)) return { error: 'cwd-missing' };
+    const moved = !this._sameDir(prev, task);
+    this.tasks[i] = task;
+    this.saveTasks();
+    if (moved) this._removeManifest(prev);
+    this._syncManifest(task);
+    return { task: { ...task } };
   }
   deleteTask(id) {
     const i = this.tasks.findIndex((x) => x.id === id);
     if (i < 0) return { error: 'not-found' };
-    this.tasks.splice(i, 1);
+    const [task] = this.tasks.splice(i, 1);
     this.saveTasks();
+    this._removeManifest(task);
     const removed = this.runs.filter((r) => r.taskId === id);
     this.runs = this.runs.filter((r) => r.taskId !== id);
     this.saveRuns();

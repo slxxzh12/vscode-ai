@@ -44,6 +44,7 @@ test('updateTask 合并并刷新 updatedAt；未知 id 返回 not-found', () => 
 test('filePath / script.path 记录为绝对路径', () => {
   const store = new SchedulerStore({ dir: tmpDir() });
   const cwd = path.join(os.tmpdir(), 'sched-cwd');
+  fs.mkdirSync(cwd, { recursive: true });
   const { task } = store.createTask({ name: 's', enabled: true, type: 'script', cwd,
     filePath: 'sub/y.py', script: { path: 'sub/y.py' },
     schedule: { mode: 'interval', interval: { every: 5, unit: 'minute' } } });
@@ -87,4 +88,67 @@ test('updateRun 修改并持久化', () => {
   const r = store.updateRun('r1', { status: 'success', exitCode: 0 });
   assert.equal(r.status, 'success');
   assert.equal(new SchedulerStore({ dir: store.dir }).getRun('r1').exitCode, 0);
+});
+
+test('createTask/updateTask/deleteTask 同步 void_manifest.json', () => {
+  const dir = tmpDir();
+  const store = new SchedulerStore({ dir });
+  const cwd = tmpDir();
+  const { task } = store.createTask(shellTask({ cwd }));
+  const mf = path.join(cwd, 'void_manifest.json');
+  assert.ok(fs.existsSync(mf));
+  assert.equal(JSON.parse(fs.readFileSync(mf, 'utf8')).command, 'echo hi');
+
+  store.updateTask(task.id, { name: 'b' });
+  assert.equal(JSON.parse(fs.readFileSync(mf, 'utf8')).name, 'b');
+
+  store.deleteTask(task.id);
+  assert.equal(fs.existsSync(mf), false);
+});
+
+test('无 cwd 的任务清单落到 manifests/<id>，删除时整目录清掉', () => {
+  const dir = tmpDir();
+  const store = new SchedulerStore({ dir });
+  const { task } = store.createTask(shellTask());
+  const mf = path.join(dir, 'manifests', task.id, 'void_manifest.json');
+  assert.ok(fs.existsSync(mf));
+  store.deleteTask(task.id);
+  assert.equal(fs.existsSync(path.dirname(mf)), false);
+});
+
+test('cwd 不存在返回 cwd-missing 且不落库', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const r = store.createTask(shellTask({ cwd: path.join(os.tmpdir(), 'nope-' + Date.now()) }));
+  assert.equal(r.error, 'cwd-missing');
+  assert.equal(store.listTasks().length, 0);
+});
+
+test('同目录第二个任务返回 dir-taken', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const cwd = tmpDir();
+  assert.ok(store.createTask(shellTask({ cwd })).task);
+  assert.equal(store.createTask(shellTask({ cwd, name: 'b' })).error, 'dir-taken');
+});
+
+test('改 cwd 时旧目录清单删除、新目录写入', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const a = tmpDir();
+  const b = tmpDir();
+  const { task } = store.createTask(shellTask({ cwd: a }));
+  store.updateTask(task.id, { cwd: b });
+  assert.equal(fs.existsSync(path.join(a, 'void_manifest.json')), false);
+  assert.ok(fs.existsSync(path.join(b, 'void_manifest.json')));
+});
+
+test('syncManifest 写入 runtime（nextRunAt / lastRun）', () => {
+  const dir = tmpDir();
+  const store = new SchedulerStore({ dir });
+  const cwd = tmpDir();
+  store.setRuntimeProvider((id) => ({ nextRunAt: 555, lastRun: store.listRuns({ taskId: id, limit: 1 })[0] || null }));
+  const { task } = store.createTask(shellTask({ cwd }));
+  store.addRun({ id: 'r1', taskId: task.id, status: 'success', startedAt: 1, exitCode: 0, durationMs: 2, logFile: 'x' });
+  store.syncManifest(task.id);
+  const m = JSON.parse(fs.readFileSync(path.join(cwd, 'void_manifest.json'), 'utf8'));
+  assert.equal(m.runtime.nextRunAt, 555);
+  assert.equal(m.runtime.lastRun.status, 'success');
 });
