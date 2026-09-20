@@ -65,9 +65,11 @@ function loadAgentSids() {
 const activeIsAgent = computed(() => {
   const sid = props.terminal.state.activeSessionId;
   if (!sid) return false;
+  const session = props.terminal.state.sessions.find((s) => s.id === sid) || null;
   // 手机端 localStorage 没有 agentSids：按会话自身 kind/agentId 判定，保证工作流面板能显示
-  if (props.phone) return isAgentSession(props.terminal.state.sessions.find((s) => s.id === sid) || null);
-  return agentSids.value.has(sid);
+  if (props.phone) return isAgentSession(session);
+  // 桌面端优先看本地标记；未标记的（从历史面板打开、刷新后漏标记等）按会话自身 kind/agentId 兜底
+  return agentSids.value.has(sid) || isAgentSession(session);
 });
 // 手机模式：未选会话时的空态提示词条（桌面模式恒为 null）
 const phoneHint = computed(() => (props.phone
@@ -658,8 +660,8 @@ function onComposerDragDown(e: MouseEvent) {
   document.addEventListener('mousemove', move);
   document.addEventListener('mouseup', up);
 }
-// 当前是 Agent 会话才默认展开；其他（含未选中）默认最小化；用户仍可手动折叠/展开
-watch(activeIsAgent, (v) => { composerMin.value = !v; });
+// 切到任意会话页签都展开输入框（Agent 与非 Agent 会话均可输入）；无会话时保持最小化；用户仍可手动折叠/展开
+watch(() => props.terminal.state.activeSessionId, (id) => { if (id) composerMin.value = false; }, { immediate: true });
 
 const curWf = computed<WfDef>(() => wfDefs.value.find((w) => w.id === wfKind.value) || wfDefs.value[0] || buildFallbackWf()[0]);
 const STAGES = computed(() => curWf.value.stages);
