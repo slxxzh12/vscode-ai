@@ -31,7 +31,7 @@ describe('usePostmanHistory', () => {
   it('createFolder 根目录不带斜杠', async () => {
     const calls: any[] = [];
     vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
-      calls.push([String(u), init?.method, JSON.parse(String(init.body))]);
+      calls.push([String(u), init?.method, init?.body ? JSON.parse(String(init.body)) : undefined]);
       return okJson({ ok: true });
     }));
     const s = usePostmanHistory();
@@ -42,7 +42,7 @@ describe('usePostmanHistory', () => {
   it('renameFolder 用 PATCH 并返回新路径', async () => {
     const calls: any[] = [];
     vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
-      calls.push([String(u), init?.method, JSON.parse(String(init.body))]);
+      calls.push([String(u), init?.method, init?.body ? JSON.parse(String(init.body)) : undefined]);
       return okJson({ ok: true, path: 'foo2' });
     }));
     const s = usePostmanHistory();
@@ -60,7 +60,7 @@ describe('usePostmanHistory', () => {
   it('renameRecord 用 PATCH /api/postman/history', async () => {
     const calls: any[] = [];
     vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
-      calls.push([String(u), init?.method, JSON.parse(String(init.body))]);
+      calls.push([String(u), init?.method, init?.body ? JSON.parse(String(init.body)) : undefined]);
       return okJson({ ok: true });
     }));
     const s = usePostmanHistory();
