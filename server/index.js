@@ -334,10 +334,6 @@ function buildWorkspace({ paths, port }) {
   engine.cleanupStagedImports();
   const collabMount = createCollabMount({ engine, logger: log });
   const usagePeers = engine.peers;
-  // 用量快照随心跳广播；成员拉取时由 _inPullDownloads 一并带回，不再落 usage.json 文件
-  const syncUsageSnapshot = () => {
-    broadcastCollab(CollabS2C.COLLAB_HEARTBEAT, {});
-  };
   // agent 可执行文件解析：显式配置(DEVFLOW_OPENCODE) → PATH → 包内 opencode/、env/；命中后把目录插到 PATH
   // 这样用量采集（execFile）与 pty 终端命中同一份，绿色包直启也不会因 PATH 缺失而 ENOENT
   const agent = defaultAgent();
@@ -348,7 +344,6 @@ function buildWorkspace({ paths, port }) {
     file: paths.usageReportFile,
     identity: () => ({ ...engine.pub }),
     peers: usagePeers,
-    onLocal: syncUsageSnapshot,
     cmd: agent.cmd,
     statsCmd: agent.statsCmd,
     resolveAgent: () => defaultAgent(),
@@ -358,7 +353,13 @@ function buildWorkspace({ paths, port }) {
     peers: usagePeers,
     reporter: usageReporter,
     checkToken: (tk) => { const inv = activeInvite(); return !!inv && safeEqual(tk, inv.token); },
-    onReport: syncUsageSnapshot,
+    pullFromHub: async (masterId) => {
+      const owned = engine.store.ownedGroup(engine.pub.machineId);
+      if (owned && (!masterId || owned.hubId === masterId)) {
+        return { code: 'ok', updatedAt: Date.now(), members: usagePeers.list() };
+      }
+      return engine.pullUsageFrom(masterId);
+    },
     logger: log,
   });
   // 默认上报目标：入群时记住 master 的地址与邀请令牌（无需手填链接），并立刻补报一次
