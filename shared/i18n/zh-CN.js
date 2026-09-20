@@ -771,7 +771,7 @@ export const messages = {
   'tools.desc.translate': '文本翻译',
   'tools.desc.yaml': 'YAML 校验 / 格式化',
   'tools.desc.js': 'JS 代码压缩',
-  'tools.desc.sort': '文本排序 / 去重',
+  'tools.desc.notepad': '记事本：文件编辑与排序去重',
   'tools.desc.postman': '粘贴 curl 直接执行',
   'tools.desc.navicat': '数据库连接与 SQL 执行',
   'nv.new': '新建连接',

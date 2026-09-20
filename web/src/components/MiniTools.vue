@@ -2,19 +2,13 @@
 import { computed, ref, watch } from 'vue';
 import { t } from '../i18n';
 import { parseYamlDoc, serializeYamlDoc } from '../yaml';
-import { sortText, dedupText, type SortMode } from '../textTools';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
 import NavicatTool from '../tools/navicat/NavicatTool.vue';
+import NotepadTool from '../tools/notepad/NotepadTool.vue';
 import { MINI_TOOLS, type ToolId } from '../tools/catalog';
 import { pendingTool, clearPendingTool } from '../uiIntents';
 
 const TOOLS = MINI_TOOLS;
-const SORT_BTNS: Array<{ mode: SortMode; key: string }> = [
-  { mode: 'asc', key: 'fp.sort.short.asc' },
-  { mode: 'desc', key: 'fp.sort.short.desc' },
-  { mode: 'num-asc', key: 'fp.sort.short.num_asc' },
-  { mode: 'num-desc', key: 'fp.sort.short.num_desc' },
-];
 
 const open = ref<ToolId | null>(null);
 const dlgOpen = computed({ get: () => open.value !== null, set: (v: boolean) => { if (!v) open.value = null; } });
@@ -86,9 +80,6 @@ async function runJs() {
   } catch (e) { fail(e); } finally { busy.value = false; }
 }
 
-function runSort(mode: SortMode) { output.value = sortText(input.value, mode); msg.value = ''; }
-function runDedup() { output.value = dedupText(input.value); msg.value = ''; }
-
 function useOutputAsInput() {
   if (!output.value) return;
   input.value = output.value;
@@ -125,6 +116,7 @@ async function copyOut() {
     <el-dialog v-model="dlgOpen" :title="open ? titleOf(open) : ''" fullscreen append-to-body class="mtdlg">
       <PostmanTool v-if="open === 'postman'" />
       <NavicatTool v-else-if="open === 'navicat'" />
+      <NotepadTool v-else-if="open === 'notepad'" />
 
       <div v-else class="mtbody">
         <div class="mtacts">
@@ -137,10 +129,6 @@ async function copyOut() {
           </template>
           <template v-else-if="open === 'js'">
             <button class="mtbtn primary" :disabled="busy" @click="runJs">{{ $t('tools.js_min') }}</button>
-          </template>
-          <template v-else>
-            <button v-for="b in SORT_BTNS" :key="b.mode" class="mtbtn" @click="runSort(b.mode)">{{ $t(b.key) }}</button>
-            <button class="mtbtn" @click="runDedup">{{ $t('tools.dedup') }}</button>
           </template>
         </div>
 

@@ -5,6 +5,7 @@ import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
 import MiniTools from './MiniTools.vue';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
+import NotepadTool from '../tools/notepad/NotepadTool.vue';
 import { pendingTool, clearPendingTool } from '../uiIntents';
 
 const writeText = vi.fn(async () => {});
@@ -34,18 +35,13 @@ describe('MiniTools', () => {
     expect((w.find('.el-overlay').element as HTMLElement).style.display).toBe('none');
   });
 
-  it('排序/去重为纯前端计算', async () => {
+  it('记事本：渲染 NotepadTool 子组件', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [], folders: [] })));
     const w = mount();
     await w.findAll('.mticon')[3].trigger('click');
-    const input = w.findAll('textarea')[0];
-    await input.setValue('b\na\nc');
-    const btns = w.findAll('.mtbtn');
-    expect(btns).toHaveLength(5);
-    await btns[0].trigger('click');   // asc
-    expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('a\nb\nc');
-    await input.setValue('a\nb\na');
-    await btns[4].trigger('click');   // 去重
-    expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('a\nb');
+    await flushPromises();
+    expect(w.findComponent(NotepadTool).exists()).toBe(true);
+    expect(w.find('.npbody').exists()).toBe(true);
   });
 
   it('YAML 校验/格式化与错误提示', async () => {
@@ -121,10 +117,12 @@ describe('MiniTools', () => {
   });
 
   it('复制输出 / 输出转输入 / 清空', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => okJson({ content: 'a\nb' })));
     const w = mount();
-    await w.findAll('.mticon')[3].trigger('click');
+    await w.findAll('.mticon')[2].trigger('click');   // JS 压缩
     await w.findAll('textarea')[0].setValue('b\na');
-    await w.findAll('.mtbtn')[0].trigger('click');   // asc
+    await w.find('.mtbtn.primary').trigger('click');
+    await flushPromises();
     const out = () => (w.findAll('textarea')[1].element as HTMLTextAreaElement).value;
     expect(out()).toBe('a\nb');
 

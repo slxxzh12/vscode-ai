@@ -771,7 +771,7 @@ export const messages = {
   'tools.desc.translate': 'Translate text',
   'tools.desc.yaml': 'Validate / format YAML',
   'tools.desc.js': 'Minify JS',
-  'tools.desc.sort': 'Sort / dedupe text',
+  'tools.desc.notepad': 'Notepad: edit files, sort/dedupe',
   'tools.desc.postman': 'Paste cURL and run it',
   'tools.desc.navicat': 'DB connections & SQL runner',
   'nv.new': 'New connection',
