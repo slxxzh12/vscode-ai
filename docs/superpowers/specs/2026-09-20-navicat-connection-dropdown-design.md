@@ -40,6 +40,7 @@
   - 选「＋ 新建连接」（或 `selectedId` 清空）→ `newProfile()`：`form = blank()`、`selectedId = ''`、`mode = 'new'`。
   - 新建态下 `el-select` 占位改为 `nv.template_ph`，其选项仍是已保存连接；选中一个 → 把其 `type/host/port/user/database/password`（密码来自 `reveal`）填入 `form`，**不复制 id 与 name**（name 保持空白、由用户填写，避免重名），填充后 `selectedId` 立即清回 `''` 以便再次选模板或保持新建态。
   - `mode` 仍为 `'new'`，保存走 POST。
+  - **退出新建态**：下拉框末项在新建态下标签改为「↩ 取消新建」（value 仍是 `NEW_SENTINEL`）；点它 → `cancelNew()`：`form = blank()`、`selectedId = ''`、`mode = 'edit'`（回到正常选择态，不选中任何连接）。仍是同一个下拉框，无独立按钮。
 - **保存（`doSave`）**：
   - 依据 `form.id` 是否存在决定 PATCH / POST（沿用现状）。
   - 保存成功后：`form.id = saved.id`、`hasPassword = saved.hasPassword`、清空 `form.password`，`selectedId = saved.id`、`mode = 'edit'`（下拉切回选中新连接）。
@@ -63,8 +64,9 @@
 
 - `nv.select_ph`：选择连接 / Select connection。
 - `nv.template_ph`：选择模板（可选）/ Pick a template (optional)。
+- `nv.cancel_new`：取消新建 / Cancel new。
 
-复用：`nv.new`、`nv.empty`（下拉无连接时占位）、`nv.rename`、`nv.delete`、`nv.search_ph`（如沿用可搜索提示）。
+复用：`nv.new`、`nv.empty`、`nv.rename`、`nv.delete`、`nv.search_ph`。
 
 ## 影响文件
 
