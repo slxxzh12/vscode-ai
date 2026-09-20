@@ -5,11 +5,12 @@ import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
 import MiniTools from './MiniTools.vue';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
+import { pendingTool, clearPendingTool } from '../uiIntents';
 
 const writeText = vi.fn(async () => {});
 Object.defineProperty(window.navigator, 'clipboard', { value: { writeText }, configurable: true });
 
-afterEach(() => { vi.unstubAllGlobals(); writeText.mockClear(); });
+afterEach(() => { vi.unstubAllGlobals(); writeText.mockClear(); clearPendingTool(); });
 
 function mount() {
   return mountC(MiniTools, { global: { plugins: [ElementPlus], stubs: { teleport: true } } });
@@ -19,10 +20,10 @@ function okJson(body: unknown) { return { ok: true, json: async () => body }; }
 function errJson(status: number, body: unknown) { return { ok: false, status, json: async () => body }; }
 
 describe('MiniTools', () => {
-  it('渲染 5 个工具；点击打开全屏面板、点 × 关闭', async () => {
+  it('渲染 6 个工具；点击打开全屏面板、点 × 关闭', async () => {
     const w = mount();
     const btns = w.findAll('.mticon');
-    expect(btns).toHaveLength(5);
+    expect(btns).toHaveLength(6);
     expect(w.find('.mtbody').exists()).toBe(false);
     await btns[0].trigger('click');
     await flushPromises();
@@ -102,6 +103,21 @@ describe('MiniTools', () => {
     await flushPromises();
     expect(w.findComponent(PostmanTool).exists()).toBe(true);
     expect(w.find('.pmbody').exists()).toBe(true);
+  });
+
+  it('Navicat：渲染 NavicatTool 子组件', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [] })));
+    const w = mount();
+    await w.findAll('.mticon')[5].trigger('click');
+    await flushPromises();
+    expect(w.find('.nvbody').exists()).toBe(true);
+  });
+
+  it('pendingTool 置值时自动打开对应工具', async () => {
+    pendingTool.value = 'yaml';
+    const w = mount();
+    await flushPromises();
+    expect(w.find('.mtbody').exists()).toBe(true);
   });
 
   it('复制输出 / 输出转输入 / 清空', async () => {

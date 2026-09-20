@@ -1,19 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { t } from '../i18n';
 import { parseYamlDoc, serializeYamlDoc } from '../yaml';
 import { sortText, dedupText, type SortMode } from '../textTools';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
+import NavicatTool from '../tools/navicat/NavicatTool.vue';
+import { MINI_TOOLS, type ToolId } from '../tools/catalog';
+import { pendingTool, clearPendingTool } from '../uiIntents';
 
-type ToolId = 'translate' | 'yaml' | 'js' | 'sort' | 'postman';
-
-const TOOLS: Array<{ id: ToolId; icon: string; label: string; disabled?: boolean; hint?: string }> = [
-  { id: 'translate', icon: '🌐', label: 'tools.translate' },
-  { id: 'yaml', icon: '🧾', label: 'tools.yaml' },
-  { id: 'js', icon: '⚙', label: 'tools.js' },
-  { id: 'sort', icon: '↕', label: 'tools.sort' },
-  { id: 'postman', icon: '📮', label: 'tools.postman' },
-];
+const TOOLS = MINI_TOOLS;
 const SORT_BTNS: Array<{ mode: SortMode; key: string }> = [
   { mode: 'asc', key: 'fp.sort.short.asc' },
   { mode: 'desc', key: 'fp.sort.short.desc' },
@@ -39,7 +34,14 @@ function openTool(id: ToolId) {
   copied.value = false;
 }
 
-function titleOf(id: ToolId) { return t(TOOLS.find((x) => x.id === id)?.label || 'tools.title'); }
+function titleOf(id: ToolId) { return t(TOOLS.find((x) => x.id === id)?.labelKey || 'tools.title'); }
+
+// 从欢迎页跳转过来时：自动打开待办工具，然后清空意图
+watch(pendingTool, (id) => {
+  if (!id) return;
+  openTool(id);
+  clearPendingTool();
+}, { immediate: true });
 
 function fail(e: unknown) {
   msg.value = t('tools.failed', { msg: (e as Error)?.message || String(e) });
@@ -115,13 +117,14 @@ async function copyOut() {
 <template>
   <div class="mt">
     <div class="mtrow">
-      <button v-for="x in TOOLS" :key="x.id" class="mticon" :class="{ on: open === x.id }" :disabled="x.disabled" :title="x.disabled && x.hint ? $t(x.hint) : $t(x.label)" @click="openTool(x.id)">
-        <span class="mtglyph">{{ x.icon }}</span><span class="mtname">{{ $t(x.label) }}</span>
+      <button v-for="x in TOOLS" :key="x.id" class="mticon" :class="{ on: open === x.id }" :disabled="x.disabled" :title="x.disabled && x.hint ? $t(x.hint) : $t(x.labelKey)" @click="openTool(x.id)">
+        <span class="mtglyph">{{ x.icon }}</span><span class="mtname">{{ $t(x.labelKey) }}</span>
       </button>
     </div>
 
     <el-dialog v-model="dlgOpen" :title="open ? titleOf(open) : ''" fullscreen append-to-body class="mtdlg">
       <PostmanTool v-if="open === 'postman'" />
+      <NavicatTool v-else-if="open === 'navicat'" />
 
       <div v-else class="mtbody">
         <div class="mtacts">
