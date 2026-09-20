@@ -2,12 +2,12 @@
 import { computed, onMounted, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { t } from '../../i18n';
-import NavicatList from './NavicatList.vue';
 import { useNavicat, type ExecResult, type NavicatProfile, type NavicatType } from './useNavicat';
 
 const { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx } = useNavicat();
 
 const TYPES: NavicatType[] = ['mysql', 'postgres', 'sqlite', 'redis'];
+const NEW_SENTINEL = '__new__';
 
 const form = ref<NavicatProfile>(blank());
 const sql = ref('');
@@ -15,6 +15,8 @@ const busy = ref(false);
 const testing = ref(false);
 const msg = ref('');
 const result = ref<ExecResult | null>(null);
+const mode = ref<'edit' | 'new'>('edit');
+const selectedId = ref('');
 
 function blank(): NavicatProfile {
   return { name: '', type: 'mysql', host: '127.0.0.1', port: '3306', user: 'root', database: '', password: '' };
@@ -23,6 +25,9 @@ function blank(): NavicatProfile {
 const isSqlite = computed(() => form.value.type === 'sqlite');
 const isRedis = computed(() => form.value.type === 'redis');
 const dbLabel = computed(() => (isSqlite.value ? t('nv.database') : isRedis.value ? t('nv.db_index') : t('nv.database')));
+const selectPlaceholder = computed(() => (mode.value === 'new' ? t('nv.template_ph') : t('nv.select_ph')));
+const sentinelLabel = computed(() => (mode.value === 'new' ? t('nv.cancel_new') : t('nv.new')));
+const showActions = computed(() => mode.value === 'edit' && !!form.value.id);
 
 function defaultPort(type: NavicatType): string {
   return type === 'mysql' ? '3306' : type === 'postgres' ? '5432' : type === 'redis' ? '6379' : '';
@@ -32,18 +37,55 @@ function onTypeChange() {
   if (!form.value.port || ['3306', '5432', '6379', ''].includes(form.value.port)) form.value.port = defaultPort(form.value.type);
 }
 
-function selectProfile(id: string) {
-  const p = profiles.value.find((x) => x.id === id);
-  if (!p) return;
-  form.value = { ...blank(), ...p, password: '' };
+function resetOutput() {
   result.value = null;
   msg.value = '';
 }
 
+async function selectProfile(id: string) {
+  const p = profiles.value.find((x) => x.id === id);
+  if (!p) return;
+  mode.value = 'edit';
+  selectedId.value = id;
+  form.value = { ...blank(), ...p, password: '' };
+  resetOutput();
+  if (p.hasPassword) {
+    try { form.value.password = await reveal(id); } catch { /* ignore */ }
+  }
+}
+
 function newProfile() {
+  mode.value = 'new';
+  selectedId.value = '';
   form.value = blank();
-  result.value = null;
-  msg.value = '';
+  resetOutput();
+}
+
+function cancelNew() {
+  mode.value = 'edit';
+  selectedId.value = '';
+  form.value = blank();
+  resetOutput();
+}
+
+async function applyTemplate(id: string) {
+  const p = profiles.value.find((x) => x.id === id);
+  if (!p) return;
+  selectedId.value = '';
+  form.value = { ...blank(), ...p, id: undefined, name: '', password: '' };
+  resetOutput();
+  if (p.hasPassword) {
+    try { form.value.password = await reveal(id); } catch { /* ignore */ }
+  }
+}
+
+function onSelectChange(id: string) {
+  if (id === NEW_SENTINEL) {
+    if (mode.value === 'new') cancelNew(); else newProfile();
+    return;
+  }
+  if (mode.value === 'new') void applyTemplate(id);
+  else void selectProfile(id);
 }
 
 async function doSave() {
@@ -52,6 +94,8 @@ async function doSave() {
   try {
     const saved = await save({ ...form.value });
     form.value = { ...form.value, id: saved.id, hasPassword: saved.hasPassword, password: '' };
+    selectedId.value = saved.id || '';
+    mode.value = 'edit';
     msg.value = t('nv.saved');
   } catch (e) { msg.value = (e as Error).message; } finally { busy.value = false; }
 }
@@ -79,11 +123,6 @@ async function doExec() {
     }
     result.value = out.result || null;
   } catch (e) { msg.value = (e as Error).message; } finally { busy.value = false; }
-}
-
-async function doReveal() {
-  if (!form.value.id) return;
-  try { form.value.password = await reveal(form.value.id); } catch { /* ignore */ }
 }
 
 async function copyConn(withPassword: boolean) {
@@ -142,65 +181,81 @@ onMounted(() => { void load(); });
 
 <template>
   <div class="nvbody">
-    <NavicatList :profiles="profiles" :active-id="form.id || ''" @select="selectProfile" @create="newProfile" @rename="onRename" @remove="onRemove" />
+    <div class="nvtop">
+      <el-select
+        v-model="selectedId"
+        class="nv-conn"
+        size="small"
+        filterable
+        :placeholder="selectPlaceholder"
+        @change="onSelectChange"
+      >
+        <el-option v-for="p in profiles" :key="p.id" :value="p.id" :label="p.name">
+          <span class="nv-badge">{{ p.type }}</span>
+          <span>{{ p.name }}</span>
+        </el-option>
+        <el-option :value="NEW_SENTINEL" :label="sentinelLabel" />
+      </el-select>
+      <button v-if="showActions" class="nvbtn nv-rename" @click="onRename(form.id!)">{{ $t('nv.rename') }}</button>
+      <button v-if="showActions" class="nvbtn nv-del" @click="onRemove(form.id!)">{{ $t('nv.delete') }}</button>
+    </div>
 
-    <section class="nvmain">
-      <div class="nvform">
-        <el-input v-model="form.name" class="nv-name-input" size="small" :placeholder="$t('nv.name')" />
-        <select v-model="form.type" class="nv-type" @change="onTypeChange">
-          <option v-for="ty in TYPES" :key="ty" :value="ty">{{ ty }}</option>
-        </select>
-        <template v-if="!isSqlite">
-          <el-input v-model="form.host" size="small" class="nv-host" :placeholder="$t('nv.host')" />
-          <el-input v-model="form.port" size="small" class="nv-port" :placeholder="$t('nv.port')" />
-          <el-input v-if="!isRedis" v-model="form.user" size="small" class="nv-user" :placeholder="$t('nv.user')" />
-          <div v-if="!isRedis" class="nv-pw">
-            <el-input v-model="form.password" size="small" type="password" show-password :placeholder="form.hasPassword && !form.password ? '••••••' : $t('nv.password')" />
-            <button v-if="form.id && form.hasPassword" class="nvbtn nv-reveal" :title="$t('nv.password')" @click="doReveal">👁</button>
-          </div>
-        </template>
-        <el-input v-model="form.database" size="small" class="nv-db" :placeholder="dbLabel" />
-        <div class="nvactions">
-          <button class="nvbtn primary nv-save" :disabled="busy" @click="doSave">{{ $t('nv.save') }}</button>
-          <button class="nvbtn nv-test" :disabled="testing" @click="doTest">{{ testing ? $t('nv.testing') : $t('nv.test') }}</button>
-          <button class="nvbtn nv-copy" @click="copyConn(false)">{{ $t('nv.copy_connstr') }}</button>
-          <button class="nvbtn nv-copy-pw" @click="copyConn(true)">{{ $t('nv.copy_with_pw') }}</button>
-          <button class="nvbtn nv-export" @click="doExport">{{ $t('nv.export_ncx') }}</button>
+    <div class="nvform">
+      <el-input v-model="form.name" class="nv-name-input" size="small" :placeholder="$t('nv.name')" />
+      <select v-model="form.type" class="nv-type" @change="onTypeChange">
+        <option v-for="ty in TYPES" :key="ty" :value="ty">{{ ty }}</option>
+      </select>
+      <template v-if="!isSqlite">
+        <el-input v-model="form.host" size="small" class="nv-host" :placeholder="$t('nv.host')" />
+        <el-input v-model="form.port" size="small" class="nv-port" :placeholder="$t('nv.port')" />
+        <el-input v-if="!isRedis" v-model="form.user" size="small" class="nv-user" :placeholder="$t('nv.user')" />
+        <div v-if="!isRedis" class="nv-pw">
+          <el-input v-model="form.password" size="small" type="password" show-password :placeholder="form.hasPassword && !form.password ? '••••••' : $t('nv.password')" />
         </div>
+      </template>
+      <el-input v-model="form.database" size="small" class="nv-db" :placeholder="dbLabel" />
+      <div class="nvactions">
+        <button class="nvbtn primary nv-save" :disabled="busy" @click="doSave">{{ $t('nv.save') }}</button>
+        <button class="nvbtn nv-test" :disabled="testing" @click="doTest">{{ testing ? $t('nv.testing') : $t('nv.test') }}</button>
+        <button class="nvbtn nv-copy" @click="copyConn(false)">{{ $t('nv.copy_connstr') }}</button>
+        <button class="nvbtn nv-copy-pw" @click="copyConn(true)">{{ $t('nv.copy_with_pw') }}</button>
+        <button class="nvbtn nv-export" @click="doExport">{{ $t('nv.export_ncx') }}</button>
       </div>
+    </div>
 
-      <div v-if="msg" class="nvmsg">{{ msg }}</div>
+    <div v-if="msg" class="nvmsg">{{ msg }}</div>
 
-      <textarea v-model="sql" class="nv-sql" :placeholder="$t('nv.sql_ph')" spellcheck="false" />
+    <textarea v-model="sql" class="nv-sql" :placeholder="$t('nv.sql_ph')" spellcheck="false" />
 
-      <div class="nvresbar">
-        <button class="nvbtn primary nv-run" :disabled="busy" @click="doExec">{{ busy ? $t('nv.running') : $t('nv.exec') }}</button>
-        <button class="nvbtn" @click="sql = ''; result = null; msg = ''">{{ $t('nv.clear') }}</button>
-        <span class="nv-meta">
-          <template v-if="result">
-            <span v-if="result.truncated">{{ $t('nv.truncated', { n: result.rows.length }) }} · </span>
-            <span v-if="result.affected !== null">{{ $t('nv.affected', { n: result.affected }) }} · </span>
-            <span>{{ $t('nv.duration', { ms: result.durationMs }) }}</span>
-          </template>
-        </span>
-        <button v-if="result && result.columns.length" class="nvbtn nvexport" style="margin-left:auto" @click="exportCsv">CSV</button>
-      </div>
+    <div class="nvresbar">
+      <button class="nvbtn primary nv-run" :disabled="busy" @click="doExec">{{ busy ? $t('nv.running') : $t('nv.exec') }}</button>
+      <button class="nvbtn" @click="sql = ''; result = null; msg = ''">{{ $t('nv.clear') }}</button>
+      <span class="nv-meta">
+        <template v-if="result">
+          <span v-if="result.truncated">{{ $t('nv.truncated', { n: result.rows.length }) }} · </span>
+          <span v-if="result.affected !== null">{{ $t('nv.affected', { n: result.affected }) }} · </span>
+          <span>{{ $t('nv.duration', { ms: result.durationMs }) }}</span>
+        </template>
+      </span>
+      <button v-if="result && result.columns.length" class="nvbtn nvexport" style="margin-left:auto" @click="exportCsv">CSV</button>
+    </div>
 
-      <div class="nvresult">
-        <table v-if="result && result.columns.length" class="nv-table">
-          <thead><tr><th v-for="c in result.columns" :key="c">{{ c }}</th></tr></thead>
-          <tbody><tr v-for="(row, i) in result.rows" :key="i"><td v-for="(cell, j) in row" :key="j">{{ cell }}</td></tr></tbody>
-        </table>
-        <pre v-else-if="result && result.raw" class="nv-raw">{{ result.raw }}</pre>
-        <div v-else class="nv-noresult">{{ $t('nv.no_result') }}</div>
-      </div>
-    </section>
+    <div class="nvresult">
+      <table v-if="result && result.columns.length" class="nv-table">
+        <thead><tr><th v-for="c in result.columns" :key="c">{{ c }}</th></tr></thead>
+        <tbody><tr v-for="(row, i) in result.rows" :key="i"><td v-for="(cell, j) in row" :key="j">{{ cell }}</td></tr></tbody>
+      </table>
+      <pre v-else-if="result && result.raw" class="nv-raw">{{ result.raw }}</pre>
+      <div v-else class="nv-noresult">{{ $t('nv.no_result') }}</div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.nvbody { display: flex; flex-direction: row; gap: 12px; height: calc(100vh - 150px); }
-.nvmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.nvbody { display: flex; flex-direction: column; gap: 8px; height: calc(100vh - 150px); }
+.nvtop { display: flex; align-items: center; gap: 6px; }
+.nv-conn { width: 240px; }
+.nv-badge { font-size: 10px; color: var(--tx4); border: 1px solid var(--bd); border-radius: 3px; padding: 0 4px; margin-right: 6px; text-transform: uppercase; }
 .nvform { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .nv-name-input { width: 150px; }
 .nv-type { width: 110px; height: 28px; background: var(--bg2); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 0 6px; font-size: 13px; }
