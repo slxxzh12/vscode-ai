@@ -22,7 +22,8 @@ function sendJson(res, status, obj) {
 }
 
 // /api/usage/* 的 HTTP 面：远端收上报（令牌），本机界面看汇总/配上报器
-export function createUsageMount({ peers, reporter, checkToken, onReport, logger = console }) {
+export function createUsageMount({ peers, reporter, checkToken, onReport, pullFromHub = null, logger = console }) {
+  const freshCache = new Map();   // masterId -> 最近一次成功拉到的 members
   async function route(req, res, url) {
     const m = req.method;
     const seg = url.pathname.replace(/^\/api\/usage\/?/, '').split('/').filter(Boolean);
@@ -47,7 +48,24 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, logger
       return sendJson(res, 200, { ok: true });
     }
 
-    if (seg[0] === 'peers' && seg.length === 1 && m === 'GET') return sendJson(res, 200, peers.snapshot());
+    if (seg[0] === 'peers' && seg.length === 1 && m === 'GET') {
+      const fresh = ['1', 'true', 'yes'].includes(String(url.searchParams.get('fresh') || '').toLowerCase());
+      if (!fresh) return sendJson(res, 200, peers.snapshot());
+      const masterId = url.searchParams.get('masterId') || undefined;
+      const key = masterId || '*';
+      if (typeof pullFromHub === 'function') {
+        try {
+          const r = await pullFromHub(masterId);
+          if (r && r.code === 'ok') {
+            freshCache.set(key, r.members || {});
+            return sendJson(res, 200, { updatedAt: r.updatedAt || Date.now(), peers: r.members || {} });
+          }
+        } catch (e) { logger?.warn?.('usage fresh pull failed', (e && e.message) || e); }
+      }
+      const cached = freshCache.get(key);
+      if (cached) return sendJson(res, 200, { updatedAt: Date.now(), peers: cached, stale: true });
+      return sendJson(res, 200, { ...peers.snapshot(), stale: true });
+    }
 
     // 每日留存（每台每天一条，最多 30 天）供趋势曲线；始终按 machineId 嵌套
     if (seg[0] === 'daily' && seg.length === 1 && m === 'GET') {

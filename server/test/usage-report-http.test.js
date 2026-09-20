@@ -12,13 +12,13 @@ function tmp(name) {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-umount-')), name);
 }
 
-async function start({ token = 'good', peers, reporter, onReport } = {}) {
+async function start({ token = 'good', peers, reporter, onReport, pullFromHub } = {}) {
   const p = peers || new UsagePeersStore({ file: tmp('usage-peers.json') });
   const r = reporter || createUsageReporter({
     file: tmp('usage-report.json'), identity: () => ({ machineId: 'm1' }),
     collect: async () => ({ sessions: 1 }), fetchFn: async () => ({ ok: true, json: async () => ({ ok: true }) }),
   });
-  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport });
+  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport, pullFromHub });
   const server = http.createServer((req, res) => mount(req, res, new URL(req.url, 'http://localhost')));
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   return { peers: p, reporter: r, port: server.address().port, server };
@@ -119,7 +119,7 @@ test('æœªçŸ¥ /api/usage/* è·¯å¾„ â†’ 404', async (t) => {
   assert.equal(r.status, 404);
 });
 
-test('GET /api/usage/daily£º·µ»ØÃ¿ÈÕÁô´æ£¨¿ÉÑ¡°´»úÆ÷¹ýÂË£©', async (t) => {
+test('GET /api/usage/dailyï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã¿ï¿½ï¿½ï¿½ï¿½ï¿½æ£¨ï¿½ï¿½Ñ¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë£ï¿½', async (t) => {
   const A = await start();
   t.after(() => A.server.close());
   await call(A.port, 'POST', '/api/usage/report', { headers: { 'X-DF-Token': 'good' }, body: { machineId: 'm1', usage: { messages: 3, output: 9 } } });
@@ -133,4 +133,36 @@ test('GET /api/usage/daily£º·µ»ØÃ¿ÈÕÁô´æ£¨¿ÉÑ¡°´»úÆ÷¹ýÂË£©', async (t) => {
   assert.equal(one.body.daily.m1[days[0]].output, 9);
   const none = await call(A.port, 'GET', '/api/usage/daily?machineId=nope');
   assert.deepEqual(none.body.daily, {});
+});
+
+test('GET /api/usage/peers?fresh=1ï¼šæˆåŠŸè¿”å›žç¾¤ä¸»æ±‡æ€»', async (t) => {
+  const A = await start({ pullFromHub: async () => ({ code: 'ok', updatedAt: 123, members: { m2: { machineId: 'm2', messages: 9 } } }) });
+  t.after(() => A.server.close());
+  const r = await call(A.port, 'GET', '/api/usage/peers?fresh=1');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.peers.m2.messages, 9);
+  assert.equal(r.body.stale, undefined);
+});
+
+test('GET /api/usage/peers?fresh=1ï¼šç¾¤ä¸»ä¸å¯è¾¾å›žé€€æœ¬åœ°å¹¶å¸¦ stale', async (t) => {
+  const p = new UsagePeersStore({ file: tmp('usage-peers.json') });
+  p.upsert({ machineId: 'm1', messages: 2 });
+  const A = await start({ peers: p, pullFromHub: async () => ({ code: 'unreachable' }) });
+  t.after(() => A.server.close());
+  const r = await call(A.port, 'GET', '/api/usage/peers?fresh=1&masterId=M');
+  assert.equal(r.body.peers.m1.messages, 2);
+  assert.equal(r.body.stale, true);
+});
+
+test('GET /api/usage/peers?fresh=1ï¼šæˆåŠŸåŽç¼“å­˜ï¼Œå¤±è´¥å›žé€€ç¼“å­˜', async (t) => {
+  let ok = true;
+  const pull = async () => (ok ? { code: 'ok', updatedAt: 1, members: { m2: { machineId: 'm2', messages: 9 } } } : { code: 'unreachable' });
+  const A = await start({ pullFromHub: pull });
+  t.after(() => A.server.close());
+  const a = await call(A.port, 'GET', '/api/usage/peers?fresh=1&masterId=M');
+  assert.equal(a.body.peers.m2.messages, 9);
+  ok = false;
+  const b = await call(A.port, 'GET', '/api/usage/peers?fresh=1&masterId=M');
+  assert.equal(b.body.peers.m2.messages, 9);
+  assert.equal(b.body.stale, true);
 });
