@@ -23,12 +23,15 @@ test('isVisionModel：预设标记与模型名兜底', () => {
   assert.equal(isVisionModel('custom', 'plain-text'), false);
 });
 
-test('validateSelections 拒绝非法结构', () => {
+test('validateSelections 拒绝非法结构、放行自定义（需 baseURL）', () => {
   assert.throws(() => validateSelections('x'), (e) => e.code === 'bad-config');
   assert.throws(() => validateSelections([{ id: 'nope', models: [] }]), (e) => e.code === 'bad-config');
   assert.throws(() => validateSelections([{ id: 'deepseek', models: 'x' }]), (e) => e.code === 'bad-config');
   assert.throws(() => validateSelections([{ id: 'deepseek', models: [], apiKey: 1 }]), (e) => e.code === 'bad-config');
+  assert.throws(() => validateSelections([{ id: 'bad id', baseURL: 'https://x/v1', models: [] }]), (e) => e.code === 'bad-config');
+  assert.throws(() => validateSelections([{ id: 'nope', baseURL: 'not-a-url', models: [] }]), (e) => e.code === 'bad-config');
   assert.doesNotThrow(() => validateSelections([{ id: 'deepseek', models: ['deepseek-v4-flash'] }]));
+  assert.doesNotThrow(() => validateSelections([{ id: 'my-ai', baseURL: 'https://my.ai/v1', models: ['m'] }]));
 });
 
 test('mergePresetProviders：单 key、vision attachment、保留非预设 provider 与模型附加字段', () => {

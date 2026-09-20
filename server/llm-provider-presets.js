@@ -6,12 +6,27 @@ function fail(code, message) {
   throw e;
 }
 
+const CUSTOM_ID_RE = /^[A-Za-z0-9._-]+$/;
+
+function isHttpUrl(v) {
+  if (typeof v !== 'string' || !v) return false;
+  try {
+    const u = new URL(v);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch { return false; }
+}
+
 export function validateSelections(value) {
   if (!Array.isArray(value)) fail('bad-config', 'providers must be an array');
   for (const sel of value) {
     if (!sel || typeof sel !== 'object' || Array.isArray(sel)) fail('bad-config', 'selection must be an object');
     if (typeof sel.id !== 'string' || !sel.id) fail('bad-config', 'selection.id required');
-    if (!presetById(sel.id)) fail('bad-config', `unknown provider: ${sel.id}`);
+    if (!presetById(sel.id)) {
+      if (!CUSTOM_ID_RE.test(sel.id)) fail('bad-config', `invalid provider id: ${sel.id}`);
+      if (!isHttpUrl(sel.baseURL)) fail('bad-config', `provider ${sel.id} requires baseURL`);
+    }
+    if (sel.name !== undefined && typeof sel.name !== 'string') fail('bad-config', 'name must be a string');
+    if (sel.baseURL !== undefined && typeof sel.baseURL !== 'string') fail('bad-config', 'baseURL must be a string');
     if (sel.apiKey !== undefined && typeof sel.apiKey !== 'string') fail('bad-config', 'apiKey must be a string');
     if (!Array.isArray(sel.models) || sel.models.some((m) => typeof m !== 'string')) {
       fail('bad-config', 'models must be a string array');
