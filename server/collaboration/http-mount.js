@@ -186,7 +186,7 @@ export function createCollabMount({ engine, logger = console }) {
       }
       // downloads（master 共享目录；slave 点击时才拉取）
       if (seg[0] === 'downloads' && seg.length === 1 && m === 'GET') {
-        return ok(res, { manifest: engine.readManifest(), usage: { members: (engine.peers && engine.peers.list) ? engine.peers.list() : {} }, group: engine.store.getGroup(), groups: engine.store.listGroups() });
+        return ok(res, { manifest: engine.readManifest(), group: engine.store.getGroup(), groups: engine.store.listGroups() });
       }
       if (seg[0] === 'downloads' && seg.length === 2 && seg[1] === 'sync' && m === 'POST') {
         return ok(res, await engine.pullDownloads());
