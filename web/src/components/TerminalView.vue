@@ -188,8 +188,22 @@ function cancelDesc() {
   descEditSid = null;
 }
 
+// 等某会话的 Agent UI 输出稳定：最短 3s + 输出静默 1.2s（即 3-5s 量级），超时或切走会话即放弃。
+// /rename 打开改名输入框需要数秒渲染，抢跑会把名字打进普通提示区导致改名不生效，故必须等这一步。
+function waitAgentSettled(sid: string, timeoutMs = 8000): Promise<boolean> {
+  const gate = createReadyGate({ now: () => Date.now(), timeoutMs });
+  const unsub = props.terminal.on(S2C.OUTPUT, (msg: any) => { if (msg.sessionId === sid) gate.output(); });
+  return new Promise<boolean>((resolve) => {
+    const timer = setInterval(() => {
+      if (props.terminal.state.activeSessionId !== sid) { clearInterval(timer); unsub(); resolve(false); return; }
+      const st = gate.poll();
+      if (st === 'waiting') return;
+      clearInterval(timer); unsub(); resolve(st === 'ready');
+    }, 200);
+  });
+}
 // 页签改名后让 Agent 内的对话名跟着改：向 Agent 发 `/rename`（斜杠命令需回车从补全列表选中执行）
-// → 清掉预填的旧标题 → 输入新名 → 回车确认。仅 Agent 会话有该命令（shell 会话跳过）。
+// → 等改名输入框渲染稳定 → 清掉预填的旧标题 → 输入新名 → 回车确认。仅 Agent 会话有该命令（shell 跳过）。
 // 整个流程由固定延时串起来、易被用户输入打乱，故期间用全屏蒙层 + 输入闸门屏蔽用户操作。
 function syncAgentRename(sid: string, name: string) {
   if (syncingRename.value) return;                     // 已在同步中：忽略再次触发，避免时序互相打架
@@ -202,32 +216,29 @@ function syncAgentRename(sid: string, name: string) {
   void nextTick(() => renameMaskEl?.focus());          // 蒙层抢焦点：否则键盘仍会漏进 xterm
   if (needSwitch) props.terminal.switchTo(sid);
   const at = () => props.terminal.state.activeSessionId === sid;
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
   const finish = () => {
     const done = () => { syncingRename.value = false; void nextTick(() => term?.focus()); };
     if (needSwitch && prev) setTimeout(() => { props.terminal.switchTo(prev); done(); }, 600);
     else done();
   };
-  setTimeout(() => {
+  void (async () => {
+    if (needSwitch) await sleep(400);
     if (!at()) return finish();
     props.terminal.input('/rename');                   // 输入斜杠命令
-    setTimeout(() => {
-      if (!at()) return finish();
-      props.terminal.input('\r');                      // 回车从补全列表执行命令，打开改名输入
-      setTimeout(() => {
-        if (!at()) return finish();
-        props.terminal.input('\x7f'.repeat(200));      // 清掉预填的旧标题
-        setTimeout(() => {
-          if (!at()) return finish();
-          props.terminal.input(name);                  // 输入新名
-          setTimeout(() => {
-            if (!at()) return finish();
-            props.terminal.input('\r');                // 回车确认
-            finish();
-          }, 400);
-        }, 250);
-      }, 1200);
-    }, 300);
-  }, needSwitch ? 400 : 0);
+    await sleep(300);
+    if (!at()) return finish();
+    props.terminal.input('\r');                        // 回车从补全列表执行命令，打开改名输入
+    if (!(await waitAgentSettled(sid))) return finish();
+    props.terminal.input('\x7f'.repeat(200));          // 清掉预填的旧标题
+    await sleep(250);
+    if (!at()) return finish();
+    props.terminal.input(name);                        // 输入新名
+    await sleep(400);
+    if (!at()) return finish();
+    props.terminal.input('\r');                        // 回车确认
+    finish();
+  })();
 }
 
 // —— 固定 Agent 首标签：交互式 Agent（列表可配置）+ 工作流（跑 opencode 自定义命令）——
