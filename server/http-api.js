@@ -43,7 +43,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -265,6 +265,62 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const ok = postmanHistory?.move?.(String(body.id ?? ''), String(body.folder ?? '')) ?? false;
         sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
         return;
+      }
+      if (url.pathname.startsWith('/api/notepad/')) {
+        const statusOf = (code) => (code === 'exists' ? 409 : code === 'not-found' ? 404 : code === 'too-large' ? 413 : code === 'bad-path' || code === 'bad-id' || code === 'empty' ? 400 : 500);
+        try {
+          if (url.pathname === '/api/notepad/tree' && req.method === 'GET') {
+            sendJson(res, 200, notepadStore?.list?.() ?? { items: [], folders: [] });
+            return;
+          }
+          if (url.pathname === '/api/notepad/file' && req.method === 'GET') {
+            sendJson(res, 200, notepadStore.read(url.searchParams.get('id') || ''));
+            return;
+          }
+          if (url.pathname === '/api/notepad/file' && req.method === 'PUT') {
+            const body = await readJsonBody(req);
+            sendJson(res, 200, { ok: true, ...notepadStore.write(String(body.id ?? ''), body.content) });
+            return;
+          }
+          if (url.pathname === '/api/notepad/file' && req.method === 'POST') {
+            const body = await readJsonBody(req);
+            sendJson(res, 200, { ok: true, ...notepadStore.createFile(String(body.folder ?? ''), String(body.name ?? '')) });
+            return;
+          }
+          if (url.pathname === '/api/notepad/file' && req.method === 'PATCH') {
+            const body = await readJsonBody(req);
+            sendJson(res, 200, { ok: true, id: notepadStore.renameItem(String(body.id ?? ''), String(body.name ?? '')) });
+            return;
+          }
+          if (url.pathname === '/api/notepad/file' && req.method === 'DELETE') {
+            const ok = notepadStore.removeItem(url.searchParams.get('id') || '');
+            sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
+            return;
+          }
+          if (url.pathname === '/api/notepad/folder' && req.method === 'POST') {
+            const body = await readJsonBody(req);
+            sendJson(res, 200, { ok: true, path: notepadStore.createFolder(String(body.path ?? '')) });
+            return;
+          }
+          if (url.pathname === '/api/notepad/folder' && req.method === 'PATCH') {
+            const body = await readJsonBody(req);
+            sendJson(res, 200, { ok: true, path: notepadStore.renameFolder(String(body.path ?? ''), String(body.name ?? '')) });
+            return;
+          }
+          if (url.pathname === '/api/notepad/folder' && req.method === 'DELETE') {
+            const ok = notepadStore.removeFolder(url.searchParams.get('path') || '');
+            sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
+            return;
+          }
+          if (url.pathname === '/api/notepad/move' && req.method === 'POST') {
+            const body = await readJsonBody(req);
+            const ok = notepadStore.moveItem(String(body.id ?? ''), String(body.folder ?? ''));
+            sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: 'not-found' });
+            return;
+          }
+          sendJson(res, 404, { error: 'not-found' });
+          return;
+        } catch (e) { sendJson(res, statusOf(e?.code), { error: e?.code || 'failed' }); return; }
       }
       if (url.pathname === '/api/raw' && req.method === 'GET') {
         const project = url.searchParams.get('project');
