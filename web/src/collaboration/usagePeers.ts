@@ -22,6 +22,14 @@ export function machineLabel(u?: Partial<CollabUsage>): string {
   return (u?.employeeId || u?.username || u?.machineId || '').trim();
 }
 
+// 本地时间 YYYY-MM-DD HH:mm:ss（最后一次数据更新时间的展示/导出）
+export function fmtTime(ts?: number): string {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 // 群成员与用量上报合并成一张表：群成员即使没上报也要有一行（数据列显示 -）
 export function mergeMachines(
   peers: Record<string, CollabUsage> | undefined,

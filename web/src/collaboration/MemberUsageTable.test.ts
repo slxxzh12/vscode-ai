@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
 import ElementPlus from 'element-plus';
@@ -9,6 +9,7 @@ import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import type { CollabUsage } from './types';
 import { t } from '../i18n';
+import { fmtTime } from './usagePeers';
 
 function mount(peers: Record<string, CollabUsage>, group: unknown = null) {
   const collab = { state: ref({ ...EMPTY_SNAPSHOT, group: group as never }) } as unknown as CollabApi;
@@ -64,5 +65,31 @@ describe('MemberUsageTable', () => {
     const badge = w.find('.mebadge');
     expect(badge.exists()).toBe(true);
     expect(badge.text()).toBe(t('collab.member.me'));
+  });
+
+  it('展示最后一次数据更新时间列', async () => {
+    const now = new Date(2026, 8, 20, 13, 54, 52).getTime();
+    const w = mount({ m1: { agent: '*', days: 1, machineId: 'm1', username: 'alice', host: 'h', port: 1, messages: 1, receivedAt: now } });
+    await flushPromises();
+    expect(w.text()).toContain(t('usage.last_report'));
+    expect(w.text()).toContain(fmtTime(now));
+  });
+
+  it('导出成员 CSV 含最后更新时间', async () => {
+    const now = new Date(2026, 8, 20, 13, 54, 52).getTime();
+    const fetchMock = vi.fn(async () => ({ ok: true, blob: async () => new Blob(['x']) }));
+    vi.stubGlobal('fetch', fetchMock);
+    (URL as unknown as { createObjectURL: () => string }).createObjectURL = () => 'blob:x';
+    (URL as unknown as { revokeObjectURL: () => void }).revokeObjectURL = () => {};
+    const w = mount({ m1: { agent: '*', days: 1, machineId: 'm1', username: 'alice', host: 'h', port: 1, messages: 1, receivedAt: now } });
+    await flushPromises();
+    await w.find('.mtool button').trigger('click');
+    await flushPromises();
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(String(body.zipName)).toContain('group-members');
+    const csv = body.files[0].content as string;
+    expect(csv).toContain('alice');
+    expect(csv).toContain(fmtTime(now));
   });
 });
