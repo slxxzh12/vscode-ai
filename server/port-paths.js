@@ -38,11 +38,12 @@ export function portPaths(port, { root = dataHome() } = {}) {
     skillsRoot: path.join(dir, 'skills-opencode'),
     toolsDir: path.join(dir, 'tools'),
     postmanDir: path.join(dir, 'tools', 'postman'),
+    notepadDir: path.join(dir, 'tools', 'notepad'),
   };
 }
 
 export function ensurePortDirs(paths) {
-  for (const d of [paths.dir, paths.schedulerDir, paths.collabDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.skillsRoot, paths.sessionLogsDir, paths.postmanDir]) {
+  for (const d of [paths.dir, paths.schedulerDir, paths.collabDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.skillsRoot, paths.sessionLogsDir, paths.postmanDir, paths.notepadDir]) {
     fs.mkdirSync(d, { recursive: true });
   }
   return paths;
