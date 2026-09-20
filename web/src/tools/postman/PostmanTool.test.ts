@@ -62,9 +62,9 @@ describe('PostmanTool', () => {
     }));
     const w = mountC(PostmanTool);
     await flushPromises();
-    await w.find('.pmroot .pmnew').trigger('click');
-    await w.find('.pmedit').setValue('bar');
-    await w.find('.pmedit').trigger('keydown.enter');
+    await w.find('.ftroot .ftnew').trigger('click');
+    await w.find('.ftedit').setValue('bar');
+    await w.find('.ftedit').trigger('keydown.enter');
     await flushPromises();
     expect(w.text()).toContain('bar');
     await w.find('.pmsidehead .pmmini').trigger('click');
@@ -89,18 +89,18 @@ describe('PostmanTool', () => {
     }));
     const w = mountC(PostmanTool);
     await flushPromises();
-    await w.find('.pmrow.folder .pmexec').trigger('click');
+    await w.find('.ftrow.folder .ftexec').trigger('click');
     await flushPromises();
     expect(calls).toEqual(['curl A', 'curl B']);
-    expect(w.findAll('.pmstatus.pass').length).toBe(1);
-    expect(w.findAll('.pmstatus.fail').length).toBe(1);
+    expect(w.findAll('.ftstatus.pass').length).toBe(1);
+    expect(w.findAll('.ftstatus.fail').length).toBe(1);
   });
 
   it('点击记录载入命令', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [REC('a.json', 'curl old')], folders: [] })));
     const w = mountC(PostmanTool);
     await flushPromises();
-    await w.find('.pmrow.record .pmname').trigger('click');
+    await w.find('.ftrow.item .ftname').trigger('click');
     expect((w.find('.pmcurl').element as HTMLTextAreaElement).value).toBe('curl old');
   });
 });
