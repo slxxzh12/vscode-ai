@@ -190,9 +190,11 @@ export function validateWorkflows(workflows) {
     const id = String(w && w.id || `wf-${wi}`).trim();
     const label = String(w && (w.label || w.id) || id).trim();
     const stages = Array.isArray(w && w.stages) ? w.stages : [];
+    const prio = Number(w && w.priority);
     return {
       id: id || `wf-${wi}`,
       label: label || id || `wf-${wi}`,
+      ...(Number.isFinite(prio) && prio ? { priority: prio } : {}),
       stages: stages.map((s, si) => {
         const sid = String(s && s.id || `st-${si}`).trim();
         return {

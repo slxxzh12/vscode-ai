@@ -226,3 +226,14 @@ test('setDefaultAgent 校验未知 id 抛 bad-agent，合法则写盘', () => {
   assert.equal(parseDevflowConfig(fs.readFileSync(f, 'utf8')).agents.chosen, true);
   assert.throws(() => setDefaultAgent(f, 'nope'), (e) => e.code === 'bad-agent');
 });
+
+test('validateWorkflows 透传非 0 priority（0/缺失不产生键）', () => {
+  const out = validateWorkflows([
+    { id: 'a', label: 'A', priority: 3, stages: [{ id: 's', label: 'S', prompts: ['p'] }] },
+    { id: 'b', label: 'B', priority: 0, stages: [{ id: 's', label: 'S', prompts: ['p'] }] },
+    { id: 'c', label: 'C', stages: [{ id: 's', label: 'S', prompts: ['p'] }] },
+  ]);
+  assert.equal(out[0].priority, 3);
+  assert.equal('priority' in out[1], false);
+  assert.equal('priority' in out[2], false);
+});
