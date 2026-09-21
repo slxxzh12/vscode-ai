@@ -119,3 +119,37 @@ test('默认 activeKind 为 session', () => {
   expect(c.activeKind.value).toBe('session');
   expect(c.active.value).toBeNull();
 });
+
+test('openTool 新增并激活工具页签；重复打开只激活', () => {
+  const c = useCenter();
+  c.openTool('notepad');
+  expect(c.tabs.value).toHaveLength(1);
+  expect(c.tabs.value[0]).toMatchObject({ id: 't:notepad', kind: 'tool', tool: 'notepad' });
+  expect(c.activeId.value).toBe('t:notepad');
+  c.openTool('notepad');
+  expect(c.tabs.value).toHaveLength(1);
+});
+
+test('openTool 可同时打开多个工具页签', () => {
+  const c = useCenter();
+  c.openTool('notepad');
+  c.openTool('yaml');
+  expect(c.tabs.value.map((t) => t.id)).toEqual(['t:notepad', 't:yaml']);
+  expect(c.activeId.value).toBe('t:yaml');
+});
+
+test('closeById 关闭工具页签', () => {
+  const c = useCenter();
+  c.openTool('yaml');
+  c.closeById('t:yaml');
+  expect(c.tabs.value).toHaveLength(0);
+  expect(c.activeId.value).toBeNull();
+});
+
+test('closeById 关闭激活的工具页签回退到会话页签', () => {
+  const c = useCenter();
+  c.ensureSession('a', 'A', 'running');
+  c.openTool('notepad');
+  c.closeById('t:notepad');
+  expect(c.activeId.value).toBe('s:a');
+});

@@ -2,15 +2,17 @@ import { ref, computed } from 'vue';
 
 export interface CenterTab {
   id: string;
-  kind: 'session' | 'file';
+  kind: 'session' | 'file' | 'tool';
   label: string;
   sub?: string;
   projectId?: string | null;
   path?: string;
+  tool?: string;
 }
 
 const sid = (s: string) => `s:${s}`;
 const fid = (p: string, path: string) => `f:${p}|${path}`;
+const tid = (tool: string) => `t:${tool}`;
 
 export function useCenter() {
   const tabs = ref<CenterTab[]>([]);
@@ -52,6 +54,11 @@ export function useCenter() {
       setActive(s ? s.id : tabs.value[0]?.id ?? null);
     }
   }
+  function openTool(tool: string, label?: string) {
+    const id = tid(tool);
+    upsert({ id, kind: 'tool', label: label ?? tool, tool });
+    setActive(id);
+  }
   function activateSession(sessionId: string) {
     const id = sid(sessionId);
     // 已存在的页签只激活，不改写 label/state（否则会覆盖用户双击重命名的页签名）
@@ -67,9 +74,14 @@ export function useCenter() {
       if (t && t.projectId && t.path) closeFile(t.projectId, t.path);
       return;
     }
+    if (id.startsWith('t:')) {
+      tabs.value = tabs.value.filter((x) => x.id !== id);
+      if (activeId.value === id) { const s = activeSessionTab.value; setActive(s ? s.id : tabs.value[0]?.id ?? null); }
+      return;
+    }
     tabs.value = tabs.value.filter((x) => x.id !== id);
     if (activeId.value === id) { const s = activeSessionTab.value; setActive(s ? s.id : null); }
   }
 
-  return { tabs, activeId, active, activeKind, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab };
+  return { tabs, activeId, active, activeKind, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab, openTool };
 }
