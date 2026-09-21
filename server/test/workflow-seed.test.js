@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createWorkflowSeedStore } from '../workflow-seed.js';
+import { createWorkflowSeedStore, hashWorkflow } from '../workflow-seed.js';
 
 function tmpDb() { return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dfseed-')), 'void.db'); }
 const WF = (label = 'A') => ({ id: 'a', label, stages: [{ id: 's', label: 'S', prompts: ['p'] }] });
@@ -34,4 +34,10 @@ test('读写往返一致（跨连接持久化）', () => {
   const b = createWorkflowSeedStore({ file, logger });
   assert.deepEqual(b.read(), s);
   b.close();
+});
+
+test('hashWorkflow 区分 priority（nonzero 才计入）', () => {
+  const base = { id: 'w', label: 'W', stages: [] };
+  assert.equal(hashWorkflow(base), hashWorkflow({ ...base, priority: 0 }));
+  assert.notEqual(hashWorkflow(base), hashWorkflow({ ...base, priority: 3 }));
 });

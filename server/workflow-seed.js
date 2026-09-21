@@ -7,6 +7,7 @@ export function hashWorkflow(w) {
   const norm = {
     id: w.id,
     label: w.label,
+    ...(Number.isFinite(Number(w.priority)) && Number(w.priority) ? { priority: Number(w.priority) } : {}),
     stages: (w.stages || []).map((s) => ({ id: s.id, label: s.label, group: s.group || '', prompts: s.prompts || [] })),
   };
   return crypto.createHash('sha256').update(JSON.stringify(norm)).digest('hex');
