@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useScheduler, type TaskView } from './useScheduler';
-import { scheduleSummary, formatTime, runStatusLabel, recentRunsOf } from './format';
+import { scheduleSummary, formatTime, runStatusLabel, recentRunsOf, typeLabel } from './format';
 import type { SchedulerRun } from '@devflow/shared/scheduler';
 import { t } from '../i18n';
+import CodeEditor from '../components/CodeEditor.vue';
 
-const props = defineProps<{ terminal: any }>();
+const props = defineProps<{ terminal: any; onOpenSession?: (sessionId: string) => void }>();
 const sched = useScheduler(props.terminal);
 const { state } = sched;
 
@@ -23,9 +24,32 @@ function emptyForm() {
   return {
     name: '', enabled: true, cwd: '', filePath: '', type: 'shell', command: '',
     ai: { source: 'command', commandName: '', prompt: '' }, script: { path: '' },
+    workflow: { workflowId: '', agentId: '' },
     schedule: { mode: 'interval', interval: { every: 30, unit: 'minute' }, daily: { at: '09:30', weekdays: [] } },
   };
 }
+const workflows = ref<{ id: string; label: string }[]>([]);
+const agents = ref<{ id: string; name: string }[]>([]);
+async function loadWorkflowOptions() {
+  try {
+    const w = await fetch('/api/workflows-xml').then((r) => r.json());
+    workflows.value = (w.workflows || []).map((x: any) => ({ id: x.id, label: x.label || x.id }));
+  } catch { workflows.value = []; }
+  try {
+    const a = await fetch('/api/agents').then((r) => r.json());
+    agents.value = (a.agents || []).map((x: any) => ({ id: x.id, name: x.name || x.id }));
+  } catch { agents.value = []; }
+}
+function wfLabel(id: string) { return workflows.value.find((w) => w.id === id)?.label || id; }
+function agentName(id: string) { return agents.value.find((a) => a.id === id)?.name || id; }
+function taskIcon(t: TaskView): string {
+  if (t.type === 'workflow') return '🔀';
+  if (t.type === 'script') return '📜';
+  if (t.type === 'shell') return '⌨';
+  if (t.type === 'ai') return t.ai?.source === 'file' ? '📄' : '🤖';
+  return '•';
+}
+const currentRun = computed(() => runs.value.find((r) => r.id === logRunId.value) || null);
 function openCreate() {
   editingId.value = null;
   pickedPath.value = '';
@@ -38,7 +62,7 @@ function openEdit(task: TaskView) {
   form.value = JSON.parse(JSON.stringify({
     name: task.name, enabled: task.enabled, cwd: task.cwd || '', filePath: task.filePath || '', type: task.type,
     command: task.command || '', ai: task.ai || { source: 'command', commandName: '', prompt: '' },
-    script: task.script || { path: '' }, schedule: task.schedule,
+    script: task.script || { path: '' }, workflow: task.workflow || { workflowId: '', agentId: '' }, schedule: task.schedule,
   }));
   showEditor.value = true;
 }
@@ -99,6 +123,8 @@ async function save() {
   if (body.type !== 'shell') delete body.command;
   if (body.type !== 'ai') delete body.ai;
   if (body.type !== 'script') delete body.script;
+  if (body.type !== 'workflow') delete body.workflow;
+  if (body.type === 'workflow' && (!body.workflow?.workflowId || !body.workflow?.agentId)) { state.error = t('sched.wf.need_select'); return; }
   try {
     if (editingId.value) await sched.updateTask(editingId.value, body);
     else await sched.createTask(body);
@@ -119,6 +145,13 @@ const runPending = ref<Record<string, boolean>>({});
 function isRunning(task: TaskView) { return !!task.runningRunId || !!runPending.value[task.id]; }
 async function stop(task: TaskView) { await sched.stopTask(task.id); await sched.refresh(); }
 async function toggle(task: TaskView) { await sched.updateTask(task.id, { enabled: !task.enabled }); }
+async function openWfRun(task: TaskView) {
+  state.error = '';
+  const list = await sched.loadRuns(task.id, 20);
+  const run = list.find((r) => r.sessionId);
+  if (!run || !run.sessionId) { state.error = t('sched.wf.no_run'); return; }
+  props.onOpenSession?.(run.sessionId);
+}
 async function openRuns(task: TaskView) {
   runsTaskId.value = task.id;
   runs.value = await sched.loadRuns(task.id);
@@ -153,7 +186,7 @@ function barClass(status: string): string {
   return 'killed';
 }
 
-onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); });
+onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); void loadWorkflowOptions(); });
 onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 </script>
 
@@ -180,8 +213,9 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
         <div v-for="t in state.tasks" :key="t.id" class="row">
           <div class="rowmain">
             <div class="name">
-              <span class="badge" :class="t.type">{{ t.type === 'shell' ? $t('sched.type.shell') : t.type === 'ai' ? 'AI' : $t('sched.type.script') }}</span>
+              <span class="badge" :class="t.type"><span class="bi">{{ taskIcon(t) }}</span>{{ typeLabel(t.type) }}</span>
               {{ t.name }}
+              <span v-if="t.type === 'workflow' && t.workflow" class="dim">{{ $t('sched.wf.task_meta', { wf: wfLabel(t.workflow.workflowId), agent: agentName(t.workflow.agentId) }) }}</span>
               <span class="dim">{{ scheduleSummary(t.schedule) }}</span>
             </div>
             <div class="meta">
@@ -202,6 +236,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <button v-else @click="toggle(t)">{{ $t('sched.start') }}</button>
             <button v-if="!isRunning(t)" @click="runNow(t)">{{ $t('sched.run') }}</button>
             <button v-else-if="t.runningRunId" @click="stop(t)">{{ $t('sched.stop') }}</button>
+            <button v-if="t.type === 'workflow'" @click="openWfRun(t)">{{ $t('sched.wf.open') }}</button>
             <button @click="openRuns(t)">{{ $t('sched.history') }}</button>
             <button @click="openEdit(t)">{{ $t('sched.edit') }}</button>
             <button @click="remove(t)">{{ $t('sched.delete') }}</button>
@@ -224,10 +259,11 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <option value="shell">{{ $t('sched.type.shell') }}</option>
             <option value="ai">AI {{ $t('sched.type.shell') }}</option>
             <option value="script">{{ $t('sched.type.script') }}</option>
+            <option value="workflow">{{ $t('sched.type.workflow') }}</option>
           </select>
         </label>
         <template v-if="form.type === 'shell'">
-          <label>{{ $t('sched.field.command') }} <textarea v-model="form.command" rows="3" /></label>
+          <label>{{ $t('sched.field.command') }} <CodeEditor v-model="form.command" class="sched-edit" language="cmd.sh" /></label>
         </template>
         <template v-else-if="form.type === 'ai'">
           <label>{{ $t('sched.field.source') }}
@@ -243,8 +279,23 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
               <option v-for="c in state.aiCommands" :key="c.name" :value="c.name">{{ c.name }}</option>
             </select>
           </label>
-          <label v-else-if="form.ai.source === 'prompt'">Prompt <textarea v-model="form.ai.prompt" rows="4" /></label>
+          <label v-else-if="form.ai.source === 'prompt'">Prompt <CodeEditor v-model="form.ai.prompt" class="sched-edit" /></label>
           <div v-else class="dim">{{ $t('sched.source.file_hint') }}</div>
+        </template>
+        <template v-else-if="form.type === 'workflow'">
+          <label>{{ $t('sched.wf.select') }}
+            <select v-model="form.workflow.workflowId">
+              <option value="">{{ $t('sched.field.choose') }}</option>
+              <option v-for="w in workflows" :key="w.id" :value="w.id">{{ w.label }}</option>
+            </select>
+            <span v-if="!workflows.length" class="dim">{{ $t('sched.wf.none') }}</span>
+          </label>
+          <label>{{ $t('sched.agent.select') }}
+            <select v-model="form.workflow.agentId">
+              <option value="">{{ $t('sched.field.choose') }}</option>
+              <option v-for="a in agents" :key="a.id" :value="a.id">{{ a.name }}</option>
+            </select>
+          </label>
         </template>
         <template v-else>
           <label>{{ $t('sched.field.script_path') }} <input v-model="form.script.path" /></label>
@@ -289,6 +340,10 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
     <div v-if="runsTaskId" class="overlay" @click.self="closeRuns">
       <div class="modal wide">
         <h3>{{ $t('sched.runs.title') }}</h3>
+        <div v-if="currentRun && currentRun.sessionId" class="runsess">
+          <span class="dim">{{ currentRun.sessionId }}</span>
+          <button @click="props.onOpenSession?.(currentRun?.sessionId || '')">{{ $t('sched.open_session') }}</button>
+        </div>
         <div class="histwrap">
           <div class="histlist">
             <div v-for="r in runs" :key="r.id" class="histitem" :class="{ on: r.id === logRunId }" @click="openLog(r)">
@@ -336,6 +391,9 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .badge { font-size: 11px; padding: 1px 6px; border-radius: 3px; background: var(--bg5, var(--bg4)); color: var(--tx2); }
 .badge.ai { background: var(--ac2); color: #fff; }
 .badge.script { background: var(--warn, #b58900); color: #000; }
+.badge .bi { margin-right: 4px; }
+.runsess { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.runsess button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
 .meta { color: var(--tx4); font-size: 12px; margin-top: 2px; display: flex; gap: 12px; align-items: center; }
 .nextline { color: var(--tx3); font-size: 12px; }
 .path { font-family: ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
@@ -380,6 +438,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .modal input.time { width: auto; flex: none; }
 .modal input.fileinp { flex: 1; min-width: 0; }
 .modal input, .modal select, .modal textarea { background: var(--bg4, var(--bg5)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 6px; font-family: inherit; }
+.sched-edit { --cm-min: 72px; }
 .wd { color: var(--tx3); font-size: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .wditem { display: inline-flex; flex-direction: row; align-items: center; gap: 2px; }
 .pickfile { align-self: flex-start; background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; }

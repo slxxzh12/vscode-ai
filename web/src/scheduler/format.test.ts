@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scheduleSummary, runStatusLabel, formatTime, recentRunsOf } from './format';
+import { scheduleSummary, runStatusLabel, formatTime, recentRunsOf, typeLabel } from './format';
 
 describe('scheduleSummary', () => {
   it('间隔', () => {
@@ -21,8 +21,19 @@ describe('runStatusLabel / formatTime', () => {
     expect(runStatusLabel('success')).toBe('成功');
     expect(runStatusLabel('timeout')).toBe('超时');
   });
+  it('paused 有标签', () => {
+    expect(runStatusLabel('paused')).toBeTruthy();
+    expect(runStatusLabel('killed')).toBeTruthy();
+  });
   it('空时间显示破折号', () => {
     expect(formatTime(null)).toBe('—');
+  });
+});
+
+describe('typeLabel', () => {
+  it('workflow 有标签', () => {
+    expect(typeLabel('workflow')).toBe('工作流');
+    expect(typeLabel('ai')).toBe('AI');
   });
 });
 

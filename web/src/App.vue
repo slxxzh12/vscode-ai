@@ -241,6 +241,11 @@ async function editHistorySession(sid: string) {
   if (!opened) return;                                  // 恢复失败已提示，不再打开编辑
   termViewRef.value?.editSession(opened.id);
 }
+// 定时任务「打开运行会话」：把运行中的 agent 会话作为主区内容打开
+function openLiveSession(sid: string) {
+  center.activateSession(sid);
+  terminal.switchTo(sid);
+}
 // 会话集合变化（新建/退出/关闭）后刷新账本，保证「全部会话」能列出已关闭会话
 watch(() => terminal.state.sessions.map((s) => s.id).join(','), () => { void loadLedgerSessions(true); });
 const activeSessionTab = computed(() => sessionOfActiveTab(center.active.value));
@@ -662,7 +667,7 @@ onBeforeUnmount(() => {
       </template>
       <template v-else-if="rail === 'scheduler'">
         <section class="center">
-          <SchedulerView :terminal="terminal" />
+          <SchedulerView :terminal="terminal" :on-open-session="openLiveSession" />
         </section>
       </template>
       <template v-else-if="rail === 'proxy'">

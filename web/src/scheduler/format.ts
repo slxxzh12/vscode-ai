@@ -24,9 +24,15 @@ export function formatTime(ts: number | null | undefined): string {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-const STATUS_KEY: Record<string, string> = { running: 'sched.status.running', success: 'sched.status.success', failed: 'sched.status.failed', timeout: 'sched.status.timeout', killed: 'sched.status.killed' };
+const STATUS_KEY: Record<string, string> = { running: 'sched.status.running', success: 'sched.status.success', failed: 'sched.status.failed', timeout: 'sched.status.timeout', killed: 'sched.status.killed', paused: 'sched.status.paused' };
 export function runStatusLabel(s: string): string {
   return STATUS_KEY[s] ? t(STATUS_KEY[s]) : s;
+}
+
+export function typeLabel(type: string): string {
+  if (type === 'ai') return 'AI';
+  if (type === 'workflow') return t('sched.type.workflow');
+  return t(`sched.type.${type}`);
 }
 
 // runs 为倒序（最新在前）；取最新 n 条并按时间递增返回，便于左→右展示
