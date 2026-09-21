@@ -8,7 +8,7 @@ import '../styles/markdown.css';
 import { useProjects, type FileMeta } from '../useProjects';
 import type { DocSource, DocReadResult } from '../tools/doc/docSource';
 import { t, locale } from '../i18n';
-import { isMarkdownFile, renderMarkdown, renderMermaid, printMarkdown } from '../markdown';
+import { isMarkdownFile, renderMarkdown, renderMermaid, printMarkdown, collectAssetRefs } from '../markdown';
 import { parseCurlCommands } from '../curl';
 import CurlView from './CurlView.vue';
 import CodeEditor from './CodeEditor.vue';
@@ -262,9 +262,16 @@ async function applyPreview() {
   mdErr.value = '';
   if (viewMode.value !== 'preview' || status.value !== 'ok') return;
   try {
+    props.source.releaseMarkdownAssets?.();
+    let assetMap: Map<string, string> | undefined;
+    if (props.source.resolveMarkdownAssets) {
+      const refs = collectAssetRefs(raw.value, fileDirOf(props.path));
+      if (refs.length) assetMap = await props.source.resolveMarkdownAssets(refs);
+    }
     mdHtml.value = renderMarkdown(raw.value, {
       projectId: props.source.markdownImageBase?.projectId || '',
       fileDir: fileDirOf(props.path),
+      assetMap,
     });
   } catch (e: any) {
     mdErr.value = String(e?.message || e);
