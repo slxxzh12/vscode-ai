@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, inject, onMounted, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { t } from '../../i18n';
 import { quoteIdent, useNavicat, type ExecResult, type NavicatProfile, type NavicatType } from './useNavicat';
 import NavicatTree from './NavicatTree.vue';
+import CodeEditor from '../../components/CodeEditor.vue';
+import { DIALOG_ACTIONS_TARGET } from '../dialogActions';
 
 const { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx, listDatabases, listTables } = useNavicat();
+
+const actionsTarget = inject(DIALOG_ACTIONS_TARGET, '');
 
 const TYPES: NavicatType[] = ['mysql', 'postgres', 'sqlite', 'redis'];
 
@@ -206,18 +210,20 @@ onMounted(() => { void load(); });
     </aside>
 
     <section class="nvmain">
-      <div class="nvtoolbar">
-        <span class="nvactive">{{ activeProfile ? activeProfile.name : $t('nv.empty') }}</span>
-        <span v-if="activeProfile && activeDatabase" class="nvactivedb">· {{ activeDatabase }}</span>
-        <button v-if="activeProfile" class="nvbtn" @click="editActive">{{ $t('nv.edit') }}</button>
-        <button v-if="activeProfile" class="nvbtn nv-copy" @click="copyConn(false)">{{ $t('nv.copy_connstr') }}</button>
-        <button v-if="activeProfile" class="nvbtn nv-copy-pw" @click="copyConn(true)">{{ $t('nv.copy_with_pw') }}</button>
-        <button v-if="activeProfile" class="nvbtn nv-export" @click="doExport">{{ $t('nv.export_ncx') }}</button>
-      </div>
+      <Teleport :to="actionsTarget || 'body'" :disabled="!actionsTarget" defer>
+        <div class="nvtoolbar">
+          <span class="nvactive">{{ activeProfile ? activeProfile.name : $t('nv.empty') }}</span>
+          <span v-if="activeProfile && activeDatabase" class="nvactivedb">· {{ activeDatabase }}</span>
+          <button v-if="activeProfile" class="nvbtn" @click="editActive">{{ $t('nv.edit') }}</button>
+          <button v-if="activeProfile" class="nvbtn nv-copy" @click="copyConn(false)">{{ $t('nv.copy_connstr') }}</button>
+          <button v-if="activeProfile" class="nvbtn nv-copy-pw" @click="copyConn(true)">{{ $t('nv.copy_with_pw') }}</button>
+          <button v-if="activeProfile" class="nvbtn nv-export" @click="doExport">{{ $t('nv.export_ncx') }}</button>
+        </div>
+      </Teleport>
 
-      <div v-if="msg" class="nvmsg">{{ msg }}</div>
+      <div class="nvmsgrow"><div v-if="msg" class="nvmsg">{{ msg }}</div></div>
 
-      <textarea v-model="sql" class="nv-sql" :placeholder="$t('nv.sql_ph')" spellcheck="false" />
+      <CodeEditor v-model="sql" class="nv-sql" language="query.sql" :placeholder="$t('nv.sql_ph')" />
 
       <div class="nvresbar">
         <button class="nvbtn primary nv-run" :disabled="busy" @click="doExec">{{ busy ? $t('nv.running') : $t('nv.exec') }}</button>
@@ -319,9 +325,10 @@ onMounted(() => { void load(); });
 .nvbtn:disabled { opacity: .55; cursor: default; }
 .nvmini { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
 .nvmini:hover { border-color: var(--ac2); color: var(--ac2); }
-.nvmsg { color: var(--tx3); font-size: 12px; }
-.nv-sql { flex: none; min-height: 140px; resize: vertical; background: var(--bg2); color: var(--tx); border: 1px solid var(--bd); border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.6; font-family: ui-monospace, Consolas, monospace; box-sizing: border-box; }
-.nv-sql:focus { outline: none; border-color: var(--ac2); }
+/* 提示信息固定占一行，避免出现/消失时内容上下跳动 */
+.nvmsgrow { min-height: 16px; }
+.nvmsg { color: var(--tx3); font-size: 12px; line-height: 16px; }
+.nv-sql { flex: none; --cm-min: 140px; }
 .nvresbar { display: flex; gap: 8px; align-items: center; }
 .nv-meta { color: var(--tx4); font-size: 12px; }
 .nvresult { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--bd); border-radius: 6px; background: var(--bg2); }

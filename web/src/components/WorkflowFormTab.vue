@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { t } from '../i18n';
+import CodeEditor from './CodeEditor.vue';
 import {
   groupBands, moveItem, moveStageToIndex, duplicateWorkflow, duplicateStage,
   newWorkflow, newStage, validateModel,
@@ -172,7 +173,7 @@ function dropPrompt(wi: number, si: number, pi: number) {
             @dragover.prevent @drop.stop="dropPrompt(wi, band.startIndex + sInBand, pi)">
             <span class="handle" draggable="true" :title="$t('wfe.drag_hint')"
               @dragstart="onDragStart($event, { kind: 'prompt', wfIndex: wi, stageIndex: band.startIndex + sInBand, index: pi })" @dragend="onDragEnd">⋮</span>
-            <textarea class="ta" rows="2" :value="p" :placeholder="$t('wfe.prompt')" @input="setPrompt(wi, band.startIndex + sInBand, pi, val($event))" />
+            <CodeEditor class="ta" :model-value="p" :placeholder="$t('wfe.prompt')" @change="setPrompt(wi, band.startIndex + sInBand, pi, $event)" />
             <button class="mini danger" @click="removePrompt(wi, band.startIndex + sInBand, pi)">×</button>
           </div>
           <button class="mini add" @click="addPrompt(wi, band.startIndex + sInBand)">{{ $t('wfe.add_prompt') }}</button>
@@ -201,7 +202,7 @@ function dropPrompt(wi: number, si: number, pi: number) {
 .in { flex: 1; min-width: 0; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: inherit; box-sizing: border-box; }
 .in.wlabel { font-weight: 700; }
 .in.id { flex: 0 0 150px; font-family: ui-monospace, Consolas, monospace; color: var(--tx3); }
-.ta { flex: 1; min-width: 0; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; resize: vertical; box-sizing: border-box; }
+.ta { flex: 1; min-width: 0; --cm-min: 56px; }
 .in:focus, .ta:focus { outline: none; border-color: var(--ac2); }
 .mini { flex: none; background: var(--bg5); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit; }
 .mini:hover { border-color: var(--ac2); color: var(--tx1); }

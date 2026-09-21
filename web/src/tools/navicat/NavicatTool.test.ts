@@ -4,6 +4,7 @@ import { flushPromises } from '@vue/test-utils';
 import ElementPlus, { ElMessageBox } from 'element-plus';
 import { mountC } from '../../test-utils';
 import NavicatTool from './NavicatTool.vue';
+import CodeEditor from '../../components/CodeEditor.vue';
 
 function okJson(body: unknown) { return { ok: true, status: 200, json: async () => body }; }
 const P = { id: '1', name: 'A', type: 'mysql', host: 'h', port: '3306', user: 'u', database: 'd', hasPassword: true };
@@ -85,7 +86,7 @@ describe('NavicatTool', () => {
     await w.find('.nvdbitem .nvchev').trigger('click');
     await flushPromises();
     await w.find('.nvtbname').trigger('click');
-    expect((w.find('.nv-sql').element as HTMLTextAreaElement).value).toBe('SELECT * FROM `users`');
+    expect(w.findComponent(CodeEditor).props('modelValue')).toBe('SELECT * FROM `users`');
     await w.find('.nv-run').trigger('click');
     await flushPromises();
     expect(execBody.database).toBe('db1');
@@ -103,7 +104,7 @@ describe('NavicatTool', () => {
     const w = mount();
     await flushPromises();
     await w.find('.nvconnname').trigger('click');
-    await w.find('.nv-sql').setValue('INSERT INTO t VALUES (1)');
+    await w.findComponent(CodeEditor).vm.$emit('update:modelValue', 'INSERT INTO t VALUES (1)');
     await w.find('.nv-run').trigger('click');
     await flushPromises();
     expect(confirm).toHaveBeenCalled();

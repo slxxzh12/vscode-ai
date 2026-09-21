@@ -5,6 +5,7 @@ import {
   type CurlEntry, type CurlRequest, type QueryParam,
 } from '../curl';
 import { t } from '../i18n';
+import CodeEditor from './CodeEditor.vue';
 
 const props = defineProps<{ projectId: string; path: string; text: string }>();
 const emit = defineEmits<{ (e: 'update:text', text: string): void }>();
@@ -130,9 +131,9 @@ async function send() {
         </div>
         <button class="cvmini" @click="addParam">＋ {{ $t('fp.curl.add_param') }}</button>
         <label class="cvlab">{{ $t('fp.curl.headers') }}</label>
-        <textarea v-model="headersText" class="cvta" rows="3" :placeholder="$t('fp.curl.headers_placeholder')" @change="applyForm" />
+        <CodeEditor v-model="headersText" class="cvta" :placeholder="$t('fp.curl.headers_placeholder')" @change="applyForm" />
         <label class="cvlab">{{ $t('fp.curl.body') }}</label>
-        <textarea v-model="bodyRaw" class="cvta" rows="4" :placeholder="$t('fp.curl.body_placeholder')" @change="applyForm" />
+        <CodeEditor v-model="bodyRaw" class="cvta" :placeholder="$t('fp.curl.body_placeholder')" @change="applyForm" />
         <div v-if="err" class="cverr">{{ err }}</div>
         <label class="cvlab">{{ $t('fp.curl.response') }}</label>
         <div v-if="respStatus !== null" class="cvstat">HTTP {{ respStatus }}</div>
@@ -158,7 +159,8 @@ async function send() {
 .cvparam { display: flex; gap: 6px; align-items: center; }
 .cvempty { color: var(--tx4); font-size: 13px; padding: 20px; }
 .cvlab { color: var(--tx3); font-size: 12px; margin-top: 4px; }
-.cvta, .cvform input { background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; box-sizing: border-box; }
+.cvta { --cm-min: 72px; }
+.cvform input { background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; box-sizing: border-box; }
 .cvbtn { background: var(--ac); color: var(--onac); border: 1px solid var(--ac); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-family: inherit; }
 .cvbtn.danger { background: var(--bg5); color: var(--tx2); border-color: var(--bd); }
 .cvmini { align-self: flex-start; background: var(--bg5); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit; }

@@ -4,6 +4,7 @@ import { flushPromises } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
 import MiniTools from './MiniTools.vue';
+import CodeEditor from './CodeEditor.vue';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
 import NotepadTool from '../tools/notepad/NotepadTool.vue';
 import { pendingTool, clearPendingTool } from '../uiIntents';
@@ -20,13 +21,17 @@ function mount() {
 function okJson(body: unknown) { return { ok: true, json: async () => body }; }
 function errJson(status: number, body: unknown) { return { ok: false, status, json: async () => body }; }
 
+function setIn(w: any, text: string) { w.findAllComponents(CodeEditor)[0].vm.$emit('update:modelValue', text); }
+function inVal(w: any) { return w.findAllComponents(CodeEditor)[0].props('modelValue'); }
+function outVal(w: any) { return w.findAllComponents(CodeEditor)[1].props('modelValue'); }
+
 describe('MiniTools', () => {
-  it('渲染 6 个工具；点击打开全屏面板、点 × 关闭', async () => {
+  it('渲染 5 个工具；点击打开全屏面板、点 × 关闭', async () => {
     const w = mount();
     const btns = w.findAll('.mticon');
-    expect(btns).toHaveLength(6);
+    expect(btns).toHaveLength(5);
     expect(w.find('.ttbody').exists()).toBe(false);
-    await btns[3].trigger('click');   // 翻译（catalog 顺序：记事本/Postman/Navicat/翻译/YAML/JS）
+    await btns[3].trigger('click');   // 翻译（catalog 顺序：记事本/Postman/Navicat/翻译/YAML）
     await flushPromises();
     expect(w.find('.ttbody').exists()).toBe(true);
     expect(w.find('.el-dialog').classes()).toContain('is-fullscreen');
@@ -47,14 +52,14 @@ describe('MiniTools', () => {
   it('YAML 校验/格式化与错误提示', async () => {
     const w = mount();
     await w.findAll('.mticon')[4].trigger('click');
-    await w.findAll('textarea')[0].setValue('a: [1, ');
+    setIn(w, 'a: [1, ');
     await w.findAll('.mtbtn')[1].trigger('click');
     expect(w.find('.mtmsg').exists()).toBe(true);
 
-    await w.findAll('textarea')[0].setValue('b: 2\na: 1');
+    setIn(w, 'b: 2\na: 1');
     await w.findAll('.mtbtn')[2].trigger('click');
     expect(w.find('.mtmsg').text()).toBeTruthy();
-    expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toContain('a: 1');
+    expect(outVal(w)).toContain('a: 1');
   });
 
   it('翻译：空输入提示；成功后写入输出', async () => {
@@ -64,32 +69,20 @@ describe('MiniTools', () => {
     expect(w.find('.mtmsg').text()).toBeTruthy();
 
     vi.stubGlobal('fetch', vi.fn(async () => okJson({ text: 'hello' })));
-    await w.findAll('textarea')[0].setValue('你好');
+    setIn(w, '你好');
     await w.find('.mtbtn.primary').trigger('click');
     await flushPromises();
-    expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('hello');
+    expect(outVal(w)).toBe('hello');
   });
 
   it('翻译失败显示错误', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => errJson(400, { message: 'bad input' })));
     const w = mount();
     await w.findAll('.mticon')[3].trigger('click');
-    await w.findAll('textarea')[0].setValue('x');
+    setIn(w, 'x');
     await w.find('.mtbtn.primary').trigger('click');
     await flushPromises();
     expect(w.find('.mtmsg').text()).toContain('bad input');
-  });
-
-  it('JS 压缩走 /api/format', async () => {
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return okJson({ content: 'const a=1;' }); }));
-    const w = mount();
-    await w.findAll('.mticon')[5].trigger('click');
-    await w.findAll('textarea')[0].setValue('const a = 1;');
-    await w.find('.mtbtn.primary').trigger('click');
-    await flushPromises();
-    expect(urls).toContain('/api/format');
-    expect((w.findAll('textarea')[1].element as HTMLTextAreaElement).value).toBe('const a=1;');
   });
 
   it('Postman：渲染 PostmanTool 子组件', async () => {
@@ -117,27 +110,37 @@ describe('MiniTools', () => {
     expect(w.find('.ttbody').exists()).toBe(true);
   });
 
-  it('复制输出 / 输出转输入 / 清空', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => okJson({ content: 'a\nb' })));
-    const w = mount();
-    await w.findAll('.mticon')[5].trigger('click');   // JS 压缩
-    await w.findAll('textarea')[0].setValue('b\na');
-    await w.find('.mtbtn.primary').trigger('click');
+  it('工具操作按钮 Teleport 到弹窗标题行右侧', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [], folders: [] })));
+    // 不 stub teleport：验证按钮真的被挂到 #mtdlg-actions 里
+    const w = mountC(MiniTools, { global: { plugins: [ElementPlus] } });
+    await w.findAll('.mticon')[0].trigger('click');
     await flushPromises();
-    const out = () => (w.findAll('textarea')[1].element as HTMLTextAreaElement).value;
-    expect(out()).toBe('a\nb');
+    const actions = document.querySelector('#mtdlg-actions');
+    expect(actions?.querySelector('.npbar')).toBeTruthy();
+    expect(document.querySelector('.npmain .npbar')).toBeNull();
+    w.unmount();
+  });
+
+  it('复制输出 / 输出转输入 / 清空', async () => {
+    const w = mount();
+    await w.findAll('.mticon')[4].trigger('click');   // YAML
+    setIn(w, 'b: 2\na: 1');
+    await w.find('.mtbtn.primary').trigger('click');   // 格式化
+    const out = outVal(w);
+    expect(out).toBeTruthy();
 
     const mini = () => w.findAll('.mtmini');
     await mini()[0].trigger('click');   // copy
     await flushPromises();
-    expect(writeText).toHaveBeenCalledWith('a\nb');
+    expect(writeText).toHaveBeenCalledWith(out);
 
     await mini()[1].trigger('click');   // to input
-    expect((w.findAll('textarea')[0].element as HTMLTextAreaElement).value).toBe('a\nb');
-    expect(out()).toBe('');
+    expect(inVal(w)).toBe(out);
+    expect(outVal(w)).toBe('');
 
     await mini()[2].trigger('click');   // clear
-    expect((w.findAll('textarea')[0].element as HTMLTextAreaElement).value).toBe('');
+    expect(inVal(w)).toBe('');
   });
 
 });
