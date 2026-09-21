@@ -217,3 +217,50 @@ test('startGroup 未知分组返回 not-found', async () => {
   assert.equal(res.ok, false);
   assert.equal(res.code, 'not-found');
 });
+
+test('超时未完成 → 该步 error、run failed', async () => {
+  const { session, runner } = await makeGroupRunner({ stepTimeoutMs: 20 });
+  const res = runner.startGroup({ workflowId: 'gw', groupAnchor: 'a', sessionId: session.id });
+  await new Promise((r) => setTimeout(r, 50));
+  const snap = res.run.snapshot();
+  assert.equal(snap.status, 'failed');
+  assert.equal(snap.steps[0].status, 'error');
+  assert.equal(snap.errorMessage, 'step timeout');
+  runner.stopAll();
+});
+
+test('会话退出 → run failed 且该步 error', async () => {
+  const { session, runner, instances } = await makeGroupRunner();
+  const res = runner.startGroup({ workflowId: 'gw', groupAnchor: 'a', sessionId: session.id });
+  instances[0].pty.__emitExit(1);
+  assert.equal(res.run.snapshot().status, 'failed');
+  assert.equal(res.run.snapshot().steps[0].status, 'error');
+  runner.stopAll();
+});
+
+test('rollback 重置目标步及之后并从该步重跑', async () => {
+  const { session, runner, instances } = await makeGroupRunner();
+  const res = runner.startGroup({ workflowId: 'gw', groupAnchor: 'a', sessionId: session.id });
+  const { runId } = res.run;
+  instances[0].pty.__emitData(`DF_DONE:${runId}:0`);
+  instances[0].pty.__emitData(`DF_DONE:${runId}:1`);
+  instances[0].pty.__emitData(`DF_DONE:${runId}:2`);
+  const writesBefore = instances[0].pty.writes.length;
+  const ok = runner.rollback(runId, 'a#1');
+  assert.equal(ok, true);
+  const snap = res.run.snapshot();
+  assert.equal(snap.status, 'running');
+  assert.equal(snap.steps[0].status, 'done');       // 回退点之前不受影响
+  assert.equal(snap.steps[1].status, 'running');    // 从回退点重跑
+  assert.equal(snap.steps[2].status, 'waiting');
+  assert.equal(instances[0].pty.writes.length, writesBefore + 1);
+  assert.ok(instances[0].pty.writes[writesBefore].startsWith('p-a1'));
+  runner.stopAll();
+});
+
+test('rollback 未知 stepId 返回 false', async () => {
+  const { session, runner } = await makeGroupRunner();
+  const res = runner.startGroup({ workflowId: 'gw', groupAnchor: 'a', sessionId: session.id });
+  assert.equal(runner.rollback(res.run.runId, 'nope#9'), false);
+  runner.stopAll();
+});
