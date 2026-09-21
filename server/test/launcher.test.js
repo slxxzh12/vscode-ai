@@ -23,10 +23,10 @@ test('launch.ps1 结束旧实例前有安全校验（只杀本应用）', () => 
   assert.match(ps, /WARN/, '非本应用进程要打印告警而不是杀掉');
 });
 
-test('launch.ps1 保留原有能力（快捷方式 / Open-with / 浏览器）', () => {
+test('launch.ps1 保留原有能力（快捷方式 / 关联子命令 / 浏览器）', () => {
   const ps = makeLaunchPs1({ port: 22222 });
   assert.match(ps, /Void\.lnk/);
-  assert.match(ps, /OpenWithProgids/);
+  assert.match(ps, /Set-VoidAssoc/);
   assert.match(ps, /\?open=/);
   assert.match(ps, /22222/, '默认端口写入脚本');
 });
@@ -38,7 +38,17 @@ test('launch.ps1 已在运行时只开浏览器并立即退出（不建快捷方
   const seg = ps.slice(early, early + 400);
   assert.match(seg, /exit 0/);
   assert.ok(early < ps.indexOf('Void.lnk'), '早退应出现在快捷方式之前');
-  assert.ok(early < ps.indexOf('OpenWithProgids'), '早退应出现在关联提示之前');
+  assert.ok(early < ps.indexOf('file-assoc.json'), '早退应出现在启动自查之前');
+});
+
+test('launch.ps1 含 -Assoc 子命令与启动自查，且不再有 WScript 首启弹窗', () => {
+  const ps = makeLaunchPs1({ port: 22222 });
+  assert.match(ps, /\[string\]\$Assoc = ''/);
+  assert.match(ps, /function Set-VoidAssoc/);
+  assert.match(ps, /if \(\$Assoc\) \{ Set-VoidAssoc \$Assoc; exit 0 \}/);
+  assert.match(ps, /data\\file-assoc\.json/);
+  assert.ok(!ps.includes('assoc-prompted'), '移除了旧的首启 WScript 关联弹窗');
+  assert.match(ps, /DeleteSubKeyTree/, '删 UserChoice 才能成为默认程序');
 });
 
 test('launch.sh 含 desired 优先、nc 存活探测与 --plan 钩子', () => {
