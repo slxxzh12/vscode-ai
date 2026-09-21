@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { isMarkdownFile, renderMarkdown, renderRemoteMarkdown, printMarkdown } from './markdown';
+import { isMarkdownFile, renderMarkdown, renderRemoteMarkdown, printMarkdown, collectAssetRefs } from './markdown';
 
 const P = { projectId: 'p', fileDir: '' };
 
@@ -71,6 +71,35 @@ describe('renderMarkdown', () => {
   it('非法百分号转义不崩（safeDecode 回退原串）', () => {
     const h = renderMarkdown('![x](bad%zz.png)', { projectId: 'p', fileDir: 'docs' });
     expect(h).toContain('/api/raw?project=p');
+  });
+
+  it('assetMap 命中相对图片/链接时替换为给定 URL', () => {
+    const map = new Map([['assets/logo.png', 'blob:abc'], ['docs/other.md', 'blob:def']]);
+    const h = renderMarkdown('![logo](../assets/logo.png)\n\n[doc](./other.md)', { projectId: '', fileDir: 'docs', assetMap: map });
+    expect(h).toContain('src="blob:abc"');
+    expect(h).toContain('href="blob:def"');
+    expect(h).not.toContain('/api/raw');
+  });
+
+  it('无 projectId 且未命中 assetMap 时保持原始相对路径', () => {
+    const h = renderMarkdown('![x](imgs/a.png)', { projectId: '', fileDir: 'docs' });
+    expect(h).toContain('src="imgs/a.png"');
+    expect(h).not.toContain('/api/raw');
+  });
+});
+
+describe('collectAssetRefs', () => {
+  it('抽取相对 image/link、去重、过滤外链/锚点/绝对 URL', () => {
+    const refs = collectAssetRefs(
+      '![a](./x.png)\n![b](./x.png)\n[c](../y.md)\n[d](https://e.com/z.png)\n[e](#sec)',
+      'docs',
+    );
+    expect(refs.map((r) => r.rel).sort()).toEqual(['docs/x.png', 'y.md']);
+  });
+
+  it('保留 query/hash 后缀', () => {
+    const refs = collectAssetRefs('![a](./x.png?v=1#f)', 'docs');
+    expect(refs).toEqual([{ rel: 'docs/x.png', suffix: '?v=1#f' }]);
   });
 });
 

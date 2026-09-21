@@ -5,6 +5,7 @@ import { t } from './i18n';
 export interface MarkdownOptions {
   projectId: string;
   fileDir: string;
+  assetMap?: Map<string, string>;
 }
 
 function escHtml(s: string): string {
@@ -72,14 +73,25 @@ function rewriteTokenAttrs(tokens: unknown[], opt: MarkdownOptions): void {
     if (t.type === 'image') {
       const src = t.attrGet('src') || '';
       const r = resolveTarget(src, opt.fileDir);
-      if (r) t.attrSet('src', buildRaw(opt.projectId, r.rel, r.suffix));
+      if (r) {
+        const mapped = opt.assetMap?.get(r.rel);
+        if (mapped) t.attrSet('src', mapped);
+        else if (opt.projectId) t.attrSet('src', buildRaw(opt.projectId, r.rel, r.suffix));
+      }
     } else if (t.type === 'link_open') {
       const href = t.attrGet('href') || '';
       const r = resolveTarget(href, opt.fileDir);
       if (r) {
-        t.attrSet('href', buildRaw(opt.projectId, r.rel, r.suffix));
-        t.attrSet('target', '_blank');
-        t.attrSet('rel', 'noopener');
+        const mapped = opt.assetMap?.get(r.rel);
+        if (mapped) {
+          t.attrSet('href', mapped);
+          t.attrSet('target', '_blank');
+          t.attrSet('rel', 'noopener');
+        } else if (opt.projectId) {
+          t.attrSet('href', buildRaw(opt.projectId, r.rel, r.suffix));
+          t.attrSet('target', '_blank');
+          t.attrSet('rel', 'noopener');
+        }
       }
     }
   }
@@ -89,6 +101,22 @@ md.core.ruler.push('rewrite-assets', (state) => {
   const opt = (state.env && (state.env as { opt?: MarkdownOptions }).opt) || undefined;
   if (opt) rewriteTokenAttrs(state.tokens, opt);
 });
+
+// 抽取 markdown 里的相对资源引用（图片/链接），供本地来源预解析成 blob URL。
+export function collectAssetRefs(mdText: string, fileDir: string): { rel: string; suffix: string }[] {
+  const found = new Map<string, { rel: string; suffix: string }>();
+  const walk = (tokens: unknown[]): void => {
+    for (const tok of tokens as Array<{ type: string; children?: unknown[]; attrGet(n: string): string | null }>) {
+      if (tok.type === 'inline' && tok.children) { walk(tok.children); continue; }
+      if (tok.type !== 'image' && tok.type !== 'link_open') continue;
+      const raw = (tok.type === 'image' ? tok.attrGet('src') : tok.attrGet('href')) || '';
+      const r = resolveTarget(raw, fileDir);
+      if (r) found.set(r.rel, r);
+    }
+  };
+  walk(md.parse(mdText, {}));
+  return [...found.values()];
+}
 
 export function renderMarkdown(mdText: string, opt: MarkdownOptions): string {
   return md.render(mdText, { opt });
