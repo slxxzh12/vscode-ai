@@ -1,12 +1,14 @@
 import { useProjects } from '../useProjects';
 import { copyText } from '../clipboard';
-import type { TreeSource } from './treeSource';
+import { searchProject } from '../search/projectSearch';
+import type { TreeSource, SearchResult, SearchHit } from './treeSource';
 
 // 项目文件树数据源：包装 useProjects，供统一 TreeView 使用。
 export function projectTreeSource(opts: {
   projectId: string;
   onOpenFile: (projectId: string, path: string, name: string) => void;
   onDetailFile: (projectId: string, path: string, name: string) => void;
+  onOpenFileAt?: (projectId: string, path: string, name: string, line?: number) => void;
 }): TreeSource {
   const api = useProjects();
   const pid = opts.projectId;
@@ -39,6 +41,14 @@ export function projectTreeSource(opts: {
     async copyContent(node) {
       const f = await api.text(pid, node.key);
       await copyText(f.content);
+    },
+    async search(query: string, o: { caseSensitive: boolean }): Promise<SearchResult> {
+      if (!pid) return { nameHits: [], contentHits: [], truncated: false, scanned: 0 };
+      return searchProject(pid, query, o);
+    },
+    openHit(hit: SearchHit) {
+      if (opts.onOpenFileAt) opts.onOpenFileAt(pid, hit.path, hit.name, hit.line);
+      else opts.onOpenFile(pid, hit.path, hit.name);
     },
   };
 }
