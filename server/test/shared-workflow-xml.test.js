@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseWorkflowsXml, serializeWorkflowsFragment, serializeWorkflow, escXml, decode } from '@devflow/shared/workflow-xml';
+import { parseWorkflowsXml, serializeWorkflowsFragment, serializeWorkflow, sortWorkflows, escXml, decode } from '@devflow/shared/workflow-xml';
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -58,4 +58,34 @@ test('shared: escXml/decode 互逆', () => {
 test('shared: serializeWorkflow 是 fragment 的子串', () => {
   const one = serializeWorkflow(sample[0]);
   assert.ok(serializeWorkflowsFragment([sample[0]]).includes(one));
+});
+
+test('shared: priority 解析与序列化（缺省不出现）', () => {
+  const withP = '<workflows><workflow id="a" label="A" priority="7"><stage id="s" label="S"><prompt>p</prompt></stage></workflow></workflows>';
+  const wfs = parseWorkflowsXml(withP);
+  assert.equal(wfs[0].priority, 7);
+  assert.ok(serializeWorkflow(wfs[0]).includes('priority="7"'));
+
+  const noP = '<workflows><workflow id="b" label="B"><stage id="s" label="S"><prompt>p</prompt></stage></workflow></workflows>';
+  const plain = parseWorkflowsXml(noP)[0];
+  assert.equal('priority' in plain, false);
+  assert.ok(!serializeWorkflow(plain).includes('priority='));
+});
+
+test('shared: priority 非法值归 0 且不输出', () => {
+  const xml = '<workflows><workflow id="a" label="A" priority="abc"><stage id="s" label="S"><prompt>p</prompt></stage></workflow></workflows>';
+  const wf = parseWorkflowsXml(xml)[0];
+  assert.equal(wf.priority, 0);
+  assert.ok(!serializeWorkflow(wf).includes('priority='));
+});
+
+test('shared: sortWorkflows 按 priority 降序、label 升序、id 升序', () => {
+  const list = [
+    { id: 'b', label: 'B', stages: [] },
+    { id: 'a', label: 'A', stages: [] },
+    { id: 'c', label: 'A', stages: [], priority: 5 },
+    { id: 'd', label: 'C', stages: [], priority: 5 },
+  ];
+  assert.deepEqual(sortWorkflows(list).map((w) => w.id), ['c', 'd', 'a', 'b']);
+  assert.deepEqual(list.map((w) => w.id), ['b', 'a', 'c', 'd']);
 });

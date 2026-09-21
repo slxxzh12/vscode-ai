@@ -29,6 +29,11 @@ export function parseWorkflowsXml(xml) {
       label: attr(wm[1], 'label') || attr(wm[1], 'id'),
       stages: [],
     };
+    const prioRaw = attr(wm[1], 'priority');
+    if (prioRaw !== '') {
+      const n = Number(prioRaw);
+      wf.priority = Number.isFinite(n) ? n : 0;
+    }
     const stRe = /<stage\b([^>]*)>([\s\S]*?)<\/stage>/g;
     let sm;
     while ((sm = stRe.exec(wm[2]))) {
@@ -49,12 +54,29 @@ export function parseWorkflowsXml(xml) {
 }
 
 export function serializeWorkflow(w) {
+  const prio = Number.isFinite(Number(w.priority)) ? Number(w.priority) : 0;
+  const pAttr = prio ? ` priority="${prio}"` : '';
   const stages = (w.stages || []).map((s) => {
     const group = s.group ? ` group="${escXml(s.group)}"` : '';
     const prompts = (s.prompts || []).map((p) => `      <prompt>${escXml(p)}</prompt>`).join('\n');
     return `    <stage id="${escXml(s.id)}" label="${escXml(s.label)}"${group}>\n${prompts}\n    </stage>`;
   }).join('\n');
-  return `  <workflow id="${escXml(w.id)}" label="${escXml(w.label)}">\n${stages}\n  </workflow>`;
+  return `  <workflow id="${escXml(w.id)}" label="${escXml(w.label)}"${pAttr}>\n${stages}\n  </workflow>`;
+}
+
+// 按 priority 降序 → label 升序 → id 升序；缺失 priority 视为 0。
+export function sortWorkflows(list) {
+  const arr = Array.isArray(list) ? list.slice() : [];
+  const prio = (w) => (Number.isFinite(Number(w && w.priority)) ? Number(w.priority) : 0);
+  return arr.sort((a, b) => {
+    const d = prio(b) - prio(a);
+    if (d) return d;
+    const la = String((a && (a.label || a.id)) || '');
+    const lb = String((b && (b.label || b.id)) || '');
+    const c = la.localeCompare(lb);
+    if (c) return c;
+    return String((a && a.id) || '').localeCompare(String((b && b.id) || ''));
+  });
 }
 
 export function serializeWorkflowsFragment(workflows) {
