@@ -3,7 +3,8 @@ import { onMounted, onBeforeUnmount, ref, watch, computed, nextTick } from 'vue'
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { FitAddon } from '@xterm/addon-fit';
-import { S2C } from '@devflow/shared';
+import { C2S, S2C } from '@devflow/shared';
+import { promptStepId } from '@devflow/shared/workflow-group';
 import type { useTerminal } from '../useTerminal';
 import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
@@ -713,6 +714,57 @@ const chips = computed<Chip[]>(() => {
 });
 const stageChips = computed(() => chips.value.filter((c) => !c.append));   // 工作流阶段提示（左侧，可被挤/滚动）
 const extraChips = computed(() => chips.value.filter((c) => c.append));    // 固定附加项 1/2/3/4/5（右侧，固定位置）
+// —— 分组自动执行：run 状态与回退 ——
+interface WfRunStep { id: string; stageId: string; status: string; }
+interface WfRunSnap { runId: string; workflowId: string; groupName: string; status: string; currentIndex: number; steps: WfRunStep[]; }
+const wfRun = ref<WfRunSnap | null>(null);
+const wfAnchor = ref<string>('');
+const wfStepStatus = computed(() => {
+  const m = new Map<string, string>();
+  for (const s of wfRun.value?.steps || []) m.set(s.id, s.status);
+  return m;
+});
+const wfUnsubs: Array<() => void> = [
+  props.terminal.on(S2C.WF_STARTED, (m: any) => { wfRun.value = m.run; }),
+  props.terminal.on(S2C.WF_STATUS, (m: any) => { wfRun.value = m.run; }),
+  props.terminal.on(S2C.WF_FINISHED, () => { wfRun.value = null; wfAnchor.value = ''; }),
+];
+function groupRunning(anchor: string): boolean { return wfAnchor.value === anchor && wfRun.value?.status === 'running'; }
+function startGroupRun(anchor: string) {
+  const sid = props.terminal.state.activeSessionId;
+  if (!sid || !activeIsAgent.value) return;
+  wfRun.value = null;
+  wfAnchor.value = anchor;
+  props.terminal.send(C2S.WF_RUN, { workflowId: wfKind.value, groupAnchor: anchor, sessionId: sid });
+}
+function stopGroupRun() {
+  if (wfRun.value) props.terminal.send(C2S.WF_ABORT, { runId: wfRun.value.runId });
+  wfRun.value = null;
+  wfAnchor.value = '';
+}
+function rollbackStep(stepId: string) {
+  if (stepId && wfRun.value) props.terminal.send(C2S.WF_ROLLBACK, { runId: wfRun.value.runId, stepId });
+}
+function activeStageDef() { return curWf.value.stages.find((s) => s.id === activeStage.value) || curWf.value.stages[0] || null; }
+function chipStepId(c: Chip): string {
+  const st = activeStageDef();
+  if (!st) return '';
+  const idx = (st.prompts || []).findIndex((p) => String(p).trim() === c.text);
+  return idx >= 0 ? promptStepId(st.id, idx) : '';
+}
+function chipStatus(c: Chip): string { const id = chipStepId(c); return id ? (wfStepStatus.value.get(id) || '') : ''; }
+function chipRetryable(c: Chip): boolean { const s = chipStatus(c); return s === 'error' || s === 'done'; }
+function stageStatus(s: StageDef): string {
+  const list = (s.prompts || []).map((_, i) => wfStepStatus.value.get(promptStepId(s.id, i)) || '');
+  if (!list.length) return '';
+  if (list.includes('running')) return 'running';
+  if (list.includes('error')) return 'error';
+  if (list.every((x) => x === 'done')) return 'done';
+  return '';
+}
+function stageIcon(st: string): string { return st === 'running' ? '▶' : st === 'done' ? '✓' : st === 'error' ? '✕' : ''; }
+watch(() => props.terminal.state.activeSessionId, () => { wfRun.value = null; wfAnchor.value = ''; });
+
 // 替换型 chip 整段填入输入框；追加型 chip（编号）点击即直接发送
 function onChipClick(c: Chip) {
   if (!c.append) {
@@ -1047,6 +1099,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('df-remote-screen', onRemoteScreen);
   if (autoCompactTimer) { clearTimeout(autoCompactTimer); autoCompactTimer = null; }
   if (copySelTimer) { clearTimeout(copySelTimer); copySelTimer = null; }
+  for (const u of wfUnsubs) u();
   unsubList?.();
   unsubCfg?.();
   if (renameHintTimer) { clearTimeout(renameHintTimer); renameHintTimer = null; }
@@ -1211,9 +1264,16 @@ onBeforeUnmount(() => {
         <div v-if="activeIsAgent" class="flowbar">
           <template v-for="(g, gi) in stageGroups" :key="gi">
             <div class="fgroup">
+              <button
+                class="gplay"
+                :class="{ stop: groupRunning(g.stages[0].id) }"
+                :title="groupRunning(g.stages[0].id) ? $t('wf.group.stop') : $t('wf.group.run')"
+                @mousedown.stop
+                @click.stop="groupRunning(g.stages[0].id) ? stopGroupRun() : startGroupRun(g.stages[0].id)"
+              >{{ groupRunning(g.stages[0].id) ? '■' : '▶' }}</button>
               <span v-if="g.name" class="fglabel">{{ g.name }}</span>
               <template v-for="(s, i) in g.stages" :key="s.id">
-                <button class="stage" :class="{ on: activeStage === s.id }" @click="pickStage(s)">{{ s.label }}</button>
+                <button class="stage" :class="{ on: activeStage === s.id }" @click="pickStage(s)">{{ s.label }}<span v-if="stageStatus(s)" class="stic" :class="stageStatus(s)">{{ stageIcon(stageStatus(s)) }}</span></button>
                 <span v-if="i < g.stages.length - 1" class="flowline" />
               </template>
             </div>
@@ -1223,14 +1283,15 @@ onBeforeUnmount(() => {
         <div v-if="activeIsAgent && chips.length" class="chipbar" :title="$t('term.phase_hints')">
           <span class="chips-label">{{ $t('term.common') }}</span>
           <div class="chipstage">
-            <button
-              v-for="(c, i) in stageChips"
-              :key="i"
-              class="chip"
-              :class="{ on: composerText === c.text }"
-              :title="c.text"
-              @click="onChipClick(c)"
-            ><span class="cdot" />{{ chipText(c.text) }}</button>
+            <span v-for="(c, i) in stageChips" :key="i" class="chipwrap">
+              <button
+                class="chip"
+                :class="[{ on: composerText === c.text }, chipStatus(c)]"
+                :title="c.text"
+                @click="onChipClick(c)"
+              ><span class="cdot" />{{ chipText(c.text) }}<span v-if="stageIcon(chipStatus(c))" class="stic">{{ stageIcon(chipStatus(c)) }}</span></button>
+              <button v-if="chipRetryable(c)" class="rback" :title="$t('wf.step.rollback')" @mousedown.stop @click.stop="rollbackStep(chipStepId(c))">↺</button>
+            </span>
           </div>
           <div class="chipextra">
             <button
@@ -1466,4 +1527,13 @@ onBeforeUnmount(() => {
 .copyfloat:disabled { opacity: .4; cursor: default; pointer-events: none; }
 .file-layer { flex: 1; min-height: 0; overflow: hidden; }
 .phone-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px; text-align: center; color: var(--tx4); font-size: 13px; background: var(--bg3); z-index: 2; }
+.fgroup .gplay { background: var(--bg4); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 0 5px; cursor: pointer; font-size: 10px; line-height: 16px; }
+.fgroup .gplay.stop { color: var(--err); border-color: var(--err); }
+.stic { margin-left: 3px; font-size: 10px; }
+.stic.done { color: var(--ok); }
+.stic.error { color: var(--err); }
+.chipwrap { display: inline-flex; align-items: center; gap: 2px; }
+.chip.done { color: var(--ok); }
+.chip.error { color: var(--err); }
+.rback { background: none; border: none; color: var(--warn2); cursor: pointer; font-size: 11px; padding: 0 2px; }
 </style>
