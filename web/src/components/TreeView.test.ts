@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
+import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
 import TreeView from './TreeView.vue';
 import type { TreeSource, TreeSourceNode } from '../tree/treeSource';
@@ -65,5 +66,18 @@ describe('TreeView', () => {
     await w.find('.fthead .ftic').trigger('click');
     await flushPromises();
     expect(w.findAll('.ftrow').length).toBe(2);
+  });
+
+  it('source.search 存在时显示搜索按钮，缺失时不显示', async () => {
+    const withSearch = mountC(TreeView, {
+      props: { source: fakeSource({ search: vi.fn() }), title: 'X' },
+      global: { plugins: [ElementPlus], stubs: { teleport: true } },
+    });
+    await flushPromises();
+    expect(withSearch.find('.ftsearch').exists()).toBe(true);
+
+    const without = mountC(TreeView, { props: { source: fakeSource(), title: 'X' } });
+    await flushPromises();
+    expect(without.find('.ftsearch').exists()).toBe(false);
   });
 });

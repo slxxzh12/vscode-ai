@@ -5,6 +5,7 @@ import { copyText } from '../clipboard';
 import { flattenVisible, type TreeRow, type TreeRowNode } from '../tree/treeRows';
 import { fileIcon } from '../tree/fileIcon';
 import type { TreeSource, TreeSourceNode } from '../tree/treeSource';
+import FileSearchDialog from './FileSearchDialog.vue';
 
 type Internal = TreeRowNode;
 
@@ -26,6 +27,7 @@ const emit = defineEmits<{ (e: 'update:activeFolder', key: string): void }>();
 
 const nodes = ref<Internal[]>([]);
 const collapsed = ref<Set<string>>(readCollapsed());
+const searchOpen = ref(false);
 
 function readCollapsed(): Set<string> {
   if (!props.storageKey) return new Set();
@@ -223,6 +225,7 @@ defineExpose({ refresh });
         <button class="ftic" :title="$t('tree.refresh')" @click="refresh">⟳</button>
         <button v-if="source.createFile" class="ftic" :title="$t('tree.new_file')" @click.stop="promptCreate('file')">📄＋</button>
         <button v-if="source.createFolder" class="ftic" :title="$t('tree.new_dir')" @click.stop="promptCreate('folder')">📁＋</button>
+        <button v-if="source.search" class="ftic ftsearch" :title="$t('search.title')" @click.stop="searchOpen = true">🔍</button>
       </div>
     </div>
 
@@ -263,6 +266,8 @@ defineExpose({ refresh });
     <div v-if="menu" class="ftmenu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }" @click.stop>
       <button v-for="it in menuItems" :key="it.key" class="ftmenuitem" :class="it.cls" @click="runMenuItem(it)">{{ it.label }}</button>
     </div>
+
+    <FileSearchDialog v-if="searchOpen" :source="source" @close="searchOpen = false" />
   </div>
 </template>
 
