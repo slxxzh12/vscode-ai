@@ -16,6 +16,8 @@ import { useVersion } from '../useVersion';
 import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from './portRestart';
 import { buildChips, appendText, type Chip } from '../phaseChips';
 import WorkflowEditor from './WorkflowEditor.vue';
+import { usePromptCollect } from '../prompts/usePromptCollect';
+import PromptCollectAddon from '../prompts/PromptCollectAddon.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
 import { captureToPngDataUrl } from '../snapshot';
 import { pickRestoredAgent, restoredAgentIds } from '../sessionRestore';
@@ -272,6 +274,7 @@ async function loadAgents() {
 const currentAgent = computed(() => agents.value.find((a) => a.id === agentId.value) || agents.value[0] || { id: '', name: '-', cmd: 'opencode' });
 const agentCmd = computed(() => currentAgent.value.cmd || 'opencode');
 const wfKind = ref<string>('dev');
+const promptCollect = usePromptCollect();
 const PROMPT_AUTOSEND_KEY = 'devflow-prompt-autosend';
 const promptAutoSend = ref<boolean>((() => { try { return localStorage.getItem(PROMPT_AUTOSEND_KEY) !== '0'; } catch { return true; } })());
 watch(promptAutoSend, (v) => { try { localStorage.setItem(PROMPT_AUTOSEND_KEY, v ? '1' : '0'); } catch { /* ignore */ } });
@@ -707,6 +710,8 @@ const stageGroups = computed(() => {
   return out;
 });
 const activeStage = ref('');
+// 把当前工作流/高亮阶段上报给提示词收藏（供历史面板与 chips 的「+」快速追加）
+watch([wfKind, activeStage], () => { promptCollect.setCurrent(wfKind.value, activeStage.value); }, { immediate: true });
 const chips = computed<Chip[]>(() => {
   const st = curWf.value.stages.find((s) => s.id === activeStage.value) || curWf.value.stages[0];
   // 阶段提示（替换型）+ 固定附加项 1/2/3/4/5（追加型），见 phaseChips.ts
@@ -1291,6 +1296,7 @@ onBeforeUnmount(() => {
                 @click="onChipClick(c)"
               ><span class="cdot" />{{ chipText(c.text) }}<span v-if="stageIcon(chipStatus(c))" class="stic">{{ stageIcon(chipStatus(c)) }}</span></button>
               <button v-if="chipRetryable(c)" class="rback" :title="$t('wf.step.rollback')" @mousedown.stop @click.stop="rollbackStep(chipStepId(c))">↺</button>
+              <PromptCollectAddon :text="c.text" />
             </span>
           </div>
           <div class="chipextra">
