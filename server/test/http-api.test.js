@@ -122,6 +122,39 @@ test('/api/tree 未知项目返回 404', async (t) => {
   assert.equal(r.status, 404);
 });
 
+test('/api/search 正常返回名字与内容命中', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'target.md'), '# target\n');
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'const target = 1;\n');
+  fs.mkdirSync(path.join(dir, 'node_modules'));
+  fs.writeFileSync(path.join(dir, 'node_modules', 'x.js'), 'target\n');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/search?project=a&q=target');
+  assert.equal(r.status, 200);
+  const body = JSON.parse(r.body);
+  assert.deepEqual(body.nameHits, [{ path: 'target.md', name: 'target.md' }]);
+  assert.deepEqual(
+    body.contentHits.map((h) => [h.path, h.line]).sort(),
+    [['src/a.js', 1], ['target.md', 1]],
+  );
+});
+
+test('/api/search q 为空返回 400', async (t) => {
+  const dir = tmpDir();
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  assert.equal((await request(server, '/api/search?project=a&q=')).status, 400);
+});
+
+test('/api/search 未知项目返回 404', async (t) => {
+  const dir = tmpDir();
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  assert.equal((await request(server, '/api/search?project=nope&q=x')).status, 404);
+});
+
 test('非 /api 路由返回 404 json', async (t) => {
   const dir = tmpDir();
   const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));

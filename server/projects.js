@@ -129,6 +129,11 @@ export class Projects {
       s.on('end', () => resolve({ md5: md5.digest('hex'), sha256: sha.digest('hex') }));
     });
   }
+  // 项目根解析路径（供目录搜索用）
+  rootOf(projectId) {
+    const proj = this._project(projectId);
+    return this._realOrResolved(proj.root);
+  }
   readText(projectId, rel, maxBytes = 1024 * 1024) {
     const file = this._filePath(projectId, rel);
     const st = fs.statSync(file);

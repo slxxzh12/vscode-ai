@@ -14,6 +14,7 @@ import { pickFolder, pickAnyFile } from './native-dialog.js';
 import { revealInOs } from './reveal.js';
 import { runScript, RUNNABLE_EXT } from './run-script.js';
 import { runCurl } from './curl-run.js';
+import { searchProject } from './project-search.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
 
@@ -174,6 +175,16 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const rel = url.searchParams.get('path') || '';
         const items = projects.tree(project, rel);
         sendJson(res, 200, { items });
+        return;
+      }
+      if (url.pathname === '/api/search' && req.method === 'GET') {
+        const project = url.searchParams.get('project');
+        const q = (url.searchParams.get('q') || '').trim();
+        if (!q) { sendJson(res, 400, { error: 'q required' }); return; }
+        const cs = url.searchParams.get('case');
+        const caseSensitive = cs === '1' || cs === 'true';
+        const root = projects.rootOf(project);
+        sendJson(res, 200, searchProject(root, { query: q, caseSensitive }));
         return;
       }
       if (url.pathname === '/api/run-script' && req.method === 'POST') {

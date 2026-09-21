@@ -120,6 +120,13 @@ test('resolveAbsolute 不存在/目录抛错', () => {
   assert.throws(() => p.resolveAbsolute(dir), (e) => e.code === 'not-file');
 });
 
+test('rootOf 返回项目根解析路径，未知项目抛 not-found', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.equal(p.rootOf('p0'), fs.realpathSync(dir));
+  assert.throws(() => p.rootOf('nope'), (e) => e.code === 'not-found');
+});
+
 test('addTempProject 不写 XML（projects 数组含 temp 标记）', () => {
   const dir = tmpDir();
   const p = makeProjects([dir]);
