@@ -14,7 +14,7 @@ function shellTask(over = {}) {
 test('validateTask 校验各字段', () => {
   assert.ok(validateTask(shellTask()).ok);
   assert.equal(validateTask({}).error, 'name required');
-  assert.equal(validateTask(shellTask({ type: 'x' })).error, 'type must be shell|ai|script');
+  assert.equal(validateTask(shellTask({ type: 'x' })).error, 'type must be shell|ai|script|workflow');
   assert.equal(validateTask(shellTask({ type: 'ai', ai: { source: 'command' } })).error, 'ai.commandName required');
   assert.equal(validateTask(shellTask({ schedule: { mode: 'daily', daily: { at: 'x' } } })).error, 'daily.at must be HH:MM');
   assert.equal(validateTask(shellTask({ schedule: { mode: 'interval', interval: { every: 0, unit: 'minute' } } })).error, 'interval.every must be > 0');
@@ -151,4 +151,21 @@ test('syncManifest 写入 runtime（nextRunAt / lastRun）', () => {
   const m = JSON.parse(fs.readFileSync(path.join(cwd, 'void_manifest.json'), 'utf8'));
   assert.equal(m.runtime.nextRunAt, 555);
   assert.equal(m.runtime.lastRun.status, 'success');
+});
+
+test('validateTask 支持 workflow 类型', () => {
+  const base = { name: 'w', type: 'workflow', schedule: { mode: 'interval', interval: { every: 1, unit: 'day' } } };
+  assert.equal(validateTask(base).error, 'workflowId required');
+  assert.equal(validateTask({ ...base, workflow: { workflowId: 'dev' } }).error, 'agentId required');
+  assert.ok(validateTask({ ...base, workflow: { workflowId: 'dev', agentId: 'opencode' } }).ok);
+});
+
+test('createTask 保存 workflow 字段并可重新加载', () => {
+  const dir = tmpDir();
+  const store = new SchedulerStore({ dir });
+  const { task } = store.createTask({ name: 'wf', type: 'workflow', workflow: { workflowId: 'dev', agentId: 'opencode' },
+    schedule: { mode: 'interval', interval: { every: 1, unit: 'day' } } });
+  assert.deepEqual(task.workflow, { workflowId: 'dev', agentId: 'opencode' });
+  assert.equal(task.command, undefined);
+  assert.equal(new SchedulerStore({ dir }).getTask(task.id).workflow.workflowId, 'dev');
 });

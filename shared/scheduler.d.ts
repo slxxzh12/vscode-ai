@@ -10,17 +10,18 @@ export interface SchedulerTask {
   enabled: boolean;
   projectId: string | null;
   cwd: string | null;
-  type: 'shell' | 'ai' | 'script';
+  type: 'shell' | 'ai' | 'script' | 'workflow';
   filePath?: string | null;
   command?: string;
   ai?: { source: 'command' | 'prompt' | 'file'; commandName?: string; prompt?: string };
   script?: { path: string };
+  workflow?: { workflowId: string; agentId: string };
   schedule: Schedule;
   createdAt: number;
   updatedAt: number;
 }
 
-export type RunStatus = 'running' | 'success' | 'failed' | 'timeout' | 'killed';
+export type RunStatus = 'running' | 'success' | 'failed' | 'timeout' | 'killed' | 'paused';
 
 export interface SchedulerRun {
   id: string;
@@ -33,6 +34,7 @@ export interface SchedulerRun {
   durationMs: number | null;
   logFile: string;
   error: string | null;
+  sessionId?: string | null;
 }
 
 export const SchedulerS2C: Readonly<{

@@ -97,3 +97,17 @@ test('writeManifest / removeManifest', () => {
   removeManifest(dir);
   assert.equal(fs.existsSync(file), false);
 });
+
+test('manifest 往返保留 workflow 字段', () => {
+  const dir = tmpDir();
+  const task = {
+    id: 't4', name: 'wf', enabled: true, type: 'workflow', cwd: dir,
+    workflow: { workflowId: 'dev', agentId: 'opencode' },
+    schedule: { mode: 'interval', interval: { every: 1, unit: 'day' } },
+  };
+  const m = toManifest(task, dir);
+  assert.deepEqual(m.workflow, { workflowId: 'dev', agentId: 'opencode' });
+  const back = fromManifest(m, dir);
+  assert.deepEqual(back.workflow, { workflowId: 'dev', agentId: 'opencode' });
+  assert.equal(back.type, 'workflow');
+});

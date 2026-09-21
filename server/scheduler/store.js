@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { manifestDirOf, writeManifest, removeManifest, scanManifests, fromManifest, isDir } from './manifest.js';
 
-const TYPES = new Set(['shell', 'ai', 'script']);
+const TYPES = new Set(['shell', 'ai', 'script', 'workflow']);
 const UNITS = new Set(['second', 'minute', 'hour', 'day']);
 const WEEKDAYS = new Set([1, 2, 3, 4, 5, 6, 7]);
 const DEFAULT_RUN_LIMIT = 500;
@@ -27,7 +27,7 @@ function toAbs(p, cwd) {
 export function validateTask(input) {
   const t = input || {};
   if (!t.name || typeof t.name !== 'string') return { error: 'name required' };
-  if (!TYPES.has(t.type)) return { error: 'type must be shell|ai|script' };
+  if (!TYPES.has(t.type)) return { error: 'type must be shell|ai|script|workflow' };
   if (t.type === 'shell' && typeof t.command !== 'string') return { error: 'command required' };
   if (t.type === 'ai') {
     const ai = t.ai || {};
@@ -39,6 +39,11 @@ export function validateTask(input) {
   if (t.type === 'script') {
     const s = t.script || {};
     if (!s.path || typeof s.path !== 'string') return { error: 'script.path required' };
+  }
+  if (t.type === 'workflow') {
+    const w = t.workflow || {};
+    if (!w.workflowId) return { error: 'workflowId required' };
+    if (!w.agentId) return { error: 'agentId required' };
   }
   const sc = t.schedule || {};
   if (sc.mode !== 'interval' && sc.mode !== 'daily') return { error: 'schedule.mode must be interval|daily' };
@@ -96,6 +101,7 @@ export class SchedulerStore {
       command: input.type === 'shell' ? input.command : undefined,
       ai: input.type === 'ai' ? { ...input.ai } : undefined,
       script: input.type === 'script' ? { ...input.script, path: toAbs(input.script.path, input.cwd) } : undefined,
+      workflow: input.type === 'workflow' ? { workflowId: String(input.workflow.workflowId), agentId: String(input.workflow.agentId) } : undefined,
       schedule: { ...input.schedule },
       createdAt: base.createdAt || now,
       updatedAt: now,
