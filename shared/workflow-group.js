@@ -36,3 +36,23 @@ export function expandGroupSteps(stages, anchorStageId) {
   }
   return { group: band.group, steps };
 }
+
+// 整条工作流：把全部 stage 的 prompts 拍平成线性步骤（定时运行用）
+export function expandAllSteps(stages) {
+  const list = Array.isArray(stages) ? stages : [];
+  const steps = [];
+  for (const st of list) {
+    const prompts = Array.isArray(st.prompts) ? st.prompts : [];
+    prompts.forEach((text, idx) => {
+      steps.push({
+        id: promptStepId(st.id, idx),
+        stageId: st.id,
+        index: steps.length,
+        text: String(text),
+        type: st.type === 'cmd' ? 'cmd' : 'prompt',
+        advance: st.advance === 'manual' ? 'manual' : 'auto',
+      });
+    });
+  }
+  return steps;
+}

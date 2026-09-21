@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { promptStepId, expandGroupSteps, groupAnchorStages } from '@devflow/shared/workflow-group';
+import { promptStepId, expandGroupSteps, groupAnchorStages, expandAllSteps } from '@devflow/shared/workflow-group';
 
 const STAGES = [
   { id: 'a', label: 'A', group: 'G1', prompts: ['p-a0', 'p-a1'] },
@@ -40,4 +40,25 @@ test('stage type=cmd 时步骤类型为 cmd', () => {
   const stages = [{ id: 'x', label: 'X', group: 'G', type: 'cmd', prompts: ['npm test'] }];
   const out = expandGroupSteps(stages, 'x');
   assert.equal(out.steps[0].type, 'cmd');
+});
+
+test('expandAllSteps 展开全部 stage 的 prompts（跨分组、顺序、带 type/advance）', () => {
+  const stages = [
+    { id: 'a', label: 'A', group: 'G1', prompts: ['p-a0', 'p-a1'] },
+    { id: 'b', label: 'B', group: 'G1', prompts: ['p-b0'] },
+    { id: 'c', label: 'C', group: 'G2', type: 'cmd', prompts: ['npm test'] },
+    { id: 'd', label: 'D', group: '', advance: 'manual', prompts: ['p-d0'] },
+  ];
+  const steps = expandAllSteps(stages);
+  assert.deepEqual(steps.map((s) => s.id), ['a#0', 'a#1', 'b#0', 'c#0', 'd#0']);
+  assert.deepEqual(steps.map((s) => s.index), [0, 1, 2, 3, 4]);
+  assert.deepEqual(steps.map((s) => s.type), ['prompt', 'prompt', 'prompt', 'cmd', 'prompt']);
+  assert.deepEqual(steps.map((s) => s.advance), ['auto', 'auto', 'auto', 'auto', 'manual']);
+  assert.equal(steps[2].text, 'p-b0');
+  assert.equal(steps[4].stageId, 'd');
+});
+
+test('expandAllSteps 空/缺省返回空数组', () => {
+  assert.deepEqual(expandAllSteps([]), []);
+  assert.deepEqual(expandAllSteps(undefined), []);
 });
