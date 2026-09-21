@@ -8,6 +8,16 @@ export interface TreeSourceNode {
   status?: 'pass' | 'fail';          // 可选状态点（postman 运行结果）
 }
 
+export interface SearchNameHit { path: string; name: string; }
+export interface SearchContentHit { path: string; name: string; line: number; text: string; }
+export interface SearchResult {
+  nameHits: SearchNameHit[];
+  contentHits: SearchContentHit[];
+  truncated: boolean;
+  scanned: number;
+}
+export interface SearchHit { path: string; name: string; line?: number; }
+
 export interface TreeSource {
   loadChildren(dirKey: string): Promise<TreeSourceNode[]>;   // '' = 根
   open(node: TreeSourceNode): void;
@@ -24,6 +34,8 @@ export interface TreeSource {
   copyName?(node: TreeSourceNode): void;
   copyPath?(node: TreeSourceNode): void;
   copyContent?(node: TreeSourceNode): Promise<void>;
+  search?(query: string, opts: { caseSensitive: boolean }): Promise<SearchResult>;
+  openHit?(hit: SearchHit): void;
 }
 
 export type { TreeRowNode, TreeRow } from './treeRows';
