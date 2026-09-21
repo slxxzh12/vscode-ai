@@ -1002,6 +1002,11 @@ git commit -m "feat(workflow): 定时运行状态广播所有连接"
   'sched.wf.no_run': '该任务还没有运行记录，请先运行',
   'sched.err.agent_not_found': 'Agent 不存在',
   'sched.err.workflow_not_found': '工作流不存在',
+  'wfe.sched.enable': '保存时同步为定时任务',
+  'wfe.sched.need_agent': '请选择 Agent',
+  'wfe.sched.created': '定时任务已创建',
+  'wfe.sched.updated': '定时任务已更新',
+  'wfe.sched.no_agent': '（无可用 Agent）',
 ```
 
 - [ ] **Step 2: 英文**
@@ -1020,6 +1025,11 @@ git commit -m "feat(workflow): 定时运行状态广播所有连接"
   'sched.wf.no_run': 'No runs yet — run it first',
   'sched.err.agent_not_found': 'Agent not found',
   'sched.err.workflow_not_found': 'Workflow not found',
+  'wfe.sched.enable': 'Sync as scheduled task on save',
+  'wfe.sched.need_agent': 'Select an agent',
+  'wfe.sched.created': 'Scheduled task created',
+  'wfe.sched.updated': 'Scheduled task updated',
+  'wfe.sched.no_agent': '(no agent)',
 ```
 
 - [ ] **Step 3: 校验**
@@ -1264,7 +1274,262 @@ git commit -m "feat(scheduler): 前端工作流定时表单与运行记录"
 
 ---
 
-## Task 10: 全量验证
+## Task 10: 工作流编辑器定时任务设定
+
+**Files:**
+- Create: `web/src/scheduler/workflowTask.ts`
+- Test: `web/src/scheduler/workflowTask.test.ts`
+- Modify: `web/src/components/WorkflowEditor.vue`
+- Test: `web/src/components/WorkflowEditor.test.ts`
+
+- [ ] **Step 1: 写纯函数失败测试**
+
+Create `web/src/scheduler/workflowTask.test.ts`：
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { scheduleEqual, findWorkflowTask, findWorkflowTasks, buildWorkflowTask } from './workflowTask';
+
+const S1 = { mode: 'interval' as const, interval: { every: 1, unit: 'hour' as const } };
+const S2 = { mode: 'daily' as const, daily: { at: '09:30', weekdays: [] as number[] } };
+const T = (over: any = {}) => ({ id: 't1', type: 'workflow', name: 'DEV', schedule: S1, workflow: { workflowId: 'dev', agentId: 'opencode' }, ...over });
+
+describe('workflowTask', () => {
+  it('scheduleEqual 深度比较', () => {
+    expect(scheduleEqual(S1, { mode: 'interval', interval: { every: 1, unit: 'hour' } })).toBe(true);
+    expect(scheduleEqual(S1, S2)).toBe(false);
+  });
+
+  it('findWorkflowTask 按 workflowId + schedule 命中', () => {
+    const tasks = [T()];
+    expect(findWorkflowTask(tasks, 'dev', S1)?.id).toBe('t1');
+    expect(findWorkflowTask(tasks, 'dev', S2)).toBe(null);
+    expect(findWorkflowTask(tasks, 'other', S1)).toBe(null);
+  });
+
+  it('findWorkflowTasks 按 workflowId 过滤', () => {
+    const tasks = [T(), T({ id: 't2', schedule: S2 }), T({ id: 't3', workflow: { workflowId: 'x', agentId: 'a' } })];
+    expect(findWorkflowTasks(tasks, 'dev').map((x) => x.id)).toEqual(['t1', 't2']);
+  });
+
+  it('buildWorkflowTask 构造合法任务体', () => {
+    expect(buildWorkflowTask({ workflowId: 'dev', label: 'DEV', agentId: 'opencode', schedule: S1 }))
+      .toEqual({ name: 'DEV', type: 'workflow', enabled: true, workflow: { workflowId: 'dev', agentId: 'opencode' }, schedule: S1 });
+  });
+});
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+Run: `npm.cmd --prefix web run test -- src/scheduler/workflowTask.test.ts`
+Expected: FAIL，找不到模块。
+
+- [ ] **Step 3: 实现 `web/src/scheduler/workflowTask.ts`**
+
+```ts
+import type { Schedule, SchedulerTask } from '@devflow/shared/scheduler';
+
+export function scheduleEqual(a: Schedule, b: Schedule): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function findWorkflowTasks(tasks: SchedulerTask[], workflowId: string): SchedulerTask[] {
+  return (tasks || []).filter((x) => x.type === 'workflow' && x.workflow?.workflowId === workflowId);
+}
+
+export function findWorkflowTask(tasks: SchedulerTask[], workflowId: string, schedule: Schedule): SchedulerTask | null {
+  return findWorkflowTasks(tasks, workflowId).find((x) => scheduleEqual(x.schedule, schedule)) || null;
+}
+
+export function buildWorkflowTask({ workflowId, label, agentId, schedule }: { workflowId: string; label: string; agentId: string; schedule: Schedule }) {
+  return { name: label, type: 'workflow' as const, enabled: true, workflow: { workflowId, agentId }, schedule };
+}
+```
+
+- [ ] **Step 4: 跑测试确认通过**
+
+Run: `npm.cmd --prefix web run test -- src/scheduler/workflowTask.test.ts`
+Expected: PASS。
+
+- [ ] **Step 5: 改 `web/src/components/WorkflowEditor.vue`**
+
+顶部 import 追加：
+
+```ts
+import { findWorkflowTask, findWorkflowTasks, buildWorkflowTask } from '../scheduler/workflowTask';
+import type { Schedule, SchedulerTask } from '@devflow/shared/scheduler';
+```
+
+`<script setup>` 内（`const canSave = ...` 之后）新增状态：
+
+```ts
+const schedOn = ref(false);
+const schedAgent = ref('');
+const agents = ref<{ id: string; name: string }[]>([]);
+const schedTasks = ref<SchedulerTask[]>([]);
+const sched = ref<Schedule>({ mode: 'interval', interval: { every: 1, unit: 'hour' } });
+const WEEKDAYS = computed(() => [1, 2, 3, 4, 5, 6, 7].map((v) => ({ v, t: t('sched.wdshort.' + v) })));
+function toggleWeekday(v: number) {
+  if (sched.value.mode !== 'daily') return;
+  const arr = sched.value.daily.weekdays;
+  const i = arr.indexOf(v);
+  if (i >= 0) arr.splice(i, 1); else arr.push(v);
+}
+async function loadSchedulerOptions() {
+  try { agents.value = ((await fetch('/api/agents').then((r) => r.json())).agents || []).map((a: any) => ({ id: a.id, name: a.name || a.id })); } catch { agents.value = []; }
+  try { schedTasks.value = ((await fetch('/api/scheduler/tasks').then((r) => r.json())).tasks || []); } catch { schedTasks.value = []; }
+}
+function prefillScheduler() {
+  const first = findWorkflowTasks(schedTasks.value, currentId.value)[0];
+  if (first) { schedOn.value = true; schedAgent.value = first.workflow?.agentId || ''; sched.value = JSON.parse(JSON.stringify(first.schedule)); }
+  else { schedOn.value = false; schedAgent.value = ''; }
+}
+async function syncSchedulerTask(): Promise<'created' | 'updated'> {
+  const wf = current.value;
+  if (!wf) throw new Error('no workflow');
+  const existing = findWorkflowTask(schedTasks.value, wf.id, sched.value);
+  const body = buildWorkflowTask({ workflowId: wf.id, label: wf.label, agentId: schedAgent.value, schedule: sched.value });
+  const url = existing ? `/api/scheduler/tasks/${encodeURIComponent(existing.id)}` : '/api/scheduler/tasks';
+  const res = await fetch(url, { method: existing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) { const j: any = await res.json().catch(() => ({})); throw new Error(String(j?.error || `HTTP ${res.status}`)); }
+  return existing ? 'updated' : 'created';
+}
+```
+
+`load()` 末尾调用 `await loadSchedulerOptions(); prefillScheduler();`（`load` 已 async）。
+
+`watch(currentId, () => { prefillScheduler(); });`（放在现有 `watch(model, ...)` 之后）。
+
+`save()` 内：在 `dirty.value = false;` 之前加入：
+
+```ts
+    if (schedOn.value) {
+      if (!schedAgent.value) { throw new Error(t('wfe.sched.need_agent')); }
+      const kind = await syncSchedulerTask();
+      msg.value = `${t('wfe.saved')} · ${t(kind === 'updated' ? 'wfe.sched.updated' : 'wfe.sched.created')}`;
+    }
+```
+
+（注意 `save()` 的 `catch` 会把异常转成 `t('wfe.failed', ...)`；Agent 未选时应在最前面单独提示：把校验提前到 `save()` 开头：`if (schedOn.value && !schedAgent.value) { msg.value = t('wfe.sched.need_agent'); return false; }`。）
+
+模板：在 `<footer class="wef">` 之前插入：
+
+```html
+      <div class="wesched">
+        <label class="wechk"><input type="checkbox" v-model="schedOn" />{{ $t('wfe.sched.enable') }}</label>
+        <template v-if="schedOn">
+          <select v-model="sched.mode" class="wesel">
+            <option value="interval">{{ $t('sched.mode.interval') }}</option>
+            <option value="daily">{{ $t('sched.mode.daily') }}</option>
+          </select>
+          <template v-if="sched.mode === 'interval'">
+            <input type="number" min="1" v-model.number="sched.interval.every" class="wenum" />
+            <select v-model="sched.interval.unit" class="wesel">
+              <option value="second">{{ $t('sched.unit.second') }}</option>
+              <option value="minute">{{ $t('sched.unit.minute') }}</option>
+              <option value="hour">{{ $t('sched.unit.hour') }}</option>
+              <option value="day">{{ $t('sched.unit.day') }}</option>
+            </select>
+          </template>
+          <template v-else>
+            <input type="time" v-model="sched.daily.at" class="wetime" />
+            <label v-for="w in WEEKDAYS" :key="w.v" class="wewd">
+              <input type="checkbox" :checked="sched.mode === 'daily' && sched.daily.weekdays.includes(w.v)" @change="toggleWeekday(w.v)" />{{ w.t }}
+            </label>
+          </template>
+          <select v-model="schedAgent" class="wesel">
+            <option value="">{{ $t('sched.field.choose') }}</option>
+            <option v-for="a in agents" :key="a.id" :value="a.id">{{ a.name }}</option>
+          </select>
+          <span v-if="!agents.length" class="wedim">{{ $t('wfe.sched.no_agent') }}</span>
+        </template>
+      </div>
+```
+
+样式追加：
+
+```css
+.wesched { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--bd2); font-size: 12px; color: var(--tx2); }
+.wechk { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.wesel, .wetime, .wenum { background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 6px; font-family: inherit; }
+.wenum { width: 64px; }
+.wewd { display: inline-flex; align-items: center; gap: 2px; }
+.wedim { color: var(--tx5); }
+```
+
+- [ ] **Step 6: 写组件测试**
+
+Create `web/src/components/WorkflowEditor.test.ts`：
+
+```ts
+// @vitest-environment happy-dom
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
+import { mountC } from '../test-utils';
+import WorkflowEditor from './WorkflowEditor.vue';
+
+const WFS = [{ id: 'dev', label: 'DEV', stages: [{ id: 's', label: 'S', prompts: ['p'] }] }];
+const S1 = { mode: 'interval', interval: { every: 1, unit: 'hour' } };
+const TASKS = [{ id: 't1', type: 'workflow', name: 'DEV', schedule: S1, workflow: { workflowId: 'dev', agentId: 'opencode' } }];
+
+function mount() {
+  return mountC(WorkflowEditor, { global: { stubs: { WorkflowFormTab: true, WorkflowXmlTab: true, WorkflowPreviewTab: true } } });
+}
+afterEach(() => vi.unstubAllGlobals());
+
+function stubFetch(calls: any[], tasks: any[]) {
+  vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
+    calls.push([String(u), init?.method]);
+    if (String(u) === '/api/workflows-xml') return { ok: true, json: async () => ({ workflows: WFS }) };
+    if (String(u) === '/api/agents') return { ok: true, json: async () => ({ agents: [{ id: 'opencode', name: 'OpenCode' }] }) };
+    if (String(u) === '/api/scheduler/tasks' && (!init || !init.method)) return { ok: true, json: async () => ({ tasks }) };
+    if (String(u) === '/api/workflows') return { ok: true, json: async () => ({ workflows: WFS }) };
+    return { ok: true, json: async () => ({}) };
+  }));
+}
+
+describe('WorkflowEditor 定时任务设定', () => {
+  it('已有同工作流任务 → 自动勾选并回填；保存走 PUT', async () => {
+    const calls: any[] = [];
+    stubFetch(calls, TASKS);
+    const w = mount();
+    await flushPromises();
+    expect((w.find('.wesched input[type=checkbox]').element as HTMLInputElement).checked).toBe(true);
+    await w.find('.webtn.primary').trigger('click');
+    await flushPromises();
+    expect(calls.some(([u, m]) => u === '/api/scheduler/tasks/t1' && m === 'PUT')).toBe(true);
+  });
+
+  it('无任务 → 不勾选；勾选并选 Agent 后保存走 POST', async () => {
+    const calls: any[] = [];
+    stubFetch(calls, []);
+    const w = mount();
+    await flushPromises();
+    expect((w.find('.wesched input[type=checkbox]').element as HTMLInputElement).checked).toBe(false);
+    await w.find('.wesched input[type=checkbox]').setValue(true);
+    await w.find('.wesched select:last-of-type').setValue('opencode');
+    await w.find('.webtn.primary').trigger('click');
+    await flushPromises();
+    expect(calls.some(([u, m]) => u === '/api/scheduler/tasks' && m === 'POST')).toBe(true);
+  });
+});
+```
+
+- [ ] **Step 7: 跑测试确认通过**
+
+Run: `npm.cmd --prefix web run test -- src/scheduler/workflowTask.test.ts src/components/WorkflowEditor.test.ts`
+Expected: PASS。
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add web/src/scheduler/workflowTask.ts web/src/scheduler/workflowTask.test.ts web/src/components/WorkflowEditor.vue web/src/components/WorkflowEditor.test.ts
+git commit -m "feat(workflow): 编辑器定时任务设定并同步到定时任务列表"
+```
+
+---
+
+## Task 11: 全量验证
 
 **Files:** 无（仅验证）
 

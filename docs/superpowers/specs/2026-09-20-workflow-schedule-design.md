@@ -153,6 +153,22 @@ createWorkflowExecutor({ sessionManager, workflowRunner, resolveAgent, logger })
 
 新增键（中英同步）：`sched.type.workflow`、`sched.wf.select`、`sched.wf.none`、`sched.agent.select`、`sched.wf.session_name`、`sched.wf.run_hint`、`sched.status.paused`、`sched.open_session`、`sched.wf.open`、`sched.wf.no_run`、`sched.wf.need_select`，以及执行器错误文案 `sched.err.agent_not_found`、`sched.err.workflow_not_found`。（`sched.status.paused` 已存在，复用不新增。）
 
+### 十一、工作流编辑器同步定时任务
+
+`web/src/components/WorkflowEditor.vue` 增加「定时任务设定」一行（位于底部按钮行上方），针对当前选中的工作流 `current`：
+
+- 控件：启用勾选 + 周期模式（间隔/每日，含每 N 单位、每日 HH:MM 与周几）+ Agent 下拉（`GET /api/agents`）；周期控件与 `SchedulerView` 表单一致。
+- 打开编辑器时同时 `GET /api/scheduler/tasks`：若存在 `type==='workflow' && workflow.workflowId===current.id` 的任务，回填其 `schedule` 与 `workflow.agentId` 并自动勾选；否则不勾选。
+- 保存（工作流 `POST /api/workflows` 成功后）：
+  - 未勾选 → 只保存工作流。
+  - 已勾选 → 必须已选 Agent；在任务里按「`workflowId` 相同 且 `schedule` 深度相等」查：
+    - 命中 → `PUT /api/scheduler/tasks/<id>` 更新（`name`=工作流 label、`workflow.agentId`、`schedule`、`enabled:true`）；
+    - 未命中 → `POST /api/scheduler/tasks` 新建（`type:'workflow'`）。
+  - 结果提示合并为「工作流已保存；定时任务已更新/已创建」。
+- 通过纯函数 `web/src/scheduler/workflowTask.ts` 提供匹配与构造（`findWorkflowTask`、`findWorkflowTasks`、`buildWorkflowTask`、`scheduleEqual`），便于单测；组件负责请求。
+- 无需新增后端 API（复用现有 scheduler 端点，依赖第三、四节的 workflow 支持）。
+- 非目标：不从编辑器删除定时任务；一个工作流有多条任务时只回填第一条。
+
 ## 影响文件
 
 - 改 `shared/workflow-group.js`（+`expandAllSteps`）
@@ -163,7 +179,9 @@ createWorkflowExecutor({ sessionManager, workflowRunner, resolveAgent, logger })
 - 改 `server/scheduler/engine.js`、`store.js`、`manifest.js`、`index.js`
 - 改 `server/index.js`（构造并注入执行器）
 - 改 `web/src/scheduler/useScheduler.ts`、`SchedulerView.vue`、`format.ts`
+- 新增 `web/src/scheduler/workflowTask.ts`（+测试）
 - 改 `web/src/App.vue`（`openLiveSession` + 传入 `:on-open-session`）
+- 改 `web/src/components/WorkflowEditor.vue`（定时任务设定一行）
 - 改 `shared/i18n/zh-CN.js`、`shared/i18n/en.js`
 - 新增/改测试：`shared`/`server/test`/`web` 对应 `*.test.*`
 
@@ -175,7 +193,7 @@ createWorkflowExecutor({ sessionManager, workflowRunner, resolveAgent, logger })
 - engine：注入假 executor，验证分派、并发上限、`stop` 调 `abort`、终态清理。
 - workflow-executor：假 sessionManager + 真 WorkflowRunner，验证建会话参数（kind/agentId/agentCmd/name）、步骤日志、`paused→success` 状态回写、agent/workflow 缺失的失败。
 - gateway：无绑定连接时 `WF_STATUS`/`WF_FINISHED` 广播到全部连接。
-- web：SchedulerView 的 workflow 表单渲染/提交、format。
+- web：SchedulerView 的 workflow 表单渲染/提交、`taskIcon`、打开运行会话；`workflowTask.ts` 的匹配/构造；WorkflowEditor 勾选后按匹配规则走 PUT/POST、未勾选不发任务请求。
 - 全量：`npm run test:server`、`npm run test:web`、`npm run typecheck`、`npm run check:i18n`。
 
 ## 已知风险
