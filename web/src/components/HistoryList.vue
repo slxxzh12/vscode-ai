@@ -37,6 +37,7 @@ const emit = defineEmits<{
   (e: 'edit-session', sessionId: string, name: string): void;
   (e: 'open-file', projectId: string, path: string, name: string): void;
   (e: 'detail-file', projectId: string, path: string, name: string): void;
+  (e: 'open-file-at', projectId: string, path: string, name: string, line?: number): void;
 }>();
 
 // 目录页签的数据源：项目文件树（统一 TreeView）
@@ -44,6 +45,7 @@ const treeSource = computed(() => projectTreeSource({
   projectId: props.projectId || '',
   onOpenFile: (pid, p, name) => emit('open-file', pid, p, name),
   onDetailFile: (pid, p, name) => emit('detail-file', pid, p, name),
+  onOpenFileAt: (pid, p, name, line) => emit('open-file-at', pid, p, name, line),
 }));
 
 // 页签交给 Element Plus 的 el-tabs 渲染，切页签仍由父组件持有的 tab 决定

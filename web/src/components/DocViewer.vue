@@ -20,7 +20,7 @@ import { canFormatExt, formatText } from '../formatText';
 import { copyText } from '../clipboard';
 import type { TreeItem } from '@devflow/shared';
 
-const props = defineProps<{ source: DocSource; path: string; name: string; detailToken?: number; detailPath?: string }>();
+const props = defineProps<{ source: DocSource; path: string; name: string; detailToken?: number; detailPath?: string; locateToken?: number; locatePath?: string; locateLine?: number }>();
 // 压缩（/api/format）与来源无关，直接调用；其余读写/树/详情等一律走注入的 DocSource。
 const { format } = useProjects();
 const { isDark } = useTheme();
@@ -246,6 +246,10 @@ async function load() {
       mountEditor(f.content);
       requestMeasure();
     }
+    if (props.locatePath === props.path && props.locateLine) {
+      seenLocate = props.locateToken || seenLocate;
+      await applyLocate();
+    }
   } catch (e: any) {
     status.value = 'error';
     errMsg.value = String(e?.message || e);
@@ -287,6 +291,28 @@ async function applyPreview() {
     mdErr.value = String(e?.message || e);
   }
 }
+
+// —— 搜索命中跳行：切到 code 模式 → 编辑器选中该行并滚动聚焦 ——
+async function applyLocate() {
+  const line = props.locateLine || 0;
+  if (!line || props.locatePath !== props.path) return;
+  if (kind.value !== 'text' || isBinary.value) return;   // 图片/PDF/二进制无编辑器
+  if (viewMode.value !== 'code') viewMode.value = 'code';
+  await nextTick();
+  if (!view) mountEditor(raw.value);
+  if (!view) return;
+  const total = view.state.doc.lines;
+  const n = Math.min(Math.max(1, line), total);
+  const l = view.state.doc.line(n);
+  view.dispatch({ selection: { anchor: l.from, head: l.to }, scrollIntoView: true });
+  view.focus();
+}
+watch(() => props.locateToken, (tk) => {
+  if (!tk || tk === seenLocate) return;
+  if (props.locatePath !== props.path) return;
+  seenLocate = tk;
+  void applyLocate();
+});
 
 function applyExternalText(next: string) {
   raw.value = next;
@@ -544,6 +570,7 @@ const hashSha256 = ref('');
 const hashErr = ref('');
 const kindLabel = computed(() => ({ image: t('fp.kind.image'), pdf: 'PDF', text: t('fp.kind.text') })[kind.value] || t('fp.kind.file'));
 let seenDetail = -1;
+let seenLocate = -1;
 async function openDetail() {
   detailErr.value = '';
   detail.value = null;

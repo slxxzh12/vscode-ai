@@ -44,6 +44,9 @@ const props = defineProps<{
   projectId: string | null;
   detailToken?: number;
   detailPath?: string;
+  locateToken?: number;
+  locatePath?: string;
+  locateLine?: number;
   visibleSessionIds?: string[] | null;   // 非 null 时只自动建这些会话的页签（刷新恢复最近 N 个）
   phone?: boolean;                       // 手机页（/?phone=1）：不自动建会话、无会话显示空态
 }>();
@@ -1351,7 +1354,8 @@ onBeforeUnmount(() => {
     <div v-show="props.center.activeKind.value === 'file'" class="file-layer">
       <FilePreview v-if="activeFile && activeFile.projectId && activeFile.path"
         :key="activeFile.id" :project-id="activeFile.projectId" :path="activeFile.path" :name="activeFile.label"
-        :detail-token="detailToken" :detail-path="detailPath" />
+        :detail-token="detailToken" :detail-path="detailPath"
+        :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine" />
     </div>
     <div v-show="!!activeTool" class="tool-layer">
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
