@@ -4,9 +4,9 @@ import { createRunner } from './runner.js';
 import { createSchedulerMount } from './http-mount.js';
 import { readAiCommand } from './ai-commands.js';
 
-export function createScheduler({ dir, projectResolver = () => null, logger = console, runner = null, agentCmd = 'opencode', opencodeDataDir = null, manifestRoot = null }) {
+export function createScheduler({ dir, projectResolver = () => null, logger = console, runner = null, agentCmd = 'opencode', opencodeDataDir = null, manifestRoot = null, workflowExecutor = null }) {
   const store = new SchedulerStore({ dir, logger, ...(manifestRoot ? { manifestRoot } : {}) });
-  const engine = createEngine({ store, runner: runner || createRunner(), logger, aiBin: agentCmd, opencodeDataDir });
+  const engine = createEngine({ store, runner: runner || createRunner(), logger, aiBin: agentCmd, opencodeDataDir, workflowExecutor });
   engine.setProjectResolver(projectResolver);
   engine.setAiPromptLoader((name) => readAiCommand(name));
   const mount = createSchedulerMount({ engine, store, logger });

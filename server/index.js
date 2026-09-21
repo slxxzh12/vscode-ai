@@ -45,6 +45,7 @@ import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
+import { createWorkflowExecutor } from './scheduler/workflow-executor.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, setDefaultAgent } from './devflow-config.js';
 import { createWorkflowSeedStore } from './workflow-seed.js';
 import { createWorkflowStore } from './workflow-store.js';
@@ -444,12 +445,19 @@ function buildWorkspace({ paths, port }) {
   eventBus.on('heartbeat', () => broadcastCollab(CollabS2C.COLLAB_HEARTBEAT, {}));
   eventBus.on('tasks', (payload) => broadcastCollab(CollabS2C.COLLAB_TASKS, payload));
 
+  const workflowExecutor = createWorkflowExecutor({
+    sessionManager,
+    workflowRunner,
+    resolveAgent: (id) => (loadDevflowConfig(configFile).agents.list || []).find((a) => a.id === id) || null,
+    logger: log,
+  });
   const scheduler = createScheduler({
     dir: paths.schedulerDir,
     manifestRoot: path.join(paths.schedulerDir, 'manifests'),
     projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
     logger: log,
     opencodeDataDir: path.join(paths.dir, 'opencode-data'),
+    workflowExecutor,
   });
   scheduler.store.setRuntimeProvider((id) => ({
     nextRunAt: scheduler.engine.nextRunAtOf(id),
