@@ -17,8 +17,8 @@ export interface TreeSource {
   rename?(node: TreeSourceNode, name: string): Promise<void>;
   remove?(node: TreeSourceNode): Promise<void>;
   move?(node: TreeSourceNode, dirKey: string): Promise<void>;
-  run?(node: TreeSourceNode): Promise<void>;
-  runFolder?(dirKey: string): Promise<void>;
+  run?(node: TreeSourceNode): void;
+  runFolder?(dirKey: string): void;
   reveal?(node: TreeSourceNode): Promise<void>;
   detail?(node: TreeSourceNode): void;
   copyName?(node: TreeSourceNode): void;

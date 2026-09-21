@@ -10,7 +10,7 @@ function okJson(body: unknown) { return { ok: true, json: async () => body }; }
 
 describe('FilePreview（项目来源回归）', () => {
   it('加载文本文件：显示文件名与大小，走 /api/file', async () => {
-    const fetchMock = vi.fn(async () => okJson({ name: 'a.txt', path: 'a.txt', size: 5, content: 'hello' }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => okJson({ name: 'a.txt', path: 'a.txt', size: 5, content: 'hello' }));
     vi.stubGlobal('fetch', fetchMock);
     const w = mountC(FilePreview, { props: { projectId: 'p', path: 'a.txt', name: 'a.txt' } });
     await flushPromises();
