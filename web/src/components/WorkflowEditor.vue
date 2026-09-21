@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { t } from '../i18n';
 import { sanitizeModel, validateModel, type Workflow } from '../workflowModel';
+import { serializeWorkflow, parseWorkflowsXml, sortWorkflows } from '@devflow/shared/workflow-xml';
 import WorkflowFormTab from './WorkflowFormTab.vue';
 import WorkflowXmlTab from './WorkflowXmlTab.vue';
 import WorkflowPreviewTab from './WorkflowPreviewTab.vue';
@@ -16,6 +17,20 @@ const dirty = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 const report = computed(() => validateModel(model.value));
 const canSave = computed(() => report.value.errors.length === 0 && !busy.value);
+
+const currentId = ref('');
+const current = computed<Workflow | null>(() => model.value.find((w) => w.id === currentId.value) || model.value[0] || null);
+watch(model, () => {
+  if (!model.value.some((w) => w.id === currentId.value)) currentId.value = model.value[0]?.id || '';
+}, { deep: true });
+
+function applyWorkflow(wf: Workflow) {
+  const next = model.value.slice();
+  const i = next.findIndex((w) => w.id === wf.id);
+  if (i >= 0) next[i] = wf; else next.push(wf);
+  applyModel(sortWorkflows(next));
+  currentId.value = wf.id;
+}
 
 const history = ref<string[]>([]);
 const hIndex = ref(-1);
@@ -55,6 +70,7 @@ async function load() {
     const r = await fetch('/api/workflows-xml').then((x) => x.json());
     model.value = Array.isArray(r?.workflows) ? JSON.parse(JSON.stringify(r.workflows)) : [];
   } catch { model.value = []; }
+  currentId.value = model.value[0]?.id || '';
   history.value = [JSON.stringify(model.value)];
   hIndex.value = 0;
   dirty.value = false;
@@ -86,13 +102,13 @@ function close() {
   emit('close');
 }
 
-async function exportXml() {
-  if (!(await save())) return;
+function exportXml() {
+  if (!current.value) return;
   try {
-    const xml = await fetch('/api/config/xml').then((r) => r.text());
+    const xml = serializeWorkflow(current.value) + '\n';
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([xml], { type: 'application/xml' }));
-    a.download = 'devflow.xml';
+    a.download = `${current.value.id || 'workflow'}.xml`;
     a.click();
     URL.revokeObjectURL(a.href);
   } catch (e: any) { msg.value = t('wfe.failed', { msg: String(e?.message || e) }); }
@@ -104,16 +120,12 @@ async function onFile(e: Event) {
   const f = inp.files?.[0];
   if (!f) return;
   const xml = await f.text();
-  busy.value = true; msg.value = '';
-  try {
-    const res = await fetch('/api/config/xml', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ xml }) });
-    const j: any = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
-    await load();
-    emit('saved');
-    msg.value = t('wfe.imported');
-  } catch (e2: any) { msg.value = t('wfe.failed', { msg: String(e2?.message || e2) }); }
-  finally { busy.value = false; inp.value = ''; }
+  const wf = parseWorkflowsXml(xml)[0];
+  if (!wf) { msg.value = t('wfe.failed', { msg: 'no workflow in file' }); inp.value = ''; return; }
+  applyWorkflow(wf);
+  emit('saved');
+  msg.value = t('wfe.imported');
+  inp.value = '';
 }
 
 onMounted(() => { load(); window.addEventListener('keydown', onKey); });
@@ -125,6 +137,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     <div class="webox">
       <header class="weh">
         <span class="wtitle">{{ $t('wfe.title') }}</span>
+        <select v-if="model.length" v-model="currentId" class="wsel" :title="$t('wfe.current_workflow')">
+          <option v-for="w in model" :key="w.id" :value="w.id">{{ w.label }}{{ w.priority ? ' · P' + w.priority : '' }}</option>
+        </select>
         <nav class="tabs">
           <button v-for="k in tabs" :key="k" class="tab" :class="{ on: tab === k }" @click="tab = k">{{ $t('wfe.tab.' + k) }}</button>
         </nav>
@@ -132,14 +147,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
       </header>
       <div class="web">
         <WorkflowFormTab v-if="tab === 'form'" :model="model" @update:model="applyModel" />
-        <WorkflowXmlTab v-else-if="tab === 'xml'" :model="model" @update:model="applyModel" />
+        <WorkflowXmlTab v-else-if="tab === 'xml'" :workflow="current" @update:workflow="applyWorkflow" />
         <WorkflowPreviewTab v-else :model="model" />
       </div>
       <footer class="wef">
         <span class="wemsg">{{ msg }}</span>
         <input ref="fileInput" type="file" accept=".xml,text/xml,application/xml" class="hidden" @change="onFile" />
-        <button class="webtn" :disabled="busy" @click="pickFile">{{ $t('wfe.import') }}</button>
-        <button class="webtn" :disabled="busy" @click="exportXml">{{ $t('wfe.export') }}</button>
+        <button class="webtn" :disabled="busy" @click="pickFile">{{ $t('wfe.import_workflow') }}</button>
+        <button class="webtn" :disabled="busy || !current" @click="exportXml">{{ $t('wfe.export_workflow') }}</button>
         <button class="webtn primary" :disabled="!canSave" @click="save">{{ $t('wfe.save') }}</button>
       </footer>
     </div>
@@ -151,6 +166,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 .webox { width: 94vw; height: 90vh; max-width: 1600px; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.45); display: flex; flex-direction: column; overflow: hidden; }
 .weh { display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: var(--bg4); }
 .wtitle { font-weight: 700; }
+.wsel { background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; font-size: 12px; font-family: inherit; max-width: 260px; }
 .tabs { display: flex; gap: 4px; margin-left: auto; }
 .tab { background: none; border: 1px solid transparent; color: var(--tx3); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .tab.on { background: var(--bg1); border-color: var(--bd); color: var(--tx1); }

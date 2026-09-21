@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { EditorView, basicSetup } from 'codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { xml } from '@codemirror/lang-xml';
-import { serializeWorkflowsFragment, parseWorkflowsXml } from '@devflow/shared/workflow-xml';
+import { serializeWorkflow, parseWorkflowsXml } from '@devflow/shared/workflow-xml';
 import { useTheme } from '../theme';
 import type { Workflow } from '../workflowModel';
 
-const props = defineProps<{ model: Workflow[] }>();
-const emit = defineEmits<{ (e: 'update:model', m: Workflow[]): void }>();
+const props = defineProps<{ workflow: Workflow | null }>();
+const emit = defineEmits<{ (e: 'update:workflow', w: Workflow): void }>();
 
 const { isDark } = useTheme();
 const host = ref<HTMLDivElement | null>(null);
-const text = ref(serializeWorkflowsFragment(props.model));
+const text = ref(props.workflow ? serializeWorkflow(props.workflow) : '');
 const xmlError = ref('');
 let view: EditorView | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -35,10 +35,10 @@ function parseNow() {
   const bad = wellFormed(text.value);
   if (bad) { xmlError.value = bad; return; }
   xmlError.value = '';
-  const next = parseWorkflowsXml(text.value);
-  if (JSON.stringify(next) !== JSON.stringify(props.model)) {
+  const next = parseWorkflowsXml(text.value)[0];
+  if (next && props.workflow && JSON.stringify(next) !== JSON.stringify(props.workflow)) {
     justEmitted = true;
-    emit('update:model', next);
+    emit('update:workflow', next);
   }
   handEdited = false;
 }
@@ -77,12 +77,14 @@ function mount() {
 function refreshFromForm() {
   xmlError.value = '';
   handEdited = false;
-  setText(serializeWorkflowsFragment(props.model));
+  setText(props.workflow ? serializeWorkflow(props.workflow) : '');
 }
 
-watch(() => props.model, (m) => {
+watch(() => props.workflow, (w) => {
   if (justEmitted) { justEmitted = false; return; }
-  if (!handEdited) setText(serializeWorkflowsFragment(m));
+  if (handEdited) return;
+  if (w && !view) nextTick(mount);
+  setText(w ? serializeWorkflow(w) : '');
 }, { deep: true });
 
 watch(isDark, () => {
@@ -94,22 +96,26 @@ watch(isDark, () => {
   setText(doc);
 });
 
-onMounted(mount);
+onMounted(() => { if (props.workflow) mount(); });
 onBeforeUnmount(() => { if (timer) clearTimeout(timer); view?.destroy(); view = null; });
 </script>
 
 <template>
   <div class="xmlwrap">
-    <div class="bar">
-      <button class="btn" @click="refreshFromForm">{{ $t('wfe.refresh_from_form') }}</button>
-    </div>
-    <div v-if="xmlError" class="err">{{ $t('wfe.xml_error', { msg: xmlError }) }}</div>
-    <div ref="host" class="editor" />
+    <div v-if="!workflow" class="empty">{{ $t('wfe.preview.empty') }}</div>
+    <template v-else>
+      <div class="bar">
+        <button class="btn" @click="refreshFromForm">{{ $t('wfe.refresh_from_form') }}</button>
+      </div>
+      <div v-if="xmlError" class="err">{{ $t('wfe.xml_error', { msg: xmlError }) }}</div>
+      <div ref="host" class="editor" />
+    </template>
   </div>
 </template>
 
 <style scoped>
 .xmlwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.empty { color: var(--tx3); font-size: 13px; padding: 8px; }
 .bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .err { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); border: 1px solid var(--err); border-radius: 4px; padding: 4px 8px; font-size: 12px; white-space: pre-wrap; }
 .editor { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--bd); border-radius: 6px; }
