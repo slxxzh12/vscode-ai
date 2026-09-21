@@ -45,9 +45,9 @@ function onAdd(e: Event) {
   if (!v) return;
   const preset = presets.find((p) => p.id === v);
   if (preset) {
-    providers.value.push({ id: preset.id, name: preset.name, baseURL: preset.baseURL, custom: false, hasKey: false, apiKey: '', models: [], extraModels: '' });
+    providers.value.push({ id: preset.id, name: preset.name, baseURL: preset.baseURL, custom: false, hasKey: false, apiKey: '', keyOriginal: '', models: [], extraModels: '' });
   } else {
-    providers.value.push({ id: '', name: '', baseURL: '', custom: true, hasKey: false, apiKey: '', models: [], extraModels: '' });
+    providers.value.push({ id: '', name: '', baseURL: '', custom: true, hasKey: false, apiKey: '', keyOriginal: '', models: [], extraModels: '' });
   }
 }
 function removeProvider(i: number) {

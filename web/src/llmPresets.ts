@@ -9,6 +9,7 @@ export interface ConfiguredProvider {
   custom: boolean;
   hasKey: boolean;
   apiKey: string;
+  keyOriginal?: string;
   models: string[];
   extraModels: string;
 }
@@ -26,13 +27,15 @@ export function providersFromConfig(
     const presetIds = preset ? preset.models.map((m) => m.id) : [];
     const selected = preset ? ids.filter((m) => presetIds.includes(m)) : [];
     const extra = preset ? ids.filter((m) => !presetIds.includes(m)) : ids;
+    const keyText = apiKeysOf(options).join(', ');
     return {
       id,
       name: (typeof p?.name === 'string' && p.name) || preset?.name || id,
       baseURL: (typeof options.baseURL === 'string' && options.baseURL) || preset?.baseURL || '',
       custom: !preset,
-      hasKey: apiKeysOf(options).length > 0,
-      apiKey: '',
+      hasKey: !!keyText,
+      apiKey: keyText,
+      keyOriginal: keyText,
       models: selected,
       extraModels: extra.join(', '),
     };
@@ -55,7 +58,8 @@ export function buildProviders(list: ConfiguredProvider[]): ProviderSelection[] 
   const out: ProviderSelection[] = [];
   for (const s of list) {
     const models = [...new Set([...s.models.map((m) => m.trim()).filter(Boolean), ...splitIds(s.extraModels)])];
-    out.push({ id: s.id.trim(), name: s.name.trim(), baseURL: s.baseURL.trim(), apiKey: s.apiKey.trim(), models });
+    const unchanged = s.apiKey === (s.keyOriginal ?? '');
+    out.push({ id: s.id.trim(), name: s.name.trim(), baseURL: s.baseURL.trim(), apiKey: unchanged ? '' : s.apiKey.trim(), models });
   }
   return out;
 }

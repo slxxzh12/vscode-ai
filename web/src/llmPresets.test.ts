@@ -14,7 +14,8 @@ describe('llmPresets helpers', () => {
     expect(ds.name).toBe('DeepSeek');
     expect(ds.baseURL).toBe('https://api.deepseek.com/v1');
     expect(ds.hasKey).toBe(true);
-    expect(ds.apiKey).toBe('');
+    expect(ds.apiKey).toBe('K');
+    expect(ds.keyOriginal).toBe('K');
     expect(ds.models).toEqual(['deepseek-v4-flash']);
     expect(ds.extraModels).toBe('my-extra');
 
@@ -22,8 +23,15 @@ describe('llmPresets helpers', () => {
     expect(corp.custom).toBe(true);
     expect(corp.name).toBe('Corp');
     expect(corp.baseURL).toBe('https://gw/v1');
+    expect(corp.apiKey).toBe('C');
     expect(corp.models).toEqual([]);
     expect(corp.extraModels).toBe('a, b');
+  });
+
+  it('providersFromConfig 回显多个 key（apiKeys 数组）', () => {
+    const list = providersFromConfig({ provider: { rot: { options: { baseURL: 'https://gw/v1', apiKeys: ['A', 'B'] } } } });
+    expect(list[0].apiKey).toBe('A, B');
+    expect(list[0].hasKey).toBe(true);
   });
 
   it('providersFromConfig 空配置返回空数组（不再平铺预设）', () => {
@@ -45,6 +53,20 @@ describe('llmPresets helpers', () => {
     expect(buildProviders(list)).toEqual([
       { id: 'deepseek', name: 'DeepSeek', baseURL: 'https://api.deepseek.com/v1', apiKey: 'NEW', models: ['deepseek-v4-flash', 'my-extra'] },
     ]);
+  });
+
+  it('buildProviders 未改动 key 时不回传（交由服务端保留原 key）', () => {
+    const list: ConfiguredProvider[] = [
+      { id: 'deepseek', name: 'DeepSeek', baseURL: 'https://api.deepseek.com/v1', custom: false, hasKey: true, apiKey: 'K', keyOriginal: 'K', models: ['deepseek-v4-flash'], extraModels: '' },
+    ];
+    expect(buildProviders(list)[0].apiKey).toBe('');
+  });
+
+  it('buildProviders 改动 key 时回传新值', () => {
+    const list: ConfiguredProvider[] = [
+      { id: 'deepseek', name: 'DeepSeek', baseURL: 'https://api.deepseek.com/v1', custom: false, hasKey: true, apiKey: 'K2', keyOriginal: 'K', models: ['deepseek-v4-flash'], extraModels: '' },
+    ];
+    expect(buildProviders(list)[0].apiKey).toBe('K2');
   });
 
   it('modelOptions 汇总 provider/model', () => {

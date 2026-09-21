@@ -24,6 +24,10 @@ describe('ModelSetupCard', () => {
     await flushPromises();
     expect(w.findAll('.prov')).toHaveLength(2);
     expect(w.text()).toContain('deepseek');
+    const ds = w.findAll('.prov')[0];
+    const keyInput = ds.find('input').element as HTMLInputElement;
+    expect(keyInput.value).toBe('K');
+    expect(keyInput.type).toBe('password');
     const custom = w.findAll('.prov')[1];
     expect((custom.find('input').element as HTMLInputElement).value).toBe('Corp');
     expect(custom.text()).toContain('https://gw/v1');

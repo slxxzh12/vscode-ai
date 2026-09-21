@@ -67,7 +67,7 @@ export interface ConfiguredProvider {
   - 遍历 `config.provider` 的每个 `id`：
     - 命中预设：`custom=false`，`name`/`baseURL` 优先取文件里的值，缺则回退预设。
     - 未命中：`custom=true`，`name=provider.name||id`，`baseURL=options.baseURL||''`。
-    - `hasKey = apiKeysOf(options).length > 0`；`apiKey=''`。
+    - `hasKey = apiKeysOf(options).length > 0`；`apiKey = apiKeysOf(options).join(', ')`（**回显现有明文 key**，多 key 以 `, ` 连接），同时记 `keyOriginal` 快照。
     - `models = Object.keys(provider.models || {})`。
   - 预设卡：`models` 中命中预设清单的用于预勾选，其余进 `extraModels`。
 - `addablePresets(config)`：返回尚未出现在配置里的预设（供下拉）。
@@ -87,7 +87,7 @@ export interface ConfiguredProvider {
 4. 已配置卡片列表：无任何 provider 时显示占位（`llm.setup.none`）。每张卡：
    - 头部：`name`（自定义为可编辑输入；预设只读）+ `id · baseURL`（预设只读展示；自定义为输入框）+「移除」按钮（`llm.setup.remove`）。
    - 自定义卡额外字段：`Provider ID`（`llm.setup.provider_id`）、`Base URL`（`llm.setup.baseurl`）、`名称(可选)`（`llm.setup.name`）。
-   - API key：`<input type="password">`，`hasKey` 时 placeholder 用 `llm.setup.key_set`，留空即保留原 key。
+    - API key：`<input type="password">` **预填现有 key 并打码展示**（已配置 provider 不再放空）；`hasKey` 时 placeholder 用 `llm.setup.key_set`。保存时若与 `keyOriginal` 一致则不回传，交由服务端保留原 key（多 key 轮询亦不被破坏）。
    - 模型：
      - 预设卡：预设清单勾选框（预勾文件里已有的，vision 带 `llm.setup.vision` 标签）+「补充模型」手填（`llm.setup.manual`）。
      - 自定义卡：单个「模型名（逗号分隔）」手填（`llm.setup.custom_models`）。
