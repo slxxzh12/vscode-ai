@@ -20,7 +20,7 @@ export interface TreeSource {
   run?(node: TreeSourceNode): Promise<void>;
   runFolder?(dirKey: string): Promise<void>;
   reveal?(node: TreeSourceNode): Promise<void>;
-  detail?(node: TreeSourceNode): Promise<void>;
+  detail?(node: TreeSourceNode): void;
   copyName?(node: TreeSourceNode): void;
   copyPath?(node: TreeSourceNode): void;
   copyContent?(node: TreeSourceNode): Promise<void>;
