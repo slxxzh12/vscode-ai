@@ -1,8 +1,9 @@
 import { ref, computed } from 'vue';
+import { useLocalSources } from './local/useLocalSources';
 
 export interface CenterTab {
   id: string;
-  kind: 'session' | 'file' | 'tool';
+  kind: 'session' | 'file' | 'tool' | 'local';
   label: string;
   sub?: string;
   projectId?: string | null;
@@ -13,6 +14,8 @@ export interface CenterTab {
 const sid = (s: string) => `s:${s}`;
 const fid = (p: string, path: string) => `f:${p}|${path}`;
 const tid = (tool: string) => `t:${tool}`;
+const lidRoot = 'l:root';
+const lidFile = (key: string) => `l:f:${key}`;
 
 export function useCenter() {
   const tabs = ref<CenterTab[]>([]);
@@ -59,6 +62,19 @@ export function useCenter() {
     upsert({ id, kind: 'tool', label: label ?? tool, tool });
     setActive(id);
   }
+  function openLocalRoot(label: string) {
+    const ex = tabs.value.find((t) => t.id === lidRoot);
+    if (ex) { ex.label = label || ex.label; setActive(lidRoot); return; }
+    tabs.value.push({ id: lidRoot, kind: 'local', label: label || 'local' });
+    setActive(lidRoot);
+  }
+  function openLocalFile(key: string, label: string) {
+    const id = lidFile(key);
+    const ex = tabs.value.find((t) => t.id === id);
+    if (ex) { ex.label = label || ex.label; setActive(id); return; }
+    tabs.value.push({ id, kind: 'local', label });
+    setActive(id);
+  }
   function activateSession(sessionId: string) {
     const id = sid(sessionId);
     // 已存在的页签只激活，不改写 label/state（否则会覆盖用户双击重命名的页签名）
@@ -69,6 +85,17 @@ export function useCenter() {
   }
   function activateFileTab(id: string) { setActive(id); }
   function closeById(id: string) {
+    if (id.startsWith('l:')) {
+      const local = useLocalSources();
+      if (id === lidRoot) local.unmountRoot();
+      else local.removeFile(id.slice('l:f:'.length));
+      tabs.value = tabs.value.filter((x) => x.id !== id);
+      if (activeId.value === id) {
+        const s = activeSessionTab.value;
+        setActive(s ? s.id : tabs.value[0]?.id ?? null);
+      }
+      return;
+    }
     if (id.startsWith('f:')) {
       const t = tabs.value.find((x) => x.id === id);
       if (t && t.projectId && t.path) closeFile(t.projectId, t.path);
@@ -83,5 +110,5 @@ export function useCenter() {
     if (activeId.value === id) { const s = activeSessionTab.value; setActive(s ? s.id : null); }
   }
 
-  return { tabs, activeId, active, activeKind, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab, openTool };
+  return { tabs, activeId, active, activeKind, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab, openTool, openLocalRoot, openLocalFile };
 }

@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest';
 import { useCenter } from './useCenter';
+import { useLocalSources } from './local/useLocalSources';
 
 test('重命名后反复切换会话，页签名不回退', () => {
   const c = useCenter();
@@ -152,4 +153,41 @@ test('closeById 关闭激活的工具页签回退到会话页签', () => {
   c.openTool('notepad');
   c.closeById('t:notepad');
   expect(c.activeId.value).toBe('s:a');
+});
+
+test('openLocalRoot 新增并激活；重复打开只更新 label', () => {
+  const c = useCenter();
+  c.openLocalRoot('proj-a');
+  expect(c.tabs.value[0]).toMatchObject({ id: 'l:root', kind: 'local', label: 'proj-a' });
+  expect(c.activeId.value).toBe('l:root');
+  c.openLocalRoot('proj-b');
+  expect(c.tabs.value).toHaveLength(1);
+  expect(c.tabs.value[0].label).toBe('proj-b');
+});
+
+test('openLocalFile 新增并激活；closeById 关闭时清状态', () => {
+  const c = useCenter();
+  const s = useLocalSources();
+  s.clearAll();
+  s.mountFolder({ kind: 'directory', name: 'proj' } as unknown as FileSystemDirectoryHandle);
+  const { keys } = s.addFiles([{ name: 'f.txt', handle: null, file: null }]);
+  c.openLocalFile(keys[0], 'f.txt');
+  expect(c.activeId.value).toBe(`l:f:${keys[0]}`);
+  c.closeById(`l:f:${keys[0]}`);
+  expect(s.files.value.size).toBe(0);
+  expect(c.tabs.value).toHaveLength(0);
+});
+
+test('closeById 关闭本地根页签卸载根且不影响单文件页签', () => {
+  const c = useCenter();
+  const s = useLocalSources();
+  s.clearAll();
+  s.mountFolder({ kind: 'directory', name: 'proj' } as unknown as FileSystemDirectoryHandle);
+  const { keys } = s.addFiles([{ name: 'f.txt', handle: null, file: null }]);
+  c.openLocalFile(keys[0], 'f.txt');
+  c.openLocalRoot('proj');
+  c.closeById('l:root');
+  expect(s.root.value).toBeNull();
+  expect(s.files.value.size).toBe(1);
+  expect(c.tabs.value.some((t) => t.id === `l:f:${keys[0]}`)).toBe(true);
 });

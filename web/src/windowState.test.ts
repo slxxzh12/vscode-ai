@@ -19,6 +19,16 @@ describe('toSavedTabs', () => {
       { projectId: 'p3', path: 'c.ts', label: 'c.ts' },
     ]);
   });
+
+  it('本地来源与工具页签不写入存档', () => {
+    const tabs: CenterTab[] = [
+      tab({ id: 'l:root', kind: 'local', label: 'proj', projectId: undefined, path: undefined }),
+      tab({ id: 'l:f:1', kind: 'local', label: 'f.txt', projectId: undefined, path: undefined }),
+      tab({ id: 't:notepad', kind: 'tool', label: 'notepad', projectId: undefined, path: undefined }),
+      tab({ id: 'f:p1|a.ts', path: 'a.ts', label: 'a.ts' }),
+    ];
+    expect(toSavedTabs(tabs)).toEqual([{ projectId: 'p1', path: 'a.ts', label: 'a.ts' }]);
+  });
 });
 
 describe('fileTabsOf', () => {
