@@ -20,6 +20,18 @@
 
 ---
 
+## 执行进度（2026-09-21）
+
+- ✅ **Phase 1**（统一 `TreeView` + 主页面迁移）：T1-T4 完成（含删除 `FileTree.vue`/`TreeNode.vue` 及其测试）。
+- ✅ **Phase 2**（工具壳子 + `DocViewer` 抽取 + notepad/yaml）：T5-T10 完成。
+- ✅ **Phase 3 T11**（translate 迁移）：完成。
+- ⬜ **Phase 3 T12**（postman 迁移）/ **T13**（navicat 迁移）/ **T14**（清理弹窗 + i18n + 文档）：**待做**。
+- 验收现状：`npm.cmd test`（web 98 files / 592 tests 全绿）、`npm.cmd run typecheck`、`npm.cmd run check:i18n` 均通过。
+- 遗留：`MiniTools` 弹窗当前仅承载 postman/navicat；`NotepadTool.vue`、`PostmanTree.vue`、`NavicatTree.vue`、`FileSidebar.vue`、`ItemTree.vue`、`tools/dialogActions.ts` 仍存在，待 T14 清理。
+- T12/T13 提示：postman/navicat 需把「树 + 内容」的选中状态抽成模块级共享（参考 `useToolWorkbench`），并同步改写 `PostmanTool.test`（8 条）、`PostmanTree.test`（15 条）、`NavicatTool.test`（9 条）、`NavicatTree.test`（7 条）。
+
+---
+
 ## 分阶段
 
 - **Phase 1**：统一 `TreeView` + 主页面项目树迁移（基础设施，主页面行为不回退）。
@@ -104,6 +116,7 @@ export interface TreeSource {
   detail?(node: TreeSourceNode): Promise<void>;
   copyName?(node: TreeSourceNode): void;
   copyPath?(node: TreeSourceNode): void;
+  copyContent?(node: TreeSourceNode): Promise<void>;
 }
 
 export type { TreeRowNode, TreeRow } from './treeRows';
@@ -162,6 +175,8 @@ git commit -m "feat(tree): 统一树数据源契约与可见行纯函数"
 
 **Files:**
 - Create: `web/src/components/TreeView.vue`
+- Create: `web/src/tree/fileIcon.ts`
+- Create: `web/src/tree/fileIcon.test.ts`
 - Test: `web/src/components/TreeView.test.ts`
 
 外观/交互对齐现有实现：行样式抄 `web/src/components/ItemTree.vue` 的 `.fttree/.ftroot/.ftrow/...` 与 `TreeNode.vue` 的行（`ui-monospace`、`--bg4` 悬停/选中、`--ac2` 选中字色）；右键菜单抄 `FileTree.vue` 的 `.ctx`；小标题/按钮抄 `FileTree.vue` 的 `.head/.ic`。
@@ -239,12 +254,13 @@ Expected: FAIL（找不到 `./TreeView.vue`）
 
 要求（照此实现）：
 
+- 图标：把 `TreeNode.vue:15-35` 的「按扩展名给图标」抽成 `web/src/tree/fileIcon.ts` 的 `fileIcon(name): string`（附 `fileIcon.test.ts` 用例照搬 `TreeNode.test.ts` 的图标用例）；TreeView 对 `kind==='item'` 且未显式给 `icon` 时用它。
 - Props：`source: TreeSource`、`title?: string`（非空才显示头部标题）、`showRoot?: boolean`（是否渲染「🏠 根」行，默认 `false`）、`activeKey?: string`、`activeFolder?: string`、`storageKey?: string`。Emits：`update:activeFolder(key)`。
 - 内部节点类型：`TreeSourceNode & { children: Internal[]; loaded: boolean; loading: boolean }`；`collapsed: Set<string>`（`storageKey` 存在时读写 `localStorage`，键名沿用原工具：调用方传 `devflow-<tool>-collapsed`/`devflow-postman-collapsed`）。
 - 头部：`title` 非空时渲染 `.fthead`：左 `.fttitle`，右按钮 `⟳`（刷新，始终有）、`📄＋`（`source.createFile` 存在时）、`📁＋`（`source.createFolder` 存在时）；新建走 `window.prompt`（与 `FileTree.vue:126-152` 一致），成功后刷新并把新目录展开。
 - 行：`.ftrow`，`paddingLeft = 8 + depth*14 px`；目录有 `▸/▾`（点箭头 `toggle`；点名字：选中目录 `emit('update:activeFolder', key)` 并 `toggle`）、`📁`；文件 `📄`、可选状态点 `.ftstatus`（`status`）、可选 `.fttime`（`time`）；点文件名调 `source.open(node)`；选中态：`activeFolder === key`（目录）/ `activeKey === key`（文件）。
 - 根行：仅 `showRoot` 为真时渲染「🏠 根」行（`activeFolder === ''`，点它 `emit('update:activeFolder','')`）；不渲染根行时点列表空白 = 选中根（`emit('update:activeFolder','')`）。
-- 右键菜单（`.ftmenu`，fixed 定位）：目录 = 新建文件 / 新建文件夹 / 运行（`runFolder`）/ 重命名 / 删除 / 复制名称 / 复制相对路径 / 定位（`reveal`）；文件 = 打开 / 运行（`run`）/ 详情（`detail`）/ 重命名 / 删除 / 复制名称 / 复制相对路径 / 定位。按 `source` 能力显隐；无任何项时点右键不弹菜单。菜单文案复用 `tree.ctx.new_file`/`tree.ctx.new_dir`/`tree.rename`/`tree.delete`/`tree.copy_file_name`/`tree.copy_dir_name`/`tree.copy_path`/`tree.reveal_os`/`tree.detail`/`tree.run_item`/`tree.run_folder`。
+- 右键菜单（`.ftmenu`，fixed 定位）：目录 = 新建文件 / 新建文件夹 / 运行（`runFolder`）/ 重命名 / 删除 / 复制名称 / 复制相对路径 / 定位（`reveal`）；文件 = 运行（`run`）/ 详情（`detail`）/ 复制内容（`copyContent`）/ 重命名 / 删除 / 复制名称 / 复制相对路径 / 定位。按 `source` 能力显隐（`reveal`/新建/复制内容/详情来自项目源；`rename`/`remove`/`move`/`run` 来自工具源）；无任何项时点右键不弹菜单。菜单文案复用 `tree.ctx.new_file`/`tree.ctx.new_dir`/`tree.rename`/`tree.delete`/`tree.copy_file_name`/`tree.copy_dir_name`/`tree.copy_path`/`tree.copy_content`/`tree.reveal_os`/`tree.detail`/`tree.run_item`/`tree.run_folder`。
 - 行内重命名：`.ftedit` 输入，Enter 提交（调 `source.rename`，失败时把 `exists` 映射为 `t('tree.exists')` 显示在 `.fterr`），Esc 取消。
 - 拖拽：文件行 `draggable`，drop 到目录行/根行调 `source.move(node, dirKey)`。
 - 生命周期：`watch(() => props.source, reload, { immediate: true })`；`onMounted` 绑 `document` click/keydown 关菜单；`onBeforeUnmount` 解绑；`defineExpose({ reload })`。
@@ -323,6 +339,7 @@ Expected: FAIL
 - `reveal(node)`：`useProjects().reveal(projectId, node.key)`。
 - `detail(node)`：`onDetailFile(projectId, node.key, node.name)`。
 - `copyName(node)` / `copyPath(node)`：写剪贴板（用 `web/src/clipboard.ts` 的 `copyText`），路径用 `node.key`。
+- `copyContent(node)`：`api.text(projectId, node.key)` 后 `copyText(f.content)`（对应旧 FileTree 的「复制内容」）。
 - 不提供 `rename`/`remove`/`move`/`run`（项目树不做这些，菜单自然隐藏）。
 - 注意：`useProjects()` 每次调用返回新对象是允许的（内部只发 fetch）；适配器内保存 `const api = useProjects();`。
 
@@ -345,6 +362,7 @@ git commit -m "feat(tree): 项目文件数据源适配器"
 **Files:**
 - Modify: `web/src/components/HistoryList.vue`（把 `FileTree` 换成 `TreeView` + `projectTreeSource`）
 - Delete: `web/src/components/FileTree.vue`、`web/src/components/TreeNode.vue`
+- Delete: `web/src/components/FileTree.test.ts`、`web/src/components/TreeNode.test.ts`（行为用例移植到 `TreeView.test.ts` / `projectTreeSource.test.ts`，见 Task 2 Step 5）
 - Test: 现有 `HistoryList` 相关测试（若有）需保持通过
 
 - [ ] **Step 1: 改 `HistoryList.vue`**
