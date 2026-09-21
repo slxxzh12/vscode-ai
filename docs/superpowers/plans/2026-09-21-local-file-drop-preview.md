@@ -918,9 +918,10 @@ export function localRootDocSource(): DocSource {
       const r = root.value;
       const rel = path || activePath.value;
       if (!r?.handle) throw new Error(t('local.permission_needed'));
-      await ensurePermission(r.handle, 'readwrite');
       const { parent, leaf } = await traverse(r.handle, rel);
-      await writeToHandle(await parent.getFileHandle(leaf), content);
+      const fh = await parent.getFileHandle(leaf);
+      await ensurePermission(fh, 'readwrite');
+      await writeToHandle(fh, content);
     },
     rawUrl(path) {
       const cur = currentBlob.get('local-root');
