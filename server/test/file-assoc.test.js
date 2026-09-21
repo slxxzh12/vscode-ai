@@ -1,0 +1,75 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { EXTENSIONS, prefFile, loadPref, savePref, available, parseDefaults, getState, runAssoc } from '../file-assoc.js';
+
+function tmpApp({ withBat = false } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-assoc-'));
+  if (withBat) fs.writeFileSync(path.join(dir, 'start.bat'), '@echo off\n', 'utf8');
+  fs.mkdirSync(path.join(dir, 'script'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'script', 'launch.ps1'), '# void launcher\n', 'utf8');
+  return dir;
+}
+
+test('EXTENSIONS 为约定的 11 个扩展名', () => {
+  assert.deepEqual(EXTENSIONS, ['.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl']);
+});
+
+test('loadPref 缺省返回未启用未提示', () => {
+  const dir = tmpApp();
+  assert.deepEqual(loadPref(dir), { enabled: false, prompted: false });
+});
+
+test('savePref / loadPref 往返', () => {
+  const dir = tmpApp();
+  savePref(dir, { enabled: true, prompted: true });
+  assert.deepEqual(loadPref(dir), { enabled: true, prompted: true });
+  assert.equal(fs.existsSync(prefFile(dir)), true);
+});
+
+test('available：仅 win32 且绿色包（start.bat 存在）可用', () => {
+  const plain = tmpApp();
+  assert.equal(available({ appDir: plain, platform: 'win32', envPort: '' }).ok, false);
+  const win = tmpApp({ withBat: true });
+  assert.equal(available({ appDir: win, platform: 'win32', envPort: '' }).ok, true);
+  assert.equal(available({ appDir: win, platform: 'darwin', envPort: '' }).ok, false);
+  assert.equal(available({ appDir: win, platform: 'win32', envPort: '33333' }).ok, false);
+});
+
+test('parseDefaults：只认 true，坏输入回退空对象', () => {
+  assert.deepEqual(parseDefaults(JSON.stringify({ '.md': true, '.yaml': false })), { '.md': true, '.yaml': false });
+  assert.deepEqual(parseDefaults('not json'), {});
+  assert.deepEqual(parseDefaults(''), {});
+});
+
+test('getState：不可用时扩展名全 false 且不跑 PS', async () => {
+  const dir = tmpApp();
+  let called = false;
+  const st = await getState({ appDir: dir, platform: 'win32', envPort: '', runPs: async () => { called = true; return '{}'; } });
+  assert.equal(st.available, false);
+  assert.equal(called, false);
+  assert.equal(st.extensions.length, EXTENSIONS.length);
+  assert.equal(st.extensions.every((x) => x.isDefault === false), true);
+});
+
+test('getState：可用时按 PS 输出标记 isDefault', async () => {
+  const dir = tmpApp({ withBat: true });
+  const st = await getState({ appDir: dir, platform: 'win32', envPort: '', runPs: async () => JSON.stringify({ '.md': true }) });
+  assert.equal(st.available, true);
+  assert.equal(st.extensions.find((x) => x.ext === '.md').isDefault, true);
+  assert.equal(st.extensions.find((x) => x.ext === '.yaml').isDefault, false);
+});
+
+test('runAssoc：调 launch.ps1 -Assoc <action> 且分离进程', () => {
+  const calls = [];
+  const fakeSpawn = (bin, args, opts) => { calls.push({ bin, args, opts }); return { unref() { calls.push({ unref: true }); } }; };
+  runAssoc(path.join('C:', 'app'), 'apply', { spawnFn: fakeSpawn, platform: 'win32' });
+  assert.equal(calls[0].bin, 'powershell.exe');
+  assert.deepEqual(calls[0].args.slice(0, 4), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File']);
+  assert.equal(calls[0].args[4], path.join('C:', 'app', 'script', 'launch.ps1'));
+  assert.deepEqual(calls[0].args.slice(-2), ['-Assoc', 'apply']);
+  assert.equal(calls[0].opts.detached, true);
+  assert.deepEqual(calls[1], { unref: true });
+});
