@@ -64,6 +64,7 @@ import { createLlmMount } from './llm-mount.js';
 import { detectEmployeeId } from './llm-config.js';
 import { portPaths, ensurePortDirs } from './port-paths.js';
 import { restartGuard, spawnRestart } from './port-restart.js';
+import { available as fileAssocAvailable, getState as getFileAssocState, loadPref as loadFileAssocPref, savePref as saveFileAssocPref, runAssoc as runFileAssoc } from './file-assoc.js';
 import { askPortConflict } from './native-dialog.js';
 import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
 import { VERSION } from './version.js';
@@ -710,6 +711,33 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (url.pathname === '/api/file-assoc' && req.method === 'GET') {
+    const pref = loadFileAssocPref(APP_DIR);
+    const st = await getFileAssocState({ appDir: APP_DIR });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ available: st.available, enabled: !!pref.enabled, prompted: !!pref.prompted, extensions: st.extensions }));
+    return;
+  }
+  if (url.pathname === '/api/file-assoc' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', async () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const avail = fileAssocAvailable({ appDir: APP_DIR });
+      if (!avail.ok) {
+        res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'not-available' }));
+        return;
+      }
+      const next = saveFileAssocPref(APP_DIR, { enabled: !!body.enabled, prompted: true });
+      runFileAssoc(APP_DIR, next.enabled ? 'apply' : 'remove');
+      const st = await getFileAssocState({ appDir: APP_DIR });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ available: true, enabled: next.enabled, prompted: true, extensions: st.extensions }));
+    });
+    return;
+  }
   if (url.pathname === '/api/remote/state' && req.method === 'GET') {
     const inv = activeInvite();
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -985,6 +1013,11 @@ function startListening(port = currentPort) {
     BOOT_CFG = loadDevflowConfig(configFile);
     setLocale(BOOT_CFG.server.language);
     log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)  ${VERSION}`);
+
+    try {
+      const pref = loadFileAssocPref(APP_DIR);
+      if (pref.enabled && fileAssocAvailable({ appDir: APP_DIR }).ok) runFileAssoc(APP_DIR, 'apply');
+    } catch { /* ignore */ }
 
     if (NODE) {   // 逃生通道：沿用 nodes/<name> 机制，不进端口数据目录
       const seedDir = instanceSeedDir(NODE);
