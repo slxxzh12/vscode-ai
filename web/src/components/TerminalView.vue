@@ -24,7 +24,7 @@ import { pickRestoredAgent, restoredAgentIds } from '../sessionRestore';
 import { copyText } from '../clipboard';
 import { MAX_RESTORE_TABS, restoreTabs, setRestoreTabs } from '../restorePrefs';
 import { isAgentSession, phoneHintKey } from '../remote-coder/phoneMode';
-import { createReadyGate } from './sessionNaming';
+import { createReadyGate, paletteOffersRename, renameDialogOpen, waitForScreen } from './sessionNaming';
 import TabRenameDialog from './TabRenameDialog.vue';
 import { setTabDescription } from './tabDescriptions';
 import WelcomeView from './WelcomeView.vue';
@@ -194,23 +194,22 @@ function cancelDesc() {
   descEditSid = null;
 }
 
-// 等某会话的 Agent UI 输出稳定：最短 3s + 输出静默 1.2s（即 3-5s 量级），超时或切走会话即放弃。
-// /rename 打开改名输入框需要数秒渲染，抢跑会把名字打进普通提示区导致改名不生效，故必须等这一步。
-function waitAgentSettled(sid: string, timeoutMs = 8000): Promise<boolean> {
-  const gate = createReadyGate({ now: () => Date.now(), timeoutMs });
-  const unsub = props.terminal.on(S2C.OUTPUT, (msg: any) => { if (msg.sessionId === sid) gate.output(); });
-  return new Promise<boolean>((resolve) => {
-    const timer = setInterval(() => {
-      if (props.terminal.state.activeSessionId !== sid) { clearInterval(timer); unsub(); resolve(false); return; }
-      const st = gate.poll();
-      if (st === 'waiting') return;
-      clearInterval(timer); unsub(); resolve(st === 'ready');
-    }, 200);
-  });
+// 读当前活动会话 xterm 的可见屏（含滚动解析后的纯文本），用于判断 Agent TUI 现在处于什么状态。
+function viewportLines(): string[] {
+  const b = term?.buffer.active;
+  const rows = term?.rows || 0;
+  if (!b || !rows) return [];
+  const out: string[] = [];
+  for (let i = 0; i < rows; i += 1) {
+    const line = b.getLine(b.viewportY + i);
+    out.push(line ? line.translateToString(true) : '');
+  }
+  return out;
 }
-// 页签改名后让 Agent 内的对话名跟着改：向 Agent 发 `/rename`（斜杠命令需回车从补全列表选中执行）
-// → 等改名输入框渲染稳定 → 清掉预填的旧标题 → 输入新名 → 回车确认。仅 Agent 会话有该命令（shell 跳过）。
-// 整个流程由固定延时串起来、易被用户输入打乱，故期间用全屏蒙层 + 输入闸门屏蔽用户操作。
+// 页签改名后让 Agent 内的对话名跟着改：向 Agent 发 `/rename` → 回车 → 清掉预填的旧标题 → 输入新名 → 回车。
+// 关键：`/rename` 只有「已开始对话」的会话才有，且回车会选中面板高亮项——盲发会跑错命令，盲输的名字会被当消息发给模型。
+// 所以每步都先断言屏幕：面板出现 /rename 才回车；改名框真弹出才输入；断言失败就删掉残留输入并收手（不清屏、不发 Esc，
+// 避免打断正在生成的会话），同时提示用户没同步上。整个流程由全屏蒙层 + 输入闸门屏蔽用户操作。
 function syncAgentRename(sid: string, name: string) {
   if (syncingRename.value) return;                     // 已在同步中：忽略再次触发，避免时序互相打架
   if (!agentSids.value.has(sid)) return;               // 仅 Agent 会话
@@ -223,27 +222,40 @@ function syncAgentRename(sid: string, name: string) {
   if (needSwitch) props.terminal.switchTo(sid);
   const at = () => props.terminal.state.activeSessionId === sid;
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-  const finish = () => {
-    const done = () => { syncingRename.value = false; void nextTick(() => term?.focus()); };
+  const waitScreen = (pred: (lines: string[]) => boolean, timeoutMs: number) =>
+    waitForScreen(pred, { readScreen: viewportLines, isActive: at, timeoutMs });
+  const finish = (synced: boolean) => {
+    const done = () => {
+      syncingRename.value = false;
+      if (!synced) showRenameSyncHint();
+      void nextTick(() => term?.focus());
+    };
     if (needSwitch && prev) setTimeout(() => { props.terminal.switchTo(prev); done(); }, 600);
     else done();
   };
+  // 断言失败：只删掉残留字符收手，绝不给 Agent 发回车/Esc（Esc 会打断正在生成的会话）
+  const abort = () => { if (at()) props.terminal.input('\x7f'.repeat(24)); finish(false); };
   void (async () => {
     if (needSwitch) await sleep(400);
-    if (!at()) return finish();
+    if (!at()) return finish(false);
     props.terminal.input('/rename');                   // 输入斜杠命令
-    await sleep(300);
-    if (!at()) return finish();
-    props.terminal.input('\r');                        // 回车从补全列表执行命令，打开改名输入
-    if (!(await waitAgentSettled(sid))) return finish();
+    if (!(await waitScreen(paletteOffersRename, 2500))) return abort();   // 面板没有 /rename（新会话还没对话）：收手
+    if (!at()) return finish(false);
+    props.terminal.input('\r');                        // 回车执行面板高亮的 /rename，打开改名输入框
+    if (!(await waitScreen(renameDialogOpen, 8000))) return abort();      // 改名框没弹出：收手
     props.terminal.input('\x7f'.repeat(200));          // 清掉预填的旧标题
-    await sleep(250);
-    if (!at()) return finish();
+    await sleep(200);
+    if (!at()) return finish(false);
     props.terminal.input(name);                        // 输入新名
-    await sleep(400);
-    if (!at()) return finish();
+    await sleep(350);
+    if (!at()) return finish(false);
     props.terminal.input('\r');                        // 回车确认
-    finish();
+    await sleep(200);
+    if (await waitScreen((l) => !renameDialogOpen(l), 1500)) return finish(true);
+    if (!at()) return finish(false);
+    props.terminal.input('\r');                        // 回车没生效：补一次
+    await sleep(300);
+    finish(await waitScreen((l) => !renameDialogOpen(l), 1500));
   })();
 }
 
@@ -373,11 +385,13 @@ function closeNew() { newOpen.value = false; }
 // 名字留空时创建后的短暂提示
 const renameHint = ref('');
 let renameHintTimer: ReturnType<typeof setTimeout> | null = null;
-function showRenameHint() {
-  renameHint.value = t('term.rename_hint');
+function showRenameHint(msg: string) {
+  renameHint.value = msg;
   if (renameHintTimer) clearTimeout(renameHintTimer);
   renameHintTimer = setTimeout(() => { renameHint.value = ''; renameHintTimer = null; }, 4000);
 }
+// Agent 侧改名没同步上（新会话还没对话、或会话正忙导致 /rename 打不开）：只提示，不误发消息
+function showRenameSyncHint() { showRenameHint(t('term.rename_sync_skipped')); }
 async function createNew(id: string) {
   newOpen.value = false;
   const c = newChoices.value.find((x) => x.id === id) || newChoices.value[0];
@@ -397,7 +411,7 @@ async function createNew(id: string) {
     persistTabNames();
     msgHistory.renameTab(s.id, name);
   } else {
-    showRenameHint();
+    showRenameHint(t('term.rename_hint'));
   }
   props.terminal.switchTo(s.id);
   if (c.cmd) setTimeout(() => {
@@ -848,6 +862,15 @@ function undoContext() {
 function endTask() {
   resetAutoCompact();
   sendToActive('/clear');
+  refreshTerminalView();
+}
+// /clear 后 TUI 会整屏重画，稍后强制重绘并重新 fit 一次，消除残影/错位（保留已有输出）
+function refreshTerminalView() {
+  setTimeout(() => {
+    if (!term) return;
+    term.refresh(0, term.rows - 1);
+    onResize();
+  }, 400);
 }
 
 // —— 自动压缩上下文：默认开启；用户发送超过 30 次后，空闲 10 分钟无接续则自动 /compact ——
