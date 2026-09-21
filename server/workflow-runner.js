@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { buildMarkerCmd } from './pty-runner.js';
-import { expandGroupSteps } from '@devflow/shared/workflow-group';
+import { expandGroupSteps, expandAllSteps } from '@devflow/shared/workflow-group';
 import { GroupRun } from './workflow-group-run.js';
 
 const runId = () => 'run_' + crypto.randomBytes(4).toString('hex');
@@ -166,6 +166,23 @@ export class WorkflowRunner {
     else run._finishGroup();
     return { ok: true, run };
   }
+  startAll({ workflowId, sessionId, finalStatus = 'done' }) {
+    const wfs = this.getWorkflows ? this.getWorkflows() : [];
+    const wf = wfs.find((w) => w.id === workflowId);
+    if (!wf) return { ok: false, code: 'not-found', message: 'workflow not found' };
+    const session = this.sm.get(sessionId);
+    if (!session) return { ok: false, code: 'not-found', message: 'session not found' };
+    if (session.state !== 'running') return { ok: false, code: 'session-not-running', message: 'session not running' };
+    const prevId = this._sessionRun.get(sessionId);
+    if (prevId) { const prev = this.runs.get(prevId); if (prev) { try { prev.abort(); } catch { /* noop */ } } }
+    const steps = expandAllSteps(wf.stages || []).map((s) => ({ ...s, status: 'waiting', startedAt: null, finishedAt: null }));
+    const run = new GroupRun(this, { id: wf.id, label: wf.label || wf.id }, wf.label || wf.id, steps, session, finalStatus);
+    this.runs.set(run.runId, run);
+    this._sessionRun.set(sessionId, run.runId);
+    if (steps.length) run._beginStep(0);
+    else run._finishGroup();
+    return { ok: true, run };
+  }
   rollback(runId, stepId) {
     const run = this.runs.get(runId);
     if (!run || typeof run.rollback !== 'function') return false;
@@ -182,7 +199,10 @@ export class WorkflowRunner {
       this.runs.delete(run.runId);
     }
   }
-  onStatus(cb) { this._statusCbs.push(cb); }
+  onStatus(cb) {
+    this._statusCbs.push(cb);
+    return () => { const i = this._statusCbs.indexOf(cb); if (i >= 0) this._statusCbs.splice(i, 1); };
+  }
   attachConn(runId, conn) { this._conns.set(runId, conn); }
   connOf(runId) { return this._conns.get(runId) || null; }
   detachConn(runId) { this._conns.delete(runId); }

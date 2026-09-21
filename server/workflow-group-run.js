@@ -6,7 +6,7 @@ const newRunId = () => 'grp_' + crypto.randomBytes(4).toString('hex');
 // 分组运行：组内自动串行，组末暂停（暂停边界）。
 // status: running | paused | failed | aborted
 export class GroupRun {
-  constructor(runner, workflow, group, steps, session) {
+  constructor(runner, workflow, group, steps, session, finalStatus = 'paused') {
     this.runner = runner;
     this.runId = newRunId();
     this.workflowId = workflow.id;
@@ -19,6 +19,7 @@ export class GroupRun {
     this.steps = steps;
     this._tail = '';
     this._timer = null;
+    this.finalStatus = finalStatus;
   }
   snapshot() {
     return {
@@ -61,12 +62,13 @@ export class GroupRun {
     this._clearTimeout();
     this._tail = '';
     this.currentIndex += 1;
+    if (step.advance === 'manual') { this.status = 'paused'; this._emit(); return; }
     if (this.currentIndex < this.steps.length) this._beginStep(this.currentIndex);
     else this._finishGroup();
   }
   _finishGroup() {
     this._clearTimeout();
-    this.status = 'paused';
+    this.status = this.finalStatus;
     this._emit();
   }
   _fail(msg) {
@@ -101,8 +103,10 @@ export class GroupRun {
     return true;
   }
   advance() {
-    if (!this._current()) return;
-    this._succeedStep(this.currentIndex);
+    const cur = this._current();
+    if (cur && cur.status === 'waiting') { this._beginStep(this.currentIndex); return; }
+    if (cur) { this._succeedStep(this.currentIndex); return; }
+    this._finishGroup();
   }
   abort() {
     this._clearTimeout();

@@ -264,3 +264,77 @@ test('rollback 未知 stepId 返回 false', async () => {
   assert.equal(runner.rollback(res.run.runId, 'nope#9'), false);
   runner.stopAll();
 });
+
+const ALLWFS = [{
+  id: 'all', label: 'ALL', stages: [
+    { id: 's1', label: 'S1', group: 'G1', prompts: ['p-1'] },
+    { id: 's2', label: 'S2', group: 'G2', prompts: ['p-2', 'p-3'] },
+  ],
+}];
+
+async function makeAllRunner() {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const session = await sm.create({ name: 'ALL' });
+  const runner = new WorkflowRunner({
+    sessionManager: sm,
+    getWorkflows: () => ALLWFS,
+    doneMarker: (token) => `DONE>${token}`,
+  });
+  return { sm, instances, session, runner };
+}
+
+test('startAll 展开全部 stage 并全自动跑到 done', async () => {
+  const { session, runner, instances } = await makeAllRunner();
+  const res = runner.startAll({ workflowId: 'all', sessionId: session.id });
+  assert.equal(res.ok, true);
+  const snap = res.run.snapshot();
+  assert.deepEqual(snap.steps.map((s) => s.id), ['s1#0', 's2#0', 's2#1']);
+  assert.equal(snap.groupName, 'ALL');
+  assert.equal(snap.steps[0].status, 'running');
+  const { runId } = res.run;
+  instances[0].pty.__emitData(`DONE>DF_DONE:${runId}:0`);
+  assert.equal(res.run.snapshot().steps[1].status, 'running');
+  instances[0].pty.__emitData(`DONE>DF_DONE:${runId}:1`);
+  instances[0].pty.__emitData(`DONE>DF_DONE:${runId}:2`);
+  assert.equal(res.run.snapshot().status, 'done');
+  assert.ok(res.run.snapshot().steps.every((s) => s.status === 'done'));
+  assert.equal(runner.get(runId), null);
+  runner.stopAll();
+});
+
+test('startAll 未知 workflow / 会话不存在返回 not-found', async () => {
+  const { session, runner } = await makeAllRunner();
+  assert.equal(runner.startAll({ workflowId: 'ghost', sessionId: session.id }).code, 'not-found');
+  assert.equal(runner.startAll({ workflowId: 'all', sessionId: 'ghost' }).code, 'not-found');
+  runner.stopAll();
+});
+
+test('startAll 遇 advance=manual 步在该步后 paused，advance 续跑到 done', async () => {
+  const W = [{ id: 'm', label: 'M', stages: [
+    { id: 'x', label: 'X', group: '', advance: 'manual', prompts: ['p-x'] },
+    { id: 'y', label: 'Y', group: '', prompts: ['p-y'] },
+  ] }];
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const session = await sm.create({});
+  const runner = new WorkflowRunner({ sessionManager: sm, getWorkflows: () => W, doneMarker: (token) => `DONE>${token}` });
+  const res = runner.startAll({ workflowId: 'm', sessionId: session.id });
+  const { runId } = res.run;
+  instances[0].pty.__emitData(`DONE>DF_DONE:${runId}:0`);
+  assert.equal(res.run.snapshot().status, 'paused');
+  assert.equal(res.run.snapshot().steps[0].status, 'done');
+  assert.equal(res.run.snapshot().steps[1].status, 'waiting');
+  res.run.advance();
+  assert.equal(res.run.snapshot().steps[1].status, 'running');
+  instances[0].pty.__emitData(`DONE>DF_DONE:${runId}:1`);
+  assert.equal(res.run.snapshot().status, 'done');
+  runner.stopAll();
+});
+
+test('onStatus 返回退订函数', async () => {
+  const { runner } = await makeAllRunner();
+  const off = runner.onStatus(() => {});
+  assert.equal(typeof off, 'function');
+  off();
+});
