@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadIdentity } from '../collaboration/identity.js';
+import { saveInvite, clearInvite } from '../remote-invite.js';
 
 function tmpFile() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-id-'));
@@ -45,4 +46,22 @@ test('缺 username 时回退系统用户名', () => {
   const f = tmpFile();
   const id = loadIdentity({ file: f, host: '127.0.0.1', port: 3001 });
   assert.ok(id.username.length > 0);
+});
+
+test('开关 master 模式（邀请落盘/清除）不重置公钥/私钥与 machineId', () => {
+  const idFile = tmpFile();
+  const inviteFile = path.join(path.dirname(idFile), 'invite.json');
+  const before = loadIdentity({ file: idFile, host: '127.0.0.1', port: 3001 });
+
+  saveInvite(inviteFile, { token: 'tk', password: 'pw', expiresAt: 0 });   // 开启
+  const opened = loadIdentity({ file: idFile, host: '0.0.0.0', port: 3001 });
+  assert.equal(opened.machineId, before.machineId);
+  assert.equal(opened.publicKey, before.publicKey);
+  assert.equal(opened.privateKey, before.privateKey);
+
+  clearInvite(inviteFile);                                                // 关闭
+  const closed = loadIdentity({ file: idFile, host: '127.0.0.1', port: 3001 });
+  assert.equal(closed.machineId, before.machineId);
+  assert.equal(closed.publicKey, before.publicKey);
+  assert.equal(closed.privateKey, before.privateKey);
 });

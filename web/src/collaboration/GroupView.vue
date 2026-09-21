@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import GroupChatView from './GroupChatView.vue';
 import MemberUsageTable from './MemberUsageTable.vue';
 import UsageTrendChart from './UsageTrendChart.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import CodeEditor from '../components/CodeEditor.vue';
 import SyncSeedDialog from './SyncSeedDialog.vue';
 import { t } from '../i18n';
 
@@ -45,7 +47,7 @@ watch(() => snap.value.identity.machineId, async (mid) => {
 const remoteLink = ref('');
 const remotePassword = ref('');
 const remoteMsg = ref('');
-const remoteState = ref<{ enabled: boolean; expiresAt: number | null; address?: string | null; needRestart?: boolean; host?: string; locked?: boolean }>({ enabled: false, expiresAt: null });
+const remoteState = ref<{ enabled: boolean; expiresAt: number | null; address?: string | null; needRestart?: boolean; host?: string; locked?: boolean; local?: boolean }>({ enabled: false, expiresAt: null });
 
 async function loadInvite() {
   remoteMsg.value = '';
@@ -69,6 +71,9 @@ async function genRemote() {
     remoteState.value = { ...remoteState.value, enabled: !!r.enabled, expiresAt: r.expiresAt || null, address: r.address, needRestart: !!r.needRestart };
     await loadDir();
     try { await props.collab.refresh(); } catch { /* ignore */ }
+    if (r.needRestart) {
+      ElMessageBox.alert(t('remote.need_restart'), t('remote.restart_title'), { type: 'warning', confirmButtonText: t('common.ok') }).catch(() => { /* ignore */ });
+    }
   } catch (e) { remoteMsg.value = t('remote.failed', { msg: (e as Error)?.message || String(e) }); }
 }
 const closeConfirmOpen = ref(false);
@@ -76,9 +81,10 @@ function revokeRemote() { closeConfirmOpen.value = true; }
 async function doRevokeRemote() {
   closeConfirmOpen.value = false;
   try {
-    await fetch('/api/remote/revoke', { method: 'POST' });
+    const r = await fetch('/api/remote/revoke', { method: 'POST' }).then((x) => x.json());
     remoteLink.value = ''; remotePassword.value = '';
-    remoteState.value = { ...remoteState.value, enabled: false, expiresAt: null };
+    remoteState.value = { ...remoteState.value, enabled: false, expiresAt: null, needRestart: !!r.needRestart };
+    try { await props.collab.refresh(); } catch { /* ignore */ }
   } catch { /* ignore */ }
 }
 async function copy(v: string) {
@@ -249,12 +255,12 @@ onMounted(async () => {
 
       <div class="sec boxed">
         <h4>{{ $t('collab.remote.title') }}</h4>
-        <div class="addrow">
+        <div v-if="remoteState.local !== false" class="addrow">
           <button class="gen" :class="remoteState.enabled ? 'stop' : 'start'" @click="remoteState.enabled ? revokeRemote() : genRemote()">
             {{ remoteState.enabled ? '⏹ ' + $t('collab.remote.disable') : '▶ ' + $t('collab.remote.enable') }}
           </button>
         </div>
-        <template v-if="remoteState.enabled && (remotePassword || remoteLink)">
+        <template v-if="remoteState.local !== false && remoteState.enabled && (remotePassword || remoteLink)">
           <div class="invitecard">
             <div class="cfghint">{{ $t('remote.invite_hint') }}</div>
             <div v-if="remoteLink" class="linkrow big">
@@ -268,6 +274,8 @@ onMounted(async () => {
             </div>
           </div>
         </template>
+        <div v-if="remoteState.local !== false" class="cfghint">{{ $t('remote.forgot_hint') }}</div>
+        <div v-else class="cfghint">{{ $t('remote.remote_hint') }}</div>
         <div v-if="remoteState.needRestart" class="err">
           {{ $t('remote.need_restart') }}
           <button class="mini" :disabled="restarting" @click="restartBackend">{{ restarting ? $t('term.port_restarting') : $t('term.port_restart') }}</button>
@@ -312,7 +320,7 @@ onMounted(async () => {
               {{ editAnnounce ? $t('common.cancel') : $t('collab.announce.edit') }}
             </button>
           </h4>
-          <textarea v-if="isMaster && editAnnounce" v-model="announceText" class="ata" rows="4" :placeholder="$t('collab.announce.placeholder')" />
+          <CodeEditor v-if="isMaster && editAnnounce" v-model="announceText" class="ata" :placeholder="$t('collab.announce.placeholder')" />
           <div v-if="isMaster && editAnnounce" class="abox">
             <button class="mini primary" @click="saveAnnounce">{{ $t('collab.announce.save') }}</button>
             <span v-if="announceMsg" class="ahint">{{ announceMsg }}</span>
@@ -413,7 +421,7 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .mtitle { display: flex; align-items: center; gap: 8px; margin: 0; padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--tx2); }
 .mtable { flex: 1; min-height: 0; }
 .abody { padding: 0 10px 10px; color: var(--tx); font-size: 12px; line-height: 1.6; white-space: pre-wrap; max-height: 96px; overflow: auto; }
-.ata { margin: 0 12px; background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 8px; font-family: inherit; font-size: 12px; resize: vertical; }
+.ata { margin: 0 12px; --cm-min: 84px; }
 .abox { display: flex; align-items: center; gap: 8px; padding: 8px 12px 12px; }
 .ahint { color: var(--tx6); font-size: 11px; }
 .mini { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 11px; font-family: inherit; }
