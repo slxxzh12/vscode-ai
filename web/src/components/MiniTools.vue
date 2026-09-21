@@ -3,7 +3,6 @@ import { computed, provide, ref, watch } from 'vue';
 import { t } from '../i18n';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
 import NavicatTool from '../tools/navicat/NavicatTool.vue';
-import NotepadTool from '../tools/notepad/NotepadTool.vue';
 import TextToolBody from '../tools/text/TextToolBody.vue';
 import { MINI_TOOLS, type ToolId } from '../tools/catalog';
 import { DIALOG_ACTIONS_ID, DIALOG_ACTIONS_TARGET } from '../tools/dialogActions';
@@ -19,8 +18,8 @@ const dlgOpen = computed({ get: () => open.value !== null, set: (v: boolean) => 
 
 function openTool(id: ToolId) {
   if (TOOLS.find((x) => x.id === id)?.disabled) return;
-  // 记事本 / YAML：改为在主区以「工具页签」打开（不再弹窗）
-  if (id === 'notepad' || id === 'yaml') { requestToolTab(id); return; }
+  // 记事本 / YAML / 翻译：改为在主区以「工具页签」打开（不再弹窗）
+  if (id === 'notepad' || id === 'yaml' || id === 'translate') { requestToolTab(id); return; }
   open.value = id;
 }
 
@@ -32,9 +31,6 @@ watch(pendingTool, (id) => {
   openTool(id);
   clearPendingTool();
 }, { immediate: true });
-
-const textTool = computed<'yaml' | 'translate'>(() =>
-  open.value === 'yaml' || open.value === 'translate' ? open.value : 'translate');
 </script>
 
 <template>
@@ -54,8 +50,7 @@ const textTool = computed<'yaml' | 'translate'>(() =>
       </template>
       <PostmanTool v-if="open === 'postman'" />
       <NavicatTool v-else-if="open === 'navicat'" />
-      <NotepadTool v-else-if="open === 'notepad'" />
-      <TextToolBody v-else-if="open === 'yaml' || open === 'translate'" :key="textTool" :tool="textTool" />
+      <TextToolBody v-else-if="open === 'translate'" />
     </el-dialog>
   </div>
 </template>

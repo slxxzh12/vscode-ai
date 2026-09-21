@@ -1,40 +1,73 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { t } from '../../i18n';
-import { parseYamlDoc, serializeYamlDoc } from '../../yaml';
-import { useFileWorkbench } from '../files/useFileWorkbench';
-import FileSidebar from '../../components/FileSidebar.vue';
 import CodeEditor from '../../components/CodeEditor.vue';
-import { DIALOG_ACTIONS_TARGET } from '../dialogActions';
-import type { FileItem } from '../../fileTree';
+import { useToolWorkbench } from '../useToolWorkbench';
 
-type TextTool = 'yaml' | 'translate';
+// 翻译工具（主区内容）：左侧目录树由 ToolSidebar 提供，这里只放「输入 → 输出」。
+const wb = useToolWorkbench('translate');
 
-const props = defineProps<{ tool: TextTool }>();
-
-const EXT: Record<TextTool, string> = { yaml: '.yaml', translate: '.txt' };
-const LABEL: Record<TextTool, string> = { yaml: 'tools.yaml', translate: 'tools.translate' };
-const LANG: Record<TextTool, string> = { yaml: 'doc.yaml', translate: '' };
-
-const {
-  folders, items, activeId, activeFolder, content, saving, msg, title, actions,
-  openFile, newFile, flushSave,
-} = useFileWorkbench({ tool: props.tool, defaultExt: EXT[props.tool] });
-
-const actionsTarget = inject(DIALOG_ACTIONS_TARGET, '');
-
+const content = ref('');
 const output = ref('');
+const dirty = ref(false);
+const saving = ref(false);
 const busy = ref(false);
-const runMsg = ref('');
 const copied = ref(false);
+const msg = ref('');
+const runMsg = ref('');
+let loading = false;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
+const title = computed(() => wb.leafName.value || t('files.no_file'));
 const message = computed(() => runMsg.value || msg.value);
-const sidebarKey = `devflow-${props.tool}-collapsed`;
 
 function fail(e: unknown) {
   runMsg.value = t('tools.failed', { msg: (e as Error)?.message || String(e) });
 }
+
+async function flush() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  if (!wb.activeId.value || !dirty.value) return;
+  saving.value = true;
+  try {
+    await wb.files.save(wb.activeId.value, content.value);
+    dirty.value = false;
+    msg.value = t('files.saved');
+  } catch (e) {
+    msg.value = t('files.save_failed', { msg: (e as Error)?.message || String(e) });
+  } finally { saving.value = false; }
+}
+function scheduleSave() {
+  dirty.value = true;
+  msg.value = '';
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = null; void flush(); }, 1000);
+}
+
+// 活动文件变化：先落盘旧文件，再载入新文件
+watch(() => wb.activeId.value, async (id) => {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  if (dirty.value) await flush();
+  output.value = '';
+  runMsg.value = '';
+  if (!id) { loading = true; content.value = ''; loading = false; msg.value = ''; return; }
+  try {
+    const text = await wb.files.read(id);
+    loading = true;
+    content.value = text;
+    loading = false;
+    dirty.value = false;
+    msg.value = '';
+  } catch (e) {
+    msg.value = t('files.open_failed', { msg: (e as Error)?.message || String(e) });
+  }
+}, { immediate: true });
+
+watch(content, () => {
+  if (loading || !wb.activeId.value) return;
+  scheduleSave();
+});
 
 async function runTranslate() {
   if (busy.value) return;
@@ -50,13 +83,6 @@ async function runTranslate() {
     if (!res.ok) { runMsg.value = t('et.failed', { msg: j.message || j.error || `HTTP ${res.status}` }); return; }
     output.value = j.text || '';
   } catch (e) { fail(e); } finally { busy.value = false; }
-}
-
-function runYaml(format: boolean) {
-  const { doc, error } = parseYamlDoc(content.value);
-  if (error || !doc) { runMsg.value = t('tools.yaml_fail', { msg: error || 'invalid' }); return; }
-  runMsg.value = t('tools.yaml_ok');
-  if (format) output.value = serializeYamlDoc(doc);
 }
 
 function useOutputAsInput() {
@@ -82,47 +108,33 @@ async function copyOut() {
   if (copyTimer) clearTimeout(copyTimer);
   copyTimer = setTimeout(() => { copied.value = false; copyTimer = null; }, 2000);
 }
-
-function selectFolder(path: string) { activeFolder.value = path; }
-function openItem(item: FileItem) { output.value = ''; runMsg.value = ''; void openFile(item); }
 function clearAll() { content.value = ''; output.value = ''; runMsg.value = ''; }
+
+function onKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); void flush(); }
+}
+onMounted(() => document.addEventListener('keydown', onKeydown));
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown);
+  if (saveTimer) clearTimeout(saveTimer);
+  if (copyTimer) clearTimeout(copyTimer);
+});
 </script>
 
 <template>
   <div class="ttbody">
-    <FileSidebar
-      :folders="folders"
-      :items="items"
-      :active-folder="activeFolder"
-      :active-id="activeId"
-      :actions="actions"
-      :storage-key="sidebarKey"
-      :title="$t(LABEL[tool])"
-      @select-folder="selectFolder"
-      @select-item="openItem"
-      @new-file="newFile"
-    />
-
     <div class="ttmain">
-      <Teleport :to="actionsTarget || 'body'" :disabled="!actionsTarget" defer>
-        <div class="mtacts">
-          <span class="mtname">{{ title || $t('files.no_file') }}</span>
-          <button class="mtbtn" :disabled="!activeId || saving" @click="flushSave">{{ $t('files.save') }}</button>
-          <template v-if="tool === 'translate'">
-            <button class="mtbtn primary" :disabled="busy" @click="runTranslate">{{ busy ? $t('term.translating') : $t('tools.run') }}</button>
-          </template>
-          <template v-else-if="tool === 'yaml'">
-            <button class="mtbtn" @click="runYaml(false)">{{ $t('tools.yaml_check') }}</button>
-            <button class="mtbtn primary" @click="runYaml(true)">{{ $t('tools.yaml_format') }}</button>
-          </template>
-        </div>
-      </Teleport>
+      <div class="mtacts">
+        <span class="mtname">{{ title }}</span>
+        <button class="mtbtn" :disabled="!wb.activeId.value || saving" @click="flush">{{ $t('files.save') }}</button>
+        <button class="mtbtn primary" :disabled="busy" @click="runTranslate">{{ busy ? $t('term.translating') : $t('tools.run') }}</button>
+      </div>
 
       <div class="mtmsgrow"><div v-if="message" class="mtmsg">{{ message }}</div></div>
 
-      <CodeEditor v-model="content" class="mtarea" :language="LANG[tool]" :placeholder="$t('tools.input')" />
+      <CodeEditor v-model="content" class="mtarea" :placeholder="$t('tools.input')" />
       <div class="mtout">
-        <CodeEditor v-model="output" class="mtarea" :language="LANG[tool]" readonly :placeholder="$t('tools.output')" />
+        <CodeEditor v-model="output" class="mtarea" readonly :placeholder="$t('tools.output')" />
         <div class="mtoutacts">
           <button class="mtmini" :disabled="!output" @click="copyOut">{{ copied ? $t('tools.copied') : $t('tools.copy') }}</button>
           <button class="mtmini" :disabled="!output" @click="useOutputAsInput">{{ $t('tools.to_input') }}</button>
@@ -134,21 +146,20 @@ function clearAll() { content.value = ''; output.value = ''; runMsg.value = ''; 
 </template>
 
 <style scoped>
-.ttbody { display: flex; flex-direction: row; gap: 12px; height: calc(100vh - 150px); }
-.ttmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
-.mtacts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ttbody { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 0 2px; box-sizing: border-box; }
+.ttmain { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.mtacts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: none; }
 .mtname { flex: 1; min-width: 0; color: var(--tx2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mtbtn { background: var(--bg4); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
 .mtbtn:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
 .mtbtn.primary { background: var(--ac); border-color: var(--ac); color: var(--onac); font-weight: 600; }
 .mtbtn:disabled { opacity: .55; cursor: default; }
-/* 提示信息固定占一行，避免出现/消失时内容上下跳动 */
-.mtmsgrow { min-height: 16px; }
+.mtmsgrow { min-height: 16px; flex: none; }
 .mtmsg { color: var(--tx3); font-size: 12px; line-height: 16px; }
 .mtarea { flex: 1; --cm-min: 140px; }
 .mtout { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
 .mtout .mtarea { --cm-min: 120px; }
-.mtoutacts { display: flex; gap: 8px; justify-content: flex-end; }
+.mtoutacts { display: flex; gap: 8px; justify-content: flex-end; flex: none; }
 .mtmini { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
 .mtmini:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
 .mtmini:disabled { opacity: .5; cursor: default; }

@@ -9,6 +9,7 @@ import type { useTerminal } from '../useTerminal';
 import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
 import ToolDocPane from '../tools/doc/ToolDocPane.vue';
+import TextToolBody from '../tools/text/TextToolBody.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
@@ -595,7 +596,7 @@ function onWelcomeNewAgent() {
   void startAgent();
 }
 function onWelcomeOpenTool(id: ToolId) {
-  if (id === 'notepad' || id === 'yaml') { requestToolTab(id); return; }
+  if (id === 'notepad' || id === 'yaml' || id === 'translate') { requestToolTab(id); return; }
   requestTool(id);
   window.location.hash = '#mobile';
 }
@@ -1329,8 +1330,9 @@ onBeforeUnmount(() => {
         :key="activeFile.id" :project-id="activeFile.projectId" :path="activeFile.path" :name="activeFile.label"
         :detail-token="detailToken" :detail-path="detailPath" />
     </div>
-    <div v-show="!!activeDocTool" class="tool-layer">
+    <div v-show="!!activeTool" class="tool-layer">
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
+      <TextToolBody v-else-if="activeTool && activeTool.tool === 'translate'" />
     </div>
 
     <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerCollapsed, phone }" :style="{ height: (composerCollapsed ? 40 : composerH) + 'px' }">
