@@ -3,38 +3,20 @@ import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { EditorView, basicSetup } from 'codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useTheme } from '../theme';
-import { StreamLanguage } from '@codemirror/language';
-import { javascript } from '@codemirror/lang-javascript';
-import { json } from '@codemirror/lang-json';
-import { css } from '@codemirror/lang-css';
-import { html } from '@codemirror/lang-html';
-import { markdown } from '@codemirror/lang-markdown';
-import { python } from '@codemirror/lang-python';
-import { java } from '@codemirror/lang-java';
-import { cpp } from '@codemirror/lang-cpp';
-import { php } from '@codemirror/lang-php';
-import { sql } from '@codemirror/lang-sql';
-import { sass } from '@codemirror/lang-sass';
-import { go } from '@codemirror/legacy-modes/mode/go';
-import { rust } from '@codemirror/legacy-modes/mode/rust';
-import { shell } from '@codemirror/legacy-modes/mode/shell';
-import { powerShell } from '@codemirror/legacy-modes/mode/powershell';
-import { yaml } from '@codemirror/legacy-modes/mode/yaml';
-import { toml } from '@codemirror/legacy-modes/mode/toml';
-import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
-import { lua } from '@codemirror/legacy-modes/mode/lua';
-import { swift } from '@codemirror/legacy-modes/mode/swift';
-import { ruby } from '@codemirror/legacy-modes/mode/ruby';
-import { perl } from '@codemirror/legacy-modes/mode/perl';
+import { cmLangFor } from '../cmLang';
 import '../styles/markdown.css';
 import { useProjects, type FileMeta, type FileText } from '../useProjects';
 import { t, locale } from '../i18n';
 import { isMarkdownFile, renderMarkdown, renderMermaid, printMarkdown } from '../markdown';
 import { parseCurlCommands } from '../curl';
 import CurlView from './CurlView.vue';
+import CodeEditor from './CodeEditor.vue';
 import YamlView from './YamlView.vue';
+import Base64Panel from './Base64Panel.vue';
 import { diffText, type DiffRow } from '../diff';
 import { sortText, dedupText, type SortMode } from '../textTools';
+import { canFormatExt, formatText } from '../formatText';
+import { copyText } from '../clipboard';
 import type { TreeItem } from '@devflow/shared';
 
 const props = defineProps<{ projectId: string; path: string; name: string; detailToken?: number; detailPath?: string }>();
@@ -70,36 +52,6 @@ function defaultMode(): ViewMode {
 }
 const viewMode = ref<ViewMode>(defaultMode());
 const showEditor = computed(() => kind.value === 'text' && viewMode.value === 'code');
-
-function cmLangFor(extension: string) {
-  const L = (m: any) => StreamLanguage.define(m);
-  switch (extension) {
-    case 'js': case 'mjs': case 'cjs': case 'jsx': return javascript();
-    case 'ts': case 'tsx': case 'mts': return javascript({ typescript: true });
-    case 'json': return json();
-    case 'css': return css();
-    case 'html': case 'htm': case 'xml': case 'svg': case 'vue': return html();
-    case 'md': case 'markdown': return markdown();
-    case 'py': return python();
-    case 'java': return java();
-    case 'c': case 'h': case 'cc': case 'cpp': case 'cxx': case 'hpp': case 'hh': case 'cs': return cpp();
-    case 'php': return php();
-    case 'sql': return sql();
-    case 'sass': case 'scss': return sass();
-    case 'go': return L(go);
-    case 'rs': return L(rust);
-    case 'sh': case 'bash': case 'zsh': case 'ksh': return L(shell);
-    case 'ps1': return L(powerShell);
-    case 'yml': case 'yaml': return L(yaml);
-    case 'toml': return L(toml);
-    case 'dockerfile': case 'Dockerfile': return L(dockerFile);
-    case 'lua': return L(lua);
-    case 'swift': return L(swift);
-    case 'rb': case 'ruby': return L(ruby);
-    case 'pl': case 'pm': return L(perl);
-    default: return null;
-  }
-}
 
 const status = ref<'loading' | 'ok' | 'error'>('loading');
 const errMsg = ref('');
@@ -225,7 +177,7 @@ function docChanged() {
 }
 function mountEditor(doc: string) {
   if (!editorHost.value || view) return;
-  const lang = cmLangFor(ext.value);
+  const lang = cmLangFor(props.name);
   view = new EditorView({
     doc,
     extensions: [
@@ -537,69 +489,22 @@ function openCurlView() {
   viewMode.value = 'curl';
 }
 
-// —— Base64 编解码结果面板 ——
+// —— Base64 编解码面板（实现见 Base64Panel.vue，与记事本共用）——
 const b64Open = ref(false);
-const b64EncodeOut = ref('');
-const b64DecodeInput = ref('');
-const b64DecodeOut = ref('');
-const b64DecodeErr = ref('');
-function encodeB64(src: string): string {
-  return btoa(unescape(encodeURIComponent(src)));
-}
-function decodeB64(src: string): string {
-  return decodeURIComponent(escape(atob(src.trim())));
-}
+const b64Panel = ref<InstanceType<typeof Base64Panel> | null>(null);
 function currentText(): string {
   if (!view) return '';
   const s = view.state.selection.main;
   return s.empty ? view.state.doc.toString() : view.state.sliceDoc(s.from, s.to);
 }
 function refreshB64Encode() {
-  if (!b64Open.value) return;
-  try {
-    b64EncodeOut.value = encodeB64(currentText());
-  } catch {
-    b64EncodeOut.value = '';
-  }
-}
-function refreshB64Decode() {
-  const src = b64DecodeInput.value;
-  b64DecodeErr.value = '';
-  b64DecodeOut.value = '';
-  if (!src.trim()) return;
-  try {
-    b64DecodeOut.value = decodeB64(src);
-  } catch {
-    b64DecodeErr.value = t('fp.b64_invalid');
-  }
-}
-watch(b64DecodeInput, refreshB64Decode);
-function fallbackCopy(text: string) {
-  const ta = document.createElement('textarea');
-  ta.value = text; document.body.appendChild(ta); ta.select();
-  document.execCommand('copy'); ta.remove();
-}
-async function b64Copy(text: string) {
-  if (!text) return;
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    fallbackCopy(text);
-  }
-}
-function feedDecodeFromEncode() {
-  b64DecodeInput.value = b64EncodeOut.value;   // watch 自动触发解码
+  if (b64Open.value) b64Panel.value?.refresh();
 }
 function toggleB64() {
   b64Open.value = !b64Open.value;
-  if (b64Open.value) { refreshB64Encode(); refreshB64Decode(); }
 }
 function resetB64Panel() {
   b64Open.value = false;
-  b64EncodeOut.value = '';
-  b64DecodeInput.value = '';
-  b64DecodeOut.value = '';
-  b64DecodeErr.value = '';
 }
 
 // —— 文件详细信息｜≤20MB 打开即自动计算 MD5/SHA256；>20MB 显示“计算”按钮手动触发 ——
@@ -674,32 +579,13 @@ async function runFile() {
   }
 }
 
-// —— 一键格式化（Prettier 按需加载）——
-const PARSER_BY_EXT: Record<string, string> = {
-  js: 'babel', mjs: 'babel', cjs: 'babel', jsx: 'babel',
-  ts: 'typescript', tsx: 'typescript', mts: 'typescript',
-  json: 'json', css: 'css', html: 'html', htm: 'html',
-  md: 'markdown', markdown: 'markdown', yml: 'yaml', yaml: 'yaml',
-};
-const canFormat = computed(() => kind.value === 'text' && !!PARSER_BY_EXT[ext.value]);
+// —— 一键格式化（Prettier 按需加载，实现见 formatText.ts）——
+const canFormat = computed(() => kind.value === 'text' && canFormatExt(ext.value));
 async function formatDoc() {
   if (!view || !canFormat.value) return;
-  const parser = PARSER_BY_EXT[ext.value];
   const doc = view.state.doc.toString();
   try {
-    const [{ default: prettierAny }, babelM, estreeM, tsM, htmlM, postcssM, mdM] = await Promise.all([
-      import('prettier/standalone'),
-      import('prettier/plugins/babel'),
-      import('prettier/plugins/estree'),
-      import('prettier/plugins/typescript'),
-      import('prettier/plugins/html'),
-      import('prettier/plugins/postcss'),
-      import('prettier/plugins/markdown'),
-    ]);
-    const prettier = (prettierAny as any).default ?? prettierAny;
-    const pl = (m: any) => (m.default ?? m);
-    const plugins = [pl(babelM), pl(estreeM), pl(tsM), pl(htmlM), pl(postcssM), pl(mdM)];
-    const out = await prettier.format(doc, { parser, plugins });
+    const out = await formatText(doc, ext.value);
     if (out !== doc) {
       view.dispatch({ changes: { from: 0, to: doc.length, insert: out } });
       flashFmt(t('fp.formatted'));
@@ -813,30 +699,7 @@ onBeforeUnmount(() => {
         <CurlView v-if="viewMode === 'curl' && status === 'ok' && !isBinary" :project-id="projectId" :path="path" :text="raw" @update:text="applyExternalText" />
         <YamlView v-else-if="viewMode === 'visual' && status === 'ok' && !isBinary" :text="raw" @update:text="applyExternalText" />
 
-        <div v-if="b64Open && status === 'ok'" class="b64panel">
-          <div class="b64col">
-            <div class="b64ch">
-              <span class="b64t">{{ $t('fp.b64.encode') }}</span>
-              <div class="b64btns">
-                <button class="b64b" :disabled="!b64EncodeOut" @click="b64Copy(b64EncodeOut)">{{ $t('common.copy') }}</button>
-              </div>
-            </div>
-            <pre class="b64pre">{{ b64EncodeOut }}</pre>
-          </div>
-          <div class="b64col">
-            <div class="b64ch">
-              <span class="b64t">{{ $t('fp.b64.decode') }}</span>
-              <div class="b64btns">
-                <button class="b64b" :disabled="!b64EncodeOut" @click="feedDecodeFromEncode()">{{ $t('fp.b64.encode_to_decode') }}</button>
-                <button class="b64b" :disabled="!b64DecodeOut" @click="b64Copy(b64DecodeOut)">{{ $t('common.copy') }}</button>
-                <button class="b64b" :disabled="!b64DecodeInput" @click="b64DecodeInput = ''">{{ $t('fp.b64.clear') }}</button>
-              </div>
-            </div>
-            <textarea v-model="b64DecodeInput" class="b64ta" rows="2" spellcheck="false" :placeholder="$t('fp.b64.placeholder')" />
-            <div v-if="b64DecodeErr" class="b64err">{{ b64DecodeErr }}</div>
-            <pre v-else class="b64pre">{{ b64DecodeOut }}</pre>
-          </div>
-        </div>
+        <Base64Panel v-if="b64Open && status === 'ok'" ref="b64Panel" :get-text="currentText" />
 
         <div v-if="diffOpen && status === 'ok'" class="diffpanel" :style="{ height: diffHeight + 'px' }">
           <div class="diffresize" @mousedown="onDiffDragDown" />
@@ -853,7 +716,7 @@ onBeforeUnmount(() => {
                   <button class="b64b" @click="loadDiffOther('left')">{{ $t('fp.diff.load_other') }}</button>
                 </span>
               </div>
-              <textarea v-model="diffLeft" class="diffta" spellcheck="false" :placeholder="$t('fp.diff.left_placeholder')" @input="runDiff" />
+              <CodeEditor v-model="diffLeft" class="diffta" :placeholder="$t('fp.diff.left_placeholder')" @change="runDiff" />
             </div>
             <div class="diffcol">
               <div class="dch">
@@ -863,7 +726,7 @@ onBeforeUnmount(() => {
                   <button class="b64b" @click="loadDiffOther('right')">{{ $t('fp.diff.load_other') }}</button>
                 </span>
               </div>
-              <textarea v-model="diffRight" class="diffta" spellcheck="false" :placeholder="$t('fp.diff.right_placeholder')" @input="runDiff" />
+              <CodeEditor v-model="diffRight" class="diffta" :placeholder="$t('fp.diff.right_placeholder')" @change="runDiff" />
             </div>
           </div>
           <div class="diffbar">
@@ -916,7 +779,7 @@ onBeforeUnmount(() => {
         <div class="drow">
           <span class="dk">{{ $t('fp.detail.abs') }}</span>
           <span class="dv mono" :title="detail.abs">{{ detail.abs }}</span>
-          <button class="b64b" :disabled="!detail.abs" @click="b64Copy(detail.abs)">{{ $t('common.copy') }}</button>
+          <button class="b64b" :disabled="!detail.abs" @click="copyText(detail.abs)">{{ $t('common.copy') }}</button>
         </div>
         <div class="drow"><span class="dk">{{ $t('fp.detail.size') }}</span><span class="dv mono">{{ fmtBytes(detail.size) }}</span></div>
         <div class="drow"><span class="dk">{{ $t('fp.detail.mtime') }}</span><span class="dv mono">{{ fmtMtime(detail.mtime) }}</span></div>
@@ -927,7 +790,7 @@ onBeforeUnmount(() => {
             <template v-if="hashing">{{ $t('fp.detail.computing') }}</template>
             <template v-else>{{ hashMd5 || hashErr || '—' }}</template>
           </span>
-          <button class="b64b" :disabled="!hashMd5 || hashing" @click="b64Copy(hashMd5)">{{ $t('common.copy') }}</button>
+          <button class="b64b" :disabled="!hashMd5 || hashing" @click="copyText(hashMd5)">{{ $t('common.copy') }}</button>
         </div>
         <div class="drow">
           <span class="dk">SHA256</span>
@@ -936,7 +799,7 @@ onBeforeUnmount(() => {
             <template v-if="hashing">{{ $t('fp.detail.computing') }}</template>
             <template v-else>{{ hashSha256 || hashErr || '—' }}</template>
           </span>
-          <button class="b64b" :disabled="!hashSha256 || hashing" @click="b64Copy(hashSha256)">{{ $t('common.copy') }}</button>
+          <button class="b64b" :disabled="!hashSha256 || hashing" @click="copyText(hashSha256)">{{ $t('common.copy') }}</button>
         </div>
         <div v-if="needHashBtn" class="drow">
           <span class="dk" />
@@ -1019,17 +882,6 @@ onBeforeUnmount(() => {
 .editor :deep(.cm-editor.cm-focused) { outline: none; }
 .note { color: var(--tx3); padding: 16px; }
 .note.err { color: var(--errtx); }
-.b64panel { flex: none; display: flex; gap: 8px; height: 220px; padding: 8px 10px; border-top: 1px solid var(--bd); background: var(--bg2); box-sizing: border-box; }
-.b64col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; padding: 6px; }
-.b64ch { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
-.b64t { font-size: 11px; font-weight: 600; color: var(--tx2); white-space: nowrap; }
-.b64btns { display: flex; gap: 6px; flex: none; }
-.b64b { background: transparent; border: 1px solid var(--bd); color: var(--tx2); font-size: 11px; padding: 1px 8px; border-radius: 4px; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.b64b:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
-.b64b:disabled { opacity: .45; cursor: default; }
-.b64pre { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 6px 8px; background: var(--bg3); border: 1px solid var(--bd); border-radius: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: var(--tx); box-sizing: border-box; }
-.b64ta { width: 100%; box-sizing: border-box; flex: none; resize: vertical; max-height: 45%; background: var(--bg3); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
-.b64err { color: var(--err); font-size: 12px; flex: none; }
 .detailpanel { flex: none; border-top: 1px solid var(--bd); background: var(--bg2); display: flex; flex-direction: column; max-height: 260px; }
 .dph { display: flex; align-items: center; justify-content: space-between; padding: 4px 12px; background: var(--bg4); flex: none; }
 .dpt { font-size: 11px; font-weight: 600; color: var(--tx1); }
@@ -1064,7 +916,7 @@ onBeforeUnmount(() => {
 .dch { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; min-width: 0; }
 .dct { font-size: 11px; color: var(--tx2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dct code { color: var(--ac2); font-family: ui-monospace, Consolas, monospace; }
-.diffta { width: 100%; box-sizing: border-box; flex: none; height: 96px; resize: vertical; background: var(--bg3); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.diffta { width: 100%; box-sizing: border-box; flex: none; --cm-min: 96px; }
 .diffbar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 10px; }
 .diffstat { font-size: 11px; color: var(--tx2); }
 .diffsp { flex: 1; }
