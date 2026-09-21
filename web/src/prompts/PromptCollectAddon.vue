@@ -1,15 +1,21 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { t } from '../i18n';
 import { usePromptCollect, type CollectTarget } from './usePromptCollect';
 
 const props = defineProps<{ text: string }>();
+// 根节点是 fragment（触发区 + Teleport），需手动把外部 class 落到触发区上（如 HistoryList 的 .mpc）
+defineOptions({ inheritAttrs: false });
 const pc = usePromptCollect();
 
 const rootEl = ref<HTMLElement | null>(null);
+const panelEl = ref<HTMLElement | null>(null);
 const open = ref(false);
 const selWf = ref('');
+// 面板 teleport 到 body 并固定定位：消息行 / chip 都处在 overflow:hidden|auto 的滚动容器里，
+// 就地绝对定位会被裁掉，所以按触发点坐标算位置。
+const panelStyle = ref<Record<string, string>>({});
 
 const workflows = computed(() => pc.workflows.value);
 const hasWorkflows = computed(() => workflows.value.length > 0);
@@ -48,6 +54,20 @@ const quickTitle = computed(() => {
   return t('pc.add');
 });
 
+function positionPanel() {
+  const el = rootEl.value;
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const width = Math.min(300, Math.max(200, window.innerWidth - 16));
+  const margin = 8;
+  const left = Math.max(margin, Math.min(r.left, window.innerWidth - width - margin));
+  const spaceBelow = window.innerHeight - r.bottom;
+  const style: Record<string, string> = { left: `${left}px`, width: `${width}px` };
+  if (spaceBelow < 280) style.bottom = `${Math.max(margin, window.innerHeight - r.top + 4)}px`;
+  else style.top = `${r.bottom + 4}px`;
+  panelStyle.value = style;
+}
+
 function toast(status: string, target: CollectTarget | null) {
   if (status === 'ok' && target) {
     ElMessage.success(t('pc.ok', { wf: wfLabel(target.workflowId), stage: stageLabel(target.workflowId, target.stageId) }));
@@ -72,27 +92,46 @@ async function pick(target: CollectTarget) {
   toast(status, target);
   open.value = false;
 }
+function pickLast() { if (pc.lastTarget.value) void pick(pc.lastTarget.value); }
 async function toggle() {
   open.value = !open.value;
   if (!open.value) return;
+  positionPanel();
   await pc.loadWorkflows();
   selWf.value = resolveWfId();
+  await nextTick();
+  positionPanel();
 }
 function onDocDown(e: MouseEvent) {
   if (!open.value) return;
-  if (rootEl.value && !rootEl.value.contains(e.target as Node)) open.value = false;
+  const target = e.target as Node;
+  if (rootEl.value?.contains(target) || panelEl.value?.contains(target)) return;
+  open.value = false;
 }
-onMounted(() => document.addEventListener('mousedown', onDocDown));
-onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown));
+function onKey(e: KeyboardEvent) { if (e.key === 'Escape') open.value = false; }
+onMounted(() => {
+  document.addEventListener('mousedown', onDocDown);
+  document.addEventListener('keydown', onKey);
+  window.addEventListener('resize', positionPanel);
+  window.addEventListener('scroll', positionPanel, true);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onDocDown);
+  document.removeEventListener('keydown', onKey);
+  window.removeEventListener('resize', positionPanel);
+  window.removeEventListener('scroll', positionPanel, true);
+});
 </script>
 
 <template>
-  <span ref="rootEl" class="pcwrap">
+  <span ref="rootEl" v-bind="$attrs" class="pcwrap">
     <span class="pcadd" :title="quickTitle" @mousedown.stop @click.stop="quickAdd">＋</span>
     <span class="pccaret" :title="$t('pc.choose')" @mousedown.stop @click.stop="toggle">▾</span>
-    <div v-if="open" class="pcpanel" @mousedown.stop @click.stop>
+  </span>
+  <Teleport to="body">
+    <div v-if="open" ref="panelEl" class="pcpanel" :style="panelStyle" @mousedown.stop @click.stop>
       <template v-if="hasWorkflows">
-        <div v-if="lastLabel" class="pclast" @click="pc.lastTarget.value && pick(pc.lastTarget.value)">{{ $t('pc.last_used') }}：{{ lastLabel }}</div>
+        <div v-if="lastLabel" class="pclast" @click="pickLast">{{ $t('pc.last_used') }}：{{ lastLabel }}</div>
         <div class="pccols">
           <div class="pccol">
             <div class="pch">{{ $t('pc.workflow') }}</div>
@@ -107,7 +146,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown));
       </template>
       <div v-else class="pcempty">{{ $t('pc.no_workflows') }}</div>
     </div>
-  </span>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -117,12 +156,12 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown));
 .pcadd:hover { color: var(--ac2); }
 .pccaret { font-size: 9px; padding: 0 1px; }
 .pccaret:hover { color: var(--ac2); }
-.pcpanel { position: absolute; bottom: 100%; left: 0; z-index: 70; margin-bottom: 4px; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.35); padding: 6px; min-width: 260px; font-size: 12px; }
+.pcpanel { position: fixed; z-index: 3000; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.35); padding: 6px; font-size: 12px; }
 .pclast { padding: 4px 6px; margin-bottom: 4px; border-bottom: 1px solid var(--bd2); color: var(--ac2); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pccols { display: flex; gap: 6px; }
-.pccol { display: flex; flex-direction: column; gap: 2px; min-width: 110px; max-height: 220px; overflow-y: auto; }
+.pccol { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; max-height: 220px; overflow-y: auto; }
 .pch { color: var(--tx5); font-size: 11px; padding: 2px 4px; }
-.pcwf, .pcst { text-align: left; background: none; border: 1px solid transparent; color: var(--tx2); border-radius: 4px; padding: 3px 6px; cursor: pointer; font-family: inherit; font-size: 12px; white-space: nowrap; }
+.pcwf, .pcst { text-align: left; background: none; border: 1px solid transparent; color: var(--tx2); border-radius: 4px; padding: 3px 6px; cursor: pointer; font-family: inherit; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pcwf:hover, .pcst:hover { background: var(--bg3); }
 .pcwf.on { color: var(--ac2); border-color: var(--ac2); }
 .pcempty { color: var(--tx6); padding: 8px; }
