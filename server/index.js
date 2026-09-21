@@ -45,8 +45,10 @@ import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
 import { createScheduler } from './scheduler/index.js';
-import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, setDefaultAgent } from './devflow-config.js';
+import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, setDefaultAgent } from './devflow-config.js';
 import { createWorkflowSeedStore } from './workflow-seed.js';
+import { createWorkflowStore } from './workflow-store.js';
+import { fallbackWorkflows } from './workflow-xml.js';
 import { setLocale, t } from './i18n.js';
 import { isPeerRequest, resolveInviteDaysAllowForever, resolveBindHost, hostRestartNeeded } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
@@ -251,6 +253,10 @@ function buildWorkspace({ paths, port }) {
   const downloadStore = createDownloadStore({ file: usageDbFile, logger: log });
   const syncStore = createSyncStore({ file: usageDbFile, logger: log });
   const workflowSeedStore = createWorkflowSeedStore({ file: usageDbFile, logger: log });
+  // 工作流改为每端口一个目录、单文件存一条；启动时把旧 devflow.xml 的 <workflows> 一次性拆出来
+  const workflowStore = createWorkflowStore({ dir: paths.workflowsDir, configFile, seedStore: workflowSeedStore, logger: log });
+  workflowStore.migrateFromConfigXml();
+  if (!workflowStore.readAll().length) workflowStore.writeAll(fallbackWorkflows());
   const projectsFile = process.env.DEVFLOW_PROJECTS || paths.projectsFile;
   const workflowsFile = process.env.DEVFLOW_WORKFLOWS || paths.workflowsFile;
   ensureDefaults(projectsFile, workflowsFile);
@@ -363,7 +369,7 @@ function buildWorkspace({ paths, port }) {
   const workflowRunner = new WorkflowRunner({
     sessionManager,
     workflows,
-    getWorkflows: () => loadDevflowConfig(configFile).workflows,
+    getWorkflows: () => workflowStore.readAll(),
     doneMarker: (token) => t('wf.done_marker', { token }),
     logger: log,
   });
@@ -386,12 +392,9 @@ function buildWorkspace({ paths, port }) {
     downloadsDir: paths.downloadsDir,
     events: eventBus,
     logger: log,
-    getWorkflows: () => loadDevflowConfig(configFile).workflows,
+    getWorkflows: () => workflowStore.readAll(),
     getAgents: () => loadDevflowConfig(configFile).agents,
-    mergeWorkflows: (incoming) => {
-      const merged = mergeWorkflowList(loadDevflowConfig(configFile).workflows, incoming);
-      return updateWorkflows(configFile, merged, workflowSeedStore);
-    },
+    mergeWorkflows: (incoming) => workflowStore.writeAll(mergeWorkflowList(workflowStore.readAll(), incoming)),
   });
   engine.peer = makePeerClient();
   engine.cleanupStagedImports();
@@ -490,7 +493,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, navicatMount };
+  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, navicatMount };
 }
 
 // ---- 工作区（端口档案）----
@@ -599,7 +602,7 @@ const server = http.createServer(async (req, res) => {
 
   // 配置类接口永远可用（不依赖档案）
   if (url.pathname === '/api/workflows-xml' && req.method === 'GET') {
-    const workflows = loadDevflowConfig(configFile).workflows;
+    const workflows = ws?.workflowStore?.readAll() || [];
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ workflows }));
     return;
@@ -779,7 +782,10 @@ const server = http.createServer(async (req, res) => {
       }
       const parsed = parseDevflowConfig(xml);
       fs.writeFileSync(configFile, xml, 'utf8');
-      try { ws?.workflowSeedStore?.update(loadDevflowConfig(configFile).workflows); } catch { /* ignore */ }
+      try {
+        if (/<workflows\b/i.test(xml)) ws?.workflowStore?.migrateFromConfigXml();
+        ws?.workflowSeedStore?.update(ws?.workflowStore?.readAll() || []);
+      } catch { /* ignore */ }
       setLocale(parsed.server.language);
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -799,7 +805,7 @@ const server = http.createServer(async (req, res) => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       let saved;
-      try { saved = updateWorkflows(configFile, body.workflows, ws?.workflowSeedStore); }
+      try { saved = ws?.workflowStore?.writeAll(body.workflows) || []; }
       catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'invalid workflows', message: String(e && e.message || e) })); return; }
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -989,6 +995,7 @@ function startListening(port = currentPort) {
         schedulerDir: path.join(stateRoot, 'scheduler'),
         projectsFile: path.join(stateRoot, 'projects.json'),
         workflowsFile: path.join(stateRoot, 'workflows.json'),
+        workflowsDir: path.join(stateRoot, 'workflows'),
         historyFile: path.join(stateRoot, 'message-history.jsonc'),
         skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(stateRoot, 'skills-opencode'),
       });
