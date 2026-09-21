@@ -170,11 +170,16 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
   if (workflowRunner) {
     workflowRunner.onStatus((run) => {
       const c = workflowRunner.connOf(run.runId);
+      const finished = run.status === 'done' || run.status === 'aborted';
       if (c) {
-        if (run.status === 'done' || run.status === 'aborted') {
-          c.send({ type: S2C.WF_FINISHED, runId: run.runId, status: run.status });
-        }
+        if (finished) c.send({ type: S2C.WF_FINISHED, runId: run.runId, status: run.status });
         c.send({ type: S2C.WF_STATUS, run: run.snapshot() });
+        return;
+      }
+      // 定时触发的运行没有发起连接 → 广播给所有连接
+      for (const conn of conns.values()) {
+        if (finished) conn.send({ type: S2C.WF_FINISHED, runId: run.runId, status: run.status });
+        conn.send({ type: S2C.WF_STATUS, run: run.snapshot() });
       }
     });
   }

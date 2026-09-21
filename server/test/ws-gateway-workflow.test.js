@@ -96,3 +96,19 @@ test('端到端: groupAnchor 启动分组并收到 wf-started/status', async (t)
   assert.equal(err.code, 'not-found');
   c.close();
 });
+
+test('无绑定连接的运行（定时触发）向所有连接广播状态', async (t) => {
+  const { session, runner, t: ts, instances } = await groupHarness();
+  const a = await ts.connect();
+  const b = await ts.connect();
+  t.after(() => ts.stop());
+  const res = runner.startAll({ workflowId: 'gw', sessionId: session.id });
+  assert.equal(res.ok, true);
+  const { runId } = res.run;
+  instances[0].pty.__emitData(`DF_DONE:${runId}:0`);
+  const aStatus = await a.wait((m) => m.type === S2C.WF_STATUS && m.run.runId === runId && m.run.steps[0].status === 'done');
+  const bStatus = await b.wait((m) => m.type === S2C.WF_STATUS && m.run.runId === runId && m.run.steps[0].status === 'done');
+  assert.equal(aStatus.run.steps[0].status, 'done');
+  assert.equal(bStatus.run.steps[0].status, 'done');
+  a.close(); b.close();
+});
