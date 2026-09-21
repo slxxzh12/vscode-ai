@@ -48,7 +48,7 @@ import { createScheduler } from './scheduler/index.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, updateWorkflows, setDefaultAgent } from './devflow-config.js';
 import { createWorkflowSeedStore } from './workflow-seed.js';
 import { setLocale, t } from './i18n.js';
-import { isPeerRequest, matchAccessToken, resolveInviteDaysAllowForever, resolveBindHost, hostRestartNeeded } from './remote-gate.js';
+import { isPeerRequest, resolveInviteDaysAllowForever, resolveBindHost, hostRestartNeeded } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
 import { instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
@@ -118,10 +118,39 @@ let remoteFails = 0;
 let remoteLockedUntil = 0;
 function activeInvite() { return isInviteActive(remoteInvite, Date.now()) ? remoteInvite : null; }
 function remoteLocked() { return Date.now() < remoteLockedUntil; }
+// 生成/查看/失效邀请都属于「主机侧」操作：只允许本机访问（忘记密码可在本机重置）
+function denyRemote(res) {
+  res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify({ error: 'local-only' }));
+}
 function remoteAllowed(req) {
   const inv = activeInvite();
   if (!inv) return false;
   return parseCookies(req)[ACCESS_COOKIE] === inv.token;
+}
+// 文档请求（打开/刷新页面）即使持 Cookie 也要求重新输密码：登录后发一次性页面令牌随 302 带回
+const PAGE_TOKEN_MS = 60 * 1000;
+const pageTokens = new Map();   // token -> expiresAt
+function issuePageToken() {
+  const t = crypto.randomBytes(16).toString('hex');
+  for (const [k, exp] of pageTokens) if (exp <= Date.now()) pageTokens.delete(k);
+  pageTokens.set(t, Date.now() + PAGE_TOKEN_MS);
+  return t;
+}
+function consumePageToken(t) {
+  if (!t) return false;
+  const exp = pageTokens.get(t);
+  if (!exp) return false;
+  pageTokens.delete(t);
+  return exp > Date.now();
+}
+// 页面文档请求：GET 且无扩展名（SPA fallback），排除 /api、/ws
+function isDocumentReq(url, method) {
+  if (method !== 'GET') return false;
+  const p = url.pathname;
+  if (p.startsWith('/api/') || p.startsWith('/ws')) return false;
+  if (p === '/index.html') return true;
+  return !/\.[^/]+$/.test(p);
 }
 function safeEqual(a, b) {
   const ba = Buffer.from(String(a));
@@ -152,20 +181,42 @@ function publicKeyParam() {
     return pem ? Buffer.from(pem, 'utf8').toString('base64url') : '';
   } catch { return ''; }
 }
+// 登录后要回跳的本地路径：只允许站内绝对路径，剥掉 access/pk/password 等敏感参数
+function safeNextPath(raw) {
+  const s = String(raw || '');
+  if (!s.startsWith('/') || s.startsWith('//')) return '/';
+  try {
+    const u = new URL(s, 'http://localhost');
+    u.searchParams.delete('access');
+    u.searchParams.delete('pk');
+    u.searchParams.delete('password');
+    u.searchParams.delete('__df');
+    return u.pathname + (u.search ? u.search : '');
+  } catch { return '/'; }
+}
+// 页面级请求（首页）才回跳原查询串；静态资源请求一律回首页，避免把 login 后重定向到资源
+function pageNext(url) {
+  return url.pathname === '/' || url.pathname === '/index.html'
+    ? safeNextPath(url.pathname + url.search)
+    : '/';
+}
+function escapeAttr(v) {
+  return String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 function pageShell(title, body) {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:system-ui,Segoe UI,sans-serif;background:#1e1e1e;color:#ddd;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}.box{max-width:520px;padding:28px 32px;background:#252526;border:1px solid #3c3c3c;border-radius:10px;text-align:center}.box h1{font-size:18px;margin:0 0 12px}.box p{color:#aaa;line-height:1.7;font-size:13px}.box input{width:100%;box-sizing:border-box;margin:14px 0 10px;padding:10px 12px;background:#1e1e1e;border:1px solid #3c3c3c;border-radius:6px;color:#eee;font-size:14px}.box button{width:100%;padding:10px;background:#0e639c;border:none;border-radius:6px;color:#fff;font-size:14px;cursor:pointer}.err{color:#f48771;margin-top:10px}</style></head><body><div class="box"><h1>${title}</h1>${body}</div></body></html>`;
 }
 function remoteBlockPage() {
   return pageShell(t('remote.block_title'), `<p>${t('remote.need_invite')}</p>`);
 }
-function remoteLoginPage(showError) {
+function remoteLoginPage(showError, next = '/') {
   const lockedMs = remoteLocked() ? remoteLockedUntil - Date.now() : 0;
   const note = lockedMs > 0
     ? `<p class="err">${t('remote.login_locked', { min: Math.ceil(lockedMs / 60000) })}</p>`
     : (showError ? `<p class="err">${t('remote.login_wrong')}</p>` : '');
   const dis = lockedMs > 0 ? ' disabled' : '';
   return pageShell(t('remote.login_title'),
-    `<p>${t('remote.login_hint')}</p><form method="POST" action="/__access"><input type="password" name="password" autocomplete="off" placeholder="${t('remote.password')}"${dis} /><button type="submit"${dis}>${t('remote.login_submit')}</button></form>${note}`);
+    `<p>${t('remote.login_hint')}</p><form method="POST" action="/__access"><input type="hidden" name="next" value="${escapeAttr(next)}" /><input type="password" name="password" autocomplete="off" placeholder="${t('remote.password')}"${dis} /><button type="submit"${dis}>${t('remote.login_submit')}</button></form>${note}`);
 }
 
 // requireAuth 占位钩子（spec §11）：HTTP 用 requireAuthHttp；WS 走 upgrade 处，远程需邀请 Cookie
@@ -309,7 +360,13 @@ function buildWorkspace({ paths, port }) {
     }
   }
   setInterval(() => sessionLedger.flushAll(), 10000).unref?.();
-  const workflowRunner = new WorkflowRunner({ sessionManager, workflows, logger: log });
+  const workflowRunner = new WorkflowRunner({
+    sessionManager,
+    workflows,
+    getWorkflows: () => loadDevflowConfig(configFile).workflows,
+    doneMarker: (token) => t('wf.done_marker', { token }),
+    logger: log,
+  });
 
   const identity = loadIdentity({ file: paths.identityFile, employeeId: detectEmployeeId(), host: HOST, port });
   const eventBus = createEventBus();
@@ -481,19 +538,8 @@ const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
 
-  // 远程访问门禁：非回环客户端必须持有效 Cookie；否则需输入一次性访问密码
+  // 远程访问门禁：非回环客户端必须持有效 Cookie；链接（?access=）不再免密，一律需输入访问密码
   if (!isLocalReq(req)) {
-    // ?access=<token> 免密换 Cookie（首次带链接访问）
-    const access = url.searchParams.get('access');
-    const invAccess = activeInvite();
-    if (matchAccessToken(access, invAccess, safeEqual)) {
-      const maxAge = Math.max(0, Math.floor((invAccess.expiresAt - Date.now()) / 1000));
-      const clean = new URL(req.url, 'http://localhost');
-      clean.searchParams.delete('access');
-      res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${invAccess.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`, Location: clean.pathname + (clean.search ? clean.search : '') });
-      res.end();
-      return;
-    }
     // 机器↔机器 peer 端点豁免 Cookie 门禁（鉴权交给信封签名 + 令牌/成员校验）
     if (!isPeerRequest(url.pathname, req.method)) {
       const inv = activeInvite();
@@ -507,23 +553,34 @@ const server = http.createServer(async (req, res) => {
         res.end(remoteBlockPage());
         return;
       }
-      if (!remoteAllowed(req)) {
+      if (isDocumentReq(url, req.method)) {
+        // 文档请求：Cookie 不顶用，必须带登录后下发的一次性页面令牌；否则重新输密码
+        if (!consumePageToken(url.searchParams.get('__df'))) {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(remoteLoginPage(false, pageNext(url)));
+          return;
+        }
+      } else if (!remoteAllowed(req)) {
         if (url.pathname === '/__access' && req.method === 'POST') {
           let body = '';
           req.on('data', (c) => { body += c; });
           req.on('end', () => {
-            if (remoteLocked()) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(remoteLoginPage(true)); return; }
-            const pw = new URLSearchParams(body).get('password') || '';
+            const form = new URLSearchParams(body);
+            const next = safeNextPath(form.get('next'));
+            if (remoteLocked()) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(remoteLoginPage(true, next)); return; }
+            const pw = form.get('password') || '';
             if (safeEqual(pw, inv.password)) {
               remoteFails = 0;
-              const maxAge = Math.max(0, Math.floor((inv.expiresAt - Date.now()) / 1000));
-              res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${inv.token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`, Location: '/' });
+              // 会话级 Cookie（供资源和 /api、/ws 使用）；文档每次加载都靠一次性页面令牌重新验证
+              const loc = new URL(next, 'http://localhost');
+              loc.searchParams.set('__df', issuePageToken());
+              res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${inv.token}; HttpOnly; SameSite=Lax; Path=/`, Location: loc.pathname + (loc.search || '') });
               res.end();
             } else {
               remoteFails += 1;
               if (remoteFails >= MAX_FAILS) { remoteLockedUntil = Date.now() + LOCK_MS; remoteFails = 0; }
               res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-              res.end(remoteLoginPage(true));
+              res.end(remoteLoginPage(true, next));
             }
           });
           return;
@@ -534,7 +591,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(remoteLoginPage(false));
+        res.end(remoteLoginPage(false, pageNext(url)));
         return;
       }
     }
@@ -649,6 +706,7 @@ const server = http.createServer(async (req, res) => {
       enabled: !!inv,
       host: HOST,
       port: actualPort || PORT,
+      local: isLocalReq(req),
       expiresAt: inv ? inv.expiresAt : null,
       forever: !!inv && inv.expiresAt === 0,
       address: lanAddress(),
@@ -659,11 +717,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/remote/reveal' && req.method === 'GET') {
-    if (!isLocalReq(req)) {
-      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: 'local-only' }));
-      return;
-    }
+    if (!isLocalReq(req)) { denyRemote(res); return; }
     const inv = activeInvite();
     if (!inv) {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -676,6 +730,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/remote/invite' && req.method === 'POST') {
+    if (!isLocalReq(req)) { denyRemote(res); return; }
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
@@ -697,6 +752,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/remote/revoke' && req.method === 'POST') {
+    if (!isLocalReq(req)) { denyRemote(res); return; }
     remoteInvite = null;
     if (ws && ws.paths) clearInvite(ws.paths.inviteFile);
     remoteFails = 0;
