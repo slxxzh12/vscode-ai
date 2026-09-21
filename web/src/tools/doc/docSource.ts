@@ -11,8 +11,10 @@ export interface DocReadResult {
   binary?: boolean;
 }
 
+export interface MarkdownAssetRef { rel: string; suffix: string }
+
 export interface DocSource {
-  kind: 'project' | 'tool';
+  kind: 'project' | 'tool' | 'local';
   read(path: string): Promise<DocReadResult>;
   write(path: string, content: string): Promise<void>;
   rawUrl?(path: string): string;
@@ -23,4 +25,7 @@ export interface DocSource {
   run?(path: string): Promise<void>;
   pickExternal?(): Promise<DocReadResult | { cancelled: true } | { error: string; message?: string | null }>;
   markdownImageBase?: { projectId: string };
+  // 本地来源：把 markdown 里的相对资源解析为可直接使用的 URL（如 blob:）
+  resolveMarkdownAssets?(refs: MarkdownAssetRef[]): Promise<Map<string, string>>;
+  releaseMarkdownAssets?(): void;
 }
