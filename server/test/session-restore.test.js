@@ -84,3 +84,50 @@ test('restoreRecord：agentSessionId 被占用时退化为原命令且 resumed=f
   await new Promise((r) => setTimeout(r, 10));
   assert.equal(instances[0].pty.writes.includes('opencode\r'), true);
 });
+
+test('restoreRecord：无 agentSessionId 时现场 discover 并续接 + 回写账本', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const upserts = [];
+  const ledger = {
+    read: () => ({ sessions: [rec('s_a', { agentSessionId: null })] }),
+    readLog: () => null,
+    upsert: (e) => upserts.push(e),
+  };
+  const out = await restoreRecord({
+    ledger, sessionManager: sm, agents: [{ id: 'opencode', cmd: 'opencode' }],
+    rec: rec('s_a', { agentSessionId: null }), resumeDelayMs: 0,
+    discover: async () => 'ses_found',
+  });
+  assert.equal(out.resumed, true);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(instances[0].pty.writes.includes('opencode --session ses_found\r'), true);
+  assert.equal(upserts.some((u) => u.id === 's_a' && u.agentSessionId === 'ses_found'), true);
+});
+
+test('restoreRecord：discover 找不到时退化为原命令', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const ledger = makeLedger([rec('s_a', { agentSessionId: null })]);
+  const out = await restoreRecord({
+    ledger, sessionManager: sm, agents: [{ id: 'opencode', cmd: 'opencode' }],
+    rec: rec('s_a', { agentSessionId: null }), resumeDelayMs: 0,
+    discover: async () => null,
+  });
+  assert.equal(out.resumed, false);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(instances[0].pty.writes.includes('opencode\r'), true);
+});
+
+test('restoreSessions：把 discover 透传给缺 id 的 agent 记录', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const ledger = makeLedger([rec('s_x', { agentSessionId: null })]);
+  const res = await restoreSessions({
+    ledger, sessionManager: sm, agents: [{ id: 'opencode', cmd: 'opencode' }],
+    resumeDelayMs: 0, discover: async () => 'ses_z',
+  });
+  assert.equal(res.restored, 1);
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(instances[0].pty.writes.includes('opencode --session ses_z\r'), true);
+});

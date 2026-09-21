@@ -299,7 +299,8 @@ function buildWorkspace({ paths, port }) {
   function scheduleAgentDiscovery(session) {
     const known = sessionLedger.read().sessions.find((r) => r.id === session.id);
     if (known && known.agentSessionId) return;
-    for (const delay of [15000, 60000]) {
+    // 多次重试：agent 自己的会话可能在某次尝试时还没出现在 session list 里（首次发现越早越好）
+    for (const delay of [15000, 60000, 300000, 900000]) {
       setTimeout(() => { void runDiscovery(session); }, delay).unref?.();
     }
   }
@@ -522,6 +523,13 @@ function initWorkspace(paths, port) {
     sessionManager: ws.sessionManager,
     agents: loadDevflowConfig(configFile).agents.list || [],
     logger: log,
+    // 账本缺 agentSessionId 时现场补发现：尽量续回原对话，而不是重开新对话
+    discover: async (rec) => {
+      const agent = (loadDevflowConfig(configFile).agents.list || []).find((a) => a.id === rec.agentId) || null;
+      if (!agent) return null;
+      const exclude = claimedAgentSessionIds(ws.sessionLedger.read().sessions, rec.id);
+      return await discoverAgentSessionId({ agent, cwd: rec.cwd, since: rec.createdAt, exclude });
+    },
   }).then((r) => {
     if (r.restored || r.skipped.length) log.info(`session restore: restored=${r.restored} skipped=${r.skipped.length}`);
   }).catch((e) => log.warn('session restore failed', (e && e.message) || e));

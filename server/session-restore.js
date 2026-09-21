@@ -6,7 +6,7 @@ import { buildResumeCommand } from './agent-resume.js';
 export async function restoreRecord({
   ledger, sessionManager, agents = [], logger = console,
   rec, resumeDelayMs = 1500, exists = fs.existsSync,
-  isAgentSessionIdTaken = () => false,
+  isAgentSessionIdTaken = () => false, discover = null,
 } = {}) {
   if (!rec || !rec.id) throw new Error('bad-record');
   if (rec.kind === 'workflow') throw new Error('workflow-skip');
@@ -20,9 +20,15 @@ export async function restoreRecord({
   });
   sessionManager.markRestored(session.id);
   const agent = rec.kind === 'agent' ? (agents.find((a) => a.id === rec.agentId) || null) : null;
-  let resumeCmd = rec.kind === 'agent' ? buildResumeCommand({ agent, agentSessionId: rec.agentSessionId }) : null;
+  // 账本没记下 agentSessionId（发现失败/未及时发现）时现场补一次发现，尽量续回原对话而非重开
+  let agentSessionId = typeof rec.agentSessionId === 'string' ? rec.agentSessionId : '';
+  if (rec.kind === 'agent' && !agentSessionId && typeof discover === 'function') {
+    try { agentSessionId = (await discover(rec)) || ''; } catch { agentSessionId = ''; }
+    if (agentSessionId) ledger.upsert?.({ ...rec, agentSessionId, updatedAt: Date.now() });
+  }
+  let resumeCmd = rec.kind === 'agent' ? buildResumeCommand({ agent, agentSessionId }) : null;
   // 目标对话已被别的活跃会话占用：不抢，退化为原命令重开
-  if (resumeCmd && rec.agentSessionId && isAgentSessionIdTaken(rec.agentSessionId, rec.id)) resumeCmd = null;
+  if (resumeCmd && agentSessionId && isAgentSessionIdTaken(agentSessionId, rec.id)) resumeCmd = null;
   const cmd = resumeCmd || (agent && agent.cmd) || rec.agentCmd || null;
   session.resumed = !!resumeCmd;
   if (cmd) {
@@ -37,6 +43,7 @@ export async function restoreRecord({
 // 启动时按账本重建会话：逐条 restoreRecord，单条失败不阻断其它。
 export async function restoreSessions({
   ledger, sessionManager, agents = [], logger = console, resumeDelayMs = 1500, exists = fs.existsSync,
+  discover = null,
 } = {}) {
   const records = ledger.read().sessions || [];
   const result = { restored: 0, skipped: [] };
@@ -53,7 +60,7 @@ export async function restoreSessions({
     if (rec.state === 'exited') continue;   // 关闭的会话只留在账本供按需恢复，不随启动自动拉起
     if (rec.cwd && !exists(rec.cwd)) { result.skipped.push({ id: rec.id, reason: 'cwd-missing' }); continue; }
     try {
-      await restoreRecord({ ledger, sessionManager, agents, logger, rec, resumeDelayMs, exists, isAgentSessionIdTaken });
+      await restoreRecord({ ledger, sessionManager, agents, logger, rec, resumeDelayMs, exists, isAgentSessionIdTaken, discover });
       result.restored += 1;
     } catch (e) {
       const reason = (e && e.message) || 'restore-failed';
