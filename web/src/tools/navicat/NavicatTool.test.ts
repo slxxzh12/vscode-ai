@@ -109,4 +109,57 @@ describe('NavicatTool', () => {
     expect(confirm).toHaveBeenCalled();
     expect(w.find('.nv-meta').text()).toContain('1');
   });
+
+  it('新建连接常规页不含数据库输入', async () => {
+    vi.stubGlobal('fetch', stubFetch(() => okJson({})));
+    const w = mount();
+    await flushPromises();
+    await w.find('.nvnewbtn').trigger('click');
+    await flushPromises();
+    expect(w.find('.nv-name-input input').exists()).toBe(true);
+    expect(w.find('.nv-db').exists()).toBe(false);
+    expect(w.find('.nv-db-file').exists()).toBe(false);
+  });
+
+  it('类型选 sqlite 时显示数据库文件输入，隐藏主机端口', async () => {
+    vi.stubGlobal('fetch', stubFetch(() => okJson({})));
+    const w = mount();
+    await flushPromises();
+    await w.find('.nvnewbtn').trigger('click');
+    await flushPromises();
+    await w.find('.nv-type').setValue('sqlite');
+    await flushPromises();
+    expect(w.find('.nv-db-file').exists()).toBe(true);
+    expect(w.find('.nv-host').exists()).toBe(false);
+  });
+
+  it('高级页含 SSL 开关，sqlite 下不渲染高级页', async () => {
+    vi.stubGlobal('fetch', stubFetch(() => okJson({})));
+    const w = mount();
+    await flushPromises();
+    await w.find('.nvnewbtn').trigger('click');
+    await flushPromises();
+    expect(w.find('.nv-ssl').exists()).toBe(true);
+    await w.find('.nv-type').setValue('sqlite');
+    await flushPromises();
+    expect(w.find('.nv-ssl').exists()).toBe(false);
+  });
+
+  it('保存 mysql 连接时清空残留 database', async () => {
+    let body: any = null;
+    vi.stubGlobal('fetch', stubFetch((u, init) => {
+      if (u === '/api/navicat/profiles' && init?.method === 'PATCH') {
+        body = init?.body ? JSON.parse(String(init.body)) : null;
+      }
+      return okJson({ ok: true, item: P });
+    }));
+    const w = mount();
+    await flushPromises();
+    await w.find('.nvedit').trigger('click');
+    await flushPromises();
+    await w.find('.nv-save').trigger('click');
+    await flushPromises();
+    expect(body).toBeTruthy();
+    expect(body.database).toBe('');
+  });
 });

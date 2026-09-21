@@ -21,12 +21,16 @@ const result = ref<ExecResult | null>(null);
 const treeVersion = ref(0);
 
 const dlg = ref(false);
+const dlgTab = ref('general');
 const dlgMsg = ref('');
 const form = ref<NavicatProfile>(blank());
 
 const isSqlite = computed(() => form.value.type === 'sqlite');
 const isRedis = computed(() => form.value.type === 'redis');
-const dbLabel = computed(() => (isRedis.value ? t('nv.db_index') : t('nv.database')));
+const ssl = computed({
+  get: () => !!form.value.options?.ssl,
+  set: (v: boolean) => { form.value = { ...form.value, options: { ...(form.value.options || {}), ssl: v } }; },
+});
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
   return q ? profiles.value.filter((p) => p.name.toLowerCase().includes(q)) : profiles.value;
@@ -34,7 +38,7 @@ const filtered = computed(() => {
 const activeProfile = computed(() => profiles.value.find((p) => p.id === activeId.value) || null);
 
 function blank(): NavicatProfile {
-  return { name: '', type: 'mysql', host: '127.0.0.1', port: '3306', user: 'root', database: '', password: '' };
+  return { name: '', type: 'mysql', host: '127.0.0.1', port: '3306', user: 'root', database: '', password: '', options: { ssl: false } };
 }
 
 function defaultPort(type: NavicatType): string {
@@ -43,17 +47,20 @@ function defaultPort(type: NavicatType): string {
 
 function onTypeChange() {
   if (!form.value.port || ['3306', '5432', '6379', ''].includes(form.value.port)) form.value.port = defaultPort(form.value.type);
+  if (form.value.type === 'sqlite') dlgTab.value = 'general';
 }
 
 function openNew() {
   form.value = blank();
   dlgMsg.value = '';
+  dlgTab.value = 'general';
   dlg.value = true;
 }
 
 async function openEdit(p: NavicatProfile) {
-  form.value = { ...blank(), ...p, password: '' };
+  form.value = { ...blank(), ...p, password: '', options: { ssl: false, ...(p.options || {}) } };
   dlgMsg.value = '';
+  dlgTab.value = 'general';
   dlg.value = true;
   if (p.hasPassword && p.id) {
     try { form.value.password = await reveal(p.id); } catch { /* ignore */ }
@@ -66,10 +73,11 @@ async function doSave() {
   if (!form.value.name.trim()) { dlgMsg.value = t('nv.required_name'); return; }
   saving.value = true; dlgMsg.value = '';
   try {
-    const saved = await save({ ...form.value });
+    const payload = { ...form.value, database: form.value.type === 'sqlite' ? form.value.database : '' };
+    const saved = await save(payload);
     dlg.value = false;
     activeId.value = saved.id || '';
-    activeDatabase.value = form.value.type === 'sqlite' ? '' : (saved.database || '');
+    activeDatabase.value = saved.type === 'sqlite' ? '' : (saved.database || '');
     treeVersion.value += 1;
     msg.value = t('nv.saved');
   } catch (e) { dlgMsg.value = (e as Error).message; } finally { saving.value = false; }
@@ -234,27 +242,61 @@ onMounted(() => { void load(); });
       </div>
     </section>
 
-    <el-dialog v-model="dlg" :title="form.id ? $t('nv.edit_title') : $t('nv.new_title')" width="520px" class="nvdlg">
-      <div class="nvform">
-        <el-input v-model="form.name" class="nv-name-input" size="small" :placeholder="$t('nv.name')" />
-        <select v-model="form.type" class="nv-type" @change="onTypeChange">
-          <option v-for="ty in TYPES" :key="ty" :value="ty">{{ ty }}</option>
-        </select>
-        <template v-if="!isSqlite">
-          <el-input v-model="form.host" size="small" class="nv-host" :placeholder="$t('nv.host')" />
-          <el-input v-model="form.port" size="small" class="nv-port" :placeholder="$t('nv.port')" />
-          <el-input v-if="!isRedis" v-model="form.user" size="small" class="nv-user" :placeholder="$t('nv.user')" />
-          <div v-if="!isRedis" class="nv-pw">
-            <el-input v-model="form.password" size="small" type="password" show-password :placeholder="form.hasPassword && !form.password ? '••••••' : $t('nv.password')" />
+    <el-dialog v-model="dlg" :title="form.id ? $t('nv.edit_title') : $t('nv.new_title')" width="560px" class="nvdlg">
+      <el-tabs v-model="dlgTab" class="nv-tabs">
+        <el-tab-pane :label="$t('nv.tab_general')" name="general">
+          <div class="nvform">
+            <label class="nvrow">
+              <span class="nvlbl">{{ $t('nv.name') }}</span>
+              <el-input v-model="form.name" size="small" class="nv-name-input" />
+            </label>
+            <label class="nvrow">
+              <span class="nvlbl">{{ $t('nv.type') }}</span>
+              <select v-model="form.type" class="nv-type" @change="onTypeChange">
+                <option v-for="ty in TYPES" :key="ty" :value="ty">{{ ty }}</option>
+              </select>
+            </label>
+            <template v-if="isSqlite">
+              <label class="nvrow">
+                <span class="nvlbl">{{ $t('nv.database_file') }}</span>
+                <el-input v-model="form.database" size="small" class="nv-db-file" />
+              </label>
+            </template>
+            <template v-else>
+              <label class="nvrow">
+                <span class="nvlbl">{{ $t('nv.host') }}</span>
+                <el-input v-model="form.host" size="small" class="nv-host" />
+              </label>
+              <label class="nvrow">
+                <span class="nvlbl">{{ $t('nv.port') }}</span>
+                <el-input v-model="form.port" size="small" class="nv-port" />
+              </label>
+              <label v-if="!isRedis" class="nvrow">
+                <span class="nvlbl">{{ $t('nv.user') }}</span>
+                <el-input v-model="form.user" size="small" class="nv-user" />
+              </label>
+              <label class="nvrow">
+                <span class="nvlbl">{{ $t('nv.password') }}</span>
+                <el-input v-model="form.password" size="small" type="password" show-password class="nv-pw"
+                          :placeholder="form.hasPassword && !form.password ? '••••••' : ''" />
+              </label>
+            </template>
           </div>
-        </template>
-        <el-input v-model="form.database" size="small" class="nv-db" :placeholder="dbLabel" />
-      </div>
+        </el-tab-pane>
+        <el-tab-pane v-if="!isSqlite" :label="$t('nv.tab_advanced')" name="advanced">
+          <div class="nvform">
+            <label class="nvrow">
+              <span class="nvlbl">{{ $t('nv.ssl') }}</span>
+              <el-switch v-model="ssl" class="nv-ssl" />
+            </label>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
       <div v-if="dlgMsg" class="nvmsg nvdlgmsg">{{ dlgMsg }}</div>
       <template #footer>
         <button class="nvbtn nv-test" :disabled="testing" @click="doTest">{{ testing ? $t('nv.testing') : $t('nv.test') }}</button>
-        <button class="nvbtn" @click="dlg = false">{{ $t('nv.cancel') }}</button>
-        <button class="nvbtn primary nv-save" :disabled="saving" @click="doSave">{{ $t('nv.save') }}</button>
+        <button class="nvbtn nv-cancel" @click="dlg = false">{{ $t('nv.cancel') }}</button>
+        <button class="nvbtn primary nv-save" :disabled="saving" @click="doSave">{{ $t('nv.ok') }}</button>
       </template>
     </el-dialog>
   </div>
@@ -288,14 +330,13 @@ onMounted(() => { void load(); });
 .nv-table th { background: var(--bg4); position: sticky; top: 0; }
 .nv-raw { margin: 0; padding: 10px 12px; font-size: 13px; color: var(--tx); white-space: pre-wrap; }
 .nv-noresult { color: var(--tx4); font-size: 12px; padding: 14px; text-align: center; }
-.nvform { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.nv-name-input { width: 150px; }
-.nv-type { width: 110px; height: 28px; background: var(--bg2); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 0 6px; font-size: 13px; }
+.nv-tabs { margin-top: -6px; }
+.nvform { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; }
+.nvrow { display: flex; align-items: center; gap: 10px; }
+.nvlbl { flex: none; width: 96px; text-align: right; color: var(--tx3); font-size: 13px; }
+.nvrow .el-input { flex: 1; }
+.nv-type { flex: 1; height: 32px; background: var(--bg2); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 0 8px; font-size: 13px; }
 .nv-type:focus { outline: none; border-color: var(--ac2); }
-.nv-host { width: 150px; }
-.nv-port { width: 90px; }
-.nv-user { width: 110px; }
-.nv-db { width: 200px; }
-.nv-pw { display: flex; gap: 4px; align-items: center; width: 200px; }
-.nvform .el-input { flex: none; }
+.nvdlg :deep(.el-dialog__footer) { display: flex; align-items: center; }
+.nv-test { margin-right: auto; }
 </style>
