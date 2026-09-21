@@ -146,11 +146,12 @@ createWorkflowExecutor({ sessionManager, workflowRunner, resolveAgent, logger })
   - 任务列表/卡片显示 `工作流：<label> · Agent：<name>`（标签通过两份列表查名）。
   - 运行记录：`paused` 状态徽标；workflow 运行显示 `sessionId` 与「打开会话」按钮。
 - `web/src/scheduler/format.ts`：`typeLabel`/`scheduleSummary` 支持 `workflow`。
-- 「打开会话」：在 `web/src/uiIntents.ts` 新增一次性意图 `pendingSession`/`openSession(id)`（与既有 `pendingTool` 同型）；`App.vue`（持有 tab/center 管理器）`watch(pendingSession)` → 切到终端视图并 `center.activateSession(id)`，随后清空意图。`SchedulerView` 运行记录里点击按钮调用 `openSession(sessionId)`。
+- 「打开会话」：`SchedulerView` 新增可选 prop `onOpenSession: (sessionId: string) => void`；`App.vue` 传入 `openLiveSession`，实现为 `center.activateSession(sid)` + `terminal.switchTo(sid)`（`activateSession` 在页签不存在时会自动创建，`switchTo` 同步终端输出）。打开后首页欢迎层因页签非空而收起，主区即该 agent 终端，可看到工作流逐步写入的 prompt 与流式输出。
+- 「点击进入工作流」：`workflow` 类型任务在操作区额外显示「打开运行会话」按钮；点击时 `loadRuns(taskId, 20)` 取最近一条带 `sessionId` 的运行 → 调 `onOpenSession`；没有则提示「该任务还没有运行记录，请先运行」。运行记录弹窗里每条运行也显示 `sessionId` 并可打开。
 
 ### 十、i18n
 
-新增键（中英同步）：`sched.type.workflow`、`sched.wf.select`、`sched.wf.none`、`sched.agent.select`、`sched.wf.session_name`、`sched.wf.run_hint`、`sched.status.paused`、`sched.open_session`、`sched.wf.need_select`，以及执行器错误文案 `sched.err.agent_not_found`、`sched.err.workflow_not_found`。
+新增键（中英同步）：`sched.type.workflow`、`sched.wf.select`、`sched.wf.none`、`sched.agent.select`、`sched.wf.session_name`、`sched.wf.run_hint`、`sched.status.paused`、`sched.open_session`、`sched.wf.open`、`sched.wf.no_run`、`sched.wf.need_select`，以及执行器错误文案 `sched.err.agent_not_found`、`sched.err.workflow_not_found`。（`sched.status.paused` 已存在，复用不新增。）
 
 ## 影响文件
 
@@ -162,7 +163,7 @@ createWorkflowExecutor({ sessionManager, workflowRunner, resolveAgent, logger })
 - 改 `server/scheduler/engine.js`、`store.js`、`manifest.js`、`index.js`
 - 改 `server/index.js`（构造并注入执行器）
 - 改 `web/src/scheduler/useScheduler.ts`、`SchedulerView.vue`、`format.ts`
-- 改 `web/src/uiIntents.ts`、`web/src/App.vue`（打开会话意图）
+- 改 `web/src/App.vue`（`openLiveSession` + 传入 `:on-open-session`）
 - 改 `shared/i18n/zh-CN.js`、`shared/i18n/en.js`
 - 新增/改测试：`shared`/`server/test`/`web` 对应 `*.test.*`
 
@@ -181,4 +182,4 @@ createWorkflowExecutor({ sessionManager, workflowRunner, resolveAgent, logger })
 
 - 定时运行在**无人值守**下若某 prompt 步永不回显 done marker，会一直等待到 `stepTimeoutMs`（`WorkflowRunner.stepTimeoutMs`，默认 30 分钟）后 `failed`。这是既有行为，本次不额外处理。
 - 自动新建的会话数量随触发累积（跑完保留），长期启用会堆会话；本次不做自动清理。
-- 「打开会话」依赖 `App.vue` 里 tab/center 管理器的 `activateSession`；若定时运行的会话尚未出现在标签管理器已知列表，需在 `activateSession` 前补一次会话列表刷新（实现时按现有 `App.vue` 的会话同步逻辑处理）。
+- 「打开会话」依赖 `App.vue` 的 `center.activateSession` 与 `terminal.switchTo`；定时运行的会话是**运行中**会话，已在 `terminal.state.sessions` 列表中，`activateSession` 会新建页签、`switchTo` 会拉取回放，无需走 RESTORE。

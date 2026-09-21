@@ -998,6 +998,8 @@ git commit -m "feat(workflow): 定时运行状态广播所有连接"
   'sched.wf.session_name': '定时：{name} · {time}',
   'sched.wf.need_select': '请选择工作流与 Agent',
   'sched.open_session': '打开会话',
+  'sched.wf.open': '打开运行会话',
+  'sched.wf.no_run': '该任务还没有运行记录，请先运行',
   'sched.err.agent_not_found': 'Agent 不存在',
   'sched.err.workflow_not_found': '工作流不存在',
 ```
@@ -1014,6 +1016,8 @@ git commit -m "feat(workflow): 定时运行状态广播所有连接"
   'sched.wf.session_name': 'Scheduled: {name} · {time}',
   'sched.wf.need_select': 'Select a workflow and an agent',
   'sched.open_session': 'Open session',
+  'sched.wf.open': 'Open run session',
+  'sched.wf.no_run': 'No runs yet — run it first',
   'sched.err.agent_not_found': 'Agent not found',
   'sched.err.workflow_not_found': 'Workflow not found',
 ```
@@ -1160,10 +1164,26 @@ onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); void load
 
 （注意把原来的 `<template v-else>` 顺延；`v-else-if` 必须紧跟 `v-else-if="form.type === 'ai'"` 分支。）
 
-- 列表徽标（第 184 行那处嵌套三元）替换为：
+- 列表徽标（第 184 行那处嵌套三元）替换为「图标 + 文字」，并在 script 区新增 `taskIcon`：
+
+```ts
+function taskIcon(t: TaskView): string {
+  if (t.type === 'workflow') return '🔀';
+  if (t.type === 'script') return '📜';
+  if (t.type === 'shell') return '⌨';
+  if (t.type === 'ai') return t.ai?.source === 'file' ? '📄' : '🤖';
+  return '•';
+}
+```
 
 ```html
-              <span class="badge" :class="t.type">{{ typeLabel(t.type) }}</span>
+              <span class="badge" :class="t.type"><span class="bi">{{ taskIcon(t) }}</span>{{ typeLabel(t.type) }}</span>
+```
+
+样式追加：
+
+```css
+.badge .bi { margin-right: 4px; }
 ```
 
 并在 `name` 行后补 workflow 元信息（`v-if="t.type === 'workflow' && t.workflow"`）：
@@ -1188,6 +1208,24 @@ onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); void load
 ```ts
 const props = defineProps<{ terminal: any; onOpenSession?: (sessionId: string) => void }>();
 const currentRun = computed(() => runs.value.find((r) => r.id === logRunId.value) || null);
+```
+
+新增「打开运行会话」处理函数：
+
+```ts
+async function openWfRun(task: TaskView) {
+  state.error = '';
+  const list = await sched.loadRuns(task.id, 20);
+  const run = list.find((r) => r.sessionId);
+  if (!run || !run.sessionId) { state.error = t('sched.wf.no_run'); return; }
+  props.onOpenSession?.(run.sessionId);
+}
+```
+
+在操作区（`.acts`）「历史」按钮之前插入（仅 workflow 任务显示）：
+
+```html
+            <button v-if="t.type === 'workflow'" @click="openWfRun(t)">{{ $t('sched.wf.open') }}</button>
 ```
 
 （`computed` 已在 import 中。）
