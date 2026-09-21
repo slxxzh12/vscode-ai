@@ -14,11 +14,12 @@ function timeoutFor(task) {
 export function createEngine({
   store, runner = createRunner(), logger = console,
   now = () => Date.now(), tickMs = TICK_MS, aiBin = 'opencode',
-  opencodeDataDir = null,
+  opencodeDataDir = null, workflowExecutor = null,
   maxConcurrent = Number(process.env.DEVFLOW_SCHED_MAX_CONCURRENT) || 3,
 } = {}) {
   const nextAt = new Map();
   const taskRuns = new Map();
+  const activeWorkflow = new Map();   // taskId -> { runId, handle }
   const listeners = new Set();
   let timer = null;
   let projectResolver = () => null;
@@ -50,6 +51,7 @@ export function createEngine({
   }
 
   function startRun(task, trigger) {
+    if (task.type === 'workflow') return startWorkflowRun(task, trigger);
     if (taskRuns.has(task.id)) return { error: 'already-running' };
     if (runner.count() >= maxConcurrent) return { error: 'max-concurrent' };
     const cwd = task.cwd || projectResolver(task.projectId) || process.cwd();
@@ -80,6 +82,55 @@ export function createEngine({
     return { run: { ...run } };
   }
 
+  function startWorkflowRun(task, trigger) {
+    if (taskRuns.has(task.id)) return { error: 'already-running' };
+    if (!workflowExecutor) {
+      const run = finishImmediate(task, trigger, 'executor-unavailable');
+      return { run: { ...run } };
+    }
+    if (runner.count() + activeWorkflow.size >= maxConcurrent) return { error: 'max-concurrent' };
+    const id = runIdGen();
+    const logFile = store.logFileFor(task.id, id);
+    const run = { id, taskId: task.id, status: 'running', trigger, startedAt: now(), finishedAt: null, exitCode: null, durationMs: null, logFile, error: null, sessionId: null };
+    store.addRun(run);
+    taskRuns.set(task.id, id);
+    const finish = (status, extra = {}) => {
+      const cur = activeWorkflow.get(task.id);
+      if (!cur || cur.runId !== id) return;
+      activeWorkflow.delete(task.id);
+      taskRuns.delete(task.id);
+      const patch = { status, finishedAt: now(), durationMs: now() - run.startedAt, ...extra };
+      const updated = store.updateRun(id, patch);
+      const fresh = store.getTask(task.id);
+      if (fresh) scheduleTask(fresh, now());
+      emit('run-end', { run: updated ? { ...updated } : { id, taskId: task.id, ...patch } });
+    };
+    const onStatus = (s = {}) => {
+      if (s.sessionId) store.updateRun(id, { sessionId: s.sessionId });
+      if (s.status === 'success') finish('success', { sessionId: s.sessionId || null });
+      else if (s.status === 'failed') finish('failed', { error: s.error || 'workflow failed' });
+      else if (s.status === 'aborted') finish('killed');
+      else if (s.status === 'paused') store.updateRun(id, { status: 'paused' });
+    };
+    // 先占位并 emit run-start，再启动执行器；执行器的状态回调均为异步（queueMicrotask）
+    activeWorkflow.set(task.id, { runId: id, handle: null });
+    emit('run-start', { run: { ...run } });
+    let handle = null;
+    try {
+      handle = workflowExecutor.start({ task, runId: id, logFile, onStatus });
+    } catch (e) {
+      finish('failed', { error: String(e && e.message || e) });
+      return { run: { ...store.getRun(id) } };
+    }
+    if (!handle || handle.error) {
+      finish('failed', { error: (handle && handle.error) || 'executor-error' });
+      return { run: { ...store.getRun(id) } };
+    }
+    const cur = activeWorkflow.get(task.id);
+    if (cur && cur.runId === id) cur.handle = handle;
+    return { run: { ...run } };
+  }
+
   function complete(task, id, status, res) {
     taskRuns.delete(task.id);
     const patch = { status, finishedAt: now(), exitCode: res.exitCode ?? null, durationMs: res.durationMs ?? null, error: res.error || null };
@@ -95,6 +146,8 @@ export function createEngine({
     return startRun(task, 'manual');
   }
   function stop(taskId) {
+    const wf = activeWorkflow.get(taskId);
+    if (wf) { try { wf.handle?.abort?.(); } catch { /* ignore */ } return true; }
     const rid = taskRuns.get(taskId);
     if (!rid) return false;
     return runner.stop(rid);

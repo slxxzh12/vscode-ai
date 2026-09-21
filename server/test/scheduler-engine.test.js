@@ -110,3 +110,85 @@ test('command 来源任务：prompt loader 抛错不阻断运行', () => {
   assert.equal(runner.calls.length, 1);
   assert.deepEqual(runner.calls[0].spec.args, ['run', '--command', 'code-review']);
 });
+
+function wfTask(over = {}) {
+  return { name: 'wf', enabled: true, type: 'workflow', workflow: { workflowId: 'dev', agentId: 'opencode' },
+    schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } }, ...over };
+}
+function fakeExecutor() {
+  const calls = [];
+  const handles = new Map();
+  return {
+    calls, handles,
+    start(args) {
+      calls.push(args);
+      let cb = args.onStatus;
+      let aborted = false;
+      const handle = {
+        abort() { aborted = true; cb?.({ status: 'aborted' }); },
+        get aborted() { return aborted; },
+        emit: (s) => cb?.(s),
+      };
+      handles.set(args.runId, handle);
+      return handle;
+    },
+  };
+}
+
+test('workflow 任务：触发时调用 executor 不 spawn 进程', async () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const runner = fakeRunner();
+  const executor = fakeExecutor();
+  const events = [];
+  const now = { v: 1000 };
+  const engine = createEngine({ store, runner, workflowExecutor: executor, now: () => now.v });
+  engine.onEvent((e) => events.push(e));
+  store.createTask(wfTask());
+  engine.refreshAll();
+  now.v += HOUR;
+  engine.tick();
+  assert.equal(runner.calls.length, 0);
+  assert.equal(executor.calls.length, 1);
+  assert.equal(executor.calls[0].task.workflow.workflowId, 'dev');
+  assert.equal(store.listRuns({ taskId: store.listTasks()[0].id }).length, 1);
+  assert.deepEqual(events, ['run-start']);
+});
+
+test('workflow 任务：executor onStatus success → run success，可再次触发', async () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const executor = fakeExecutor();
+  const now = { v: 1000 };
+  const engine = createEngine({ store, runner: fakeRunner(), workflowExecutor: executor, now: () => now.v });
+  const { task } = store.createTask(wfTask());
+  engine.refreshAll();
+  now.v += HOUR; engine.tick();
+  const runId = executor.calls[0].runId;
+  executor.handles.get(runId).emit({ status: 'success', sessionId: 'sess1' });
+  const run = store.getRun(runId);
+  assert.equal(run.status, 'success');
+  assert.equal(run.sessionId, 'sess1');
+  assert.equal(engine.isRunning(task.id), false);
+});
+
+test('workflow 任务：stop 调 executor.abort', async () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const executor = fakeExecutor();
+  const now = { v: 1000 };
+  const engine = createEngine({ store, runner: fakeRunner(), workflowExecutor: executor, now: () => now.v });
+  const { task } = store.createTask(wfTask());
+  engine.refreshAll();
+  now.v += HOUR; engine.tick();
+  const runId = executor.calls[0].runId;
+  assert.equal(engine.stop(task.id), true);
+  assert.equal(executor.handles.get(runId).aborted, true);
+  assert.equal(store.getRun(runId).status, 'killed');
+});
+
+test('workflow 任务：未注入 executor → 立即 failed', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const engine = createEngine({ store, runner: fakeRunner(), now: () => 1000 });
+  const { task } = store.createTask(wfTask());
+  const r = engine.manualRun(task.id);
+  assert.equal(r.run.status, 'failed');
+  assert.equal(r.run.error, 'executor-unavailable');
+});
