@@ -8,7 +8,11 @@ import { promptStepId } from '@devflow/shared/workflow-group';
 import type { useTerminal } from '../useTerminal';
 import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
+import DocViewer from './DocViewer.vue';
 import ToolDocPane from '../tools/doc/ToolDocPane.vue';
+import { useLocalSources } from '../local/useLocalSources';
+import { localRootDocSource, localFileDocSource } from '../local/localDocSource';
+import type { DocSource } from '../tools/doc/docSource';
 import TextToolBody from '../tools/text/TextToolBody.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
@@ -60,6 +64,25 @@ let copySelTimer: ReturnType<typeof setTimeout> | null = null;
 
 const activeFile = computed(() => (props.center.active.value?.kind === 'file' ? props.center.active.value : null));
 const activeTool = computed(() => (props.center.active.value?.kind === 'tool' ? props.center.active.value : null));
+// 本地来源页签（拖入文件/文件夹）
+const local = useLocalSources();
+const activeLocal = computed(() => (props.center.active.value?.kind === 'local' ? props.center.active.value : null));
+const localIsRoot = computed(() => activeLocal.value?.id === 'l:root');
+const localRootSource = localRootDocSource();
+const localLeafName = computed(() => {
+  const p = local.activePath.value;
+  const i = p.lastIndexOf('/');
+  return i >= 0 ? p.slice(i + 1) : p;
+});
+const localFileEntry = computed(() => {
+  const id = activeLocal.value?.id || '';
+  if (!id.startsWith('l:f:')) return null;
+  return local.files.value.get(id.slice(4)) || null;
+});
+const localFileSource = computed<DocSource | null>(() => {
+  const e = localFileEntry.value;
+  return e ? localFileDocSource(e.key) : null;
+});
 // 文档型工具（notepad/yaml）在主区用 DocViewer 展示
 const activeDocTool = computed(() => {
   const x = activeTool.value?.tool;
@@ -1334,6 +1357,24 @@ onBeforeUnmount(() => {
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
       <TextToolBody v-else-if="activeTool && activeTool.tool === 'translate'" />
     </div>
+    <div v-show="!!activeLocal" class="local-layer">
+      <template v-if="localIsRoot">
+        <DocViewer
+          v-if="local.activePath.value"
+          :source="localRootSource"
+          :path="local.activePath.value"
+          :name="localLeafName"
+        />
+        <div v-else class="local-empty">{{ $t('local.empty') }}</div>
+      </template>
+      <DocViewer
+        v-else-if="localFileSource && localFileEntry"
+        :key="localFileEntry.key"
+        :source="localFileSource"
+        :path="localFileEntry.name"
+        :name="localFileEntry.name"
+      />
+    </div>
 
     <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerCollapsed, phone }" :style="{ height: (composerCollapsed ? 40 : composerH) + 'px' }">
       <div class="cbar" @mousedown="onComposerDragDown">
@@ -1612,6 +1653,8 @@ onBeforeUnmount(() => {
 .copyfloat:disabled { opacity: .4; cursor: default; pointer-events: none; }
 .file-layer { flex: 1; min-height: 0; overflow: hidden; }
 .tool-layer { flex: 1; min-height: 0; overflow: hidden; }
+.local-layer { flex: 1; min-height: 0; overflow: hidden; }
+.local-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--tx4); font-size: 13px; }
 .phone-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px; text-align: center; color: var(--tx4); font-size: 13px; background: var(--bg3); z-index: 2; }
 .fgroup .gplay { background: var(--bg4); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 0 5px; cursor: pointer; font-size: 10px; line-height: 16px; }
 .fgroup .gplay.stop { color: var(--err); border-color: var(--err); }
