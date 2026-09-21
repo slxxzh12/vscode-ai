@@ -2,6 +2,7 @@ export declare const C2S: Readonly<{
   LIST: 'list'; CREATE: 'create'; START: 'start'; INPUT: 'input';
   RESIZE: 'resize'; STOP: 'stop'; KILL: 'kill'; PING: 'ping'; RESTORE: 'restore';
   WF_LIST: 'wf-list'; WF_RUN: 'wf-run'; WF_NEXT: 'wf-next'; WF_ABORT: 'wf-abort';
+  WF_ROLLBACK: 'wf-rollback';
 }>;
 export declare const S2C: Readonly<{
   OUTPUT: 'output'; REPLAY: 'replay'; SESSION_CREATED: 'session-created';

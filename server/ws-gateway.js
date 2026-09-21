@@ -134,7 +134,9 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
         conn.send({ type: S2C.WF_LIST_RESULT, workflows: workflowRunner.list() });
         break;
       case C2S.WF_RUN: {
-        const res = workflowRunner.start(msg.workflowId, msg.sessionId);
+        const res = msg.groupAnchor
+          ? workflowRunner.startGroup({ workflowId: msg.workflowId, groupAnchor: msg.groupAnchor, sessionId: msg.sessionId })
+          : workflowRunner.start(msg.workflowId, msg.sessionId);
         if (!res.ok) { conn.send({ type: S2C.ERROR, code: res.code, message: res.message }); break; }
         workflowRunner.attachConn(res.run.runId, conn);
         conn.send({ type: S2C.WF_STARTED, run: res.run.snapshot() });
@@ -152,6 +154,13 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
         const run = workflowRunner.get(msg.runId);
         if (!run) { conn.send({ type: S2C.ERROR, code: 'not-found', message: 'run not found' }); break; }
         run.abort();
+        conn.send({ type: S2C.WF_STATUS, run: run.snapshot() });
+        break;
+      }
+      case C2S.WF_ROLLBACK: {
+        const ok = workflowRunner.rollback(msg.runId, msg.stepId);
+        if (!ok) { conn.send({ type: S2C.ERROR, code: 'not-found', message: 'run or step not found' }); break; }
+        const run = workflowRunner.get(msg.runId);
         conn.send({ type: S2C.WF_STATUS, run: run.snapshot() });
         break;
       }
