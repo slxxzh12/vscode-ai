@@ -139,7 +139,7 @@ function itemsFor(node: Internal): MenuItem[] {
   }
   if (src.rename) out.push({ key: 'rename', cls: 'ftmenu-rename', label: t('tree.rename'), run: () => startRename(node) });
   if (src.remove) out.push({ key: 'del', cls: 'ftmenu-del', label: t('tree.delete'), run: () => void src.remove!(node) });
-  if (src.reveal) out.push({ key: 'reveal', cls: 'ftmenu-reveal', label: t('tree.reveal_os'), run: () => void src.reveal!(node) });
+  if (src.reveal) out.push({ key: 'reveal', cls: 'ftmenu-reveal', label: t('tree.reveal_os'), run: () => runReveal(node) });
   if (src.copyName) out.push({ key: 'copy-name', cls: 'ftmenu-copy-name', label: node.kind === 'dir' ? t('tree.copy_dir_name') : t('tree.copy_file_name'), run: () => src.copyName!(node) });
   if (src.copyPath) out.push({ key: 'copy-path', cls: 'ftmenu-copy-path', label: t('tree.copy_path'), run: () => src.copyPath!(node) });
   return out;
@@ -151,6 +151,10 @@ function openMenu(e: MouseEvent, node: Internal) {
   menu.value = itemsFor(node).length ? { x: e.clientX, y: e.clientY, node } : null;
 }
 function runMenuItem(it: MenuItem) { menu.value = null; it.run(); }
+function runReveal(node: Internal) {
+  Promise.resolve(props.source.reveal!(node))
+    .catch((e: unknown) => alert(t('tree.reveal_failed', { msg: (e as Error)?.message || String(e) })));
+}
 function startRename(node: Internal) {
   menu.value = null;
   editing.value = { key: node.key, name: node.name, error: '' };

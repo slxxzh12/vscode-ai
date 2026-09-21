@@ -3,7 +3,8 @@ import { computed, ref, watch } from 'vue';
 import type { HistoryMessage } from '../useMessageHistory';
 import { t } from '../i18n';
 import { buildSessionTree, type SessionNode, type SessionExtra } from '../sessionTree';
-import FileTree from './FileTree.vue';
+import TreeView from './TreeView.vue';
+import { projectTreeSource } from '../tree/projectTreeSource';
 import PromptCollectAddon from '../prompts/PromptCollectAddon.vue';
 
 export interface HistoryEntry { projectId: string; path: string; name: string; projName: string; ts: number; }
@@ -37,6 +38,13 @@ const emit = defineEmits<{
   (e: 'open-file', projectId: string, path: string, name: string): void;
   (e: 'detail-file', projectId: string, path: string, name: string): void;
 }>();
+
+// 目录页签的数据源：项目文件树（统一 TreeView）
+const treeSource = computed(() => projectTreeSource({
+  projectId: props.projectId || '',
+  onOpenFile: (pid, p, name) => emit('open-file', pid, p, name),
+  onDetailFile: (pid, p, name) => emit('detail-file', pid, p, name),
+}));
 
 // 页签交给 Element Plus 的 el-tabs 渲染，切页签仍由父组件持有的 tab 决定
 const activeTab = computed({
@@ -203,9 +211,8 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
         <el-tab-pane :label="$t('hist.tab.files')" name="files" />
       </el-tabs>
     </header>
-    <FileTree v-if="tab === 'tree'" class="hltree" :key="projectId || 'none'" :project-id="projectId" :active-path="activePath"
-      @open-file="(pid, p, name) => emit('open-file', pid, p, name)"
-      @detail-file="(pid, p, name) => emit('detail-file', pid, p, name)" />
+    <TreeView v-if="tab === 'tree'" class="hltree" :key="projectId || 'none'" :source="treeSource"
+      :active-key="activePath || ''" :title="$t('tree.title')" />
     <template v-else>
     <div v-if="tab === 'messages'" class="filterbar" :title="$t('hist.filter.title')">
       <button class="filterbtn" :class="{ on: filter }" @click="emit('update:filter', true)">{{ $t('hist.filter.on') }}</button>

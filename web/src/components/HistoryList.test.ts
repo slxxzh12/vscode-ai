@@ -66,7 +66,7 @@ describe('HistoryList', () => {
   it('目录页签渲染文件树（无项目时显示空态，不请求）', async () => {
     const w = mount({ tab: 'tree', projectId: null });
     await w.vm.$nextTick();
-    expect(w.find('.ft').exists()).toBe(true);
+    expect(w.find('.ftv').exists()).toBe(true);
     expect(w.find('.filterbtn').exists()).toBe(false);
     expect(w.find('.searchinput').exists()).toBe(false);
   });
