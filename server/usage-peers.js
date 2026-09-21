@@ -89,6 +89,8 @@ export class UsagePeersStore {
     for (const k of METRIC_KEYS) {
       if (!Number.isFinite(usage && usage[k]) && Number.isFinite(prev && prev[k])) merged[k] = prev[k];
     }
+    // 成功的一轮（带指标）清掉上次残留的采集错误，避免 error 字段一直挂着旧的 ENOENT
+    if (hasMetrics(usage)) delete merged.error;
     const rec = { ...merged, machineId, receivedAt: now };
     this.data.peers[machineId] = rec;
     // 合计行与 agent 明细同表（usage），不再单独维护 peer_daily；没指标不写，保护当天已有行

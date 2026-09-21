@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { t } from '../i18n';
-import { fmtNum, fmtTime, isOnline, machineLabel, mergeMachines } from './usagePeers';
+import { fmtNum, fmtTime, isOnline, machineLabel, machineFullLabel, mergeMachines } from './usagePeers';
 import type { MachineRow } from './usagePeers';
 import type { CollabApi } from './useCollab';
 import { EMPTY_SNAPSHOT } from './types';
@@ -60,8 +60,7 @@ async function exportCsv() {
             <span class="dot" :class="{ on: isOnline(row.receivedAt) }" />
             <span v-if="row.machineId === hubId" class="crown">👑 {{ $t('collab.member.master') }}</span>
             <span v-if="row.machineId === me" class="mebadge">{{ $t('collab.member.me') }}</span>
-            <span class="mname" :title="machineLabel(row)">{{ machineLabel(row) }}</span>
-            <span class="host">@{{ row.host || '-' }}:{{ row.port || '-' }}</span>
+            <span class="mname" :title="machineFullLabel(row)">{{ machineLabel(row) }}</span>
             <span v-if="!row.inGroup" class="tag">{{ $t('usage.not_in_group') }}</span>
           </div>
         </template>
@@ -87,7 +86,6 @@ async function exportCsv() {
 .dot { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tx6); margin-right: 6px; }
 .dot.on { background: #4caf50; }
 .mname { color: var(--tx1); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.host { flex: none; color: var(--tx6); margin-left: 6px; font-size: 11px; white-space: nowrap; }
 .tag { flex: none; margin-left: 8px; padding: 0 6px; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx6); font-size: 11px; white-space: nowrap; }
 .crown { flex: none; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: var(--warn); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; white-space: nowrap; }
 .mebadge { flex: none; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: var(--ac); color: var(--onac); font-size: 11px; font-weight: 700; line-height: 18px; white-space: nowrap; }

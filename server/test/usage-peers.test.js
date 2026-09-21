@@ -58,6 +58,17 @@ test('无任何指标的上报不落当天合计行', () => {
   assert.equal(s.get('m2').error, 'ENOENT');
 });
 
+test('成功上报清除上次残留的采集错误', () => {
+  const s = new UsagePeersStore({ file: tmpFile() });
+  const day = Date.UTC(2026, 8, 17, 3, 0, 0);
+  s.upsert({ machineId: 'm1', agent: 'opencode', days: 7, error: 'spawn opencode ENOENT' }, day);
+  assert.equal(s.get('m1').error, 'spawn opencode ENOENT');
+  const rec = s.upsert({ machineId: 'm1', agent: 'nga', days: 7, sessions: 3, messages: 12 }, day + 1000);
+  assert.equal('error' in rec, false, '成功上报不再残留上次的 error');
+  assert.equal(rec.messages, 12);
+  assert.equal(s.get('m1').error, undefined);
+});
+
 test('缺 machineId 不落库，返回 null', () => {
   const s = new UsagePeersStore({ file: tmpFile() });
   assert.equal(s.upsert({ sessions: 1 }, 1000), null);

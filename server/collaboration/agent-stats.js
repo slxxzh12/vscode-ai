@@ -15,6 +15,17 @@ function baseName(cmd) {
   return path.basename(String(cmd || '')).replace(/\.(exe|cmd|bat|ps1)$/i, '').toLowerCase();
 }
 
+// 改名的 opencode（如 nga）与 opencode 是同一个 CLI：解析可执行文件时视为等价、互为回退，
+// DEVFLOW_OPENCODE 覆盖与包内 opencode/、env/ 查找对它们一视同仁。
+const OPENCODE_EQUIVALENTS = ['opencode', 'nga'];
+
+// 待查找的命令名：自身在前，同族等价名在后（保留原写法作为首选）
+function binCandidates(name) {
+  const base = baseName(name);
+  if (!OPENCODE_EQUIVALENTS.includes(base)) return [name];
+  return [name, ...OPENCODE_EQUIVALENTS.filter((n) => n !== base)];
+}
+
 // 在给定目录里找可执行文件（Windows 无扩展名时补 PATHEXT 常见后缀）
 function findIn(cmd, dirs, exists) {
   const exts = process.platform === 'win32' && !path.extname(cmd) ? WIN_EXTS : [''];
@@ -29,19 +40,28 @@ function findIn(cmd, dirs, exists) {
 }
 
 // 解析 agent 可执行文件：显式配置(DEVFLOW_OPENCODE) → 本身是路径 → PATH → 包内 opencode/、env/
-// 都找不到时原样返回 cmd，交给 execFile 报 ENOENT（保持旧行为）
+// opencode 与其改名等价物（如 nga）走同一条链、互为回退；都找不到时原样返回 cmd，
+// 交给 execFile 报 ENOENT（保持旧行为）
 export function resolveAgentBin(cmd, { env = process.env, exists = fs.existsSync, appRoot = APP_ROOT } = {}) {
   const name = String(cmd || '').trim();
   if (!name) return name;
-  if (baseName(name) === 'opencode') {
+  const candidates = binCandidates(name);
+  if (candidates.some((c) => baseName(c) === 'opencode')) {
     const override = String(env.DEVFLOW_OPENCODE || '').trim();
     if (override && exists(override)) return override;
   }
   if (name.includes('/') || name.includes('\\')) return name;
-  const fromPath = findIn(name, String(env.PATH || '').split(path.delimiter), exists);
-  if (fromPath) return fromPath;
-  const bundled = findIn(name, [path.join(appRoot, 'opencode'), path.join(appRoot, 'env')], exists);
-  return bundled || name;
+  const pathDirs = String(env.PATH || '').split(path.delimiter);
+  for (const c of candidates) {
+    const fromPath = findIn(c, pathDirs, exists);
+    if (fromPath) return fromPath;
+  }
+  const bundledDirs = [path.join(appRoot, 'opencode'), path.join(appRoot, 'env')];
+  for (const c of candidates) {
+    const bundled = findIn(c, bundledDirs, exists);
+    if (bundled) return bundled;
+  }
+  return name;
 }
 
 // 把解析到的 agent 目录插到 PATH 最前，让本机采集与 pty 终端命中同一份；返回命中的可执行路径

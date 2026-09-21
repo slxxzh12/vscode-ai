@@ -19,7 +19,15 @@ export function fmtNum(n?: number): string {
 }
 
 export function machineLabel(u?: Partial<CollabUsage>): string {
-  return (u?.employeeId || u?.username || u?.machineId || '').trim();
+  return (u?.username || u?.employeeId || u?.machineId || '').trim();
+}
+
+// 完整展示名 username@host:port（鼠标悬停时的标题）
+export function machineFullLabel(u?: Partial<CollabUsage>): string {
+  const name = machineLabel(u);
+  const host = u?.host || '-';
+  const port = u?.port ?? '-';
+  return name ? `${name}@${host}:${port}` : `${host}:${port}`;
 }
 
 // 本地时间 YYYY-MM-DD HH:mm:ss（最后一次数据更新时间的展示/导出）

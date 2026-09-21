@@ -26,7 +26,8 @@ describe('MemberUsageTable', () => {
     const rows = w.findAll('.el-table__row');
     expect(rows.length).toBeGreaterThanOrEqual(1);
     expect(w.text()).toContain('alice');
-    expect(w.text()).toContain('@10.0.0.1:22222');
+    expect(w.text()).not.toContain('@10.0.0.1:22222');
+    expect(w.find('.mname').attributes('title')).toBe('alice@10.0.0.1:22222');
   });
 
   it('成员不在群内时打标签', async () => {

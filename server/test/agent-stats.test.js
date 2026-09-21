@@ -84,12 +84,27 @@ test('collectAgentStats：ENOENT 不重试，直接返回 error', async () => {
   assert.equal(r.agent, 'opencode');
 });
 
-test('resolveAgentBin：DEVFLOW_OPENCODE 显式配置优先（仅对 opencode 生效）', () => {
+test('resolveAgentBin：nga 与 opencode 等价，DEVFLOW_OPENCODE 覆盖对二者都生效', () => {
   const bin = path.join('C:', 'tools', 'opencode.exe');
   const env = { PATH: '', DEVFLOW_OPENCODE: bin };
   assert.equal(resolveAgentBin('opencode', { env, exists: (p) => p === bin, appRoot: '' }), bin);
-  // 非 opencode 命令不吃这个覆盖
-  assert.equal(resolveAgentBin('nga.cmd', { env, exists: (p) => p === bin, appRoot: '' }), 'nga.cmd');
+  assert.equal(resolveAgentBin('nga', { env, exists: (p) => p === bin, appRoot: '' }), bin);
+  // 真正无关的命令不吃这个覆盖
+  assert.equal(resolveAgentBin('claudecode', { env, exists: (p) => p === bin, appRoot: '' }), 'claudecode');
+});
+
+test('resolveAgentBin：nga 与 opencode 互为回退（PATH 上只有另一个时命中它）', () => {
+  const dir = path.join('C:', 'bin');
+  const nga = path.join(dir, 'nga.exe');
+  const oc = path.join(dir, 'opencode.exe');
+  assert.equal(resolveAgentBin('opencode', { env: { PATH: dir }, exists: (p) => p === nga, appRoot: '' }), nga);
+  assert.equal(resolveAgentBin('nga', { env: { PATH: dir }, exists: (p) => p === oc, appRoot: '' }), oc);
+});
+
+test('resolveAgentBin：nga 在 PATH 缺失时命中包内 opencode/', () => {
+  const appRoot = path.join('D:', 'pkg');
+  const bundled = path.join(appRoot, 'opencode', 'opencode.exe');
+  assert.equal(resolveAgentBin('nga', { env: { PATH: '' }, exists: (p) => p === bundled, appRoot }), bundled);
 });
 
 test('resolveAgentBin：按 PATH 命中；PATH 没有时退回包内 opencode/、env/', () => {

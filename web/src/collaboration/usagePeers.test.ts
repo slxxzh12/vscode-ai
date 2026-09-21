@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isOnline, fmtNum, machineLabel, mergeMachines, ONLINE_WINDOW_MS } from './usagePeers';
+import { isOnline, fmtNum, machineLabel, machineFullLabel, mergeMachines, ONLINE_WINDOW_MS } from './usagePeers';
 
 const mk = (o: any) => ({ machineId: 'm', username: 'u', host: 'h', port: 1, ...o });
 
@@ -18,10 +18,16 @@ describe('usagePeers', () => {
     expect(fmtNum(2_000_000)).toBe('2.0M');
   });
 
-  it('machineLabel：员工号 → 用户名 → machineId 依次回退', () => {
-    expect(machineLabel({ machineId: 'm', employeeId: 'E1', username: 'u' } as any)).toBe('E1');
-    expect(machineLabel({ machineId: 'm', username: 'u' } as any)).toBe('u');
+  it('machineLabel：用户名 → 员工号 → machineId 依次回退', () => {
+    expect(machineLabel({ machineId: 'm', employeeId: 'E1', username: 'u' } as any)).toBe('u');
+    expect(machineLabel({ machineId: 'm', employeeId: 'E1' } as any)).toBe('E1');
     expect(machineLabel({ machineId: 'm' } as any)).toBe('m');
+  });
+
+  it('machineFullLabel：用户名@host:port（缺失用 - 占位）', () => {
+    expect(machineFullLabel({ machineId: 'm', username: 'u', host: '10.0.0.1', port: 22222 } as any)).toBe('u@10.0.0.1:22222');
+    expect(machineFullLabel({ machineId: 'm', username: 'u' } as any)).toBe('u@-:-');
+    expect(machineFullLabel({ machineId: 'm' } as any)).toBe('m@-:-');
   });
 
   it('mergeMachines：上报过的机器 inGroup=false', () => {
