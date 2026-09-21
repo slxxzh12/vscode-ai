@@ -19,6 +19,11 @@ import { useI18n } from './i18n';
 import { parseOpenParam } from './deeplink';
 import ProxyView from './components/ProxyView.vue';
 import AppMarketView from './components/AppMarketView.vue';
+import { useLocalSources } from './local/useLocalSources';
+import { useLocalDrop, type LocalDropPayload } from './local/useLocalDrop';
+import { MAX_DROP_FILES } from './local/localHandles';
+import LocalDropOverlay from './local/LocalDropOverlay.vue';
+import LocalSidebar from './local/LocalSidebar.vue';
 import { startDesktopRemoteCoder } from './remote-coder/useDesktopRemoteCoder';
 import { useVersion } from './useVersion';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
@@ -48,6 +53,30 @@ function onPhone() {
 
 const terminal = useTerminal({});
 const center = useCenter();
+
+// —— 拖入本地文件/文件夹：挂载本地来源并开页签 ——
+const local = useLocalSources();
+function onLocalDrop(p: LocalDropPayload) {
+  rail.value = 'explorer';
+  if (p.dirHandles.length) {
+    const folder = p.dirHandles[0];
+    local.mountFolder(folder);
+    center.openLocalRoot(folder.name);
+    if (p.dirHandles.length > 1) alert(t('local.extra_folders'));
+  }
+  if (p.fileHandles.length) {
+    const { keys, truncated } = local.addFiles(p.fileHandles.map((h) => ({ name: h.name, handle: h, file: null })));
+    keys.forEach((key, i) => center.openLocalFile(key, p.fileHandles[i].name));
+    if (truncated > 0) alert(t('local.too_many_files', { max: MAX_DROP_FILES }));
+  } else if (!p.dirHandles.length && p.files.length) {
+    // 非 Chromium 降级：只读打开文件
+    const { keys, truncated } = local.addFiles(p.files.map((f) => ({ name: f.name, handle: null, file: f })));
+    keys.forEach((key, i) => center.openLocalFile(key, p.files[i].name));
+    if (truncated > 0) alert(t('local.too_many_files', { max: MAX_DROP_FILES }));
+  }
+}
+const { dragging: localDragging } = useLocalDrop(onLocalDrop);
+const activeLocalRoot = computed(() => center.active.value?.kind === 'local' && center.active.value.id === 'l:root' && !!local.root.value);
 // 活动页签是工具时：左侧面板显示该工具的固定树（否则显示历史列表）
 const activeToolTab = computed(() => (center.active.value?.kind === 'tool' ? center.active.value : null));
 const activeTool = computed(() => activeToolTab.value?.tool as FileTool | undefined);
@@ -369,6 +398,15 @@ function onDetailFile(projectId: string, path: string) {
   center.openFile(projectId, path, name);
   detailPath.value = q;
   detailToken.value++;
+}
+const locateToken = ref(0);
+const locatePath = ref('');
+const locateLine = ref(0);
+function onOpenFileAt(projectId: string, path: string, _name: string, line?: number) {
+  openFile(projectId, path);
+  locatePath.value = path.replace(/\\/g, '/');
+  locateLine.value = line || 0;
+  locateToken.value++;
 }
 
 // —— 打开文件历史（按节点公钥指纹隔离存储，同机多实例不串）——
@@ -717,16 +755,17 @@ onBeforeUnmount(() => {
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
           <ToolSidebar v-if="activeTool" :tool="activeTool" />
+          <LocalSidebar v-else-if="activeLocalRoot" />
           <HistoryList v-else :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter" :all-style="msgAllStyle"
             :live-session-ids="liveSessionIds" :sessions="sessionExtras" :session-names="sessionNames" :project-id="currentProject" :active-path="activeFilePath"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
             @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
             @update:filter="msgFilter = $event" @update:all-style="msgAllStyle = $event" @open-session="openHistorySession" @edit-session="editHistorySession"
-            @open-file="openFile" @detail-file="onDetailFile" />
+            @open-file="openFile" @detail-file="onDetailFile" @open-file-at="onOpenFileAt" />
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
         <section class="center">
-          <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" />
+          <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine" />
         </section>
       </template>
     </div>
@@ -745,6 +784,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+    <LocalDropOverlay v-if="localDragging" />
     <DistTaskNotifier :terminal="terminal" />
   </div>
 </template>
