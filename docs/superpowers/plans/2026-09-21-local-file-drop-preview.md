@@ -215,9 +215,8 @@ export function splitRel(path: string): string[] | null {
 }
 
 export function joinRel(dir: string, name: string): string {
-  const a = splitRel(dir) ?? [];
-  const b = splitRel(name) ?? [];
-  return [...a, ...b].join('/');
+  const segs = splitRel(`${dir}/${name}`);
+  return segs ? segs.join('/') : '';
 }
 
 export function supportsHandles(): boolean {
