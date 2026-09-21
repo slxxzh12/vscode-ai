@@ -261,4 +261,22 @@ describe('HistoryList', () => {
     const files = mount({ tab: 'files' });
     expect(files.find('.stylebtn').exists()).toBe(false);
   });
+
+  it('消息行渲染收藏控件，点 + 不触发 open-message', async () => {
+    const messages = [{ text: 'collect me', ts: 1, tabName: 't' }];
+    const w = mount({ tab: 'messages', messages });
+    await w.vm.$nextTick();
+    const add = w.find('.mrow .pcadd');
+    expect(add.exists()).toBe(true);
+    await add.trigger('click');
+    expect(w.emitted('open-message')).toBeUndefined();
+  });
+
+  it('会话树消息行也渲染收藏控件', async () => {
+    const messages = [{ text: 'm1', ts: 100, sessionId: 's1', tabName: 'A' }];
+    const w = mount({ tab: 'messages', filter: false, allStyle: 'tree', messages });
+    await w.vm.$nextTick();
+    await w.find('.tnode').trigger('click');
+    expect(w.find('.mrow .pcadd').exists()).toBe(true);
+  });
 });

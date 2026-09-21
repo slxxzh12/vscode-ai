@@ -4,6 +4,7 @@ import type { HistoryMessage } from '../useMessageHistory';
 import { t } from '../i18n';
 import { buildSessionTree, type SessionNode, type SessionExtra } from '../sessionTree';
 import FileTree from './FileTree.vue';
+import PromptCollectAddon from '../prompts/PromptCollectAddon.vue';
 
 export interface HistoryEntry { projectId: string; path: string; name: string; projName: string; ts: number; }
 export type SideTab = 'files' | 'messages' | 'tree';
@@ -264,6 +265,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
                       <span class="mtext">{{ row.item.text }}</span>
                       <span class="mmeta"><span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span></span>
                     </span>
+                    <PromptCollectAddon class="mpc" :text="row.item.text" />
                     <span class="x" :title="$t('hist.remove_message')" @click.stop="emit('remove-message', row.item)">×</span>
                   </button>
                 </template>
@@ -285,6 +287,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
                   <span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span>
                 </span>
               </span>
+              <PromptCollectAddon class="mpc" :text="row.item.text" />
               <span class="x" :title="$t('hist.remove_message')" @click.stop="emit('remove-message', row.item)">×</span>
             </button>
           </template>
@@ -334,6 +337,8 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
 .x:hover { color: var(--err); }
 .empty { color: var(--tx6); padding: 16px 12px; font-size: 12px; }
 .mrow { display: flex; align-items: flex-start; gap: 8px; width: 100%; background: none; border: none; border-bottom: 1px solid var(--bd2); text-align: left; padding: 8px 10px; cursor: pointer; }
+.mpc { flex: none; opacity: 0; pointer-events: none; transition: opacity .12s; }
+.mrow:hover .mpc { opacity: 1; pointer-events: auto; }
 .mbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .mtext { color: var(--tx1); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .mmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
