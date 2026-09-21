@@ -9,6 +9,8 @@ import DistTaskNotifier from './collaboration/DistTaskNotifier.vue';
 import SchedulerView from './scheduler/SchedulerView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
+import ToolSidebar from './components/ToolSidebar.vue';
+import type { FileTool } from './tools/files/useToolFiles';
 import CodeStats from './components/CodeStats.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
@@ -45,6 +47,9 @@ function onPhone() {
 
 const terminal = useTerminal({});
 const center = useCenter();
+// 活动页签是工具时：左侧面板显示该工具的固定树（否则显示历史列表）
+const activeToolTab = computed(() => (center.active.value?.kind === 'tool' ? center.active.value : null));
+const activeTool = computed(() => activeToolTab.value?.tool as FileTool | undefined);
 const projectsApi = useProjects();
 const { version: appVersion, loadVersion } = useVersion();
 const { theme, toggle } = useTheme();
@@ -523,6 +528,13 @@ async function checkFirstRunAgentChoice() {
     if (!r?.chosen && list.length >= 2) pendingAgentChoice.value = true;
   } catch { /* 引导失败不阻塞 */ }
 }
+const pendingFileAssoc = ref(false);
+async function checkFirstRunFileAssoc() {
+  try {
+    const r = await fetch('/api/file-assoc').then((x) => x.json());
+    if (r?.available && !r?.prompted) pendingFileAssoc.value = true;
+  } catch { /* 探测失败不阻塞 */ }
+}
 function onSettingsClosed() {
   if (pendingAgentChoice.value && !projects.value.length && !noProjectPrompted.value) {
     noProjectPrompted.value = true;
@@ -598,8 +610,8 @@ onMounted(async () => {
   } catch { /* ignore */ }
   applyHash();
   initFileHistory();
-  const projectsReady = (async () => { await checkFirstRunAgentChoice(); await loadProjects(); })();
-  void restoreWindowState(projectsReady).finally(() => { if (pendingAgentChoice.value) openAgentSettings(true); });
+  const projectsReady = (async () => { await checkFirstRunAgentChoice(); await checkFirstRunFileAssoc(); await loadProjects(); })();
+  void restoreWindowState(projectsReady).finally(() => { if (pendingAgentChoice.value || pendingFileAssoc.value) openAgentSettings(true); });
   void loadSessionProjects();
   void loadLedgerSessions();
   processOpenParam();
@@ -689,7 +701,8 @@ onBeforeUnmount(() => {
       </template>
       <template v-else>
         <aside class="side" :style="{ width: sideW + 'px' }">
-          <HistoryList :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter" :all-style="msgAllStyle"
+          <ToolSidebar v-if="activeTool" :tool="activeTool" />
+          <HistoryList v-else :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter" :all-style="msgAllStyle"
             :live-session-ids="liveSessionIds" :sessions="sessionExtras" :session-names="sessionNames" :project-id="currentProject" :active-path="activeFilePath"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
             @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"

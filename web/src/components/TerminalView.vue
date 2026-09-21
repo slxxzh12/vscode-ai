@@ -8,12 +8,14 @@ import { promptStepId } from '@devflow/shared/workflow-group';
 import type { useTerminal } from '../useTerminal';
 import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
+import ToolDocPane from '../tools/doc/ToolDocPane.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
 import { useVersion } from '../useVersion';
 import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from './portRestart';
+import { getFileAssoc, setFileAssoc } from '../fileAssoc';
 import { buildChips, appendText, type Chip } from '../phaseChips';
 import WorkflowEditor from './WorkflowEditor.vue';
 import { usePromptCollect } from '../prompts/usePromptCollect';
@@ -56,7 +58,17 @@ const copiedSel = ref(false);
 let copySelTimer: ReturnType<typeof setTimeout> | null = null;
 
 const activeFile = computed(() => (props.center.active.value?.kind === 'file' ? props.center.active.value : null));
-const isSessionView = computed(() => props.center.activeKind.value !== 'file');
+const activeTool = computed(() => (props.center.active.value?.kind === 'tool' ? props.center.active.value : null));
+// 文档型工具（notepad/yaml）在主区用 DocViewer 展示
+const activeDocTool = computed(() => {
+  const x = activeTool.value?.tool;
+  return x === 'notepad' || x === 'yaml' ? x : null;
+});
+const isSessionView = computed(() => props.center.activeKind.value === 'session');
+// 页签标签：工具页签按当前语言显示
+function tabDisplayLabel(tab: { kind: string; tool?: string; label: string }) {
+  return tab.kind === 'tool' && tab.tool ? t(`tools.${tab.tool}`) : tab.label;
+}
 // 仅 Agent 会话显示工作流相关板块（终端 cmd/shell 等不显示）
 const agentSids = ref<Set<string>>(new Set());
 let agentSidsKey = 'devflow-agent-sids-none';
@@ -310,6 +322,21 @@ const portMsg = ref('');
 const portState = ref<PortRuntimeState>({});
 const restartMsg = ref('');
 const restarting = ref(false);
+const assocAvailable = ref(false);
+const assocEnabled = ref(false);
+const assocLoaded = ref(false);
+const assocPrompted = ref(true);
+const assocExts = ref<{ ext: string; isDefault: boolean }[]>([]);
+const assocMsg = ref('');
+async function loadFileAssoc() {
+  const r = await getFileAssoc();
+  if (!r) { assocAvailable.value = false; return; }
+  assocAvailable.value = r.available;
+  assocPrompted.value = r.prompted;
+  assocEnabled.value = r.prompted ? r.enabled : true;   // 首启（未提示过）默认勾选
+  assocLoaded.value = r.enabled;
+  assocExts.value = r.extensions || [];
+}
 async function loadSettings() {
   try {
     const r = await fetch('/api/settings').then((x) => x.json());
@@ -325,6 +352,18 @@ function persistPort(p: number) {
 // 右下角「确定」：保存当前设置并立即生效（端口变了就重启后端并重载页面）
 async function confirmSettings() {
   portMsg.value = '';
+  assocMsg.value = '';
+  if (assocAvailable.value && (!assocPrompted.value || assocEnabled.value !== assocLoaded.value)) {
+    const r = await setFileAssoc(assocEnabled.value);
+    if (r) {
+      assocEnabled.value = r.enabled;
+      assocLoaded.value = r.enabled;
+      assocPrompted.value = r.prompted;
+      assocExts.value = r.extensions || [];
+    } else {
+      assocMsg.value = t('term.file_assoc_failed');
+    }
+  }
   const plan = planConfirm({ port: Number(serverPort.value), loadedPort: loadedPort.value, state: portState.value });
   if (plan.action === 'blocked') { portMsg.value = t(plan.hintKey); return; }
   if (plan.action === 'close') { settingsOpen.value = false; return; }
@@ -363,6 +402,7 @@ function onOpenSettings(e: Event) {
   const firstRun = !!(e as CustomEvent).detail?.firstRun;
   settingsOpen.value = true;
   loadSettings();
+  loadFileAssoc();
   firstRunHint.value = firstRun;
   if (firstRun) nextTick(() => agentSecRef.value?.scrollIntoView({ block: 'start' }));
 }
@@ -1190,6 +1230,16 @@ onBeforeUnmount(() => {
             <div v-if="restartMsg" class="cfghint warn">{{ restartMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>
+          <div v-if="assocAvailable" class="setsec">
+            <div class="settitle">{{ $t('term.file_assoc') }}</div>
+            <label class="chkrow">
+              <input type="checkbox" v-model="assocEnabled" />
+              <span>{{ $t('term.file_assoc_label') }}</span>
+            </label>
+            <div class="cfghint">{{ $t('term.file_assoc_hint') }}</div>
+            <div class="cfghint">{{ assocExts.map((x) => (x.isDefault ? '✓ ' : '· ') + x.ext).join('　') }}</div>
+            <div v-if="assocMsg" class="cfghint warn">{{ assocMsg }}</div>
+          </div>
           <div class="setsec">
             <div class="settitle">{{ $t('term.auto_compact') }}</div>
             <label class="chkrow">
@@ -1259,7 +1309,7 @@ onBeforeUnmount(() => {
         @dblclick="t.kind === 'session' && openTabDialog(t.id)">
         <span v-if="t.kind === 'session'" :class="['dot', sessionState(t.id.slice(2))]" />
         <span v-else class="file-ic">▤</span>
-        <span class="nm" :title="t.kind === 'file' ? t.path : (t.label + ' — ' + $t('term.tab_rename'))">{{ t.label }}</span>
+        <span class="nm" :title="t.kind === 'file' ? t.path : (tabDisplayLabel(t) + ' — ' + $t('term.tab_rename'))">{{ tabDisplayLabel(t) }}</span>
         <span class="x" @click="onTabClose(t.id, $event)" @dblclick.stop>×</span>
       </div>
       <button v-if="!phone" class="new" @click="openNew">{{ $t('term.new_session_btn') }}</button>
@@ -1273,10 +1323,13 @@ onBeforeUnmount(() => {
       <div v-if="phoneHint" class="phone-empty">{{ $t(phoneHint) }}</div>
       <button class="copyfloat" :disabled="!hasSelection" :title="$t('term.copy_sel')" @mousedown.stop @click="copySel">{{ copiedSel ? $t('term.copied') : $t('term.copy_sel') }}</button>
     </div>
-    <div v-show="!isSessionView" class="file-layer">
+    <div v-show="props.center.activeKind.value === 'file'" class="file-layer">
       <FilePreview v-if="activeFile && activeFile.projectId && activeFile.path"
         :key="activeFile.id" :project-id="activeFile.projectId" :path="activeFile.path" :name="activeFile.label"
         :detail-token="detailToken" :detail-path="detailPath" />
+    </div>
+    <div v-show="!!activeDocTool" class="tool-layer">
+      <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
     </div>
 
     <div v-if="isSessionView" class="composer" :class="{ light: !isDark, min: composerCollapsed, phone }" :style="{ height: (composerCollapsed ? 40 : composerH) + 'px' }">
@@ -1555,6 +1608,7 @@ onBeforeUnmount(() => {
 .copyfloat:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
 .copyfloat:disabled { opacity: .4; cursor: default; pointer-events: none; }
 .file-layer { flex: 1; min-height: 0; overflow: hidden; }
+.tool-layer { flex: 1; min-height: 0; overflow: hidden; }
 .phone-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px; text-align: center; color: var(--tx4); font-size: 13px; background: var(--bg3); z-index: 2; }
 .fgroup .gplay { background: var(--bg4); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 0 5px; cursor: pointer; font-size: 10px; line-height: 16px; }
 .fgroup .gplay.stop { color: var(--err); border-color: var(--err); }
