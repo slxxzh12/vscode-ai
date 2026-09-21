@@ -11,6 +11,7 @@ import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import ToolSidebar from './components/ToolSidebar.vue';
 import type { FileTool } from './tools/files/useToolFiles';
+import type { ToolId } from './tools/catalog';
 import CodeStats from './components/CodeStats.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
@@ -28,7 +29,7 @@ import { openRestoredSession } from './sessionRestore';
 import { useLedgerSessions } from './ledgerSessions';
 import type { SessionExtra } from './sessionTree';
 import { allowedRestoreIds, loadRecentTabs, loadRestoreTabs, pushRecentTab, saveRecentTabs } from './restorePrefs';
-import { requestStartAgent } from './uiIntents';
+import { pendingToolTab, clearPendingToolTab, requestStartAgent } from './uiIntents';
 
 const appRef = ref<HTMLDivElement | null>(null);
 const termViewRef = ref<InstanceType<typeof TerminalView> | null>(null);
@@ -50,6 +51,11 @@ const center = useCenter();
 // 活动页签是工具时：左侧面板显示该工具的固定树（否则显示历史列表）
 const activeToolTab = computed(() => (center.active.value?.kind === 'tool' ? center.active.value : null));
 const activeTool = computed(() => activeToolTab.value?.tool as FileTool | undefined);
+// 活动栏工具快捷入口：切到 explorer 并打开/激活该工具页签
+function openToolTab(id: ToolId) {
+  rail.value = 'explorer';
+  center.openTool(id);
+}
 const projectsApi = useProjects();
 const { version: appVersion, loadVersion } = useVersion();
 const { theme, toggle } = useTheme();
@@ -143,6 +149,13 @@ let colorHeartbeat: ReturnType<typeof setInterval> | null = null;
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
 const rail = ref<'explorer' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
+// 工具页签意图：切到 explorer 并打开对应工具页签（磁贴 / 活动栏图标触发）
+watch(pendingToolTab, (id) => {
+  if (!id) return;
+  rail.value = 'explorer';
+  center.openTool(id);
+  clearPendingToolTab();
+}, { immediate: true });
 // 新窗口（新标签/新浏览器窗口）与刷新的区分：sessionStorage 每标签独立，刷新保留、新开为空 → 左侧默认「消息」子页
 const NEW_WINDOW = (() => {
   try {
@@ -667,6 +680,8 @@ onBeforeUnmount(() => {
     <div class="main">
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
+        <button class="a-btn" :class="{ on: activeTool === 'notepad' }" :title="$t('tools.notepad')" @click="openToolTab('notepad')">📝</button>
+        <button class="a-btn" :class="{ on: activeTool === 'yaml' }" :title="$t('tools.yaml')" @click="openToolTab('yaml')">🧾</button>
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🧰</button>

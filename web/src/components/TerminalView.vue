@@ -30,7 +30,7 @@ import { createReadyGate, paletteOffersRename, renameDialogOpen, waitForScreen }
 import TabRenameDialog from './TabRenameDialog.vue';
 import { setTabDescription } from './tabDescriptions';
 import WelcomeView from './WelcomeView.vue';
-import { pendingStartAgent, clearPendingStartAgent, requestTool } from '../uiIntents';
+import { pendingStartAgent, clearPendingStartAgent, requestTool, requestToolTab } from '../uiIntents';
 import type { ToolId } from '../tools/catalog';
 
 const props = defineProps<{
@@ -595,6 +595,7 @@ function onWelcomeNewAgent() {
   void startAgent();
 }
 function onWelcomeOpenTool(id: ToolId) {
+  if (id === 'notepad' || id === 'yaml') { requestToolTab(id); return; }
   requestTool(id);
   window.location.hash = '#mobile';
 }

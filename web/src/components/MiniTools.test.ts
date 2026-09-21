@@ -6,13 +6,12 @@ import { mountC } from '../test-utils';
 import MiniTools from './MiniTools.vue';
 import CodeEditor from './CodeEditor.vue';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
-import NotepadTool from '../tools/notepad/NotepadTool.vue';
-import { pendingTool, clearPendingTool } from '../uiIntents';
+import { pendingTool, clearPendingTool, pendingToolTab, clearPendingToolTab } from '../uiIntents';
 
 const writeText = vi.fn(async () => {});
 Object.defineProperty(window.navigator, 'clipboard', { value: { writeText }, configurable: true });
 
-afterEach(() => { vi.unstubAllGlobals(); writeText.mockClear(); clearPendingTool(); });
+afterEach(() => { vi.unstubAllGlobals(); writeText.mockClear(); clearPendingTool(); clearPendingToolTab(); });
 
 function mount() {
   return mountC(MiniTools, { global: { plugins: [ElementPlus], stubs: { teleport: true } } });
@@ -26,7 +25,7 @@ function inVal(w: any) { return w.findAllComponents(CodeEditor)[0].props('modelV
 function outVal(w: any) { return w.findAllComponents(CodeEditor)[1].props('modelValue'); }
 
 describe('MiniTools', () => {
-  it('渲染 5 个工具；点击打开全屏面板、点 × 关闭', async () => {
+  it('渲染 5 个工具；点击翻译打开全屏面板、点 × 关闭', async () => {
     const w = mount();
     const btns = w.findAll('.mticon');
     expect(btns).toHaveLength(5);
@@ -40,26 +39,15 @@ describe('MiniTools', () => {
     expect((w.find('.el-overlay').element as HTMLElement).style.display).toBe('none');
   });
 
-  it('记事本：渲染 NotepadTool 子组件', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [], folders: [] })));
+  it('记事本 / YAML 磁贴改为请求主区工具页签（不开弹窗）', async () => {
     const w = mount();
-    await w.findAll('.mticon')[0].trigger('click');
-    await flushPromises();
-    expect(w.findComponent(NotepadTool).exists()).toBe(true);
-    expect(w.find('.npbody').exists()).toBe(true);
-  });
-
-  it('YAML 校验/格式化与错误提示', async () => {
-    const w = mount();
-    await w.findAll('.mticon')[4].trigger('click');
-    setIn(w, 'a: [1, ');
-    await w.findAll('.mtbtn')[1].trigger('click');
-    expect(w.find('.mtmsg').exists()).toBe(true);
-
-    setIn(w, 'b: 2\na: 1');
-    await w.findAll('.mtbtn')[2].trigger('click');
-    expect(w.find('.mtmsg').text()).toBeTruthy();
-    expect(outVal(w)).toContain('a: 1');
+    await w.findAll('.mticon')[0].trigger('click');   // 记事本
+    expect(pendingToolTab.value).toBe('notepad');
+    expect(w.find('.ttbody').exists()).toBe(false);
+    clearPendingToolTab();
+    await w.findAll('.mticon')[4].trigger('click');   // YAML
+    expect(pendingToolTab.value).toBe('yaml');
+    expect(w.find('.ttbody').exists()).toBe(false);
   });
 
   it('翻译：空输入提示；成功后写入输出', async () => {
@@ -104,31 +92,41 @@ describe('MiniTools', () => {
   });
 
   it('pendingTool 置值时自动打开对应工具', async () => {
-    pendingTool.value = 'yaml';
+    pendingTool.value = 'translate';
     const w = mount();
     await flushPromises();
     expect(w.find('.ttbody').exists()).toBe(true);
+  });
+
+  it('pendingTool 置为记事本时改为请求工具页签', async () => {
+    pendingTool.value = 'notepad';
+    const w = mount();
+    await flushPromises();
+    expect(pendingToolTab.value).toBe('notepad');
+    expect(w.find('.ttbody').exists()).toBe(false);
   });
 
   it('工具操作按钮 Teleport 到弹窗标题行右侧', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => okJson({ items: [], folders: [] })));
     // 不 stub teleport：验证按钮真的被挂到 #mtdlg-actions 里
     const w = mountC(MiniTools, { global: { plugins: [ElementPlus] } });
-    await w.findAll('.mticon')[0].trigger('click');
+    await w.findAll('.mticon')[1].trigger('click');   // Postman
     await flushPromises();
     const actions = document.querySelector('#mtdlg-actions');
-    expect(actions?.querySelector('.npbar')).toBeTruthy();
-    expect(document.querySelector('.npmain .npbar')).toBeNull();
+    expect(actions?.querySelector('.pmactsbar')).toBeTruthy();
+    expect(document.querySelector('.pmmain .pmactsbar')).toBeNull();
     w.unmount();
   });
 
-  it('复制输出 / 输出转输入 / 清空', async () => {
+  it('翻译：复制输出 / 输出转输入 / 清空', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => okJson({ text: 'hello' })));
     const w = mount();
-    await w.findAll('.mticon')[4].trigger('click');   // YAML
-    setIn(w, 'b: 2\na: 1');
-    await w.find('.mtbtn.primary').trigger('click');   // 格式化
+    await w.findAll('.mticon')[3].trigger('click');   // 翻译
+    setIn(w, '你好');
+    await w.find('.mtbtn.primary').trigger('click');
+    await flushPromises();
     const out = outVal(w);
-    expect(out).toBeTruthy();
+    expect(out).toBe('hello');
 
     const mini = () => w.findAll('.mtmini');
     await mini()[0].trigger('click');   // copy
@@ -142,5 +140,4 @@ describe('MiniTools', () => {
     await mini()[2].trigger('click');   // clear
     expect(inVal(w)).toBe('');
   });
-
 });

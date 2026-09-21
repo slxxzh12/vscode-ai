@@ -7,7 +7,7 @@ import NotepadTool from '../tools/notepad/NotepadTool.vue';
 import TextToolBody from '../tools/text/TextToolBody.vue';
 import { MINI_TOOLS, type ToolId } from '../tools/catalog';
 import { DIALOG_ACTIONS_ID, DIALOG_ACTIONS_TARGET } from '../tools/dialogActions';
-import { pendingTool, clearPendingTool } from '../uiIntents';
+import { pendingTool, clearPendingTool, requestToolTab } from '../uiIntents';
 
 const TOOLS = MINI_TOOLS;
 
@@ -19,6 +19,8 @@ const dlgOpen = computed({ get: () => open.value !== null, set: (v: boolean) => 
 
 function openTool(id: ToolId) {
   if (TOOLS.find((x) => x.id === id)?.disabled) return;
+  // 记事本 / YAML：改为在主区以「工具页签」打开（不再弹窗）
+  if (id === 'notepad' || id === 'yaml') { requestToolTab(id); return; }
   open.value = id;
 }
 
