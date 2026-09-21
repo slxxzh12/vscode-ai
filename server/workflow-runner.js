@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import { buildMarkerCmd } from './pty-runner.js';
+import { expandGroupSteps } from '@devflow/shared/workflow-group';
+import { GroupRun } from './workflow-group-run.js';
 
 const runId = () => 'run_' + crypto.randomBytes(4).toString('hex');
 
@@ -99,9 +101,12 @@ class Run {
 }
 
 export class WorkflowRunner {
-  constructor({ sessionManager, workflows = [], logger = console }) {
+  constructor({ sessionManager, workflows = [], getWorkflows = null, stepTimeoutMs = 30 * 60 * 1000, doneMarker = null, logger = console }) {
     this.sm = sessionManager;
     this.workflows = workflows;
+    this.getWorkflows = getWorkflows;
+    this.stepTimeoutMs = stepTimeoutMs;
+    this.doneMarker = doneMarker || ((token) => `[DevFlow] When finished, output a single line at the end: ${token}`);
     this.log = logger;
     this.runs = new Map();
     this._sessionRun = new Map();
@@ -141,6 +146,30 @@ export class WorkflowRunner {
     if (first.advance === 'manual') run._beginManual();
     else run._beginStep(0);
     return { ok: true, run };
+  }
+  startGroup({ workflowId, groupAnchor, sessionId }) {
+    const wfs = this.getWorkflows ? this.getWorkflows() : [];
+    const wf = wfs.find((w) => w.id === workflowId);
+    if (!wf) return { ok: false, code: 'not-found', message: 'workflow not found' };
+    const expanded = expandGroupSteps(wf.stages || [], groupAnchor);
+    if (!expanded) return { ok: false, code: 'not-found', message: 'group not found' };
+    const session = this.sm.get(sessionId);
+    if (!session) return { ok: false, code: 'not-found', message: 'session not found' };
+    if (session.state !== 'running') return { ok: false, code: 'session-not-running', message: 'session not running' };
+    const prevId = this._sessionRun.get(sessionId);
+    if (prevId) { const prev = this.runs.get(prevId); if (prev) { try { prev.abort(); } catch { /* noop */ } } }
+    const steps = expanded.steps.map((s) => ({ ...s, status: 'waiting', startedAt: null, finishedAt: null }));
+    const run = new GroupRun(this, wf, expanded.group, steps, session);
+    this.runs.set(run.runId, run);
+    this._sessionRun.set(sessionId, run.runId);
+    if (steps.length) run._beginStep(0);
+    else run._finishGroup();
+    return { ok: true, run };
+  }
+  rollback(runId, stepId) {
+    const run = this.runs.get(runId);
+    if (!run || typeof run.rollback !== 'function') return false;
+    return run.rollback(stepId);
   }
   _emit(run) {
     for (const cb of this._statusCbs) { try { cb(run); } catch (e) { this.log.error('wf status cb', e); } }

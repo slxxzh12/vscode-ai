@@ -145,3 +145,75 @@ test('force advance 可越过卡住的 auto 步', async () => {
   assert.equal(run.snapshot().steps[1].status, 'running');
   runner.stopAll();
 });
+
+const GWFS = [{
+  id: 'gw', label: 'GW', stages: [
+    { id: 'a', label: 'A', group: 'G1', prompts: ['p-a0', 'p-a1'] },
+    { id: 'b', label: 'B', group: 'G1', prompts: ['p-b0'] },
+    { id: 'c', label: 'C', group: 'G2', prompts: ['p-c0'] },
+  ],
+}];
+
+async function makeGroupRunner({ stepTimeoutMs = 30 * 60 * 1000 } = {}) {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const session = await sm.create({ name: 'G' });
+  const runner = new WorkflowRunner({
+    sessionManager: sm,
+    getWorkflows: () => GWFS,
+    stepTimeoutMs,
+    doneMarker: (token) => `DONE>${token}`,
+  });
+  return { sm, instances, session, runner };
+}
+
+test('startGroup 展开分组并把完成指令追加到首个提示词', async () => {
+  const { session, runner, instances } = await makeGroupRunner();
+  const res = runner.startGroup({ workflowId: 'gw', groupAnchor: 'a', sessionId: session.id });
+  assert.equal(res.ok, true);
+  const snap = res.run.snapshot();
+  assert.equal(snap.groupName, 'G1');
+  assert.deepEqual(snap.steps.map((s) => s.id), ['a#0', 'a#1', 'b#0']);
+  assert.equal(snap.steps[0].status, 'running');
+  assert.equal(instances[0].pty.writes.length, 1);
+  const write = instances[0].pty.writes[0];
+  assert.ok(write.startsWith('p-a0'));
+  assert.ok(write.includes(`DONE>DF_DONE:${res.run.runId}:0`));
+  runner.stopAll();
+});
+
+test('匹配 token 后组内自动串行，组末 paused 且不清理', async () => {
+  const { session, runner, instances } = await makeGroupRunner();
+  const res = runner.startGroup({ workflowId: 'gw', groupAnchor: 'a', sessionId: session.id });
+  const { runId } = res.run;
+  instances[0].pty.__emitData(`DF_DONE:${runId}:0`);
+  assert.equal(res.run.snapshot().steps[0].status, 'done');
+  assert.equal(res.run.snapshot().steps[1].status, 'running');
+  assert.equal(instances[0].pty.writes.length, 2);
+  instances[0].pty.__emitData(`DF_DONE:${runId}:1`);
+  instances[0].pty.__emitData(`DF_DONE:${runId}:2`);
+  assert.equal(res.run.snapshot().status, 'paused');
+  assert.ok(res.run.snapshot().steps.every((s) => s.status === 'done'));
+  assert.equal(runner.get(runId), res.run);   // paused 不清理，供回退
+  runner.stopAll();
+});
+
+test('空分组直接 paused 且不写入', async () => {
+  const EMPTY = [{ id: 'e', label: 'E', stages: [{ id: 'empty', label: 'X', group: 'G', prompts: [] }] }];
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const session = await sm.create({});
+  const runner = new WorkflowRunner({ sessionManager: sm, getWorkflows: () => EMPTY });
+  const res = runner.startGroup({ workflowId: 'e', groupAnchor: 'empty', sessionId: session.id });
+  assert.equal(res.ok, true);
+  assert.equal(res.run.snapshot().status, 'paused');
+  assert.equal(instances[0].pty.writes.length, 0);
+  runner.stopAll();
+});
+
+test('startGroup 未知分组返回 not-found', async () => {
+  const { session, runner } = await makeGroupRunner();
+  const res = runner.startGroup({ workflowId: 'gw', groupAnchor: 'ghost', sessionId: session.id });
+  assert.equal(res.ok, false);
+  assert.equal(res.code, 'not-found');
+});
