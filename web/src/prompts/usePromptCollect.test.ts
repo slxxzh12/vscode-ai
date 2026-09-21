@@ -65,7 +65,7 @@ describe('usePromptCollect', () => {
     expect(st).toBe('ok');
     expect(pc.lastTarget.value).toEqual({ workflowId: 'w1', stageId: 's1' });
     const posted = calls.filter((c) => c.method === 'POST').pop();
-    expect(posted.body.workflows[0].stages[0].prompts).toContain('second');
+    expect(posted?.body.workflows[0].stages[0].prompts).toContain('second');
   });
 
   it('无可用目标时回退到第一个工作流的第一阶段', async () => {
