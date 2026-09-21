@@ -7,6 +7,7 @@ export interface WorkflowStage {
 export interface Workflow {
   id: string;
   label: string;
+  priority?: number;
   stages: WorkflowStage[];
 }
 export interface ModelIssue {
@@ -96,14 +97,18 @@ export function duplicateWorkflow(w: Workflow, suffix = ''): Workflow {
 }
 
 export function sanitizeModel(model: Workflow[]): Workflow[] {
-  return (model || []).map((w) => ({
-    id: w.id,
-    label: w.label,
-    stages: (w.stages || []).map((st) => ({
-      id: st.id,
-      label: st.label,
-      group: st.group || '',
-      prompts: (st.prompts || []).map((p) => String(p)).filter((p) => p.trim() !== ''),
-    })),
-  }));
+  return (model || []).map((w) => {
+    const prio = Number(w.priority);
+    return {
+      id: w.id,
+      label: w.label,
+      ...(Number.isFinite(prio) && prio ? { priority: prio } : {}),
+      stages: (w.stages || []).map((st) => ({
+        id: st.id,
+        label: st.label,
+        group: st.group || '',
+        prompts: (st.prompts || []).map((p) => String(p)).filter((p) => p.trim() !== ''),
+      })),
+    };
+  });
 }

@@ -68,4 +68,10 @@ describe('duplicate / new / sanitize', () => {
     const m = [w({ stages: [s({ prompts: [' ', 'keep', ''] })] })];
     expect(sanitizeModel(m)[0].stages[0].prompts).toEqual(['keep']);
   });
+  it('sanitizeModel 保留非 0 priority、丢弃非法', () => {
+    const m = [w({ priority: 5 }), w({ id: 'x', priority: NaN as unknown as number })];
+    const out = sanitizeModel(m);
+    expect(out[0].priority).toBe(5);
+    expect('priority' in out[1]).toBe(false);
+  });
 });
