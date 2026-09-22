@@ -1215,6 +1215,8 @@ export const messages = {
   'llm.setup.model_none': '(none)',
   'llm.setup.model_manual': 'Custom provider/model',
   'llm.setup.key': 'API key',
+  'llm.setup.reveal': 'Show key',
+  'llm.setup.hide': 'Hide',
   'llm.setup.key_set': 'Configured (leave blank to keep)',
   'llm.setup.vision': 'image',
   'llm.setup.manual': 'Extra models (comma separated)',

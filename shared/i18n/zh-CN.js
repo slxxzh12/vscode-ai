@@ -1215,6 +1215,8 @@ export const messages = {
   'llm.setup.model_none': '（不设置）',
   'llm.setup.model_manual': '手填 provider/model',
   'llm.setup.key': 'API key',
+  'llm.setup.reveal': '显示明文',
+  'llm.setup.hide': '隐藏',
   'llm.setup.key_set': '已配置（留空不修改）',
   'llm.setup.vision': '图像',
   'llm.setup.manual': '补充模型（逗号分隔）',

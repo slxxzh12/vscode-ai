@@ -15,6 +15,7 @@ const model = ref('');
 const err = ref('');
 const saved = ref(false);
 const skipped = ref<string[]>([]);
+const revealed = ref<Set<number>>(new Set());   // 已点开明的 ApiKey 行下标
 
 const presets = LLM_PROVIDER_PRESETS;
 const options = computed(() => modelOptions(providers.value));
@@ -55,6 +56,11 @@ function removeProvider(i: number) {
   if (originalIds.value.has(p.id)) removed.value.push(p.id);
   providers.value.splice(i, 1);
   if (p.id && model.value.startsWith(`${p.id}/`)) model.value = '';
+}
+function toggleReveal(i: number) {
+  const next = new Set(revealed.value);
+  if (next.has(i)) next.delete(i); else next.add(i);
+  revealed.value = next;
 }
 function toggle(s: ConfiguredProvider, mid: string) {
   const i = s.models.indexOf(mid);
@@ -118,7 +124,8 @@ async function save() {
         <input v-model="s.baseURL" :placeholder="$t('llm.setup.baseurl')" />
       </div>
       <div class="row">
-        <input v-model="s.apiKey" type="password" :placeholder="s.hasKey ? $t('llm.setup.key_set') : $t('llm.setup.key')" />
+        <input v-model="s.apiKey" :type="revealed.has(i) ? 'text' : 'password'" :placeholder="s.hasKey ? $t('llm.setup.key_set') : $t('llm.setup.key')" />
+        <button class="ghost" @click="toggleReveal(i)">{{ revealed.has(i) ? $t('llm.setup.hide') : $t('llm.setup.reveal') }}</button>
       </div>
       <div v-if="isPreset(s.id)" class="models">
         <label v-for="m in presetModels(s.id)" :key="m.id" class="mchk">

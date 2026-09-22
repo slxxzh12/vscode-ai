@@ -33,6 +33,22 @@ describe('ModelSetupCard', () => {
     expect(custom.text()).toContain('https://gw/v1');
   });
 
+  it('ApiKey 旁「显示明文」按钮切换 password/text', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => cfg({
+      deepseek: { options: { apiKey: 'K' }, models: { 'deepseek-v4-flash': {} } },
+    }) })));
+    const w = mount();
+    await flushPromises();
+    expect((w.find('.prov input').element as HTMLInputElement).type).toBe('password');
+    const reveal = w.findAll('button').find((b) => b.text() === '显示明文')!;
+    expect(reveal).toBeTruthy();
+    await reveal.trigger('click');
+    expect((w.find('.prov input').element as HTMLInputElement).type).toBe('text');
+    const hide = w.findAll('button').find((b) => b.text() === '隐藏')!;
+    await hide.trigger('click');
+    expect((w.find('.prov input').element as HTMLInputElement).type).toBe('password');
+  });
+
   it('空配置时不平铺预设', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => cfg({}) })));
     const w = mount();
