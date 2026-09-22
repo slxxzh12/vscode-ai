@@ -79,7 +79,7 @@ export function localRootDocSource(): DocSource {
         return await readViaFile(file, rel, ROOT_READ_SCOPE);
       } catch (e: any) {
         const msg = String(e?.message || rel);
-        if (/授权|permission|exceeds|超过/.test(msg)) throw e;
+        if (/\u6388\u6743|permission|exceeds|\u8d85\u8fc7/.test(msg)) throw e;
         throw new Error(t('local.read_failed', { msg }));
       }
     },
