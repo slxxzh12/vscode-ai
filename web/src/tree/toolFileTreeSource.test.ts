@@ -52,7 +52,7 @@ describe('toolFileTreeSource', () => {
     ];
     const text = events.map((e) => JSON.stringify(e)).join('\n') + '\n';
     const body = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } });
-    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, body }));
+    const fetchMock = vi.fn(async (_u: string, _i?: RequestInit) => ({ ok: true, status: 200, body }));
     vi.stubGlobal('fetch', fetchMock);
     const files = useToolFiles('notepad');
     const onOpen = vi.fn();
