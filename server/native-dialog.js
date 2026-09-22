@@ -7,6 +7,8 @@ function runDialog(setupLines, resultExpr, { timeoutMs = 300000, platform = proc
     if (platform !== 'win32') { resolve({ error: 'unsupported' }); return; }
     const ps = [
       'Add-Type -AssemblyName System.Windows.Forms',
+      // 重定向的 stdout 默认按控制台 OEM 代码页（如 936/GBK）编码，Node 按 UTF-8 解码会乱码。
+      '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
       '$owner = New-Object System.Windows.Forms.Form',
       '$owner.TopMost = $true',
       '$owner.ShowInTaskbar = $false',

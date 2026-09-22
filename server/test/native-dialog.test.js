@@ -39,6 +39,16 @@ test('pickFile: 选中文件返回 path', async () => {
   assert.equal(rec[0].opts.windowsHide, true);
 });
 
+test('pickFolder: 脚本强制 UTF-8 输出（中文路径不乱码）', async () => {
+  const child = fakeChild();
+  const rec = [];
+  const p = pickFolder({ platform: 'win32', spawnFn: spawnOnce(child, rec) });
+  child.emit('close');
+  await p;
+  const script = rec[0].args[rec[0].args.length - 1];
+  assert.match(script, /\[Console\]::OutputEncoding\s*=\s*\[System\.Text\.Encoding\]::UTF8/);
+});
+
 test('pickAnyFile: 无输出视为取消', async () => {
   const child = fakeChild();
   const p = pickAnyFile({ platform: 'win32', spawnFn: spawnOnce(child) });
