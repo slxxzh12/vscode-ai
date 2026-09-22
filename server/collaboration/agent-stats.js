@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { wrapCmdBin } from '../win-spawn.js';
 
 const MULT = { K: 1e3, M: 1e6, B: 1e9, T: 1e12 };
 
@@ -121,9 +122,10 @@ export function probeAgentStats({
 } = {}) {
   const spec = parseStatsCmd(statsCmd, days, { env })
     || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
+  const { bin, args } = wrapCmdBin(spec.bin, spec.args);   // .cmd/.bat 在 Windows 上必须经 cmd.exe
   const startedAt = Date.now();
   return new Promise((resolve) => {
-    execFileFn(spec.bin, spec.args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFileFn(bin, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
       const raw = String(stdout || '');
       resolve({
         agent: cmd, days, cmdline: [spec.bin, ...spec.args].join(' '), bin: spec.bin, args: spec.args,
@@ -145,8 +147,9 @@ export function collectAgentStats({
 } = {}) {
   const spec = parseStatsCmd(statsCmd, days, { env })
     || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
+  const { bin, args } = wrapCmdBin(spec.bin, spec.args);   // .cmd/.bat 在 Windows 上必须经 cmd.exe
   const runOnce = () => new Promise((resolve) => {
-    execFileFn(spec.bin, spec.args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+    execFileFn(bin, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
       if (err && !stdout) { resolve({ error: String((err && err.message) || err), code: err && err.code }); return; }
       resolve({ ...parseStats(stdout), collectedAt: Date.now() });
     });

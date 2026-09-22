@@ -73,6 +73,16 @@ test('collectAgentStats：配了 statsCmd 走模板，agent 仍记 cmd', async (
   assert.equal(r.sessions, 21);
 });
 
+test('collectAgentStats：Windows 上 .cmd 用 cmd.exe /d /s /c 包装（CVE-2024-27980）', { skip: process.platform !== 'win32' }, async () => {
+  const calls = [];
+  await collectAgentStats({
+    cmd: 'nga', statsCmd: 'C:/tools/nga.cmd stats --days {days}', env: { PATH: '' }, sleepFn: async () => {},
+    execFileFn: (bin, args, opts, cb) => { calls.push([bin, args]); cb(null, SAMPLE, ''); },
+  });
+  assert.equal(calls[0][0], process.env.ComSpec || 'cmd.exe');
+  assert.deepEqual(calls[0][1], ['/d', '/s', '/c', 'C:/tools/nga.cmd', 'stats', '--days', '7']);
+});
+
 test('collectAgentStats：ENOENT 不重试，直接返回 error', async () => {
   let calls = 0;
   const r = await collectAgentStats({

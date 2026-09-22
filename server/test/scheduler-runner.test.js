@@ -81,6 +81,18 @@ test('run 把 stdout/stderr 写入日志并返回退出码', async () => {
   assert.equal(captured.bin, 'echo');
 });
 
+test('run：Windows 上 .cmd 走 cmd.exe /d /s /c 包装（CVE-2024-27980）', { skip: process.platform !== 'win32' }, async () => {
+  const dir = tmpDir();
+  const child = fakeChild();
+  let captured = null;
+  const runner = createRunner({ spawnFn: (bin, args) => { captured = { bin, args }; return child; }, killChild: () => {} });
+  const p = runner.run({ runId: 'r4', spec: { bin: 'C:/tools/nga.cmd', args: ['run', 'x'], cwd: dir }, logPath: path.join(dir, 'r4.log'), timeoutMs: 0 });
+  child.emit('close', 0);
+  await p;
+  assert.equal(captured.bin, process.env.ComSpec || 'cmd.exe');
+  assert.deepEqual(captured.args, ['/d', '/s', '/c', 'C:/tools/nga.cmd', 'run', 'x']);
+});
+
 test('run 超时 kill 子进程并标记 timedOut', async () => {
   const dir = tmpDir();
   const child = fakeChild();

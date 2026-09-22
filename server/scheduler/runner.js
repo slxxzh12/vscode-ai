@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { wrapCmdBin } from '../win-spawn.js';
 
 export function resolveCwd(task, projectRoot, fallback) {
   return task.cwd || projectRoot || fallback;
@@ -61,7 +62,8 @@ export function createRunner({ spawnFn = spawn, killChild = defaultKill } = {}) 
       const stream = fs.createWriteStream(logPath, { flags: 'a' });
       let child;
       try {
-        child = spawnFn(spec.bin, spec.args, { cwd: spec.cwd, env: spec.env ? { ...process.env, ...spec.env } : undefined, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+        const { bin, args } = wrapCmdBin(spec.bin, spec.args);   // .cmd/.bat 在 Windows 上必须经 cmd.exe
+        child = spawnFn(bin, args, { cwd: spec.cwd, env: spec.env ? { ...process.env, ...spec.env } : undefined, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       } catch (e) {
         stream.end();
         const result = { exitCode: -1, timedOut: false, spawnError: true, error: String(e && e.message || e), durationMs: 0 };
