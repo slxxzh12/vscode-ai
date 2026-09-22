@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { parseStats, parseNum, parseStatsCmd, collectAgentStats, resolveAgentBin, ensureAgentOnPath } from '../collaboration/agent-stats.js';
+import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath } from '../collaboration/agent-stats.js';
 
 const SAMPLE = [
   '│Sessions                                             21 │',
@@ -82,6 +82,45 @@ test('collectAgentStats：ENOENT 不重试，直接返回 error', async () => {
   assert.equal(calls, 1);
   assert.ok(r.error);
   assert.equal(r.agent, 'opencode');
+});
+
+test('probeAgentStats：只跑一次，返回命令行 + 原文 + 解析结果', async () => {
+  let calls = 0;
+  const r = await probeAgentStats({
+    cmd: 'opencode', statsCmd: 'opencode stats --days {days}', days: 7, env: { PATH: '' },
+    execFileFn: (bin, args, opts, cb) => { calls += 1; cb(null, SAMPLE, ''); },
+  });
+  assert.equal(calls, 1);
+  assert.equal(r.ok, true);
+  assert.equal(r.error, '');
+  assert.match(r.cmdline, /opencode stats --days 7$/);
+  assert.equal(r.raw, SAMPLE);
+  assert.equal(r.parsed.sessions, 21);
+  assert.equal(r.parsed.input, 8200000);
+});
+
+test('probeAgentStats：命令失败时带上 stderr/错误码，仍是单次调用', async () => {
+  let calls = 0;
+  const r = await probeAgentStats({
+    cmd: 'opencode', env: { PATH: '' },
+    execFileFn: (bin, args, opts, cb) => { calls += 1; cb(Object.assign(new Error('boom'), { code: 7 }), '', 'fatal: bad\n'); },
+  });
+  assert.equal(calls, 1);
+  assert.equal(r.ok, false);
+  assert.equal(r.error, 'boom');
+  assert.equal(r.code, 7);
+  assert.equal(r.stderr, 'fatal: bad\n');
+  assert.equal(r.raw, '');
+});
+
+test('probeAgentStats：非零退出但 stdout 有内容时，原文与解析照常返回', async () => {
+  const r = await probeAgentStats({
+    cmd: 'opencode', env: { PATH: '' },
+    execFileFn: (bin, args, opts, cb) => { cb(Object.assign(new Error('partial'), { code: 1 }), SAMPLE, 'warn\n'); },
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.raw, SAMPLE);
+  assert.equal(r.parsed.messages, 3986);
 });
 
 test('resolveAgentBin：nga 与 opencode 等价，DEVFLOW_OPENCODE 覆盖对二者都生效', () => {

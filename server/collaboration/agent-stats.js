@@ -114,6 +114,27 @@ export function parseStats(text) {
   };
 }
 
+// 诊断用探针：只跑一次统计命令，把「命令行 + 原始输出 + 解析结果 + 错误」原样返回。
+// 刻意不走重试、不落库，也不并入 collectAgentStats —— 以免 raw 混进上报体。
+export function probeAgentStats({
+  cmd = 'opencode', statsCmd = '', days = 7, timeoutMs = 20000, env = process.env, execFileFn = execFile,
+} = {}) {
+  const spec = parseStatsCmd(statsCmd, days, { env })
+    || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
+  const startedAt = Date.now();
+  return new Promise((resolve) => {
+    execFileFn(spec.bin, spec.args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+      const raw = String(stdout || '');
+      resolve({
+        agent: cmd, days, cmdline: [spec.bin, ...spec.args].join(' '), bin: spec.bin, args: spec.args,
+        ok: !err, error: err ? String((err && err.message) || err) : '', code: (err && err.code) || null,
+        raw, stderr: String(stderr || ''), parsed: parseStats(raw),
+        durationMs: Date.now() - startedAt, collectedAt: Date.now(),
+      });
+    });
+  });
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 采集本机用量。命令来自 agent 配置的 statsCmd 模板（每个 agent 一套），未配置时回退 `<cmd> stats --days N`。

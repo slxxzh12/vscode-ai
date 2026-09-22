@@ -68,6 +68,25 @@ describe('MemberUsageTable', () => {
     expect(badge.text()).toBe(t('collab.member.me'));
   });
 
+  it('点击自己那行请求 /api/usage/probe 并展示原文', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true, cmdline: 'opencode stats --days 7', raw: 'Sessions 21', parsed: { sessions: 21 } }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const w = mountWithIdentity(
+      { m1: { agent: '*', days: 1, machineId: 'm1', username: 'alice', host: 'h', port: 1, messages: 1, receivedAt: Date.now() } },
+      { id: 'g', name: 'G', hubId: 'hub2', createdAt: 1, members: [{ machineId: 'm1' }] },
+      'm1',
+    );
+    await flushPromises();
+    await w.find('.el-table__row').trigger('click');
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledWith('/api/usage/probe', expect.objectContaining({ method: 'POST' }));
+    expect(w.text()).toContain(t('usage.probe.raw'));
+    expect(w.text()).toContain(t('usage.probe.command'));
+  });
+
   it('展示最后一次数据更新时间列', async () => {
     const now = new Date(2026, 8, 20, 13, 54, 52).getTime();
     const w = mount({ m1: { agent: '*', days: 1, machineId: 'm1', username: 'alice', host: 'h', port: 1, messages: 1, receivedAt: now } });
