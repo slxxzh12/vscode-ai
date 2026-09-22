@@ -53,6 +53,8 @@ test('launch.ps1 含 -Assoc 子命令与启动自查，且不再有 WScript 首�
   assert.match(ps, /\$p\.selected/, '按偏好里的 selected 逐扩展设置/移除');
   assert.ok(!ps.includes('assoc-prompted'), '移除了旧的首启 WScript 关联弹窗');
   assert.match(ps, /DeleteSubKeyTree/, '删 UserChoice 才能成为默认程序');
+  assert.match(ps, /UserChoiceLatest/, '新版 Windows 还需删 UserChoiceLatest');
+  assert.match(ps, /SHChangeNotify/, '设置后广播 SHCNE_ASSOCCHANGED 刷新 Shell 关联');
 });
 
 test('launch.sh 含 desired 优先、nc 存活探测与 --plan 钩子', () => {

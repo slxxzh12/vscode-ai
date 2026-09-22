@@ -1280,6 +1280,7 @@ onBeforeUnmount(() => {
                 <span v-if="x.isDefault" class="assoc-on">✓</span>
               </label>
             </div>
+            <div class="cfghint">{{ $t('term.file_assoc_common') }}</div>
             <div v-if="assocMsg" class="cfghint warn">{{ assocMsg }}</div>
           </div>
           <div class="setsec">

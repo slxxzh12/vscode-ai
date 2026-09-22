@@ -638,6 +638,7 @@ export const messages = {
   'term.file_assoc_label': 'Set Void as the default app for these files',
   'term.file_assoc_hint': 'Applied when you click Done; re-applied automatically on each start. Uncheck to remove.',
   'term.file_assoc_failed': 'Failed to update file associations: {msg}',
+  'term.file_assoc_common': 'Note: Windows may keep the previous app for common types (.md/.txt/.pdf etc.). If it does not apply, set Void as the default in Windows Default apps (or right-click the file → Open with → Choose another app → Always).',
   'term.restore_default': 'Restore defaults',
   'term.done': 'OK',
   'brand.title': 'vscode-ai(Void)',

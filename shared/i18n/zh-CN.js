@@ -638,6 +638,7 @@ export const messages = {
   'term.file_assoc_label': '把以下文件的默认打开方式设为 Void',
   'term.file_assoc_hint': '勾选后点「确定」立即生效；之后每次启动会自动校正为 Void。取消勾选可移除登记。',
   'term.file_assoc_failed': '文件关联设置失败：{msg}',
+  'term.file_assoc_common': '注意：常见类型（.md/.txt/.pdf 等）Windows 可能仍用原程序打开；若未生效，请在系统「默认应用」里把该类型指定为 Void（或右键文件 → 打开方式 → 选择其他应用 → 始终）。',
   'term.restore_default': '恢复默认',
   'term.done': '确定',
   'brand.title': 'vscode-ai(黑洞)',
