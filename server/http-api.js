@@ -14,7 +14,7 @@ import { pickFolder, pickAnyFile } from './native-dialog.js';
 import { revealInOs } from './reveal.js';
 import { runScript, RUNNABLE_EXT } from './run-script.js';
 import { runCurl } from './curl-run.js';
-import { streamProject } from './project-search.js';
+import { streamProject, replaceProject } from './project-search.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
 
@@ -98,8 +98,7 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const searchName = !['0', 'false'].includes(url.searchParams.get('name'));
         const searchContent = !['0', 'false'].includes(url.searchParams.get('content'));
         const skipIgnores = !['1', 'true'].includes(url.searchParams.get('all'));
-        const split = !['0', 'false'].includes(url.searchParams.get('split'));
-        await streamSearchTo(res, store?.dir, { query: q, caseSensitive, searchName, searchContent, skipIgnores, split });
+        await streamSearchTo(res, store?.dir, { query: q, caseSensitive, searchName, searchContent, skipIgnores });
         return;
       }
       if (sub === '/file' && req.method === 'GET') {
@@ -213,9 +212,21 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const searchName = !['0', 'false'].includes(url.searchParams.get('name'));
         const searchContent = !['0', 'false'].includes(url.searchParams.get('content'));
         const skipIgnores = !['1', 'true'].includes(url.searchParams.get('all'));
-        const split = !['0', 'false'].includes(url.searchParams.get('split'));
         const root = projects.rootOf(project);
-        await streamSearchTo(res, root, { query: q, caseSensitive, searchName, searchContent, skipIgnores, split });
+        await streamSearchTo(res, root, { query: q, caseSensitive, searchName, searchContent, skipIgnores });
+        return;
+      }
+      if (url.pathname === '/api/search/replace' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const project = String(body.project || '');
+        const q = String(body.q || '').trim();
+        if (!q) { sendJson(res, 400, { error: 'q required' }); return; }
+        const caseSensitive = body.case === true || body.case === 1 || body.case === '1';
+        const skipIgnores = body.all !== true;
+        const replacement = typeof body.replace === 'string' ? body.replace : '';
+        const root = projects.rootOf(project);
+        const r = await replaceProject(root, { query: q, caseSensitive, skipIgnores }, replacement);
+        sendJson(res, 200, { ok: true, ...r });
         return;
       }
       if (url.pathname === '/api/run-script' && req.method === 'POST') {

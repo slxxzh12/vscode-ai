@@ -1,6 +1,6 @@
 import { useProjects } from '../useProjects';
 import { copyText } from '../clipboard';
-import { searchProject } from '../search/projectSearch';
+import { searchProject, replaceProject } from '../search/projectSearch';
 import type { TreeSource, SearchHit, SearchEvent } from './treeSource';
 
 // 项目文件树数据源：包装 useProjects，供统一 TreeView 使用。
@@ -8,7 +8,7 @@ export function projectTreeSource(opts: {
   projectId: string;
   onOpenFile: (projectId: string, path: string, name: string) => void;
   onDetailFile: (projectId: string, path: string, name: string) => void;
-  onOpenFileAt?: (projectId: string, path: string, name: string, line?: number) => void;
+  onOpenFileAt?: (projectId: string, path: string, name: string, line?: number, query?: string, caseSensitive?: boolean) => void;
 }): TreeSource {
   const api = useProjects();
   const pid = opts.projectId;
@@ -42,13 +42,16 @@ export function projectTreeSource(opts: {
       const f = await api.text(pid, node.key);
       await copyText(f.content);
     },
-    search(query: string, o: { caseSensitive: boolean; name: boolean; content: boolean; all: boolean; split?: boolean }, signal?: AbortSignal): AsyncGenerator<SearchEvent> {
+    search(query: string, o: { caseSensitive: boolean; name: boolean; content: boolean; all: boolean }, signal?: AbortSignal): AsyncGenerator<SearchEvent> {
       if (!pid) return (async function* (): AsyncGenerator<SearchEvent> { yield { type: 'done', scanned: 0 }; })();
       return searchProject(pid, query, o, signal);
     },
     openHit(hit: SearchHit) {
-      if (opts.onOpenFileAt) opts.onOpenFileAt(pid, hit.path, hit.name, hit.line);
+      if (opts.onOpenFileAt) opts.onOpenFileAt(pid, hit.path, hit.name, hit.line, hit.query, hit.caseSensitive);
       else opts.onOpenFile(pid, hit.path, hit.name);
+    },
+    replaceInFiles(query: string, o: { caseSensitive: boolean; all: boolean }, replacement: string) {
+      return replaceProject(pid, query, o, replacement);
     },
   };
 }

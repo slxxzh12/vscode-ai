@@ -396,10 +396,14 @@ function onDetailFile(projectId: string, path: string) {
 const locateToken = ref(0);
 const locatePath = ref('');
 const locateLine = ref(0);
-function onOpenFileAt(projectId: string, path: string, _name: string, line?: number) {
+const locateQuery = ref('');
+const locateCaseSensitive = ref(false);
+function onOpenFileAt(projectId: string, path: string, _name: string, line?: number, query?: string, caseSensitive?: boolean) {
   openFile(projectId, path);
   locatePath.value = path.replace(/\\/g, '/');
   locateLine.value = line || 0;
+  locateQuery.value = query || '';
+  locateCaseSensitive.value = !!caseSensitive;
   locateToken.value++;
 }
 
@@ -757,7 +761,7 @@ onBeforeUnmount(() => {
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
         <section class="center">
-          <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine" />
+          <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine" :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive" />
         </section>
       </template>
     </div>

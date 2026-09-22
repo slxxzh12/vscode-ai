@@ -15,7 +15,7 @@ export type SearchEvent =
   | { type: 'content'; path: string; name: string; lines: SearchLine[] }
   | { type: 'progress'; scanned: number }
   | { type: 'done'; scanned: number };
-export interface SearchHit { path: string; name: string; line?: number; }
+export interface SearchHit { path: string; name: string; line?: number; query?: string; caseSensitive?: boolean; }
 
 export interface TreeSource {
   loadChildren(dirKey: string): Promise<TreeSourceNode[]>;   // '' = 根
@@ -33,8 +33,9 @@ export interface TreeSource {
   copyName?(node: TreeSourceNode): void;
   copyPath?(node: TreeSourceNode): void;
   copyContent?(node: TreeSourceNode): Promise<void>;
-  search?(query: string, opts: { caseSensitive: boolean; name: boolean; content: boolean; all: boolean; split?: boolean }, signal?: AbortSignal): AsyncIterable<SearchEvent>;
+  search?(query: string, opts: { caseSensitive: boolean; name: boolean; content: boolean; all: boolean }, signal?: AbortSignal): AsyncIterable<SearchEvent>;
   openHit?(hit: SearchHit): void;
+  replaceInFiles?(query: string, opts: { caseSensitive: boolean; all: boolean }, replacement: string): Promise<{ files: number; replacements: number }>;
 }
 
 export type { TreeRowNode, TreeRow } from './treeRows';

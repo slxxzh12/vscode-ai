@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onBeforeUnmount, watch } from 'vue';
 import type { TreeSource, SearchNameHit, SearchLine } from '../tree/treeSource';
+import { t } from '../i18n';
 
 // 左侧内嵌搜索面板：替换目录树显示，右上角关闭后恢复目录；可勾选按内容/文件名搜索。
 // 结果流式增量渲染（服务端 NDJSON），不截断；命中过多时仅提示。
@@ -12,7 +13,9 @@ const caseSensitive = ref(false);
 const byContent = ref(true);   // 默认搜文件内容
 const byName = ref(true);      // 默认也搜文件名
 const all = ref(false);        // 默认跳过忽略目录/二进制
-const splitBySpace = ref(false); // 默认不按空格分词：整串作为一个关键词
+const replaceText = ref('');   // 替换为
+const replacing = ref(false);
+const replaceMsg = ref('');
 const loading = ref(false);
 const error = ref('');
 const scanned = ref(0);
@@ -26,14 +29,15 @@ let ctrl: AbortController | null = null;
 
 const keyword = computed(() => query.value.trim());
 const searched = computed(() => keyword.value.length > 0);
-const terms = computed(() => splitBySpace.value
-  ? keyword.value.split(/\s+/).filter((t) => t.length >= 2)   // 按空格分词；单个字母/单字忽略
-  : (keyword.value.length >= 2 ? [keyword.value] : []));      // 整串作为一个关键词
+const terms = computed(() => (keyword.value.length >= 2 ? [keyword.value] : []));  // 整串作为一个关键词
 const anyMode = computed(() => byContent.value || byName.value);
 const started = computed(() => nameHits.value.length > 0 || contentGroups.value.length > 0);
 const contentHitCount = computed(() => contentGroups.value.reduce((n, g) => n + g.lines.length, 0));
+const hitFileCount = computed(() => contentGroups.value.length + nameHits.value.length);
 const totalHits = computed(() => nameHits.value.length + contentHitCount.value);
 const tooMany = computed(() => totalHits.value >= 2000);
+const canReplace = computed(() => !!props.source.replaceInFiles);
+const canRunReplace = computed(() => canReplace.value && searched.value && contentGroups.value.length > 0 && !loading.value && !replacing.value);
 
 function reset() {
   nameHits.value = [];
@@ -59,7 +63,7 @@ async function run() {
   const myCtrl = new AbortController();
   ctrl = myCtrl;
   try {
-    const stream = props.source.search(q, { caseSensitive: caseSensitive.value, name: byName.value, content: byContent.value, all: all.value, split: splitBySpace.value }, myCtrl.signal);
+    const stream = props.source.search(q, { caseSensitive: caseSensitive.value, name: byName.value, content: byContent.value, all: all.value }, myCtrl.signal);
     for await (const ev of stream) {
       if (my !== seq) return;
       if (ev.type === 'name') nameHits.value = [...nameHits.value, ...ev.hits];
@@ -76,8 +80,27 @@ async function run() {
   }
 }
 watch(query, schedule);
-watch([caseSensitive, byContent, byName, all, splitBySpace], () => { if (searched.value) void run(); });
+watch([caseSensitive, byContent, byName, all], () => { if (searched.value) void run(); });
 onBeforeUnmount(() => ctrl?.abort());
+
+// 全量替换：把内容命中的整串关键词替换为「替换为」输入框内容（跨所有命中文件，先确认）。
+async function replaceAll() {
+  if (!canRunReplace.value || !props.source.replaceInFiles) return;
+  const files = contentGroups.value.length;
+  if (!window.confirm(t('search.replace_confirm', { q: keyword.value, files }))) return;
+  replacing.value = true;
+  replaceMsg.value = '';
+  error.value = '';
+  try {
+    const r = await props.source.replaceInFiles(keyword.value, { caseSensitive: caseSensitive.value, all: all.value }, replaceText.value);
+    replaceMsg.value = t('search.replace_done', { files: r.files, n: r.replacements });
+    await run();
+  } catch (e: unknown) {
+    error.value = String((e as Error)?.message || e);
+  } finally {
+    replacing.value = false;
+  }
+}
 
 function toggle(path: string) {
   const s = new Set(collapsed.value);
@@ -85,7 +108,9 @@ function toggle(path: string) {
   collapsed.value = s;
 }
 function pick(hit: { path: string; name: string; line?: number }) {
-  props.source.openHit?.(hit);
+  // 内容命中行带上关键词与大小写设置，供右侧打开后黄色高亮命中内容。
+  const full = hit.line != null ? { ...hit, query: keyword.value, caseSensitive: caseSensitive.value } : hit;
+  props.source.openHit?.(full);
 }
 // 命中分词分段（任一分词命中即高亮），供模板高亮
 function segments(text: string): { text: string; hit: boolean }[] {
@@ -114,13 +139,15 @@ function segments(text: string): { text: string; hit: boolean }[] {
 
 <template>
   <div class="fsp">
-    <div class="fstop">
-      <label class="scase" :title="$t('search.split')"><input data-mode="split" v-model="splitBySpace" type="checkbox" /><span>{{ $t('search.split') }}</span></label>
-    </div>
     <div class="fsbar">
       <input v-model="query" class="sinput" type="search" :placeholder="$t('search.placeholder')" spellcheck="false" @keydown.enter="run" />
       <button class="fsclose" :title="$t('search.close')" @click="emit('close')">×</button>
     </div>
+    <div v-if="canReplace" class="fsreplace">
+      <input v-model="replaceText" class="sinput" type="text" :placeholder="$t('search.replace_placeholder')" spellcheck="false" />
+      <button class="rbtn" :disabled="!canRunReplace" :title="$t('search.replace_all')" @click="replaceAll">{{ replacing ? $t('search.replacing') : $t('search.replace_all') }}</button>
+    </div>
+    <div v-if="replaceMsg" class="sok">{{ replaceMsg }}</div>
     <div class="fsmodes">
       <label class="scase" :title="$t('search.mode.content')"><input data-mode="content" v-model="byContent" type="checkbox" /><span>{{ $t('search.mode.content') }}</span></label>
       <label class="scase" :title="$t('search.mode.name')"><input data-mode="name" v-model="byName" type="checkbox" /><span>{{ $t('search.mode.name') }}</span></label>
@@ -135,6 +162,7 @@ function segments(text: string): { text: string; hit: boolean }[] {
       <div v-else-if="loading && !started" class="shint">{{ $t('search.loading') }}</div>
       <div v-else-if="done && !started" class="shint">{{ $t('search.empty') }}</div>
       <template v-else>
+        <div class="ssum">{{ $t('search.summary', { hits: totalHits, files: hitFileCount }) }}</div>
         <section v-if="nameHits.length" class="sgroup">
           <div class="sghead">{{ $t('search.name_group') }} <span class="scount">{{ nameHits.length }}</span></div>
           <button v-for="h in nameHits" :key="'n:' + h.path" class="sname-row" :title="$t('search.open_file')" @click="pick({ path: h.path, name: h.name })">
@@ -168,8 +196,12 @@ function segments(text: string): { text: string; hit: boolean }[] {
 
 <style scoped>
 .fsp { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.fstop { flex: none; display: flex; align-items: center; gap: 10px; padding: 0 6px 6px; }
 .fsbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 6px 6px; }
+.fsreplace { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 6px 6px; }
+.rbtn { flex: none; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 10px; font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+.rbtn:hover:not(:disabled) { background: var(--bg5); border-color: var(--ac2); }
+.rbtn:disabled { opacity: .5; cursor: default; }
+.sok { flex: none; color: var(--ac2); font-size: 12px; padding: 2px 6px 6px; }
 .sinput { flex: 1; min-width: 0; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: inherit; }
 .sinput:focus { outline: none; border-color: var(--ac2); }
 .fsclose { flex: none; background: none; border: 1px solid transparent; color: var(--tx3); font-size: 14px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
@@ -179,6 +211,7 @@ function segments(text: string): { text: string; hit: boolean }[] {
 .sbody { flex: 1; min-height: 0; overflow-y: auto; padding-top: 6px; }
 .shint, .strunc, .sfoot { color: var(--tx5); font-size: 12px; padding: 10px 2px; }
 .serr { color: var(--err); font-size: 12px; padding: 10px 2px; }
+.ssum { color: var(--tx2); font-size: 12px; padding: 2px 2px 8px; border-bottom: 1px solid var(--bd2); margin-bottom: 6px; }
 .sgroup { margin-bottom: 10px; }
 .sghead { color: var(--ac2); font-size: 11px; text-transform: uppercase; padding: 8px 2px 4px; }
 .scount { color: var(--tx5); font-size: 11px; margin-left: 6px; }
@@ -189,6 +222,6 @@ function segments(text: string): { text: string; hit: boolean }[] {
 .scaret { flex: none; width: 12px; text-align: center; color: var(--tx4); }
 .sline { padding-left: 28px; align-items: flex-start; }
 .sln { flex: none; width: 44px; text-align: right; color: var(--tx5); user-select: none; }
-.stext { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+.stext { flex: 1; min-width: 0; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 .stext .hit { background: color-mix(in srgb, var(--ac) 40%, transparent); border-radius: 2px; }
 </style>

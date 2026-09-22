@@ -34,10 +34,11 @@ describe('FileSearchPanel', () => {
     await w.find('.sinput').setValue('target');
     await w.find('.sinput').trigger('keydown.enter');
     await flushPromises();
-    expect(src.search).toHaveBeenCalledWith('target', { caseSensitive: false, name: true, content: true, all: false, split: false }, expect.anything());
+    expect(src.search).toHaveBeenCalledWith('target', { caseSensitive: false, name: true, content: true, all: false }, expect.anything());
     expect(w.findAll('.sname-row').length).toBe(1);
     expect(w.findAll('.scgroup').length).toBe(2);
     expect(w.findAll('.sline').length).toBe(2);
+    expect(w.find('.ssum').text()).toContain('3');
   });
 
   it('取消勾选「文件名」后重搜只带 content', async () => {
@@ -49,7 +50,7 @@ describe('FileSearchPanel', () => {
     await flushPromises();
     await w.find('[data-mode="name"]').setValue(false);
     await flushPromises();
-    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: false, content: true, all: false, split: false }, expect.anything());
+    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: false, content: true, all: false }, expect.anything());
   });
 
   it('勾选「包含忽略目录/二进制」后重搜带 all:true', async () => {
@@ -61,20 +62,7 @@ describe('FileSearchPanel', () => {
     await flushPromises();
     await w.find('[data-mode="all"]').setValue(true);
     await flushPromises();
-    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: true, content: true, all: true, split: false }, expect.anything());
-  });
-
-  it('默认不勾选「按空格分词」，勾选后重搜带 split:true', async () => {
-    const src = fakeSource({ search: vi.fn(() => streamOf(EVENTS)), openHit: vi.fn() });
-    const w = mountPanel(src);
-    await flushPromises();
-    expect((w.find('[data-mode="split"]').element as HTMLInputElement).checked).toBe(false);
-    await w.find('.sinput').setValue('target');
-    await w.find('.sinput').trigger('keydown.enter');
-    await flushPromises();
-    await w.find('[data-mode="split"]').setValue(true);
-    await flushPromises();
-    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: true, content: true, all: false, split: true }, expect.anything());
+    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: true, content: true, all: true }, expect.anything());
   });
 
   it('两种模式都不勾选时不发起搜索并提示', async () => {
@@ -124,8 +112,34 @@ describe('FileSearchPanel', () => {
     await w.find('.sinput').trigger('keydown.enter');
     await flushPromises();
     await w.findAll('.sline')[0].trigger('click');
-    expect(src.openHit).toHaveBeenCalledWith({ path: 'src/a.js', name: 'a.js', line: 2 });
+    expect(src.openHit).toHaveBeenCalledWith({ path: 'src/a.js', name: 'a.js', line: 2, query: 'target', caseSensitive: false });
     expect(w.emitted('close')).toBeUndefined();
+  });
+
+  it('来源支持替换时显示替换栏，「全部替换」确认后调用 replaceInFiles 并复搜', async () => {
+    const replaceInFiles = vi.fn(async () => ({ files: 2, replacements: 3 }));
+    const src = fakeSource({ search: vi.fn(() => streamOf(EVENTS)), openHit: vi.fn(), replaceInFiles });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const w = mountPanel(src);
+    await flushPromises();
+    await w.find('.sinput').setValue('target');
+    await w.find('.sinput').trigger('keydown.enter');
+    await flushPromises();
+    expect(w.find('.fsreplace').exists()).toBe(true);
+    await w.find('.fsreplace .sinput').setValue('done');
+    await w.find('.rbtn').trigger('click');
+    await flushPromises();
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(replaceInFiles).toHaveBeenCalledWith('target', { caseSensitive: false, all: false }, 'done');
+    expect(w.find('.sok').exists()).toBe(true);
+    confirmSpy.mockRestore();
+  });
+
+  it('来源不支持替换时不显示替换栏', async () => {
+    const src = fakeSource({ search: vi.fn(() => streamOf(EVENTS)), openHit: vi.fn() });
+    const w = mountPanel(src);
+    await flushPromises();
+    expect(w.find('.fsreplace').exists()).toBe(false);
   });
 
   it('点右上角关闭按钮 emit close', async () => {

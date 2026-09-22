@@ -187,6 +187,24 @@ test('/api/search 未知项目返回 404', async (t) => {
   assert.equal((await request(server, '/api/search?project=nope&q=x')).status, 404);
 });
 
+test('/api/search/replace 全量替换命中内容', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'target target\n');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/search/replace', { project: 'a', q: 'target', replace: 'T' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body), { ok: true, files: 1, replacements: 2 });
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'T T\n');
+});
+
+test('/api/search/replace q 为空返回 400', async (t) => {
+  const dir = tmpDir();
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  assert.equal((await post(server, '/api/search/replace', { project: 'a', q: '', replace: 'x' })).status, 400);
+});
+
 test('非 /api 路由返回 404 json', async (t) => {
   const dir = tmpDir();
   const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));

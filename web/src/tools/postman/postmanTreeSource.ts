@@ -22,15 +22,10 @@ function labelOf(r: PostmanRecord): string {
   return (r.title && r.title.trim()) || r.command;
 }
 
-function splitTerms(query: string, caseSensitive: boolean, split = true): string[] {
-  const out: string[] = [];
+function searchTerms(query: string, caseSensitive: boolean): string[] {
   const src = String(query).trim();
-  for (const raw of (split ? src.split(/\s+/) : [src])) {
-    if (raw.length < 2) continue;
-    const t = caseSensitive ? raw : raw.toLowerCase();
-    if (!out.includes(t)) out.push(t);
-  }
-  return out;
+  if (src.length < 2) return [];
+  return [caseSensitive ? src : src.toLowerCase()];
 }
 
 export function postmanTreeSource(deps: PostmanTreeDeps): TreeSource {
@@ -72,7 +67,7 @@ export function postmanTreeSource(deps: PostmanTreeDeps): TreeSource {
     copyPath(node) { void copyText(node.key); },
     async *search(query, o): AsyncGenerator<SearchEvent> {
       void o.all;
-      const terms = splitTerms(query, o.caseSensitive, o.split !== false);
+      const terms = searchTerms(query, o.caseSensitive);
       if (!terms.length || (!o.name && !o.content)) { yield { type: 'done', scanned: 0 }; return; }
       const hayOf = (s: string) => (o.caseSensitive ? s : s.toLowerCase());
       const nameHits: SearchNameHit[] = [];

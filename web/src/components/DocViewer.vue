@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { EditorView, basicSetup } from 'codemirror';
+import { Decoration, type DecorationSet } from '@codemirror/view';
+import { StateEffect, StateField } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useTheme } from '../theme';
 import { cmLangFor } from '../cmLang';
@@ -20,7 +22,26 @@ import { canFormatExt, formatText } from '../formatText';
 import { copyText } from '../clipboard';
 import type { TreeItem } from '@devflow/shared';
 
-const props = defineProps<{ source: DocSource; path: string; name: string; detailToken?: number; detailPath?: string; locateToken?: number; locatePath?: string; locateLine?: number }>();
+const props = defineProps<{ source: DocSource; path: string; name: string; detailToken?: number; detailPath?: string; locateToken?: number; locatePath?: string; locateLine?: number; locateQuery?: string; locateCaseSensitive?: boolean }>();
+
+// 搜索命中高亮：黄色背景标出文件中所有命中关键词（由点击搜索结果触发）。
+const setLocateHighlight = StateEffect.define<{ from: number; to: number }[]>();
+const locateHitMark = Decoration.mark({ class: 'df-locate-hit' });
+const locateHighlightField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(setLocateHighlight)) {
+        deco = e.value.length
+          ? Decoration.set(e.value.map((r) => locateHitMark.range(r.from, r.to)), true)
+          : Decoration.none;
+      }
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 // 压缩（/api/format）与来源无关，直接调用；其余读写/树/详情等一律走注入的 DocSource。
 const { format } = useProjects();
 const { isDark } = useTheme();
@@ -198,6 +219,7 @@ function mountEditor(doc: string) {
       basicSetup,
       ...(isDark.value ? [oneDark] : []),
       EditorView.lineWrapping,
+      locateHighlightField,
       ...(lang ? [lang] : []),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) docChanged();
@@ -292,7 +314,23 @@ async function applyPreview() {
   }
 }
 
-// —— 搜索命中跳行：切到 code 模式 → 编辑器选中该行并滚动聚焦 ——
+// 找出文档中关键词的全部位置（整串匹配，长度 < 2 忽略）；供黄色高亮。
+function locateRanges(doc: string, q: string, caseSensitive: boolean): { from: number; to: number }[] {
+  if (!q || q.length < 2) return [];
+  const hay = caseSensitive ? doc : doc.toLowerCase();
+  const needle = caseSensitive ? q : q.toLowerCase();
+  const out: { from: number; to: number }[] = [];
+  let from = 0;
+  for (;;) {
+    const i = hay.indexOf(needle, from);
+    if (i < 0) break;
+    out.push({ from: i, to: i + needle.length });
+    from = i + needle.length;
+  }
+  return out;
+}
+
+// —— 搜索命中跳行：切到 code 模式 → 滚动聚焦该行，并用黄色背景高亮命中内容 ——
 async function applyLocate() {
   const line = props.locateLine || 0;
   if (!line || props.locatePath !== props.path) return;
@@ -304,7 +342,14 @@ async function applyLocate() {
   const total = view.state.doc.lines;
   const n = Math.min(Math.max(1, line), total);
   const l = view.state.doc.line(n);
-  view.dispatch({ selection: { anchor: l.from, head: l.to }, scrollIntoView: true });
+  const ranges = locateRanges(view.state.doc.toString(), props.locateQuery || '', !!props.locateCaseSensitive);
+  const onLine = ranges.filter((r) => r.from >= l.from && r.to <= l.to);
+  const sel = onLine[0] || { from: l.from, to: l.to };
+  view.dispatch({
+    selection: { anchor: sel.from, head: sel.to },
+    effects: setLocateHighlight.of(ranges),
+    scrollIntoView: true,
+  });
   view.focus();
 }
 watch(() => props.locateToken, (tk) => {
@@ -934,6 +979,7 @@ onBeforeUnmount(() => {
 .editor { flex: 1; min-height: 0; overflow: auto; }
 .editor :deep(.cm-editor) { height: 100%; font-size: 12.5px; }
 .editor :deep(.cm-editor.cm-focused) { outline: none; }
+.editor :deep(.df-locate-hit) { background: rgba(255, 214, 10, .5); border-radius: 2px; }
 .note { color: var(--tx3); padding: 16px; }
 .note.err { color: var(--errtx); }
 .detailpanel { flex: none; border-top: 1px solid var(--bd); background: var(--bg2); display: flex; flex-direction: column; max-height: 260px; }

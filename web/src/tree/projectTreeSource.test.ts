@@ -70,8 +70,18 @@ describe('projectTreeSource.openHit', () => {
   it('有 onOpenFileAt 时带上 line', () => {
     const onOpenFileAt = vi.fn();
     const src = projectTreeSource({ projectId: 'p1', onOpenFile: vi.fn(), onDetailFile: vi.fn(), onOpenFileAt });
-    src.openHit!({ path: 'src/a.js', name: 'a.js', line: 7 });
-    expect(onOpenFileAt).toHaveBeenCalledWith('p1', 'src/a.js', 'a.js', 7);
+    src.openHit!({ path: 'src/a.js', name: 'a.js', line: 7, query: 'foo', caseSensitive: true });
+    expect(onOpenFileAt).toHaveBeenCalledWith('p1', 'src/a.js', 'a.js', 7, 'foo', true);
+  });
+
+  it('replaceInFiles 调用 /api/search/replace', async () => {
+    const calls: { url: string; body: any }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: any) => { calls.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => ({ files: 1, replacements: 2 }) }; }));
+    const src = projectTreeSource({ projectId: 'p1', onOpenFile: vi.fn(), onDetailFile: vi.fn() });
+    const r = await src.replaceInFiles!('foo', { caseSensitive: false, all: false }, 'bar');
+    expect(r).toEqual({ files: 1, replacements: 2 });
+    expect(calls[0].url).toBe('/api/search/replace');
+    expect(calls[0].body).toEqual({ project: 'p1', q: 'foo', case: false, all: false, replace: 'bar' });
   });
 
   it('无 onOpenFileAt 时回退到 onOpenFile', () => {

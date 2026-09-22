@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { streamProject, searchProject, IGNORE_DIRS } from '../project-search.js';
+import { streamProject, searchProject, replaceProject, IGNORE_DIRS } from '../project-search.js';
 
 function tmpTree() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dfsearch-'));
@@ -85,30 +85,20 @@ test('空 query 只发 done 事件且不扫描', async () => {
   assert.equal(r.scanned, 0);
 });
 
-test('单个字母/单字分词被忽略', async () => {
+test('整串匹配：单个字母（长度 < 2）被忽略且不扫描', async () => {
   const { root, w } = tmpTree();
   w('a.txt', 'x\nfoo\n');
-  const r = await collect(root, { query: 'x foo' });
-  assert.deepEqual(r.contentHits.map((h) => h.line), [2]);
-  assert.deepEqual(r.nameHits, []);
-});
-
-test('split=false 时整串（含空格）作为一个关键词，不做空格分词', async () => {
-  const { root, w } = tmpTree();
-  w('a.txt', 'foo bar\nfoo\nbar\n');
-  const joined = await collect(root, { query: 'foo bar', split: false });
-  assert.deepEqual(joined.contentHits.map((h) => h.line), [1]);
-  assert.deepEqual(joined.nameHits, []);
-  const tokenized = await collect(root, { query: 'foo bar' });
-  assert.deepEqual(tokenized.contentHits.map((h) => h.line), [1, 2, 3]);
-});
-
-test('split=false 且整串不足 2 字符时忽略', async () => {
-  const { root, w } = tmpTree();
-  w('a.txt', 'x y\n');
-  const r = await collect(root, { query: 'x', split: false });
+  const r = await collect(root, { query: 'x' });
   assert.deepEqual(r.types, ['done']);
   assert.equal(r.scanned, 0);
+});
+
+test('整串（含空格）作为一个关键词，不做空格分词', async () => {
+  const { root, w } = tmpTree();
+  w('a.txt', 'foo bar\nfoo\nbar\n');
+  const r = await collect(root, { query: 'foo bar' });
+  assert.deepEqual(r.contentHits.map((h) => h.line), [1]);
+  assert.deepEqual(r.nameHits, []);
 });
 
 test('searchName=false 只搜内容，searchContent=false 只搜文件名', async () => {
@@ -136,6 +126,32 @@ test('收集器 searchProject 聚合事件', async () => {
   assert.equal(r.nameHits.length, 1);
   assert.equal(r.contentHits.length, 1);
   assert.ok(r.scanned >= 1);
+});
+
+test('replaceProject 对内容命中文件全量替换并写回', async () => {
+  const { root, w } = tmpTree();
+  w('a.txt', 'foo foo\nbar\n');
+  w('sub/b.txt', 'foo\n');
+  w('c.txt', 'nope\n');
+  const r = await replaceProject(root, { query: 'foo' }, 'baz');
+  assert.deepEqual(r, { files: 2, replacements: 3 });
+  assert.equal(fs.readFileSync(path.join(root, 'a.txt'), 'utf8'), 'baz baz\nbar\n');
+  assert.equal(fs.readFileSync(path.join(root, 'sub', 'b.txt'), 'utf8'), 'baz\n');
+  assert.equal(fs.readFileSync(path.join(root, 'c.txt'), 'utf8'), 'nope\n');
+});
+
+test('replaceProject 区分大小写', async () => {
+  const { root, w } = tmpTree();
+  w('a.txt', 'Foo foo\n');
+  assert.deepEqual(await replaceProject(root, { query: 'foo', caseSensitive: true }, 'X'), { files: 1, replacements: 1 });
+  assert.equal(fs.readFileSync(path.join(root, 'a.txt'), 'utf8'), 'Foo X\n');
+});
+
+test('replaceProject 单个字母关键词不做任何改动', async () => {
+  const { root, w } = tmpTree();
+  w('a.txt', 'x x\n');
+  assert.deepEqual(await replaceProject(root, { query: 'x' }, 'y'), { files: 0, replacements: 0 });
+  assert.equal(fs.readFileSync(path.join(root, 'a.txt'), 'utf8'), 'x x\n');
 });
 
 test('IGNORE_DIRS 覆盖常见目录', () => {
