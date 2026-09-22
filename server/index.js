@@ -721,7 +721,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/file-assoc' && req.method === 'GET') {
-    const pref = loadFileAssocPref(paths.dir);
+    const pref = loadFileAssocPref(ws?.paths?.dir);
     const st = await getFileAssocState({ appDir: APP_DIR });
     const extensions = st.extensions.map((x) => ({ ext: x.ext, isDefault: x.isDefault, enabled: pref.selected.includes(x.ext) }));
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -740,7 +740,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: 'not-available' }));
         return;
       }
-      const next = saveFileAssocPref(paths.dir, { enabled: !!body.enabled, prompted: true, selected: body.selected });
+      const next = saveFileAssocPref(ws?.paths?.dir, { enabled: !!body.enabled, prompted: true, selected: body.selected });
       runFileAssoc(APP_DIR, next.enabled ? 'apply' : 'remove');
       const st = await getFileAssocState({ appDir: APP_DIR });
       const extensions = st.extensions.map((x) => ({ ext: x.ext, isDefault: x.isDefault, enabled: next.selected.includes(x.ext) }));
