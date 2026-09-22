@@ -373,7 +373,7 @@ function buildWorkspace({ paths, port }) {
     sessionManager,
     workflows,
     getWorkflows: () => workflowStore.readAll(),
-    doneMarker: (token) => t('wf.done_marker', { token }),
+    doneMarker: (token, { runId, index }) => t('wf.done_marker', { runId, index }),
     logger: log,
   });
 

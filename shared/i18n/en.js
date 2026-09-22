@@ -412,7 +412,7 @@ export const messages = {
   'wf.step.running': 'Running',
   'wf.step.done': 'Done',
   'wf.step.error': 'Failed',
-  'wf.done_marker': '[DevFlow] When finished, output a single line at the end: DF_DONE:{token}',
+  'wf.done_marker': '[DevFlow] When finished, output a single line as the completion marker: drop the quotes on these three parts and join them directly with no characters between them — "DF_DONE:", "{runId}", ":{index}".',
   'hist.tab.files': '📄 Recent',
   'hist.tab.messages': '💬 Messages',
   'hist.tab.tree': '📁 Tree',

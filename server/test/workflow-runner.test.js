@@ -198,6 +198,50 @@ test('匹配 token 后组内自动串行，组末 paused 且不清理', async ()
   runner.stopAll();
 });
 
+// 模拟会回显输入的 TUI（opencode）：写入什么就把什么画回输出流。
+// 回归：完成指令里若含连续 token，会被自己的回显误命中而抢跑，整组提示词一次灌进去。
+function makeEchoPtyFactory(instances) {
+  return () => {
+    const handlers = { data: [], exit: [] };
+    const pty = {
+      pid: 1, shell: 'unix', writes: [],
+      onData(cb) { handlers.data.push(cb); },
+      onExit(cb) { handlers.exit.push(cb); },
+      write(s) {
+        s = String(s);
+        pty.writes.push(s);
+        for (const cb of handlers.data.slice()) cb(s);
+      },
+      resize() {}, kill() {},
+      __emitData(c) { for (const cb of handlers.data.slice()) cb(String(c)); },
+    };
+    instances.push({ pty });
+    return pty;
+  };
+}
+
+test('prompt 步完成指令不含连续 token：TUI 回显不会误判（回归）', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeEchoPtyFactory(instances)() });
+  const session = await sm.create({ name: 'E' });
+  // 与生产一致的「拆段」指令：三段拼接起来才是 token，发送文本里没有连续 token
+  const runner = new WorkflowRunner({
+    sessionManager: sm,
+    getWorkflows: () => GWFS,
+    doneMarker: (token, { runId, index }) => `JOIN "DF_DONE:", "${runId}", ":${index}"`,
+  });
+  const res = runner.startGroup({ workflowId: 'gw', groupAnchor: 'a', sessionId: session.id });
+  const { runId } = res.run;
+  const write = instances[0].pty.writes[0];
+  assert.ok(!write.includes(`DF_DONE:${runId}:0`));            // 发送文本里没有连续 token
+  assert.equal(instances[0].pty.writes.length, 1);             // 回显没有触发抢跑
+  assert.equal(res.run.snapshot().steps[0].status, 'running');
+  instances[0].pty.__emitData(`DF_DONE:${runId}:0`);           // Agent 真正回答后正常推进
+  assert.equal(res.run.snapshot().steps[0].status, 'done');
+  assert.equal(instances[0].pty.writes.length, 2);
+  runner.stopAll();
+});
+
 test('空分组直接 paused 且不写入', async () => {
   const EMPTY = [{ id: 'e', label: 'E', stages: [{ id: 'empty', label: 'X', group: 'G', prompts: [] }] }];
   const instances = [];

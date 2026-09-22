@@ -106,7 +106,13 @@ export class WorkflowRunner {
     this.workflows = workflows;
     this.getWorkflows = getWorkflows;
     this.stepTimeoutMs = stepTimeoutMs;
-    this.doneMarker = doneMarker || ((token) => `[DevFlow] When finished, output a single line at the end: ${token}`);
+    // 完成指令里不能出现连续的 token 本身：TUI 会把输入回显到输出流，明文 token 会被自己的回显误命中而抢跑。
+    // 因此把 token 拆成三段、用分隔符隔开表述，只有 Agent 真正回答时才出现连续 token（见 _token 的拼法）。
+    this.doneMarker = doneMarker || ((token, info = {}) => {
+      const runId = info.runId ?? '';
+      const index = info.index ?? '';
+      return `[DevFlow] When finished, output a single line as the completion marker: drop the quotes on these three parts and join them directly with no characters between them — "DF_DONE:", "${runId}", ":${index}".`;
+    });
     this.log = logger;
     this.runs = new Map();
     this._sessionRun = new Map();

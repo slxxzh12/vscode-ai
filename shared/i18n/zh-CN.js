@@ -412,7 +412,7 @@ export const messages = {
   'wf.step.running': '运行中',
   'wf.step.done': '完成',
   'wf.step.error': '失败',
-  'wf.done_marker': '[DevFlow] 完成后请在最后单独输出一行：DF_DONE:{token}',
+  'wf.done_marker': '[DevFlow] 完成后请在最后单独输出一行完成标记：去掉下面三段的引号、首尾直接相接（中间不加任何字符）后原样输出——"DF_DONE:"、"{runId}"、":{index}"。',
   'hist.tab.files': '📄 最近文件',
   'hist.tab.messages': '💬 消息',
   'hist.tab.tree': '📁 目录',

@@ -43,7 +43,7 @@ export class GroupRun {
     if (!session || !session.alive) { this._fail('session exited'); return; }
     let line = step.text;
     if (step.type === 'cmd') line = buildMarkerCmd(step.text, this.runId, i, session.pty.shell);
-    else line = `${step.text}\n\n${this.runner.doneMarker(this._token(i))}`;
+    else line = `${step.text}\n\n${this.runner.doneMarker(this._token(i), { runId: this.runId, index: i })}`;
     const ok = this.runner.sm.write(this.sessionId, line + '\r');
     if (!ok) { this._fail('write failed'); return; }
     this._armTimeout();
