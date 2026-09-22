@@ -211,8 +211,17 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 watch(() => props.source, () => { void loadRoot(); }, { immediate: true });
-onMounted(() => { document.addEventListener('click', onDocClick); document.addEventListener('keydown', onKeydown); });
-onBeforeUnmount(() => { document.removeEventListener('click', onDocClick); document.removeEventListener('keydown', onKeydown); });
+function onRefreshTree() { void refresh(); }
+onMounted(() => {
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('keydown', onKeydown);
+  window.addEventListener('df-refresh-tree', onRefreshTree);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick);
+  document.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('df-refresh-tree', onRefreshTree);
+});
 
 defineExpose({ refresh });
 </script>

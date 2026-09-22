@@ -68,6 +68,23 @@ describe('TreeView', () => {
     expect(w.findAll('.ftrow').length).toBe(2);
   });
 
+  it('收到 df-refresh-tree 事件时重新加载根（首次添加目录后自动刷新）', async () => {
+    let calls = 0;
+    const src = fakeSource({
+      loadChildren: vi.fn(async (dir: string): Promise<TreeSourceNode[]> => {
+        calls += 1;
+        return dir === '' ? [{ key: 'a.txt', name: 'a.txt', kind: 'item' }] : [];
+      }),
+    });
+    const w = mountC(TreeView, { props: { source: src } });
+    await flushPromises();
+    expect(calls).toBe(1);
+    window.dispatchEvent(new CustomEvent('df-refresh-tree'));
+    await flushPromises();
+    expect(calls).toBe(2);
+    w.unmount();
+  });
+
   it('source.search 存在时显示搜索按钮，缺失时不显示', async () => {
     const withSearch = mountC(TreeView, {
       props: { source: fakeSource({ search: vi.fn() }), title: 'X' },

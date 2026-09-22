@@ -610,6 +610,7 @@ async function confirmAddFolder() {
     if (wasFirst && proj?.id) {
       historyTab.value = 'tree';                  // 左侧切到「目录」页签（FileTree）
       await nextTick();                           // 等 currentProject 传导到 TerminalView 的 projectId
+      window.dispatchEvent(new CustomEvent('df-refresh-tree'));   // 首次添加目录后左侧目录树自动刷新
       requestStartAgent();                        // 复用「新建 Agent」意图，自动启动默认 Agent
     }
   } catch (e) { alert(t('top.add_failed', { msg: (e as Error).message || String(e) })); }
