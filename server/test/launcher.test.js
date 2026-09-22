@@ -48,6 +48,9 @@ test('launch.ps1 含 -Assoc 子命令与启动自查，且不再有 WScript 首�
   assert.match(ps, /if \(\$Assoc\) \{ Set-VoidAssoc \$Assoc; exit 0 \}/);
   assert.match(ps, /file-assoc\.json/);
   assert.match(ps, /ports\\' \+ \$desired/, '偏好改读端口数据目录');
+  assert.match(ps, /'\.pdf'/, '扩展名含 .pdf');
+  assert.match(ps, /'\.txt'/, '扩展名含 .txt');
+  assert.match(ps, /\$p\.selected/, '按偏好里的 selected 逐扩展设置/移除');
   assert.ok(!ps.includes('assoc-prompted'), '移除了旧的首启 WScript 关联弹窗');
   assert.match(ps, /DeleteSubKeyTree/, '删 UserChoice 才能成为默认程序');
 });

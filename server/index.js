@@ -723,8 +723,9 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/file-assoc' && req.method === 'GET') {
     const pref = loadFileAssocPref(paths.dir);
     const st = await getFileAssocState({ appDir: APP_DIR });
+    const extensions = st.extensions.map((x) => ({ ext: x.ext, isDefault: x.isDefault, enabled: pref.selected.includes(x.ext) }));
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ available: st.available, enabled: !!pref.enabled, prompted: !!pref.prompted, extensions: st.extensions }));
+    res.end(JSON.stringify({ available: st.available, enabled: !!pref.enabled, prompted: !!pref.prompted, extensions }));
     return;
   }
   if (url.pathname === '/api/file-assoc' && req.method === 'POST') {
@@ -739,11 +740,12 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: 'not-available' }));
         return;
       }
-      const next = saveFileAssocPref(paths.dir, { enabled: !!body.enabled, prompted: true });
+      const next = saveFileAssocPref(paths.dir, { enabled: !!body.enabled, prompted: true, selected: body.selected });
       runFileAssoc(APP_DIR, next.enabled ? 'apply' : 'remove');
       const st = await getFileAssocState({ appDir: APP_DIR });
+      const extensions = st.extensions.map((x) => ({ ext: x.ext, isDefault: x.isDefault, enabled: next.selected.includes(x.ext) }));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ available: true, enabled: next.enabled, prompted: true, extensions: st.extensions }));
+      res.end(JSON.stringify({ available: true, enabled: next.enabled, prompted: true, extensions }));
     });
     return;
   }

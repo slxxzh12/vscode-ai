@@ -353,8 +353,9 @@ const assocAvailable = ref(false);
 const assocEnabled = ref(false);
 const assocLoaded = ref(false);
 const assocPrompted = ref(true);
-const assocExts = ref<{ ext: string; isDefault: boolean }[]>([]);
+const assocExts = ref<{ ext: string; isDefault: boolean; enabled: boolean }[]>([]);
 const assocMsg = ref('');
+const assocLoadedSel = ref('');   // 已保存的逐扩展勾选（用于判断脏值）
 async function loadFileAssoc() {
   const r = await getFileAssoc();
   if (!r) { assocAvailable.value = false; return; }
@@ -363,6 +364,7 @@ async function loadFileAssoc() {
   assocEnabled.value = r.prompted ? r.enabled : true;   // 首启（未提示过）默认勾选
   assocLoaded.value = r.enabled;
   assocExts.value = r.extensions || [];
+  assocLoadedSel.value = assocExts.value.filter((x) => x.enabled).map((x) => x.ext).join(',');
 }
 async function loadSettings() {
   try {
@@ -380,13 +382,16 @@ function persistPort(p: number) {
 async function confirmSettings() {
   portMsg.value = '';
   assocMsg.value = '';
-  if (assocAvailable.value && (!assocPrompted.value || assocEnabled.value !== assocLoaded.value)) {
-    const r = await setFileAssoc(assocEnabled.value);
+  const sel = assocExts.value.filter((x) => x.enabled).map((x) => x.ext);
+  const assocDirty = assocEnabled.value !== assocLoaded.value || sel.join(',') !== assocLoadedSel.value;
+  if (assocAvailable.value && (!assocPrompted.value || assocDirty)) {
+    const r = await setFileAssoc(assocEnabled.value, sel);
     if (r) {
       assocEnabled.value = r.enabled;
       assocLoaded.value = r.enabled;
       assocPrompted.value = r.prompted;
       assocExts.value = r.extensions || [];
+      assocLoadedSel.value = assocExts.value.filter((x) => x.enabled).map((x) => x.ext).join(',');
     } else {
       assocMsg.value = t('term.file_assoc_failed');
     }
@@ -1265,7 +1270,13 @@ onBeforeUnmount(() => {
               <span>{{ $t('term.file_assoc_label') }}</span>
             </label>
             <div class="cfghint">{{ $t('term.file_assoc_hint') }}</div>
-            <div class="cfghint">{{ assocExts.map((x) => (x.isDefault ? '✓ ' : '· ') + x.ext).join('　') }}</div>
+            <div class="cfghint assoc-exts">
+              <label v-for="x in assocExts" :key="x.ext" class="assoc-ext">
+                <input type="checkbox" v-model="x.enabled" />
+                <span>{{ x.ext }}</span>
+                <span v-if="x.isDefault" class="assoc-on">✓</span>
+              </label>
+            </div>
             <div v-if="assocMsg" class="cfghint warn">{{ assocMsg }}</div>
           </div>
           <div class="setsec">
@@ -1589,6 +1600,10 @@ onBeforeUnmount(() => {
 .chkrow input { margin-top: 2px; cursor: pointer; }
 .cfghint { color: var(--tx6); font-size: 11px; }
 .cfghint.warn { color: var(--warn2); }
+.assoc-exts { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.assoc-ext { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-family: Consolas, monospace; }
+.assoc-ext input { cursor: pointer; }
+.assoc-on { color: var(--ac2); }
 .acfg.gear { flex: none; }
 .setmask { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: center; justify-content: center; }
 .renamemask { position: fixed; inset: 0; z-index: 4000; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; cursor: wait; outline: none; }

@@ -7,7 +7,20 @@ import { restartGuard } from './port-restart.js';
 
 // 文件关联「默认用 Void 打开」的服务端模块：绿色包(win32)专用。
 // 真实注册表读写在 launch.ps1（-Assoc apply|remove），这里只做偏好/状态/调用。
-export const EXTENSIONS = ['.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl'];
+// 顺序即 UI 展示顺序：pdf/txt 置顶
+export const EXTENSIONS = ['.pdf', '.txt', '.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl'];
+
+// 默认勾选：除 .txt 外全部
+export const DEFAULT_SELECTED = EXTENSIONS.filter((e) => e !== '.txt');
+
+// selected 归一化：去未知、去重、保序；非数组（缺省）视为默认勾选
+function normSelected(raw) {
+  if (!Array.isArray(raw)) return [...DEFAULT_SELECTED];
+  const known = new Set(EXTENSIONS);
+  const out = [];
+  for (const e of raw) if (known.has(e) && !out.includes(e)) out.push(e);
+  return out;
+}
 
 // 偏好存端口数据目录（<dataHome>/ports/<端口>/file-assoc.json），跨版本保留（不再放包内 data/）
 export function prefFile(dir) {
@@ -26,21 +39,21 @@ export function legacyPrefFile(appDir = APP_DIR) {
 export function loadPref(dir = defaultAssocDir(), { appDir = APP_DIR } = {}) {
   try {
     const p = JSON.parse(fs.readFileSync(prefFile(dir), 'utf8'));
-    return { enabled: !!p.enabled, prompted: !!p.prompted };
+    return { enabled: !!p.enabled, prompted: !!p.prompted, selected: normSelected(p.selected) };
   } catch {
     try {
       const p = JSON.parse(fs.readFileSync(legacyPrefFile(appDir), 'utf8'));
-      const next = { enabled: !!p.enabled, prompted: !!p.prompted };
+      const next = { enabled: !!p.enabled, prompted: !!p.prompted, selected: normSelected(p.selected) };
       savePref(dir, next);
       return next;
-    } catch { return { enabled: false, prompted: false }; }
+    } catch { return { enabled: false, prompted: false, selected: [...DEFAULT_SELECTED] }; }
   }
 }
 
 export function savePref(dir = defaultAssocDir(), pref) {
   const file = prefFile(dir);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const next = { enabled: !!pref.enabled, prompted: !!pref.prompted };
+  const next = { enabled: !!pref.enabled, prompted: !!pref.prompted, selected: normSelected(pref.selected) };
   fs.writeFileSync(file, JSON.stringify(next, null, 2), 'utf8');
   return next;
 }

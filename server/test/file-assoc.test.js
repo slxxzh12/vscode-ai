@@ -5,6 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { EXTENSIONS, prefFile, loadPref, savePref, available, parseDefaults, getState, runAssoc } from '../file-assoc.js';
 
+const ALL = ['.pdf', '.txt', '.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl'];
+const DEFAULT_SEL = ALL.filter((e) => e !== '.txt');   // 默认勾选：除 .txt 外全部
+
 function tmpApp({ withBat = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-assoc-'));
   if (withBat) fs.writeFileSync(path.join(dir, 'start.bat'), '@echo off\n', 'utf8');
@@ -13,20 +16,20 @@ function tmpApp({ withBat = false } = {}) {
   return dir;
 }
 
-test('EXTENSIONS 为约定的 11 个扩展名', () => {
-  assert.deepEqual(EXTENSIONS, ['.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl']);
+test('EXTENSIONS：pdf/txt 在最前，共 13 个', () => {
+  assert.deepEqual(EXTENSIONS, ALL);
 });
 
 test('prefFile 落在传入目录根部（端口数据目录，非包内 data/）', () => {
   assert.equal(prefFile(path.join('C:', 'p', '22222')), path.join('C:', 'p', '22222', 'file-assoc.json'));
 });
 
-test('loadPref：端口目录缺省时从包内 data/ 迁移旧偏好', () => {
+test('loadPref：端口目录缺省时从包内 data/ 迁移旧偏好（selected 缺省=txt 不选）', () => {
   const app = tmpApp();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-port-'));
   fs.mkdirSync(path.join(app, 'data'), { recursive: true });
   fs.writeFileSync(path.join(app, 'data', 'file-assoc.json'), JSON.stringify({ enabled: true, prompted: true }), 'utf8');
-  assert.deepEqual(loadPref(dir, { appDir: app }), { enabled: true, prompted: true });
+  assert.deepEqual(loadPref(dir, { appDir: app }), { enabled: true, prompted: true, selected: DEFAULT_SEL });
   assert.equal(fs.existsSync(prefFile(dir)), true, '迁移后写入端口数据目录');
 });
 
@@ -35,20 +38,30 @@ test('loadPref：端口目录已有偏好时不读旧路径', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-port-'));
   fs.mkdirSync(path.join(app, 'data'), { recursive: true });
   fs.writeFileSync(path.join(app, 'data', 'file-assoc.json'), JSON.stringify({ enabled: true, prompted: true }), 'utf8');
-  savePref(dir, { enabled: false, prompted: true });
-  assert.deepEqual(loadPref(dir, { appDir: app }), { enabled: false, prompted: true });
+  savePref(dir, { enabled: false, prompted: true, selected: ['.txt'] });
+  assert.deepEqual(loadPref(dir, { appDir: app }), { enabled: false, prompted: true, selected: ['.txt'] });
 });
 
-test('loadPref 缺省返回未启用未提示', () => {
+test('loadPref 缺省返回未启用未提示、selected 默认（txt 不选）', () => {
   const dir = tmpApp();
-  assert.deepEqual(loadPref(dir), { enabled: false, prompted: false });
+  assert.deepEqual(loadPref(dir), { enabled: false, prompted: false, selected: DEFAULT_SEL });
 });
 
-test('savePref / loadPref 往返', () => {
+test('savePref / loadPref 往返（含 selected）', () => {
   const dir = tmpApp();
-  savePref(dir, { enabled: true, prompted: true });
-  assert.deepEqual(loadPref(dir), { enabled: true, prompted: true });
+  savePref(dir, { enabled: true, prompted: true, selected: ['.pdf', '.md'] });
+  assert.deepEqual(loadPref(dir), { enabled: true, prompted: true, selected: ['.pdf', '.md'] });
   assert.equal(fs.existsSync(prefFile(dir)), true);
+});
+
+test('selected 归一化：去未知、去重、保序；显式空数组保留为空', () => {
+  const dir = tmpApp();
+  savePref(dir, { enabled: true, prompted: true, selected: ['.md', '.nope', '.md', '.txt'] });
+  assert.deepEqual(loadPref(dir).selected, ['.md', '.txt']);
+  savePref(dir, { enabled: true, prompted: true, selected: [] });
+  assert.deepEqual(loadPref(dir).selected, []);
+  savePref(dir, { enabled: true, prompted: true });
+  assert.deepEqual(loadPref(dir).selected, DEFAULT_SEL, '未传 selected 视为默认（txt 不选）');
 });
 
 test('available：仅 win32 且绿色包（start.bat 存在）可用', () => {
