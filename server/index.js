@@ -37,6 +37,7 @@ import { mergeWorkflowList } from './collaboration/workflow-merge.js';
 import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
 import { createUsageMount } from './usage-mount.js';
+import { loadProbe, saveProbe, toProbeRecord } from './usage-probe-store.js';
 import { createNotepadStore } from './notepad-store.js';
 import { ensureAgentOnPath, probeAgentStats } from './collaboration/agent-stats.js';
 import { createTranslator, createTranslateMount, defaultCatalog, defaultProviderResolver } from './translate.js';
@@ -416,7 +417,7 @@ function buildWorkspace({ paths, port }) {
     cmd: agent.cmd,
     statsCmd: agent.statsCmd,
     resolveAgent: () => defaultAgent(),
-    logger: log,
+    onCollected: (u) => saveProbe(paths.usageProbeFile, toProbeRecord(u)),
   });
   const usageMount = createUsageMount({
     peers: usagePeers,
@@ -430,6 +431,8 @@ function buildWorkspace({ paths, port }) {
       return engine.pullUsageFrom(masterId);
     },
     probe: () => probeAgentStats({ ...defaultAgent(), days: usageReporter.config().days }),
+    loadProbe: () => loadProbe(paths.usageProbeFile),
+    saveProbe: (r) => saveProbe(paths.usageProbeFile, r),
     logger: log,
   });
   // 默认上报目标：入群时记住 master 的地址与邀请令牌（无需手填链接），并立刻补报一次

@@ -22,7 +22,7 @@ function sendJson(res, status, obj) {
 }
 
 // /api/usage/* 的 HTTP 面：远端收上报（令牌），本机界面看汇总/配上报器
-export function createUsageMount({ peers, reporter, checkToken, onReport, pullFromHub = null, probe = null, logger = console }) {
+export function createUsageMount({ peers, reporter, checkToken, onReport, pullFromHub = null, probe = null, loadProbe = null, saveProbe = null, logger = console }) {
   const freshCache = new Map();   // masterId -> 最近一次成功拉到的 members
   async function route(req, res, url) {
     const m = req.method;
@@ -75,11 +75,18 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, pullFr
       return sendJson(res, 200, { daily: Object.keys(days).length ? { [id]: days } : {} });
     }
 
-    // 本机用量探针：现场跑一次统计命令，回原文 + 解析结果（仅本机有原文，故只对自己那台有意义）
+    // 本机用量探针缓存：上次采集/探针的命令行原文（仅本机有原文，故只对自己那台有意义）
+    if (seg[0] === 'probe' && seg.length === 1 && m === 'GET') {
+      const cached = typeof loadProbe === 'function' ? loadProbe() : null;
+      return sendJson(res, 200, cached ? { ...cached, cached: true } : { none: true });
+    }
+    // 现场跑一次统计命令，回原文 + 解析结果，并写入缓存
     if (seg[0] === 'probe' && seg.length === 1 && m === 'POST') {
       if (typeof probe !== 'function') return sendJson(res, 500, { error: 'probe-unavailable' });
       try {
-        return sendJson(res, 200, await probe());
+        const r = await probe();
+        try { saveProbe?.(r); } catch (e) { logger?.warn?.('usage probe cache save failed', (e && e.message) || e); }
+        return sendJson(res, 200, r);
       } catch (e) {
         logger?.warn?.('usage probe failed', (e && e.message) || e);
         return sendJson(res, 500, { error: String((e && e.message) || e) });

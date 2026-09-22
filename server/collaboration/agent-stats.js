@@ -148,10 +148,12 @@ export function collectAgentStats({
   const spec = parseStatsCmd(statsCmd, days, { env })
     || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
   const { bin, args } = wrapCmdBin(spec.bin, spec.args);   // .cmd/.bat 在 Windows 上必须经 cmd.exe
+  const cmdline = [spec.bin, ...spec.args].join(' ');
   const runOnce = () => new Promise((resolve) => {
     execFileFn(bin, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
-      if (err && !stdout) { resolve({ error: String((err && err.message) || err), code: err && err.code }); return; }
-      resolve({ ...parseStats(stdout), collectedAt: Date.now() });
+      const raw = String(stdout || '');
+      if (err && !raw) { resolve({ error: String((err && err.message) || err), code: err && err.code, raw, cmdline }); return; }
+      resolve({ ...parseStats(raw), raw, cmdline, collectedAt: Date.now() });
     });
   });
   return (async () => {
@@ -163,6 +165,6 @@ export function collectAgentStats({
       if (last.code === 'ENOENT') break;
       if (i < total - 1) await sleepFn(retryDelayMs);
     }
-    return { agent: cmd, days, error: last.error };
+    return { agent: cmd, days, error: last.error, code: last.code, raw: last.raw || '', cmdline };
   })();
 }

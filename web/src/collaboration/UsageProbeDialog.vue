@@ -8,6 +8,8 @@ interface ProbeResult {
   raw?: string; stderr?: string;
   parsed?: Record<string, number | null> | null;
   durationMs?: number;
+  collectedAt?: number;
+  cached?: boolean;
 }
 
 const props = defineProps<{ open: boolean; label?: string }>();
@@ -34,10 +36,24 @@ const parsedRows = computed(() => fields.map((f) => {
   return { label: f.label, value: v == null ? '-' : String(v) };
 }));
 
+// 打开即取上次采集缓存（本机落盘），点「重新采集」才现场跑一次
 async function load() {
-  loading.value = true;
+  loading.value = false;
   err.value = '';
   result.value = null;
+  try {
+    const res = await fetch('/api/usage/probe');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    result.value = data && data.none ? null : data;
+  } catch (e) {
+    err.value = (e as Error)?.message || String(e);
+  }
+}
+
+async function recollect() {
+  loading.value = true;
+  err.value = '';
   try {
     const res = await fetch('/api/usage/probe', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
@@ -62,8 +78,10 @@ watch(() => props.open, (v) => { if (v) load(); });
 
         <div v-if="loading" class="hint">{{ $t('usage.probe.loading') }}</div>
         <div v-else-if="err" class="err">{{ $t('usage.probe.load_failed', { msg: err }) }}</div>
+        <div v-else-if="!result" class="hint">{{ $t('usage.probe.none') }}</div>
 
         <template v-else-if="result">
+          <div v-if="result.cached" class="meta2">{{ $t('usage.probe.cached') }}</div>
           <div class="kv">
             <span class="k">{{ $t('usage.probe.command') }}</span>
             <code class="v">{{ result.cmdline || '-' }}</code>
@@ -93,6 +111,7 @@ watch(() => props.open, (v) => { if (v) load(); });
         </template>
 
         <div class="foot">
+          <button class="btn" :disabled="loading" @click="recollect">{{ $t('usage.probe.recollect') }}</button>
           <button class="btn primary" @click="emit('close')">{{ $t('common.ok') }}</button>
         </div>
       </div>
@@ -105,6 +124,7 @@ watch(() => props.open, (v) => { if (v) load(); });
 .box { width: 560px; max-width: 92vw; max-height: 86vh; overflow: auto; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, .35); padding: 18px 20px 14px; }
 .title { font-size: 15px; font-weight: 600; color: var(--tx1); }
 .meta { color: var(--tx6); font-size: 12px; margin: 6px 0 10px; }
+.meta2 { color: var(--tx6); font-size: 11px; margin: 0 0 8px; }
 .hint { color: var(--tx6); font-size: 13px; padding: 12px 0; }
 .err { color: var(--err); font-size: 12px; padding: 8px 0; }
 .kv { display: flex; gap: 8px; font-size: 12px; margin: 4px 0; }

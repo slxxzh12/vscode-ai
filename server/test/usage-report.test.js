@@ -127,6 +127,29 @@ test('reportNow：带 X-DF-Token POST 到 /api/usage/report，body 带机器身�
   assert.equal(r.status().lastError, '');
 });
 
+test('reportNow：onCollected 拿到带原文的采集结果，peers/上报体不含 raw/cmdline', async () => {
+  const file = tmpFile();
+  saveReportConfig(file, { masterUrl: 'http://10.0.0.9:22222', token: 'tk' });
+  const collected = [];
+  const local = [];
+  let wireBody = null;
+  const r = createUsageReporter({
+    file,
+    identity: () => ({ machineId: 'm1' }),
+    peers: { upsert: (u) => { local.push(u); return u; } },
+    collect: async ({ cmd, days }) => ({ agent: cmd, days, sessions: 4, raw: 'RAW OUTPUT', cmdline: 'opencode stats --days 7' }),
+    onCollected: (u) => collected.push(u),
+    fetchFn: async (_url, opts) => { wireBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ ok: true }) }; },
+  });
+  await r.reportNow();
+  assert.equal(collected.length, 1);
+  assert.equal(collected[0].raw, 'RAW OUTPUT');
+  assert.equal(wireBody.usage.raw, undefined);
+  assert.equal(wireBody.usage.cmdline, undefined);
+  assert.equal(wireBody.usage.sessions, 4);
+  assert.equal(local[0].raw, undefined);
+});
+
 test('reportNow：403 bad-token 记入 lastError 且不抛错', async () => {
   const file = tmpFile();
   saveReportConfig(file, { masterUrl: 'http://10.0.0.9:22222', token: 'bad' });

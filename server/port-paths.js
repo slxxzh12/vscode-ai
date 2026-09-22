@@ -32,6 +32,7 @@ export function portPaths(port, { root = dataHome() } = {}) {
     sessionLogsDir: path.join(dir, 'session-logs'),
     usagePeersFile: path.join(dir, 'usage-peers.json'),
     usageReportFile: path.join(dir, 'usage-report.json'),
+    usageProbeFile: path.join(dir, 'usage-probe.json'),
     inviteFile: path.join(dir, 'collab', 'invite.json'),
     fileAssocFile: path.join(dir, 'file-assoc.json'),
     codeGroupsFile: path.join(dir, 'code-groups.json'),

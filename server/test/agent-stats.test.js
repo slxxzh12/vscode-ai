@@ -71,6 +71,8 @@ test('collectAgentStats：配了 statsCmd 走模板，agent 仍记 cmd', async (
   assert.deepEqual(calls[0], ['claudecode', ['usage', '--days', '7']]);
   assert.equal(r.agent, 'claudecode');
   assert.equal(r.sessions, 21);
+  assert.equal(r.raw, SAMPLE, '本地保留原文供采集信息弹窗');
+  assert.match(r.cmdline, /claudecode usage --days 7$/);
 });
 
 test('collectAgentStats：Windows 上 .cmd 用 cmd.exe /d /s /c 包装（CVE-2024-27980）', { skip: process.platform !== 'win32' }, async () => {

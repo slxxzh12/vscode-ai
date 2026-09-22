@@ -52,7 +52,7 @@ export function saveReportConfig(file, cfg) {
 
 // slave 侧上报器：启动即报一次（先本地落库自己这份，再发给 master），之后 60–90 分钟随机再报
 export function createUsageReporter({
-  file, identity, peers = null, onLocal = null, cmd = 'opencode', statsCmd = '', resolveAgent = null, collect = collectAgentStats,
+  file, identity, peers = null, onLocal = null, onCollected = null, cmd = 'opencode', statsCmd = '', resolveAgent = null, collect = collectAgentStats,
   fetchFn = fetch, logger = console, random = Math.random,
   now = () => Date.now(), scheduleFn = (fn, ms) => setTimeout(fn, ms),
 } = {}) {
@@ -77,9 +77,13 @@ export function createUsageReporter({
     let usage;
     try { usage = await collect({ cmd: a.cmd, statsCmd: a.statsCmd, days: cfg.days }); }
     catch (e) { usage = { agent: a.cmd, days: cfg.days, error: String((e && e.message) || e) }; }
+    // 本机缓存一份带原文的采集结果，供「采集信息」弹窗即时展示
+    try { onCollected?.(usage); } catch (e) { logger?.warn?.('usage onCollected failed', (e && e.message) || e); }
+    // raw/cmdline 只留本机，不进 peers/上报体
+    const { raw: _raw, cmdline: _cmdline, ...usageClean } = usage || {};
     const me = (typeof identity === 'function' ? identity() : identity) || {};
     const self = {
-      ...usage,
+      ...usageClean,
       machineId: me.machineId || '', employeeId: me.employeeId || '', username: me.username || '',
       host: me.host || '', port: me.port || 0,
     };
@@ -97,7 +101,7 @@ export function createUsageReporter({
     }
     const wire = {
       machineId: self.machineId, employeeId: self.employeeId, username: self.username,
-      host: self.host, port: self.port, usage,
+      host: self.host, port: self.port, usage: usageClean,
     };
     try {
       const res = await fetchFn(`${cfg.masterUrl}/api/usage/report`, {

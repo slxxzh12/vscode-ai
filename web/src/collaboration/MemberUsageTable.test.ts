@@ -68,7 +68,7 @@ describe('MemberUsageTable', () => {
     expect(badge.text()).toBe(t('collab.member.me'));
   });
 
-  it('点击自己那行请求 /api/usage/probe 并展示原文', async () => {
+  it('点击自己那行取上次采集缓存并展示原文；「重新采集」发 POST', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ ok: true, cmdline: 'opencode stats --days 7', raw: 'Sessions 21', parsed: { sessions: 21 } }),
@@ -82,9 +82,13 @@ describe('MemberUsageTable', () => {
     await flushPromises();
     await w.find('.el-table__row').trigger('click');
     await flushPromises();
-    expect(fetchMock).toHaveBeenCalledWith('/api/usage/probe', expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenCalledWith('/api/usage/probe');   // 打开时先读缓存（GET）
     expect(w.text()).toContain(t('usage.probe.raw'));
     expect(w.text()).toContain(t('usage.probe.command'));
+    const recollect = w.findAll('button').find((b) => b.text() === t('usage.probe.recollect'))!;
+    await recollect.trigger('click');
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledWith('/api/usage/probe', expect.objectContaining({ method: 'POST' }));
   });
 
   it('展示最后一次数据更新时间列', async () => {

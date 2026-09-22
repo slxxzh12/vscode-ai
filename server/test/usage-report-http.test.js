@@ -12,13 +12,13 @@ function tmp(name) {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-umount-')), name);
 }
 
-async function start({ token = 'good', peers, reporter, onReport, pullFromHub } = {}) {
+async function start({ token = 'good', peers, reporter, onReport, pullFromHub, probe, loadProbe, saveProbe } = {}) {
   const p = peers || new UsagePeersStore({ file: tmp('usage-peers.json') });
   const r = reporter || createUsageReporter({
     file: tmp('usage-report.json'), identity: () => ({ machineId: 'm1' }),
     collect: async () => ({ sessions: 1 }), fetchFn: async () => ({ ok: true, json: async () => ({ ok: true }) }),
   });
-  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport, pullFromHub });
+  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport, pullFromHub, probe, loadProbe, saveProbe });
   const server = http.createServer((req, res) => mount(req, res, new URL(req.url, 'http://localhost')));
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   return { peers: p, reporter: r, port: server.address().port, server };
@@ -110,6 +110,26 @@ test('POST /api/usage/reporter/now：立即上报并回状态', async (t) => {
   const r = await call(A.port, 'POST', '/api/usage/reporter/now');
   assert.equal(r.status, 200);
   assert.equal(r.body.status.lastOk, true);
+});
+
+test('GET/POST /api/usage/probe：GET 空缓存回 none；POST 现场采集并写缓存，GET 回缓存', async (t) => {
+  let cached = null;
+  const A = await start({
+    probe: async () => ({ cmdline: 'opencode stats --days 7', ok: true, raw: 'Sessions 1' }),
+    loadProbe: () => cached,
+    saveProbe: (r) => { cached = r; },
+  });
+  t.after(() => A.server.close());
+  const none = await call(A.port, 'GET', '/api/usage/probe');
+  assert.equal(none.status, 200);
+  assert.equal(none.body.none, true);
+  const post = await call(A.port, 'POST', '/api/usage/probe');
+  assert.equal(post.body.cmdline, 'opencode stats --days 7');
+  assert.equal(post.body.raw, 'Sessions 1');
+  assert.equal(cached.raw, 'Sessions 1');
+  const got = await call(A.port, 'GET', '/api/usage/probe');
+  assert.equal(got.body.cached, true);
+  assert.equal(got.body.cmdline, 'opencode stats --days 7');
 });
 
 test('未知 /api/usage/* 路径 → 404', async (t) => {
