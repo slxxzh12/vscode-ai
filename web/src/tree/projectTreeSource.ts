@@ -1,7 +1,7 @@
 import { useProjects } from '../useProjects';
 import { copyText } from '../clipboard';
 import { searchProject } from '../search/projectSearch';
-import type { TreeSource, SearchResult, SearchHit } from './treeSource';
+import type { TreeSource, SearchHit, SearchEvent } from './treeSource';
 
 // 项目文件树数据源：包装 useProjects，供统一 TreeView 使用。
 export function projectTreeSource(opts: {
@@ -42,9 +42,9 @@ export function projectTreeSource(opts: {
       const f = await api.text(pid, node.key);
       await copyText(f.content);
     },
-    async search(query: string, o: { caseSensitive: boolean; name: boolean; content: boolean }): Promise<SearchResult> {
-      if (!pid) return { nameHits: [], contentHits: [], truncated: false, scanned: 0 };
-      return searchProject(pid, query, o);
+    search(query: string, o: { caseSensitive: boolean; name: boolean; content: boolean; all: boolean }, signal?: AbortSignal): AsyncGenerator<SearchEvent> {
+      if (!pid) return (async function* (): AsyncGenerator<SearchEvent> { yield { type: 'done', scanned: 0 }; })();
+      return searchProject(pid, query, o, signal);
     },
     openHit(hit: SearchHit) {
       if (opts.onOpenFileAt) opts.onOpenFileAt(pid, hit.path, hit.name, hit.line);

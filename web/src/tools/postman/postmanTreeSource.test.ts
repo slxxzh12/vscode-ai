@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { postmanTreeSource } from './postmanTreeSource';
 import type { PostmanRecord } from './usePostmanHistory';
+import type { SearchEvent } from '../../tree/treeSource';
 
 const REC = (id: string, command: string, folder: string, title?: string, updatedAt?: string): PostmanRecord =>
   ({ id, command, folder, title, updatedAt, result: {}, name: id.slice(id.lastIndexOf('/') + 1) });
@@ -61,10 +62,12 @@ describe('postmanTreeSource', () => {
   it('search：名字命中与内容命中；openHit 打开记录', async () => {
     const recs = [REC('a.json', 'curl https://target.com', '', 'Alpha'), REC('b.json', 'curl other', '', 'Beta')];
     const { src, opened } = make(recs, []);
-    const byName = await src.search!('alpha', { caseSensitive: false, name: true, content: false });
-    expect(byName.nameHits).toEqual([{ path: 'a.json', name: 'Alpha' }]);
-    const byContent = await src.search!('target', { caseSensitive: false, name: false, content: true });
-    expect(byContent.contentHits[0].path).toBe('a.json');
+    const nameEvents: SearchEvent[] = [];
+    for await (const ev of src.search!('alpha', { caseSensitive: false, name: true, content: false, all: false })) nameEvents.push(ev);
+    expect(nameEvents.flatMap((e) => (e.type === 'name' ? e.hits : []))).toEqual([{ path: 'a.json', name: 'Alpha' }]);
+    const contentEvents: SearchEvent[] = [];
+    for await (const ev of src.search!('target', { caseSensitive: false, name: false, content: true, all: false })) contentEvents.push(ev);
+    expect(contentEvents.flatMap((e) => (e.type === 'content' ? [e.path] : []))).toEqual(['a.json']);
     src.openHit!({ path: 'b.json', name: 'Beta' });
     expect(opened[0].id).toBe('b.json');
   });

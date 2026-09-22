@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { navicatTreeSource } from './navicatTreeSource';
 import type { NavicatProfile } from './useNavicat';
+import type { SearchEvent } from '../../tree/treeSource';
 
 const MYSQL: NavicatProfile = { id: '1', name: 'Alpha', type: 'mysql', host: 'h', port: '3306', user: 'u', database: 'd' };
 const SQLITE: NavicatProfile = { id: '2', name: 'Sqlite', type: 'sqlite', host: '', port: '', user: '', database: 'f.db' };
@@ -43,8 +44,9 @@ describe('navicatTreeSource', () => {
     const { src, picked, opened } = make();
     src.open({ key: 't:1\u0000db1\u0000users', name: 'users', kind: 'item' });
     expect(picked).toEqual(['1:db1:users']);
-    const byName = await src.search!('alp', { caseSensitive: false, name: true, content: false });
-    expect(byName.nameHits[0].path).toBe('c:1');
+    const events: SearchEvent[] = [];
+    for await (const ev of src.search!('alp', { caseSensitive: false, name: true, content: false, all: false })) events.push(ev);
+    expect(events.flatMap((e) => (e.type === 'name' ? e.hits.map((h) => h.path) : []))).toEqual(['c:1']);
     src.openHit!({ path: 'c:1', name: 'Alpha' });
     expect(opened).toEqual(['c:1']);
   });

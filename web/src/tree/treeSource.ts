@@ -9,13 +9,12 @@ export interface TreeSourceNode {
 }
 
 export interface SearchNameHit { path: string; name: string; }
-export interface SearchContentHit { path: string; name: string; line: number; text: string; }
-export interface SearchResult {
-  nameHits: SearchNameHit[];
-  contentHits: SearchContentHit[];
-  truncated: boolean;
-  scanned: number;
-}
+export interface SearchLine { line: number; text: string; }
+export type SearchEvent =
+  | { type: 'name'; hits: SearchNameHit[] }
+  | { type: 'content'; path: string; name: string; lines: SearchLine[] }
+  | { type: 'progress'; scanned: number }
+  | { type: 'done'; scanned: number };
 export interface SearchHit { path: string; name: string; line?: number; }
 
 export interface TreeSource {
@@ -34,7 +33,7 @@ export interface TreeSource {
   copyName?(node: TreeSourceNode): void;
   copyPath?(node: TreeSourceNode): void;
   copyContent?(node: TreeSourceNode): Promise<void>;
-  search?(query: string, opts: { caseSensitive: boolean; name: boolean; content: boolean }): Promise<SearchResult>;
+  search?(query: string, opts: { caseSensitive: boolean; name: boolean; content: boolean; all: boolean }, signal?: AbortSignal): AsyncIterable<SearchEvent>;
   openHit?(hit: SearchHit): void;
 }
 

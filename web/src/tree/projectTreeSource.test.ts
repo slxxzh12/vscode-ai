@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { projectTreeSource } from './projectTreeSource';
+import type { SearchEvent } from './treeSource';
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -41,20 +42,27 @@ describe('projectTreeSource', () => {
 });
 
 describe('projectTreeSource.search', () => {
-  it('按 project/q/case/name/content 请求 /api/search 并返回结果', async () => {
-    const payload = { nameHits: [{ path: 'a.txt', name: 'a.txt' }], contentHits: [], truncated: false, scanned: 3 };
-    const fetchMock = vi.fn(async () => okJson(payload));
+  it('按 project/q/case/name/content/all 请求 /api/search 并流式返回事件', async () => {
+    const events: SearchEvent[] = [
+      { type: 'name', hits: [{ path: 'a.txt', name: 'a.txt' }] },
+      { type: 'done', scanned: 3 },
+    ];
+    const text = events.map((e) => JSON.stringify(e)).join('\n') + '\n';
+    const body = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } });
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, body }));
     vi.stubGlobal('fetch', fetchMock);
     const src = projectTreeSource({ projectId: 'p1', onOpenFile: vi.fn(), onDetailFile: vi.fn() });
-    const r = await src.search!('target', { caseSensitive: true, name: true, content: false });
-    expect(r).toEqual(payload);
-    expect(fetchMock).toHaveBeenCalledWith('/api/search?project=p1&q=target&case=1&name=1&content=0');
+    const got: SearchEvent[] = [];
+    for await (const ev of src.search!('target', { caseSensitive: true, name: true, content: false, all: false })) got.push(ev);
+    expect(got).toEqual(events);
+    expect(fetchMock).toHaveBeenCalledWith('/api/search?project=p1&q=target&case=1&name=1&content=0&all=0', { signal: undefined });
   });
 
   it('请求失败抛错', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => ({ error: 'boom' }) })));
     const src = projectTreeSource({ projectId: 'p1', onOpenFile: vi.fn(), onDetailFile: vi.fn() });
-    await expect(src.search!('x', { caseSensitive: false, name: true, content: true })).rejects.toThrow('boom');
+    const gen = src.search!('x', { caseSensitive: false, name: true, content: true, all: false });
+    await expect((async () => { for await (const _ of gen) { /* drain */ } })()).rejects.toThrow('boom');
   });
 });
 

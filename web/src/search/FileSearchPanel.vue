@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import type { TreeSource, SearchResult, SearchHit } from '../tree/treeSource';
+import { computed, ref, onBeforeUnmount, watch } from 'vue';
+import type { TreeSource, SearchNameHit, SearchLine } from '../tree/treeSource';
 
 // 左侧内嵌搜索面板：替换目录树显示，右上角关闭后恢复目录；可勾选按内容/文件名搜索。
+// 结果流式增量渲染（服务端 NDJSON），不截断；命中过多时仅提示。
 const props = defineProps<{ source: TreeSource }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
@@ -10,61 +11,77 @@ const query = ref('');
 const caseSensitive = ref(false);
 const byContent = ref(true);   // 默认搜文件内容
 const byName = ref(true);      // 默认也搜文件名
+const all = ref(false);        // 默认跳过忽略目录/二进制
 const loading = ref(false);
 const error = ref('');
-const result = ref<SearchResult | null>(null);
+const scanned = ref(0);
+const done = ref(false);
+const nameHits = ref<SearchNameHit[]>([]);
+const contentGroups = ref<{ path: string; name: string; lines: SearchLine[] }[]>([]);
 const collapsed = ref<Set<string>>(new Set());
 let timer: ReturnType<typeof setTimeout> | null = null;
 let seq = 0;
+let ctrl: AbortController | null = null;
 
 const keyword = computed(() => query.value.trim());
 const searched = computed(() => keyword.value.length > 0);
 const terms = computed(() => keyword.value.split(/\s+/).filter((t) => t.length >= 2));   // 空格分词；单个字母/单字忽略
 const anyMode = computed(() => byContent.value || byName.value);
-const nameHits = computed(() => result.value?.nameHits ?? []);
-const contentHits = computed(() => result.value?.contentHits ?? []);
-const contentGroups = computed(() => {
-  const map = new Map<string, { path: string; name: string; lines: { line: number; text: string }[] }>();
-  for (const h of contentHits.value) {
-    let g = map.get(h.path);
-    if (!g) { g = { path: h.path, name: h.name, lines: [] }; map.set(h.path, g); }
-    g.lines.push({ line: h.line, text: h.text });
-  }
-  return [...map.values()];
-});
+const started = computed(() => nameHits.value.length > 0 || contentGroups.value.length > 0);
+const contentHitCount = computed(() => contentGroups.value.reduce((n, g) => n + g.lines.length, 0));
+const totalHits = computed(() => nameHits.value.length + contentHitCount.value);
+const tooMany = computed(() => totalHits.value >= 2000);
 
+function reset() {
+  nameHits.value = [];
+  contentGroups.value = [];
+  scanned.value = 0;
+  done.value = false;
+  error.value = '';
+}
 function schedule() {
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => { void run(); }, 300);
 }
 async function run() {
   if (timer) { clearTimeout(timer); timer = null; }
+  ctrl?.abort();
   const q = keyword.value;
   const my = ++seq;
-  if (!q || !terms.value.length || !anyMode.value || !props.source.search) { result.value = null; loading.value = false; error.value = ''; return; }
+  if (!q || !terms.value.length || !anyMode.value || !props.source.search) {
+    reset(); loading.value = false; return;
+  }
+  reset();
   loading.value = true;
-  error.value = '';
+  const myCtrl = new AbortController();
+  ctrl = myCtrl;
   try {
-    const r = await props.source.search(q, { caseSensitive: caseSensitive.value, name: byName.value, content: byContent.value });
-    if (my !== seq) return;
-    result.value = r;
+    const stream = props.source.search(q, { caseSensitive: caseSensitive.value, name: byName.value, content: byContent.value, all: all.value }, myCtrl.signal);
+    for await (const ev of stream) {
+      if (my !== seq) return;
+      if (ev.type === 'name') nameHits.value = [...nameHits.value, ...ev.hits];
+      else if (ev.type === 'content') contentGroups.value = [...contentGroups.value, { path: ev.path, name: ev.name, lines: ev.lines }];
+      else scanned.value = ev.scanned;
+    }
+    if (my === seq) done.value = true;
   } catch (e: unknown) {
     if (my !== seq) return;
+    if ((e as Error)?.name === 'AbortError') return;
     error.value = String((e as Error)?.message || e);
-    result.value = null;
   } finally {
     if (my === seq) loading.value = false;
   }
 }
 watch(query, schedule);
-watch([caseSensitive, byContent, byName], () => { if (searched.value) void run(); });
+watch([caseSensitive, byContent, byName, all], () => { if (searched.value) void run(); });
+onBeforeUnmount(() => ctrl?.abort());
 
 function toggle(path: string) {
   const s = new Set(collapsed.value);
   if (s.has(path)) s.delete(path); else s.add(path);
   collapsed.value = s;
 }
-function pick(hit: SearchHit) {
+function pick(hit: { path: string; name: string; line?: number }) {
   props.source.openHit?.(hit);
 }
 // 命中分词分段（任一分词命中即高亮），供模板高亮
@@ -102,23 +119,24 @@ function segments(text: string): { text: string; hit: boolean }[] {
       <label class="scase" :title="$t('search.mode.content')"><input data-mode="content" v-model="byContent" type="checkbox" /><span>{{ $t('search.mode.content') }}</span></label>
       <label class="scase" :title="$t('search.mode.name')"><input data-mode="name" v-model="byName" type="checkbox" /><span>{{ $t('search.mode.name') }}</span></label>
       <label class="scase" :title="$t('search.case')"><input data-mode="case" v-model="caseSensitive" type="checkbox" /><span>{{ $t('search.case') }}</span></label>
+      <label class="scase" :title="$t('search.include_ignored')"><input data-mode="all" v-model="all" type="checkbox" /><span>{{ $t('search.include_ignored') }}</span></label>
     </div>
     <div class="sbody">
       <div v-if="!searched" class="shint">{{ $t('search.hint') }}</div>
       <div v-else-if="!terms.length" class="shint">{{ $t('search.too_short') }}</div>
       <div v-else-if="!anyMode" class="shint">{{ $t('search.need_mode') }}</div>
-      <div v-else-if="loading" class="shint">{{ $t('search.loading') }}</div>
       <div v-else-if="error" class="serr">{{ $t('search.error', { msg: error }) }}</div>
-      <div v-else-if="result && !nameHits.length && !contentHits.length" class="shint">{{ $t('search.empty') }}</div>
-      <template v-else-if="result">
+      <div v-else-if="loading && !started" class="shint">{{ $t('search.loading') }}</div>
+      <div v-else-if="done && !started" class="shint">{{ $t('search.empty') }}</div>
+      <template v-else>
         <section v-if="nameHits.length" class="sgroup">
           <div class="sghead">{{ $t('search.name_group') }} <span class="scount">{{ nameHits.length }}</span></div>
           <button v-for="h in nameHits" :key="'n:' + h.path" class="sname-row" :title="$t('search.open_file')" @click="pick({ path: h.path, name: h.name })">
             <span class="sic">📄</span><span class="spath">{{ h.path }}</span>
           </button>
         </section>
-        <section v-if="contentHits.length" class="sgroup">
-          <div class="sghead">{{ $t('search.content_group') }} <span class="scount">{{ contentHits.length }}</span></div>
+        <section v-if="contentGroups.length" class="sgroup">
+          <div class="sghead">{{ $t('search.content_group') }} <span class="scount">{{ contentHitCount }}</span></div>
           <div v-for="g in contentGroups" :key="'g:' + g.path" class="scgroup">
             <button class="sfilehead" :title="$t('search.open_file')" @click="pick({ path: g.path, name: g.name })">
               <span class="scaret" @click.stop="toggle(g.path)">{{ collapsed.has(g.path) ? '▸' : '▾' }}</span>
@@ -134,9 +152,10 @@ function segments(text: string): { text: string; hit: boolean }[] {
             </template>
           </div>
         </section>
-        <div class="sfoot">{{ $t('search.scanned', { n: result.scanned }) }}</div>
+        <div class="sfoot">{{ $t('search.scanned', { n: scanned }) }}</div>
+        <div v-if="loading" class="sfoot">{{ $t('search.loading') }}</div>
       </template>
-      <div v-if="result && result.truncated" class="strunc">{{ $t('search.truncated') }}</div>
+      <div v-if="tooMany" class="strunc">{{ $t('search.too_many') }}</div>
     </div>
   </div>
 </template>
@@ -148,7 +167,7 @@ function segments(text: string): { text: string; hit: boolean }[] {
 .sinput:focus { outline: none; border-color: var(--ac2); }
 .fsclose { flex: none; background: none; border: 1px solid transparent; color: var(--tx3); font-size: 14px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
 .fsclose:hover { background: var(--bg5); color: var(--tx1); border-color: var(--bd); }
-.fsmodes { flex: none; display: flex; align-items: center; gap: 10px; padding: 0 6px 6px; border-bottom: 1px solid var(--bd2); }
+.fsmodes { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 0 6px 6px; border-bottom: 1px solid var(--bd2); }
 .scase { display: inline-flex; align-items: center; gap: 4px; color: var(--tx3); font-size: 12px; white-space: nowrap; cursor: pointer; }
 .sbody { flex: 1; min-height: 0; overflow-y: auto; padding-top: 6px; }
 .shint, .strunc, .sfoot { color: var(--tx5); font-size: 12px; padding: 10px 2px; }

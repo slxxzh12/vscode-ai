@@ -1,5 +1,5 @@
 import { copyText } from '../../clipboard';
-import type { TreeSource, TreeSourceNode, SearchResult, SearchHit } from '../../tree/treeSource';
+import type { TreeSource, TreeSourceNode, SearchEvent, SearchNameHit, SearchLine, SearchHit } from '../../tree/treeSource';
 import type { PostmanRecord } from './usePostmanHistory';
 
 export interface PostmanTreeDeps {
@@ -30,30 +30,6 @@ function splitTerms(query: string, caseSensitive: boolean): string[] {
     if (!out.includes(t)) out.push(t);
   }
   return out;
-}
-
-function searchRecords(records: PostmanRecord[], query: string, o: { caseSensitive: boolean; name: boolean; content: boolean }): SearchResult {
-  const nameHits: SearchResult['nameHits'] = [];
-  const contentHits: SearchResult['contentHits'] = [];
-  let scanned = 0;
-  const terms = splitTerms(query, o.caseSensitive);
-  if (!terms.length || (!o.name && !o.content)) return { nameHits, contentHits, truncated: false, scanned };
-  const hayOf = (s: string) => (o.caseSensitive ? s : s.toLowerCase());
-  for (const r of records) {
-    scanned++;
-    const label = labelOf(r);
-    if (o.name && terms.some((t) => hayOf(label).includes(t))) nameHits.push({ path: r.id, name: label });
-    if (o.content) {
-      const lines = JSON.stringify(r, null, 2).split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        if (terms.some((t) => hayOf(lines[i]).includes(t))) {
-          contentHits.push({ path: r.id, name: label, line: i + 1, text: lines[i].slice(0, 400) });
-          break;
-        }
-      }
-    }
-  }
-  return { nameHits, contentHits, truncated: false, scanned };
 }
 
 export function postmanTreeSource(deps: PostmanTreeDeps): TreeSource {
@@ -93,7 +69,27 @@ export function postmanTreeSource(deps: PostmanTreeDeps): TreeSource {
     runFolder(dirKey) { deps.runFolder(dirKey); },
     copyName(node) { void copyText(node.name); },
     copyPath(node) { void copyText(node.key); },
-    async search(query, o): Promise<SearchResult> { return searchRecords(deps.history(), query, o); },
+    async *search(query, o): AsyncGenerator<SearchEvent> {
+      void o.all;
+      const terms = splitTerms(query, o.caseSensitive);
+      if (!terms.length || (!o.name && !o.content)) { yield { type: 'done', scanned: 0 }; return; }
+      const hayOf = (s: string) => (o.caseSensitive ? s : s.toLowerCase());
+      const nameHits: SearchNameHit[] = [];
+      let scanned = 0;
+      for (const r of deps.history()) {
+        scanned++;
+        const label = labelOf(r);
+        if (o.name && terms.some((t) => hayOf(label).includes(t))) nameHits.push({ path: r.id, name: label });
+        if (o.content) {
+          const lines = JSON.stringify(r, null, 2).split('\n');
+          const hitLines: SearchLine[] = [];
+          for (let i = 0; i < lines.length; i++) if (terms.some((t) => hayOf(lines[i]).includes(t))) hitLines.push({ line: i + 1, text: lines[i] });
+          if (hitLines.length) yield { type: 'content', path: r.id, name: label, lines: hitLines };
+        }
+      }
+      if (nameHits.length) yield { type: 'name', hits: nameHits };
+      yield { type: 'done', scanned };
+    },
     openHit(hit: SearchHit) { const r = deps.recordById(hit.path); if (r) deps.openRecord(r); },
   };
 }
