@@ -38,7 +38,7 @@ import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
 import { createUsageMount } from './usage-mount.js';
 import { createNotepadStore } from './notepad-store.js';
-import { ensureAgentOnPath } from './collaboration/agent-stats.js';
+import { ensureAgentOnPath, probeAgentStats } from './collaboration/agent-stats.js';
 import { createTranslator, createTranslateMount, defaultCatalog, defaultProviderResolver } from './translate.js';
 import { loadInvite, saveInvite, clearInvite, isInviteActive } from './remote-invite.js';
 import { CollabS2C } from '@devflow/shared/collab';
@@ -429,6 +429,7 @@ function buildWorkspace({ paths, port }) {
       }
       return engine.pullUsageFrom(masterId);
     },
+    probe: () => probeAgentStats({ ...defaultAgent(), days: usageReporter.config().days }),
     logger: log,
   });
   // 默认上报目标：入群时记住 master 的地址与邀请令牌（无需手填链接），并立刻补报一次
@@ -720,7 +721,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/file-assoc' && req.method === 'GET') {
-    const pref = loadFileAssocPref(APP_DIR);
+    const pref = loadFileAssocPref(paths.dir);
     const st = await getFileAssocState({ appDir: APP_DIR });
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ available: st.available, enabled: !!pref.enabled, prompted: !!pref.prompted, extensions: st.extensions }));
@@ -738,7 +739,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: 'not-available' }));
         return;
       }
-      const next = saveFileAssocPref(APP_DIR, { enabled: !!body.enabled, prompted: true });
+      const next = saveFileAssocPref(paths.dir, { enabled: !!body.enabled, prompted: true });
       runFileAssoc(APP_DIR, next.enabled ? 'apply' : 'remove');
       const st = await getFileAssocState({ appDir: APP_DIR });
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -1023,7 +1024,7 @@ function startListening(port = currentPort) {
     log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)  ${VERSION}`);
 
     try {
-      const pref = loadFileAssocPref(APP_DIR);
+      const pref = loadFileAssocPref(portPaths(actual).dir);
       if (pref.enabled && fileAssocAvailable({ appDir: APP_DIR }).ok) runFileAssoc(APP_DIR, 'apply');
     } catch { /* ignore */ }
 

@@ -1,26 +1,44 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { APP_DIR } from './port-file.js';
+import { APP_DIR, resolvePort } from './port-file.js';
+import { portPaths } from './port-paths.js';
 import { restartGuard } from './port-restart.js';
 
 // 文件关联「默认用 Void 打开」的服务端模块：绿色包(win32)专用。
 // 真实注册表读写在 launch.ps1（-Assoc apply|remove），这里只做偏好/状态/调用。
 export const EXTENSIONS = ['.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl'];
 
-export function prefFile(appDir = APP_DIR) {
+// 偏好存端口数据目录（<dataHome>/ports/<端口>/file-assoc.json），跨版本保留（不再放包内 data/）
+export function prefFile(dir) {
+  return path.join(dir, 'file-assoc.json');
+}
+
+function defaultAssocDir() {
+  return portPaths(resolvePort()).dir;
+}
+
+// 旧版偏好写在包内 data/；仅作一次性迁移来源
+export function legacyPrefFile(appDir = APP_DIR) {
   return path.join(appDir, 'data', 'file-assoc.json');
 }
 
-export function loadPref(appDir = APP_DIR) {
+export function loadPref(dir = defaultAssocDir(), { appDir = APP_DIR } = {}) {
   try {
-    const p = JSON.parse(fs.readFileSync(prefFile(appDir), 'utf8'));
+    const p = JSON.parse(fs.readFileSync(prefFile(dir), 'utf8'));
     return { enabled: !!p.enabled, prompted: !!p.prompted };
-  } catch { return { enabled: false, prompted: false }; }
+  } catch {
+    try {
+      const p = JSON.parse(fs.readFileSync(legacyPrefFile(appDir), 'utf8'));
+      const next = { enabled: !!p.enabled, prompted: !!p.prompted };
+      savePref(dir, next);
+      return next;
+    } catch { return { enabled: false, prompted: false }; }
+  }
 }
 
-export function savePref(appDir, pref) {
-  const file = prefFile(appDir);
+export function savePref(dir = defaultAssocDir(), pref) {
+  const file = prefFile(dir);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const next = { enabled: !!pref.enabled, prompted: !!pref.prompted };
   fs.writeFileSync(file, JSON.stringify(next, null, 2), 'utf8');

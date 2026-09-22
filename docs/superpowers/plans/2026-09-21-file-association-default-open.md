@@ -769,3 +769,10 @@ Expected: 成功产出 `web/dist`。
 - **命名一致**：`available` / `getState` / `loadPref` / `savePref` / `runAssoc` / `EXTENSIONS` / `prefFile` 在 Task 1 定义，Task 3 与测试沿用同名。
 - **无占位符**：每个代码步骤给出完整代码；命令给出预期输出。
 - **风险**：`DeleteSubKeyTree` 在个别机器可能因 UserChoice 的 DENY ACE 失败 —— 已 try/catch 包裹，失败则该扩展仍是旧默认（不阻断其它扩展）。
+
+---
+
+## 实现偏差（执行时发现）
+
+1. **Task 4 的测试 mock 需显式参数类型**：计划里 `const fn = vi.fn(async () => ({...}))` 无参，`fn.mock.calls[0][0]` 在 `vue-tsc` 下报 `TS2493`（tuple 长度为 0）与 `TS2352`。执行时改为 `vi.fn(async (_u: string, _init?: RequestInit) => ({...}))`，断言不变。
+2. **Task 8 Step 6（人工验收）未执行**：需在带图形界面的 Windows 上双击打包产物操作注册表，非本会话可完成；其余步骤（test / typecheck / check:i18n / build:web）均已通过。

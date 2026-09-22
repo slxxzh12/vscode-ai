@@ -38,7 +38,7 @@ test('launch.ps1 已在运行时只开浏览器并立即退出（不建快捷方
   const seg = ps.slice(early, early + 400);
   assert.match(seg, /exit 0/);
   assert.ok(early < ps.indexOf('Void.lnk'), '早退应出现在快捷方式之前');
-  assert.ok(early < ps.indexOf('file-assoc.json'), '早退应出现在启动自查之前');
+  assert.ok(ps.indexOf('file-assoc.json') < early, '启动自查应出现在 open 早退之前（已在运行时也纠正关联）');
 });
 
 test('launch.ps1 含 -Assoc 子命令与启动自查，且不再有 WScript 首启弹窗', () => {
@@ -46,7 +46,8 @@ test('launch.ps1 含 -Assoc 子命令与启动自查，且不再有 WScript 首�
   assert.match(ps, /\[string\]\$Assoc = ''/);
   assert.match(ps, /function Set-VoidAssoc/);
   assert.match(ps, /if \(\$Assoc\) \{ Set-VoidAssoc \$Assoc; exit 0 \}/);
-  assert.match(ps, /data\\file-assoc\.json/);
+  assert.match(ps, /file-assoc\.json/);
+  assert.match(ps, /ports\\' \+ \$desired/, '偏好改读端口数据目录');
   assert.ok(!ps.includes('assoc-prompted'), '移除了旧的首启 WScript 关联弹窗');
   assert.match(ps, /DeleteSubKeyTree/, '删 UserChoice 才能成为默认程序');
 });

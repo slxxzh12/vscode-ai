@@ -17,6 +17,28 @@ test('EXTENSIONS 为约定的 11 个扩展名', () => {
   assert.deepEqual(EXTENSIONS, ['.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl']);
 });
 
+test('prefFile 落在传入目录根部（端口数据目录，非包内 data/）', () => {
+  assert.equal(prefFile(path.join('C:', 'p', '22222')), path.join('C:', 'p', '22222', 'file-assoc.json'));
+});
+
+test('loadPref：端口目录缺省时从包内 data/ 迁移旧偏好', () => {
+  const app = tmpApp();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-port-'));
+  fs.mkdirSync(path.join(app, 'data'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'data', 'file-assoc.json'), JSON.stringify({ enabled: true, prompted: true }), 'utf8');
+  assert.deepEqual(loadPref(dir, { appDir: app }), { enabled: true, prompted: true });
+  assert.equal(fs.existsSync(prefFile(dir)), true, '迁移后写入端口数据目录');
+});
+
+test('loadPref：端口目录已有偏好时不读旧路径', () => {
+  const app = tmpApp();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-port-'));
+  fs.mkdirSync(path.join(app, 'data'), { recursive: true });
+  fs.writeFileSync(path.join(app, 'data', 'file-assoc.json'), JSON.stringify({ enabled: true, prompted: true }), 'utf8');
+  savePref(dir, { enabled: false, prompted: true });
+  assert.deepEqual(loadPref(dir, { appDir: app }), { enabled: false, prompted: true });
+});
+
 test('loadPref 缺省返回未启用未提示', () => {
   const dir = tmpApp();
   assert.deepEqual(loadPref(dir), { enabled: false, prompted: false });
