@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { toolFileTreeSource } from './toolFileTreeSource';
 import { useToolFiles } from '../tools/files/useToolFiles';
+import type { SearchEvent } from './treeSource';
 
 afterEach(() => vi.unstubAllGlobals());
 function okJson(body: unknown) { return { ok: true, json: async () => body }; }
@@ -41,5 +42,26 @@ describe('toolFileTreeSource', () => {
     vi.stubGlobal('fetch', patch);
     await src.rename!({ key: 'x.yaml', name: 'x.yaml', kind: 'item' }, 'y.yaml');
     expect(patch.mock.calls.some((c) => c[1]?.method === 'PATCH')).toBe(true);
+  });
+
+  it('search 调 /api/files/<tool>/search 流式返回事件；openHit 打开文件', async () => {
+    const events: SearchEvent[] = [
+      { type: 'name', hits: [{ path: 'a.txt', name: 'a.txt' }] },
+      { type: 'content', path: 'a.txt', name: 'a.txt', lines: [{ line: 1, text: 'target' }] },
+      { type: 'done', scanned: 1 },
+    ];
+    const text = events.map((e) => JSON.stringify(e)).join('\n') + '\n';
+    const body = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } });
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, body }));
+    vi.stubGlobal('fetch', fetchMock);
+    const files = useToolFiles('notepad');
+    const onOpen = vi.fn();
+    const src = toolFileTreeSource(files, { onOpen });
+    const got: SearchEvent[] = [];
+    for await (const ev of src.search!('target', { caseSensitive: false, name: true, content: true, all: false })) got.push(ev);
+    expect(got).toEqual(events);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/files/notepad/search?');
+    src.openHit!({ path: 'a.txt', name: 'a.txt' });
+    expect(onOpen).toHaveBeenCalledWith({ key: 'a.txt', name: 'a.txt', kind: 'item' });
   });
 });

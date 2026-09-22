@@ -16,6 +16,7 @@ async function jfetch(url: string, opt: RequestInit = {}): Promise<any> {
 }
 
 export function useToolFiles(tool: FileTool): {
+  tool: FileTool;
   folders: Ref<string[]>;
   items: Ref<ToolFile[]>;
   load: () => Promise<void>;
@@ -69,5 +70,5 @@ export function useToolFiles(tool: FileTool): {
   const removeItem = (id: string) => wrap(() => jfetch(`${base}/file?id=${encodeURIComponent(id)}`, { method: 'DELETE' }));
   const moveItem = (id: string, folder: string) => wrap(() => jfetch(`${base}/move`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ id, folder }) }));
 
-  return { folders, items, load, read, save, createFile, createFolder, renameFolder, removeFolder, renameItem, removeItem, moveItem };
+  return { tool, folders, items, load, read, save, createFile, createFolder, renameFolder, removeFolder, renameItem, removeItem, moveItem };
 }

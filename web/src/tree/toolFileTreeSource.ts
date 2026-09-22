@@ -1,6 +1,7 @@
 import { useToolFiles } from '../tools/files/useToolFiles';
 import { copyText } from '../clipboard';
-import type { TreeSource, TreeSourceNode } from './treeSource';
+import type { TreeSource, TreeSourceNode, SearchEvent } from './treeSource';
+import { streamSearch } from '../search/streamSearch';
 
 export interface ToolTreeHooks {
   onOpen(node: TreeSourceNode): void;
@@ -57,6 +58,11 @@ export function toolFileTreeSource(
     async move(node, dirKey) { await files.moveItem(node.key, dirKey); changed(); },
     copyName(node) { void copyText(node.name); },
     copyPath(node) { void copyText(node.key); },
+    search(query: string, o: { caseSensitive: boolean; name: boolean; content: boolean; all: boolean }, signal?: AbortSignal): AsyncGenerator<SearchEvent> {
+      const p = new URLSearchParams({ q: query, case: o.caseSensitive ? '1' : '0', name: o.name ? '1' : '0', content: o.content ? '1' : '0', all: o.all ? '1' : '0' });
+      return streamSearch(`/api/files/${files.tool}/search?${p.toString()}`, signal);
+    },
+    openHit(hit) { hooks.onOpen({ key: hit.path, name: hit.name, kind: 'item' }); },
     ...(hooks.run ? { run: (node: TreeSourceNode) => hooks.run!(node) } : {}),
     ...(hooks.runFolder ? { runFolder: (dirKey: string) => hooks.runFolder!(dirKey) } : {}),
   };
