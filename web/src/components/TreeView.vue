@@ -5,7 +5,7 @@ import { copyText } from '../clipboard';
 import { flattenVisible, type TreeRow, type TreeRowNode } from '../tree/treeRows';
 import { fileIcon } from '../tree/fileIcon';
 import type { TreeSource, TreeSourceNode } from '../tree/treeSource';
-import FileSearchDialog from './FileSearchDialog.vue';
+import FileSearchPanel from '../search/FileSearchPanel.vue';
 
 type Internal = TreeRowNode;
 
@@ -219,6 +219,8 @@ defineExpose({ refresh });
 
 <template>
   <div class="ftv" @click.self="selectRoot">
+    <FileSearchPanel v-if="searchOpen" :source="source" @close="searchOpen = false" />
+    <template v-else>
     <div v-if="title" class="fthead">
       <span class="fttitle">{{ title }}</span>
       <div class="ftacts">
@@ -266,8 +268,7 @@ defineExpose({ refresh });
     <div v-if="menu" class="ftmenu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }" @click.stop>
       <button v-for="it in menuItems" :key="it.key" class="ftmenuitem" :class="it.cls" @click="runMenuItem(it)">{{ it.label }}</button>
     </div>
-
-    <FileSearchDialog v-if="searchOpen" :source="source" @close="searchOpen = false" />
+    </template>
   </div>
 </template>
 

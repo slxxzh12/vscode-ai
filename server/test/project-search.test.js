@@ -54,8 +54,8 @@ test('跳过忽略目录、二进制文件与超大文件', () => {
 
 test('总内容命中上限触发 truncated', () => {
   const { root, w } = tmpTree();
-  w('a.txt', 'x\nx\ny\n');
-  const r = searchProject(root, { query: 'x', limits: { maxContentHits: 2 } });
+  w('a.txt', 'xx\nxx\nyy\n');
+  const r = searchProject(root, { query: 'xx', limits: { maxContentHits: 2 } });
   assert.equal(r.contentHits.length, 2);
   assert.equal(r.truncated, true);
 });
@@ -72,6 +72,72 @@ test('空 query 返回空结果且不扫描', () => {
   const { root, w } = tmpTree();
   w('a.txt', 'x');
   assert.deepEqual(searchProject(root, { query: '' }), { nameHits: [], contentHits: [], truncated: false, scanned: 0 });
+});
+
+test('单个字母/单字分词被忽略，只用有效分词', () => {
+  const { root, w } = tmpTree();
+  w('a.txt', 'x\nfoo\n');
+  const r = searchProject(root, { query: 'x foo' });
+  assert.deepEqual(r.contentHits.map((h) => h.line), [2]);
+  assert.deepEqual(r.nameHits, []);
+});
+
+test('全是单个字母/单字分词：返回空结果且不扫描', () => {
+  const { root, w } = tmpTree();
+  w('a.txt', 'x\n');
+  assert.deepEqual(
+    searchProject(root, { query: 'a b' }),
+    { nameHits: [], contentHits: [], truncated: false, scanned: 0 },
+  );
+});
+
+test('多分词内容：命中分词多的文件排前，少者排后', () => {
+  const { root, w } = tmpTree();
+  w('aaa.txt', 'foo\n');
+  w('zzz.txt', 'foo bar\n');
+  const r = searchProject(root, { query: 'foo bar' });
+  assert.deepEqual(r.contentHits.map((h) => h.path), ['zzz.txt', 'aaa.txt']);
+});
+
+test('多分词文件名：命中分词多的排前', () => {
+  const { root, w } = tmpTree();
+  w('foo-aaa.txt', 'x\n');
+  w('bar-foo.txt', 'x\n');
+  const r = searchProject(root, { query: 'foo bar', searchContent: false });
+  assert.equal(r.nameHits[0].path, 'bar-foo.txt');
+  assert.equal(r.nameHits.length, 2);
+});
+
+test('多分词：命中任一分词即算命中（单个也保留）', () => {
+  const { root, w } = tmpTree();
+  w('only-foo.txt', 'x\n');
+  const r = searchProject(root, { query: 'foo bar', searchContent: false });
+  assert.deepEqual(r.nameHits.map((h) => h.path), ['only-foo.txt']);
+});
+
+test('searchName=false 只搜内容', () => {
+  const { root, w } = tmpTree();
+  w('target.md', '# target\n');
+  const r = searchProject(root, { query: 'target', searchName: false });
+  assert.deepEqual(r.nameHits, []);
+  assert.equal(r.contentHits.length, 1);
+});
+
+test('searchContent=false 只搜文件名', () => {
+  const { root, w } = tmpTree();
+  w('target.md', '# target\n');
+  const r = searchProject(root, { query: 'target', searchContent: false });
+  assert.deepEqual(r.nameHits, [{ path: 'target.md', name: 'target.md' }]);
+  assert.deepEqual(r.contentHits, []);
+});
+
+test('两种模式都关：返回空结果且不扫描', () => {
+  const { root, w } = tmpTree();
+  w('a.txt', 'target\n');
+  assert.deepEqual(
+    searchProject(root, { query: 'target', searchName: false, searchContent: false }),
+    { nameHits: [], contentHits: [], truncated: false, scanned: 0 },
+  );
 });
 
 test('IGNORE_DIRS 覆盖常见目录', () => {

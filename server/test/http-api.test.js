@@ -141,6 +141,26 @@ test('/api/search 正常返回名字与内容命中', async (t) => {
   );
 });
 
+test('/api/search name=0 只返回内容命中', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'target.md'), '# target\n');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const body = JSON.parse((await request(server, '/api/search?project=a&q=target&name=0')).body);
+  assert.deepEqual(body.nameHits, []);
+  assert.equal(body.contentHits.length, 1);
+});
+
+test('/api/search content=0 只返回名字命中', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'target.md'), '# target\n');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const body = JSON.parse((await request(server, '/api/search?project=a&q=target&content=0')).body);
+  assert.deepEqual(body.nameHits, [{ path: 'target.md', name: 'target.md' }]);
+  assert.deepEqual(body.contentHits, []);
+});
+
 test('/api/search q 为空返回 400', async (t) => {
   const dir = tmpDir();
   const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));

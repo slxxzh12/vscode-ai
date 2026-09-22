@@ -34,7 +34,7 @@ export interface TreeSource {
   copyName?(node: TreeSourceNode): void;
   copyPath?(node: TreeSourceNode): void;
   copyContent?(node: TreeSourceNode): Promise<void>;
-  search?(query: string, opts: { caseSensitive: boolean }): Promise<SearchResult>;
+  search?(query: string, opts: { caseSensitive: boolean; name: boolean; content: boolean }): Promise<SearchResult>;
   openHit?(hit: SearchHit): void;
 }
 

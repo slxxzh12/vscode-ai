@@ -42,7 +42,7 @@ export function projectTreeSource(opts: {
       const f = await api.text(pid, node.key);
       await copyText(f.content);
     },
-    async search(query: string, o: { caseSensitive: boolean }): Promise<SearchResult> {
+    async search(query: string, o: { caseSensitive: boolean; name: boolean; content: boolean }): Promise<SearchResult> {
       if (!pid) return { nameHits: [], contentHits: [], truncated: false, scanned: 0 };
       return searchProject(pid, query, o);
     },

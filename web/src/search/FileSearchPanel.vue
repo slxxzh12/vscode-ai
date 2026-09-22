@@ -2,13 +2,14 @@
 import { computed, ref, watch } from 'vue';
 import type { TreeSource, SearchResult, SearchHit } from '../tree/treeSource';
 
-// 项目文件搜索弹窗：一个输入框同时搜文件名与内容；内容命中按文件分组。
+// 左侧内嵌搜索面板：替换目录树显示，右上角关闭后恢复目录；可勾选按内容/文件名搜索。
 const props = defineProps<{ source: TreeSource }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
-const open = ref(true);                 // 组件被挂载即打开
 const query = ref('');
 const caseSensitive = ref(false);
+const byContent = ref(true);   // 默认搜文件内容
+const byName = ref(true);      // 默认也搜文件名
 const loading = ref(false);
 const error = ref('');
 const result = ref<SearchResult | null>(null);
@@ -18,6 +19,8 @@ let seq = 0;
 
 const keyword = computed(() => query.value.trim());
 const searched = computed(() => keyword.value.length > 0);
+const terms = computed(() => keyword.value.split(/\s+/).filter((t) => t.length >= 2));   // 空格分词；单个字母/单字忽略
+const anyMode = computed(() => byContent.value || byName.value);
 const nameHits = computed(() => result.value?.nameHits ?? []);
 const contentHits = computed(() => result.value?.contentHits ?? []);
 const contentGroups = computed(() => {
@@ -38,11 +41,11 @@ async function run() {
   if (timer) { clearTimeout(timer); timer = null; }
   const q = keyword.value;
   const my = ++seq;
-  if (!q || !props.source.search) { result.value = null; loading.value = false; error.value = ''; return; }
+  if (!q || !terms.value.length || !anyMode.value || !props.source.search) { result.value = null; loading.value = false; error.value = ''; return; }
   loading.value = true;
   error.value = '';
   try {
-    const r = await props.source.search(q, { caseSensitive: caseSensitive.value });
+    const r = await props.source.search(q, { caseSensitive: caseSensitive.value, name: byName.value, content: byContent.value });
     if (my !== seq) return;
     result.value = r;
   } catch (e: unknown) {
@@ -54,7 +57,7 @@ async function run() {
   }
 }
 watch(query, schedule);
-watch(caseSensitive, () => { if (searched.value) void run(); });
+watch([caseSensitive, byContent, byName], () => { if (searched.value) void run(); });
 
 function toggle(path: string) {
   const s = new Set(collapsed.value);
@@ -63,37 +66,47 @@ function toggle(path: string) {
 }
 function pick(hit: SearchHit) {
   props.source.openHit?.(hit);
-  open.value = false;
 }
-// 命中关键词分段，供模板高亮
+// 命中分词分段（任一分词命中即高亮），供模板高亮
 function segments(text: string): { text: string; hit: boolean }[] {
-  const kw = keyword.value;
-  if (!kw) return [{ text, hit: false }];
+  const ts = terms.value;
+  if (!text || !ts.length) return [{ text, hit: false }];
   const hay = caseSensitive.value ? text : text.toLowerCase();
-  const needle = caseSensitive.value ? kw : kw.toLowerCase();
-  const out: { text: string; hit: boolean }[] = [];
-  let from = 0;
-  for (;;) {
-    const i = hay.indexOf(needle, from);
-    if (i < 0) break;
-    if (i > from) out.push({ text: text.slice(from, i), hit: false });
-    out.push({ text: text.slice(i, i + needle.length), hit: true });
-    from = i + needle.length;
-    if (!needle.length) break;
+  const mask = new Array<boolean>(text.length).fill(false);
+  for (const t of ts) {
+    const needle = caseSensitive.value ? t : t.toLowerCase();
+    let from = 0;
+    for (;;) {
+      const i = hay.indexOf(needle, from);
+      if (i < 0) break;
+      for (let k = i; k < i + needle.length; k++) mask[k] = true;
+      from = i + needle.length;
+    }
   }
-  if (from < text.length) out.push({ text: text.slice(from), hit: false });
+  const out: { text: string; hit: boolean }[] = [];
+  let start = 0;
+  for (let i = 1; i <= text.length; i++) {
+    if (i === text.length || mask[i] !== mask[start]) { out.push({ text: text.slice(start, i), hit: mask[start] }); start = i; }
+  }
   return out;
 }
 </script>
 
 <template>
-  <el-dialog v-model="open" :title="$t('search.title')" width="720px" append-to-body class="fsdlg" @closed="emit('close')">
-    <div class="sbar">
+  <div class="fsp">
+    <div class="fsbar">
       <input v-model="query" class="sinput" type="search" :placeholder="$t('search.placeholder')" spellcheck="false" @keydown.enter="run" />
-      <label class="scase" :title="$t('search.case')"><input v-model="caseSensitive" type="checkbox" /><span>{{ $t('search.case') }}</span></label>
+      <button class="fsclose" :title="$t('search.close')" @click="emit('close')">×</button>
+    </div>
+    <div class="fsmodes">
+      <label class="scase" :title="$t('search.mode.content')"><input data-mode="content" v-model="byContent" type="checkbox" /><span>{{ $t('search.mode.content') }}</span></label>
+      <label class="scase" :title="$t('search.mode.name')"><input data-mode="name" v-model="byName" type="checkbox" /><span>{{ $t('search.mode.name') }}</span></label>
+      <label class="scase" :title="$t('search.case')"><input data-mode="case" v-model="caseSensitive" type="checkbox" /><span>{{ $t('search.case') }}</span></label>
     </div>
     <div class="sbody">
       <div v-if="!searched" class="shint">{{ $t('search.hint') }}</div>
+      <div v-else-if="!terms.length" class="shint">{{ $t('search.too_short') }}</div>
+      <div v-else-if="!anyMode" class="shint">{{ $t('search.need_mode') }}</div>
       <div v-else-if="loading" class="shint">{{ $t('search.loading') }}</div>
       <div v-else-if="error" class="serr">{{ $t('search.error', { msg: error }) }}</div>
       <div v-else-if="result && !nameHits.length && !contentHits.length" class="shint">{{ $t('search.empty') }}</div>
@@ -125,16 +138,19 @@ function segments(text: string): { text: string; hit: boolean }[] {
       </template>
       <div v-if="result && result.truncated" class="strunc">{{ $t('search.truncated') }}</div>
     </div>
-  </el-dialog>
+  </div>
 </template>
 
 <style scoped>
-.fsdlg :deep(.el-dialog__body) { padding-top: 8px; }
-.sbar { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--bd2); }
-.sinput { flex: 1; min-width: 0; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: inherit; }
+.fsp { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fsbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 6px 6px; }
+.sinput { flex: 1; min-width: 0; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: inherit; }
 .sinput:focus { outline: none; border-color: var(--ac2); }
+.fsclose { flex: none; background: none; border: 1px solid transparent; color: var(--tx3); font-size: 14px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+.fsclose:hover { background: var(--bg5); color: var(--tx1); border-color: var(--bd); }
+.fsmodes { flex: none; display: flex; align-items: center; gap: 10px; padding: 0 6px 6px; border-bottom: 1px solid var(--bd2); }
 .scase { display: inline-flex; align-items: center; gap: 4px; color: var(--tx3); font-size: 12px; white-space: nowrap; cursor: pointer; }
-.sbody { max-height: 60vh; overflow-y: auto; padding-top: 6px; }
+.sbody { flex: 1; min-height: 0; overflow-y: auto; padding-top: 6px; }
 .shint, .strunc, .sfoot { color: var(--tx5); font-size: 12px; padding: 10px 2px; }
 .serr { color: var(--err); font-size: 12px; padding: 10px 2px; }
 .sgroup { margin-bottom: 10px; }

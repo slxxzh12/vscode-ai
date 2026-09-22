@@ -183,8 +183,12 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         if (!q) { sendJson(res, 400, { error: 'q required' }); return; }
         const cs = url.searchParams.get('case');
         const caseSensitive = cs === '1' || cs === 'true';
+        const nameParam = url.searchParams.get('name');
+        const contentParam = url.searchParams.get('content');
+        const searchName = nameParam !== '0' && nameParam !== 'false';
+        const searchContent = contentParam !== '0' && contentParam !== 'false';
         const root = projects.rootOf(project);
-        sendJson(res, 200, searchProject(root, { query: q, caseSensitive }));
+        sendJson(res, 200, searchProject(root, { query: q, caseSensitive, searchName, searchContent }));
         return;
       }
       if (url.pathname === '/api/run-script' && req.method === 'POST') {

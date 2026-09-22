@@ -1,8 +1,8 @@
 import type { SearchResult } from '../tree/treeSource';
 
-// 调 GET /api/search：项目内按文件名 + 内容搜索
-export async function searchProject(projectId: string, query: string, opts: { caseSensitive: boolean }): Promise<SearchResult> {
-  const url = `/api/search?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}&case=${opts.caseSensitive ? 1 : 0}`;
+// 调 GET /api/search：项目内按文件名和/或内容搜索（name/content 由调用方按需开关）
+export async function searchProject(projectId: string, query: string, opts: { caseSensitive: boolean; name: boolean; content: boolean }): Promise<SearchResult> {
+  const url = `/api/search?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}&case=${opts.caseSensitive ? 1 : 0}&name=${opts.name ? 1 : 0}&content=${opts.content ? 1 : 0}`;
   const res = await fetch(url);
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
