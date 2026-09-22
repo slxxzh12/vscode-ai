@@ -831,6 +831,8 @@ export const messages = {
   'tools.pm_enlarge': 'Expand',
   'tools.pm_close': 'Close',
   'tools.pm_run_folder': 'Run all records in this folder',
+  'tools.pm_run_all': 'Run all',
+  'tools.pm_run_all_tip': 'Run every case in the current folder (including subfolders); all cases when none selected',
   'tools.pm_run_record': 'Run this record',
   'tools.pm_folder_empty': 'No records to run in this folder',
   'tools.pm_run_progress': 'Running {i}/{total}',

@@ -831,6 +831,8 @@ export const messages = {
   'tools.pm_enlarge': '放大',
   'tools.pm_close': '关闭',
   'tools.pm_run_folder': '执行文件夹内全部记录',
+  'tools.pm_run_all': '批量执行',
+  'tools.pm_run_all_tip': '执行当前目录内全部用例（含子目录）；未选目录时为全部',
   'tools.pm_run_record': '执行该记录',
   'tools.pm_folder_empty': '该文件夹内没有可执行的记录',
   'tools.pm_run_progress': '执行中 {i}/{total}',
