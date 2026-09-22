@@ -77,3 +77,28 @@ test('files：每个 tool 独立目录，互不可见，未知 tool 404', async 
   const unknown = await call(A.port, 'GET', '/api/files/nope/tree');
   assert.equal(unknown.status, 404);
 });
+
+function callText(port, p) {
+  return fetch(`http://127.0.0.1:${port}${p}`).then(async (res) => ({
+    status: res.status,
+    ctype: res.headers.get('content-type') || '',
+    text: await res.text(),
+  }));
+}
+
+test('notepad：/api/notepad/search 流式返回 NDJSON 事件', async (t) => {
+  const A = await start();
+  t.after(() => A.server.close());
+  await call(A.port, 'POST', '/api/notepad/file', { folder: '', name: 'target.txt' });
+  await call(A.port, 'PUT', '/api/notepad/file', { id: 'target.txt', content: 'target line\nother\n' });
+  const r = await callText(A.port, '/api/notepad/search?q=target&name=1&content=1');
+  assert.equal(r.status, 200);
+  assert.match(r.ctype, /application\/x-ndjson/);
+  const evs = r.text.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  assert.ok(evs.some((e) => e.type === 'name' && e.hits.some((h) => h.path === 'target.txt')));
+  assert.ok(evs.some((e) => e.type === 'content' && e.path === 'target.txt'));
+  assert.equal(evs.at(-1).type, 'done');
+
+  const bad = await callText(A.port, '/api/notepad/search?q=');
+  assert.equal(bad.status, 400);
+});

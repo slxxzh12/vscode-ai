@@ -122,6 +122,18 @@ test('/api/tree 未知项目返回 404', async (t) => {
   assert.equal(r.status, 404);
 });
 
+// 解析 /api/search 的 NDJSON 流，并聚合出与旧结构等价的 { nameHits, contentHits }
+function combineSearch(text) {
+  const nameHits = [];
+  const contentHits = [];
+  for (const line of text.trim().split('\n').filter(Boolean)) {
+    const e = JSON.parse(line);
+    if (e.type === 'name') nameHits.push(...e.hits);
+    else if (e.type === 'content') for (const l of e.lines) contentHits.push({ path: e.path, name: e.name, line: l.line, text: l.text });
+  }
+  return { nameHits, contentHits };
+}
+
 test('/api/search 正常返回名字与内容命中', async (t) => {
   const dir = tmpDir();
   fs.writeFileSync(path.join(dir, 'target.md'), '# target\n');
@@ -133,7 +145,7 @@ test('/api/search 正常返回名字与内容命中', async (t) => {
   t.after(() => server.close());
   const r = await request(server, '/api/search?project=a&q=target');
   assert.equal(r.status, 200);
-  const body = JSON.parse(r.body);
+  const body = combineSearch(r.body);
   assert.deepEqual(body.nameHits, [{ path: 'target.md', name: 'target.md' }]);
   assert.deepEqual(
     body.contentHits.map((h) => [h.path, h.line]).sort(),
@@ -146,7 +158,7 @@ test('/api/search name=0 只返回内容命中', async (t) => {
   fs.writeFileSync(path.join(dir, 'target.md'), '# target\n');
   const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
   t.after(() => server.close());
-  const body = JSON.parse((await request(server, '/api/search?project=a&q=target&name=0')).body);
+  const body = combineSearch((await request(server, '/api/search?project=a&q=target&name=0')).body);
   assert.deepEqual(body.nameHits, []);
   assert.equal(body.contentHits.length, 1);
 });
@@ -156,7 +168,7 @@ test('/api/search content=0 只返回名字命中', async (t) => {
   fs.writeFileSync(path.join(dir, 'target.md'), '# target\n');
   const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
   t.after(() => server.close());
-  const body = JSON.parse((await request(server, '/api/search?project=a&q=target&content=0')).body);
+  const body = combineSearch((await request(server, '/api/search?project=a&q=target&content=0')).body);
   assert.deepEqual(body.nameHits, [{ path: 'target.md', name: 'target.md' }]);
   assert.deepEqual(body.contentHits, []);
 });

@@ -14,7 +14,7 @@ import { pickFolder, pickAnyFile } from './native-dialog.js';
 import { revealInOs } from './reveal.js';
 import { runScript, RUNNABLE_EXT } from './run-script.js';
 import { runCurl } from './curl-run.js';
-import { searchProject } from './project-search.js';
+import { streamProject } from './project-search.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
 
@@ -50,6 +50,23 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
   };
+  const NDJSON_HEADERS = { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' };
+  const startNdjson = (res) => { res.writeHead(200, NDJSON_HEADERS); };
+  const writeNdjson = (res, ev) => { if (!res.writableEnded) res.write(JSON.stringify(ev) + '\n'); };
+  // 把一次搜索以 NDJSON 流写出；客户端断开即停止消费生成器。
+  const streamSearchTo = async (res, root, opts) => {
+    startNdjson(res);
+    let closed = false;
+    res.on('close', () => { closed = true; });
+    try {
+      for await (const ev of streamProject(root, opts)) {
+        if (closed || res.writableEnded) break;
+        writeNdjson(res, ev);
+      }
+    } finally {
+      if (!res.writableEnded) res.end();
+    }
+  };
   const readJsonBody = (req, limit = 4 * 1024 * 1024) =>
     new Promise((resolve, reject) => {
       const chunks = [];
@@ -72,6 +89,16 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
     try {
       if (sub === '/tree' && req.method === 'GET') {
         sendJson(res, 200, store?.list?.() ?? { items: [], folders: [] });
+        return;
+      }
+      if (sub === '/search' && req.method === 'GET') {
+        const q = (url.searchParams.get('q') || '').trim();
+        if (!q) { sendJson(res, 400, { error: 'q required' }); return; }
+        const caseSensitive = ['1', 'true'].includes(url.searchParams.get('case'));
+        const searchName = !['0', 'false'].includes(url.searchParams.get('name'));
+        const searchContent = !['0', 'false'].includes(url.searchParams.get('content'));
+        const skipIgnores = !['1', 'true'].includes(url.searchParams.get('all'));
+        await streamSearchTo(res, store?.dir, { query: q, caseSensitive, searchName, searchContent, skipIgnores });
         return;
       }
       if (sub === '/file' && req.method === 'GET') {
@@ -181,14 +208,12 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const project = url.searchParams.get('project');
         const q = (url.searchParams.get('q') || '').trim();
         if (!q) { sendJson(res, 400, { error: 'q required' }); return; }
-        const cs = url.searchParams.get('case');
-        const caseSensitive = cs === '1' || cs === 'true';
-        const nameParam = url.searchParams.get('name');
-        const contentParam = url.searchParams.get('content');
-        const searchName = nameParam !== '0' && nameParam !== 'false';
-        const searchContent = contentParam !== '0' && contentParam !== 'false';
+        const caseSensitive = ['1', 'true'].includes(url.searchParams.get('case'));
+        const searchName = !['0', 'false'].includes(url.searchParams.get('name'));
+        const searchContent = !['0', 'false'].includes(url.searchParams.get('content'));
+        const skipIgnores = !['1', 'true'].includes(url.searchParams.get('all'));
         const root = projects.rootOf(project);
-        sendJson(res, 200, searchProject(root, { query: q, caseSensitive, searchName, searchContent }));
+        await streamSearchTo(res, root, { query: q, caseSensitive, searchName, searchContent, skipIgnores });
         return;
       }
       if (url.pathname === '/api/run-script' && req.method === 'POST') {
