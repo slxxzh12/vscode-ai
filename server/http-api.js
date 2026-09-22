@@ -98,7 +98,8 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const searchName = !['0', 'false'].includes(url.searchParams.get('name'));
         const searchContent = !['0', 'false'].includes(url.searchParams.get('content'));
         const skipIgnores = !['1', 'true'].includes(url.searchParams.get('all'));
-        await streamSearchTo(res, store?.dir, { query: q, caseSensitive, searchName, searchContent, skipIgnores });
+        const split = !['0', 'false'].includes(url.searchParams.get('split'));
+        await streamSearchTo(res, store?.dir, { query: q, caseSensitive, searchName, searchContent, skipIgnores, split });
         return;
       }
       if (sub === '/file' && req.method === 'GET') {
@@ -212,8 +213,9 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const searchName = !['0', 'false'].includes(url.searchParams.get('name'));
         const searchContent = !['0', 'false'].includes(url.searchParams.get('content'));
         const skipIgnores = !['1', 'true'].includes(url.searchParams.get('all'));
+        const split = !['0', 'false'].includes(url.searchParams.get('split'));
         const root = projects.rootOf(project);
-        await streamSearchTo(res, root, { query: q, caseSensitive, searchName, searchContent, skipIgnores });
+        await streamSearchTo(res, root, { query: q, caseSensitive, searchName, searchContent, skipIgnores, split });
         return;
       }
       if (url.pathname === '/api/run-script' && req.method === 'POST') {

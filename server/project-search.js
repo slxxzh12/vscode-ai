@@ -7,10 +7,13 @@ export const IGNORE_DIRS = new Set([
   '.next', '.nuxt', '.cache', '.idea', '.vscode',
 ]);
 
-// 按空白拆成多个分词；单个字母/单字（长度 < 2）一律忽略
-export function splitTerms(query, caseSensitive = false) {
+// split=true 时按空白拆成多个分词；split=false 时整串作为一个分词（不拆分空格）。
+// 单个字母/单字（长度 < 2）一律忽略。
+export function splitTerms(query, caseSensitive = false, split = true) {
+  const src = String(query).trim();
+  const parts = split ? src.split(/\s+/) : [src];
   const out = [];
-  for (const raw of String(query).trim().split(/\s+/)) {
+  for (const raw of parts) {
     if (raw.length < 2) continue;
     const t = caseSensitive ? raw : raw.toLowerCase();
     if (!out.includes(t)) out.push(t);
@@ -35,8 +38,8 @@ async function probeBinary(abs, size) {
 // 异步流式遍历 root，边扫边 yield 事件；不设任何上限、不截断。
 // 事件：{type:'name',hits}/{type:'content',path,name,lines}/{type:'progress',scanned}/{type:'done',scanned}
 // path 一律用 POSIX 风格相对路径；skipIgnores=false 时连忽略目录与二进制也搜。
-export async function* streamProject(root, { query = '', caseSensitive = false, searchName = true, searchContent = true, skipIgnores = true } = {}) {
-  const terms = splitTerms(query, caseSensitive);
+export async function* streamProject(root, { query = '', caseSensitive = false, searchName = true, searchContent = true, skipIgnores = true, split = true } = {}) {
+  const terms = splitTerms(query, caseSensitive, split);
   if (!terms.length || (!searchName && !searchContent)) { yield { type: 'done', scanned: 0 }; return; }
 
   const rootResolved = path.resolve(root);

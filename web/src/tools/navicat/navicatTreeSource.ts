@@ -24,9 +24,10 @@ function parse(key: string): { kind: string; id: string; db: string; table: stri
   return { kind, id, db: parts[1] || '', table: parts[2] || '' };
 }
 
-function splitTerms(query: string, caseSensitive: boolean): string[] {
+function splitTerms(query: string, caseSensitive: boolean, split = true): string[] {
   const out: string[] = [];
-  for (const raw of String(query).trim().split(/\s+/)) {
+  const src = String(query).trim();
+  for (const raw of (split ? src.split(/\s+/) : [src])) {
     if (raw.length < 2) continue;
     const t = caseSensitive ? raw : raw.toLowerCase();
     if (!out.includes(t)) out.push(t);
@@ -67,7 +68,7 @@ export function navicatTreeSource(deps: NavicatTreeDeps): TreeSource {
     copyPath(node) { void copyText(node.key); },
     async *search(query, o): AsyncGenerator<SearchEvent> {
       void o.all;
-      const terms = splitTerms(query, o.caseSensitive);
+      const terms = splitTerms(query, o.caseSensitive, o.split !== false);
       if (!terms.length || (!o.name && !o.content)) { yield { type: 'done', scanned: 0 }; return; }
       const hayOf = (s: string) => (o.caseSensitive ? s : s.toLowerCase());
       const nameHits: SearchNameHit[] = [];

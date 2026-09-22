@@ -34,7 +34,7 @@ describe('FileSearchPanel', () => {
     await w.find('.sinput').setValue('target');
     await w.find('.sinput').trigger('keydown.enter');
     await flushPromises();
-    expect(src.search).toHaveBeenCalledWith('target', { caseSensitive: false, name: true, content: true, all: false }, expect.anything());
+    expect(src.search).toHaveBeenCalledWith('target', { caseSensitive: false, name: true, content: true, all: false, split: false }, expect.anything());
     expect(w.findAll('.sname-row').length).toBe(1);
     expect(w.findAll('.scgroup').length).toBe(2);
     expect(w.findAll('.sline').length).toBe(2);
@@ -49,7 +49,7 @@ describe('FileSearchPanel', () => {
     await flushPromises();
     await w.find('[data-mode="name"]').setValue(false);
     await flushPromises();
-    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: false, content: true, all: false }, expect.anything());
+    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: false, content: true, all: false, split: false }, expect.anything());
   });
 
   it('勾选「包含忽略目录/二进制」后重搜带 all:true', async () => {
@@ -61,7 +61,20 @@ describe('FileSearchPanel', () => {
     await flushPromises();
     await w.find('[data-mode="all"]').setValue(true);
     await flushPromises();
-    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: true, content: true, all: true }, expect.anything());
+    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: true, content: true, all: true, split: false }, expect.anything());
+  });
+
+  it('默认不勾选「按空格分词」，勾选后重搜带 split:true', async () => {
+    const src = fakeSource({ search: vi.fn(() => streamOf(EVENTS)), openHit: vi.fn() });
+    const w = mountPanel(src);
+    await flushPromises();
+    expect((w.find('[data-mode="split"]').element as HTMLInputElement).checked).toBe(false);
+    await w.find('.sinput').setValue('target');
+    await w.find('.sinput').trigger('keydown.enter');
+    await flushPromises();
+    await w.find('[data-mode="split"]').setValue(true);
+    await flushPromises();
+    expect(src.search).toHaveBeenLastCalledWith('target', { caseSensitive: false, name: true, content: true, all: false, split: true }, expect.anything());
   });
 
   it('两种模式都不勾选时不发起搜索并提示', async () => {

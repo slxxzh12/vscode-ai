@@ -12,6 +12,7 @@ const caseSensitive = ref(false);
 const byContent = ref(true);   // 默认搜文件内容
 const byName = ref(true);      // 默认也搜文件名
 const all = ref(false);        // 默认跳过忽略目录/二进制
+const splitBySpace = ref(false); // 默认不按空格分词：整串作为一个关键词
 const loading = ref(false);
 const error = ref('');
 const scanned = ref(0);
@@ -25,7 +26,9 @@ let ctrl: AbortController | null = null;
 
 const keyword = computed(() => query.value.trim());
 const searched = computed(() => keyword.value.length > 0);
-const terms = computed(() => keyword.value.split(/\s+/).filter((t) => t.length >= 2));   // 空格分词；单个字母/单字忽略
+const terms = computed(() => splitBySpace.value
+  ? keyword.value.split(/\s+/).filter((t) => t.length >= 2)   // 按空格分词；单个字母/单字忽略
+  : (keyword.value.length >= 2 ? [keyword.value] : []));      // 整串作为一个关键词
 const anyMode = computed(() => byContent.value || byName.value);
 const started = computed(() => nameHits.value.length > 0 || contentGroups.value.length > 0);
 const contentHitCount = computed(() => contentGroups.value.reduce((n, g) => n + g.lines.length, 0));
@@ -56,7 +59,7 @@ async function run() {
   const myCtrl = new AbortController();
   ctrl = myCtrl;
   try {
-    const stream = props.source.search(q, { caseSensitive: caseSensitive.value, name: byName.value, content: byContent.value, all: all.value }, myCtrl.signal);
+    const stream = props.source.search(q, { caseSensitive: caseSensitive.value, name: byName.value, content: byContent.value, all: all.value, split: splitBySpace.value }, myCtrl.signal);
     for await (const ev of stream) {
       if (my !== seq) return;
       if (ev.type === 'name') nameHits.value = [...nameHits.value, ...ev.hits];
@@ -73,7 +76,7 @@ async function run() {
   }
 }
 watch(query, schedule);
-watch([caseSensitive, byContent, byName, all], () => { if (searched.value) void run(); });
+watch([caseSensitive, byContent, byName, all, splitBySpace], () => { if (searched.value) void run(); });
 onBeforeUnmount(() => ctrl?.abort());
 
 function toggle(path: string) {
@@ -111,6 +114,9 @@ function segments(text: string): { text: string; hit: boolean }[] {
 
 <template>
   <div class="fsp">
+    <div class="fstop">
+      <label class="scase" :title="$t('search.split')"><input data-mode="split" v-model="splitBySpace" type="checkbox" /><span>{{ $t('search.split') }}</span></label>
+    </div>
     <div class="fsbar">
       <input v-model="query" class="sinput" type="search" :placeholder="$t('search.placeholder')" spellcheck="false" @keydown.enter="run" />
       <button class="fsclose" :title="$t('search.close')" @click="emit('close')">×</button>
@@ -162,6 +168,7 @@ function segments(text: string): { text: string; hit: boolean }[] {
 
 <style scoped>
 .fsp { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fstop { flex: none; display: flex; align-items: center; gap: 10px; padding: 0 6px 6px; }
 .fsbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 6px 6px; }
 .sinput { flex: 1; min-width: 0; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 8px; font-size: 12px; font-family: inherit; }
 .sinput:focus { outline: none; border-color: var(--ac2); }

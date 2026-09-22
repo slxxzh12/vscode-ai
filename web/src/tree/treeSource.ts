@@ -33,7 +33,7 @@ export interface TreeSource {
   copyName?(node: TreeSourceNode): void;
   copyPath?(node: TreeSourceNode): void;
   copyContent?(node: TreeSourceNode): Promise<void>;
-  search?(query: string, opts: { caseSensitive: boolean; name: boolean; content: boolean; all: boolean }, signal?: AbortSignal): AsyncIterable<SearchEvent>;
+  search?(query: string, opts: { caseSensitive: boolean; name: boolean; content: boolean; all: boolean; split?: boolean }, signal?: AbortSignal): AsyncIterable<SearchEvent>;
   openHit?(hit: SearchHit): void;
 }
 

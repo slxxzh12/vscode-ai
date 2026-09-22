@@ -540,6 +540,7 @@ export const messages = {
   'search.title': 'Search files',
   'search.placeholder': 'Search file name or content',
   'search.case': 'Match case',
+  'search.split': 'Split by spaces',
   'search.name_group': 'File name matches',
   'search.content_group': 'Content matches',
   'search.hits': '{n} matches',

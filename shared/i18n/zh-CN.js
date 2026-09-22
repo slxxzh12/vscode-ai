@@ -540,6 +540,7 @@ export const messages = {
   'search.title': '搜索文件',
   'search.placeholder': '搜索文件名或内容',
   'search.case': '区分大小写',
+  'search.split': '按空格分词',
   'search.name_group': '文件名命中',
   'search.content_group': '内容命中',
   'search.hits': '{n} 处',

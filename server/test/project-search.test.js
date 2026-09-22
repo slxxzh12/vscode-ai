@@ -93,6 +93,24 @@ test('单个字母/单字分词被忽略', async () => {
   assert.deepEqual(r.nameHits, []);
 });
 
+test('split=false 时整串（含空格）作为一个关键词，不做空格分词', async () => {
+  const { root, w } = tmpTree();
+  w('a.txt', 'foo bar\nfoo\nbar\n');
+  const joined = await collect(root, { query: 'foo bar', split: false });
+  assert.deepEqual(joined.contentHits.map((h) => h.line), [1]);
+  assert.deepEqual(joined.nameHits, []);
+  const tokenized = await collect(root, { query: 'foo bar' });
+  assert.deepEqual(tokenized.contentHits.map((h) => h.line), [1, 2, 3]);
+});
+
+test('split=false 且整串不足 2 字符时忽略', async () => {
+  const { root, w } = tmpTree();
+  w('a.txt', 'x y\n');
+  const r = await collect(root, { query: 'x', split: false });
+  assert.deepEqual(r.types, ['done']);
+  assert.equal(r.scanned, 0);
+});
+
 test('searchName=false 只搜内容，searchContent=false 只搜文件名', async () => {
   const { root, w } = tmpTree();
   w('target.md', '# target\n');
