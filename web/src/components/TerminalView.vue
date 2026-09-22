@@ -60,6 +60,7 @@ const hostRef = ref<HTMLDivElement | null>(null);
 let term: Terminal | null = null;
 let fit: FitAddon | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let repaintTimer: ReturnType<typeof setTimeout> | null = null;
 let dataSub: { dispose(): void } | null = null;
 let selSub: { dispose(): void } | null = null;
 let unsubList: (() => void) | null = null;
@@ -1029,7 +1030,7 @@ function init() {
   selSub = term.onSelectionChange(() => { hasSelection.value = !!term?.hasSelection(); });
   props.terminal.bindIO({
     output: (d) => term?.write(d),
-    replay: (d) => { term?.clear(); term?.write(d); requestAnimationFrame(() => onResize()); },
+    replay: (d) => { term?.clear(); term?.write(d); requestAnimationFrame(() => { onResize(); scheduleRepaint(60); }); },
   });
   watch(() => props.terminal.state.status, (s) => {
     if (s === 'reconnecting') term?.write('\x1b[33m' + t('term.disconnected') + '\x1b[0m\r\n');
@@ -1110,6 +1111,16 @@ function onResize() {
   fit.fit();
   const d = fit.proposeDimensions();
   if (d) props.terminal.resize(d.cols, d.rows);
+  scheduleRepaint();
+}
+// xterm 的 DOM 渲染器在大块重画/改尺寸后会残留旧行；而 fit 在行列数不变时不会触发重绘。
+// 这里在尺寸变化（含拖动输入框边框）、切换会话回放后，延迟强制整屏 refresh 一次，消除残影。
+function scheduleRepaint(delay = 80) {
+  if (repaintTimer) clearTimeout(repaintTimer);
+  repaintTimer = setTimeout(() => {
+    repaintTimer = null;
+    if (term) term.refresh(0, term.rows - 1);
+  }, delay);
 }
 function termTheme(dark: boolean) {
   const base = dark
@@ -1205,6 +1216,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('df-remote-screen', onRemoteScreen);
   if (autoCompactTimer) { clearTimeout(autoCompactTimer); autoCompactTimer = null; }
   if (copySelTimer) { clearTimeout(copySelTimer); copySelTimer = null; }
+  if (repaintTimer) { clearTimeout(repaintTimer); repaintTimer = null; }
   for (const u of wfUnsubs) u();
   unsubList?.();
   unsubCfg?.();
