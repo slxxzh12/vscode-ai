@@ -10,6 +10,7 @@ import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
 import DocViewer from './DocViewer.vue';
 import ToolDocPane from '../tools/doc/ToolDocPane.vue';
+import PostmanTool from '../tools/postman/PostmanTool.vue';
 import { useLocalSources } from '../local/useLocalSources';
 import { localRootDocSource, localFileDocSource } from '../local/localDocSource';
 import type { DocSource } from '../tools/doc/docSource';
@@ -91,6 +92,7 @@ const activeDocTool = computed(() => {
   const x = activeTool.value?.tool;
   return x === 'notepad' || x === 'yaml' ? x : null;
 });
+const activeToolName = computed(() => activeTool.value?.tool ?? '');
 const isSessionView = computed(() => props.center.activeKind.value === 'session');
 // 页签标签：工具页签按当前语言显示
 function tabDisplayLabel(tab: { kind: string; tool?: string; label: string }) {
@@ -1370,7 +1372,8 @@ onBeforeUnmount(() => {
     </div>
     <div v-show="!!activeTool" class="tool-layer">
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
-      <TextToolBody v-else-if="activeTool && activeTool.tool === 'translate'" />
+      <TextToolBody v-else-if="activeToolName === 'translate'" />
+      <PostmanTool v-else-if="activeToolName === 'postman'" />
     </div>
     <div v-show="!!activeLocal" class="local-layer">
       <template v-if="localIsRoot">

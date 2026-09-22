@@ -20,4 +20,14 @@ describe('ToolSidebar', () => {
     expect(w.find('.ftv').exists()).toBe(true);
     expect(w.text()).toContain('a.txt');
   });
+
+  it('postman：渲染批量执行条与树', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u) === '/api/postman/history'
+      ? okJson({ items: [], folders: [] })
+      : okJson({}))));
+    const w = mountC(ToolSidebar, { props: { tool: 'postman' } });
+    await flushPromises();
+    expect(w.find('.pmsb-run').exists()).toBe(true);
+    expect(w.find('.ftv').exists()).toBe(true);
+  });
 });

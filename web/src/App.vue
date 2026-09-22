@@ -10,7 +10,7 @@ import SchedulerView from './scheduler/SchedulerView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import ToolSidebar from './components/ToolSidebar.vue';
-import type { FileTool } from './tools/files/useToolFiles';
+import type { ToolId } from './tools/catalog';
 import CodeStats from './components/CodeStats.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
@@ -78,7 +78,7 @@ const { dragging: localDragging } = useLocalDrop(onLocalDrop);
 const activeLocalRoot = computed(() => center.active.value?.kind === 'local' && center.active.value.id === 'l:root' && !!local.root.value);
 // 活动页签是工具时：左侧面板显示该工具的固定树（否则显示历史列表）
 const activeToolTab = computed(() => (center.active.value?.kind === 'tool' ? center.active.value : null));
-const activeTool = computed(() => activeToolTab.value?.tool as FileTool | undefined);
+const activeTool = computed(() => activeToolTab.value?.tool as ToolId | undefined);
 const projectsApi = useProjects();
 const { version: appVersion, loadVersion } = useVersion();
 const { theme, toggle } = useTheme();
