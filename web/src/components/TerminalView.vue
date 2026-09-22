@@ -11,6 +11,7 @@ import FilePreview from './FilePreview.vue';
 import DocViewer from './DocViewer.vue';
 import ToolDocPane from '../tools/doc/ToolDocPane.vue';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
+import NavicatTool from '../tools/navicat/NavicatTool.vue';
 import { useLocalSources } from '../local/useLocalSources';
 import { localRootDocSource, localFileDocSource } from '../local/localDocSource';
 import type { DocSource } from '../tools/doc/docSource';
@@ -1374,6 +1375,7 @@ onBeforeUnmount(() => {
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
       <TextToolBody v-else-if="activeToolName === 'translate'" />
       <PostmanTool v-else-if="activeToolName === 'postman'" />
+      <NavicatTool v-else-if="activeToolName === 'navicat'" />
     </div>
     <div v-show="!!activeLocal" class="local-layer">
       <template v-if="localIsRoot">

@@ -30,4 +30,12 @@ describe('ToolSidebar', () => {
     expect(w.find('.pmsb-run').exists()).toBe(true);
     expect(w.find('.ftv').exists()).toBe(true);
   });
+
+  it('navicat：渲染新建连接条与树', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u) === '/api/navicat/profiles' ? okJson({ items: [] }) : okJson({}))));
+    const w = mountC(ToolSidebar, { props: { tool: 'navicat' } });
+    await flushPromises();
+    expect(w.find('.nvsb-new').exists()).toBe(true);
+    expect(w.find('.ftv').exists()).toBe(true);
+  });
 });

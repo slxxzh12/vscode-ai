@@ -4,6 +4,8 @@ import TreeView from './TreeView.vue';
 import { useToolWorkbench } from '../tools/useToolWorkbench';
 import { usePostmanWorkbench } from '../tools/postman/usePostmanWorkbench';
 import PostmanSidebarBar from '../tools/postman/PostmanSidebarBar.vue';
+import { useNavicatWorkbench } from '../tools/navicat/useNavicatWorkbench';
+import NavicatSidebarBar from '../tools/navicat/NavicatSidebarBar.vue';
 import type { FileTool } from '../tools/files/useToolFiles';
 import type { ToolId } from '../tools/catalog';
 
@@ -12,6 +14,7 @@ const props = defineProps<{ tool: ToolId }>();
 // 各工具的 workbench 都暴露 treeSource/activeId/activeFolder，统一取用。
 const wb = computed(() => {
   if (props.tool === 'postman') return usePostmanWorkbench();
+  if (props.tool === 'navicat') return useNavicatWorkbench();
   return useToolWorkbench(props.tool as FileTool);
 });
 
@@ -25,6 +28,7 @@ function onFolder(k: string) {
 <template>
   <div class="tside">
     <PostmanSidebarBar v-if="tool === 'postman'" />
+    <NavicatSidebarBar v-else-if="tool === 'navicat'" />
     <TreeView
       :source="wb.treeSource"
       :title="$t('tools.' + tool)"
