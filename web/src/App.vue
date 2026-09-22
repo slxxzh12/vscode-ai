@@ -11,7 +11,6 @@ import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import ToolSidebar from './components/ToolSidebar.vue';
 import type { FileTool } from './tools/files/useToolFiles';
-import type { ToolId } from './tools/catalog';
 import CodeStats from './components/CodeStats.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
@@ -80,11 +79,6 @@ const activeLocalRoot = computed(() => center.active.value?.kind === 'local' && 
 // 活动页签是工具时：左侧面板显示该工具的固定树（否则显示历史列表）
 const activeToolTab = computed(() => (center.active.value?.kind === 'tool' ? center.active.value : null));
 const activeTool = computed(() => activeToolTab.value?.tool as FileTool | undefined);
-// 活动栏工具快捷入口：切到 explorer 并打开/激活该工具页签
-function openToolTab(id: ToolId) {
-  rail.value = 'explorer';
-  center.openTool(id);
-}
 const projectsApi = useProjects();
 const { version: appVersion, loadVersion } = useVersion();
 const { theme, toggle } = useTheme();
@@ -718,8 +712,6 @@ onBeforeUnmount(() => {
     <div class="main">
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
-        <button class="a-btn" :class="{ on: activeTool === 'notepad' }" :title="$t('tools.notepad')" @click="openToolTab('notepad')">📝</button>
-        <button class="a-btn" :class="{ on: activeTool === 'yaml' }" :title="$t('tools.yaml')" @click="openToolTab('yaml')">🧾</button>
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🧰</button>
