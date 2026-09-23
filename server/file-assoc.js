@@ -112,7 +112,7 @@ export async function getState({ appDir = APP_DIR, platform = process.platform, 
 export function runAssoc(appDir, action, { spawnFn = spawn, platform = process.platform } = {}) {
   if (platform !== 'win32') return false;
   const script = path.join(appDir, 'script', 'launch.ps1');
-  const child = spawnFn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Assoc', action], { cwd: appDir, detached: true, stdio: 'ignore' });
+  const child = spawnFn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Assoc', action], { cwd: appDir, detached: true, stdio: 'ignore', windowsHide: true });
   if (child && typeof child.unref === 'function') child.unref();
   return true;
 }
