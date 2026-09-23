@@ -30,15 +30,12 @@ test('parseInviteLink：缺 token / 非 http / 空串都报 bad-link', () => {
   assert.deepEqual(parseInviteLink('随便一串'), { error: 'bad-link' });
 });
 
-test('nextDelay 落在 60–90 分钟闭区间内', () => {
+test('nextDelay 固定 4 小时', () => {
+  assert.equal(MIN_INTERVAL_MS, 4 * 60 * 60 * 1000);
+  assert.equal(MAX_INTERVAL_MS, 4 * 60 * 60 * 1000);
   assert.equal(nextDelay(() => 0), MIN_INTERVAL_MS);
-  assert.equal(nextDelay(() => 1 - Number.EPSILON), MAX_INTERVAL_MS - 1);
-  for (let i = 0; i < 200; i += 1) {
-    const d = nextDelay();
-    assert.ok(d >= MIN_INTERVAL_MS && d < MAX_INTERVAL_MS, String(d));
-  }
-  assert.equal(MIN_INTERVAL_MS, 60 * 60 * 1000);
-  assert.equal(MAX_INTERVAL_MS, 90 * 60 * 1000);
+  assert.equal(nextDelay(() => 1 - Number.EPSILON), MIN_INTERVAL_MS);
+  for (let i = 0; i < 20; i += 1) assert.equal(nextDelay(), MIN_INTERVAL_MS);
 });
 
 test('loadReportConfig 默认值 / saveReportConfig 落盘读回', () => {

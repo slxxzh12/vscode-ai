@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import { collectAgentStats } from './collaboration/agent-stats.js';
 import path from 'node:path';
 
-export const MIN_INTERVAL_MS = 60 * 60 * 1000;   // 60 分钟
-export const MAX_INTERVAL_MS = 90 * 60 * 1000;   // 90 分钟
+export const INTERVAL_MS = 4 * 60 * 60 * 1000;   // 4 小时
+export const MIN_INTERVAL_MS = INTERVAL_MS;
+export const MAX_INTERVAL_MS = INTERVAL_MS;
 const DEFAULT_CONFIG = { masterUrl: '', token: '', days: 60, masterPublicKey: '' };
 
 // 解析 master 的访问链接：http://<host>:<port>/?access=<token>
