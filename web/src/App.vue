@@ -354,6 +354,7 @@ watch(center.activeId, (id) => {
 function persistWindowState() { if (windowRestored) void flushWindowState(currentWindowState()); }
 // 当天输入超过 3 条消息时，主动展示一次历史消息；当天已展示过则不再主动，仅用户点击才展示
 const AUTO_SHOWN_KEY = 'devflow-history-auto-shown';
+const SETTINGS_AUTO_KEY = 'devflow-settings-autoshown';   // 首启设置框只自动弹一次
 function ymd(ts: number) {
   const d = new Date(ts); const p = (x: number) => String(x).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
@@ -661,7 +662,15 @@ onMounted(async () => {
   applyHash();
   initFileHistory();
   const projectsReady = (async () => { await checkFirstRunAgentChoice(); await checkFirstRunFileAssoc(); await loadProjects(); })();
-  void restoreWindowState(projectsReady).finally(() => { if (pendingAgentChoice.value || pendingFileAssoc.value) openAgentSettings(true); });
+  // 首启设置框只自动弹一次（本地记住），之后不再自动弹；用户仍可点 ⚙ 手动打开
+  void restoreWindowState(projectsReady).finally(() => {
+    let shown = false;
+    try { shown = localStorage.getItem(SETTINGS_AUTO_KEY) === '1'; } catch { /* ignore */ }
+    if (!shown && (pendingAgentChoice.value || pendingFileAssoc.value)) {
+      try { localStorage.setItem(SETTINGS_AUTO_KEY, '1'); } catch { /* ignore */ }
+      openAgentSettings(true);
+    }
+  });
   void loadSessionProjects();
   void loadLedgerSessions();
   processOpenParam();
