@@ -11,16 +11,17 @@ function fakeChild() {
   return c;
 }
 
-test('execute：默认拼 opencode run <text> 并收集输出', async () => {
+test('execute：默认拼 opencode run <text> 并收集输出，注入 OPENCODE_SKIP_SAFE_CHECK', async () => {
   let captured = null;
   const child = fakeChild();
-  const runner = createOpenCodeRunner({ bin: 'opencode', spawnFn: (bin, args) => { captured = { bin, args }; return child; } });
+  const runner = createOpenCodeRunner({ bin: 'opencode', spawnFn: (bin, args, opts) => { captured = { bin, args, opts }; return child; } });
   const p = runner.execute({ text: 'hi' });
   child.stdout.emit('data', 'ok');
   child.emit('close', 0);
   const r = await p;
   assert.equal(captured.bin, 'opencode');
   assert.deepEqual(captured.args, ['run', 'hi']);
+  assert.equal(captured.opts.env.OPENCODE_SKIP_SAFE_CHECK, '1');
   assert.equal(r.exitCode, 0);
   assert.equal(r.stdout, 'ok');
 });

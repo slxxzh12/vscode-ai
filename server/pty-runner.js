@@ -1,3 +1,5 @@
+import { withAgentEnv } from './agent-env.js';
+
 export function pickShell() {
   if (process.platform === 'win32') return { file: 'powershell.exe', args: [] };
   return { file: process.env.SHELL || '/bin/bash', args: [] };
@@ -24,7 +26,7 @@ export async function createPty({ cwd = process.cwd(), cols = 80, rows = 24 } = 
   const { spawn } = await import('node-pty');
   const shell = pickShell();
   const raw = spawn(shell.file, shell.args, {
-    name: 'xterm-256color', cols, rows, cwd, env: process.env,
+    name: 'xterm-256color', cols, rows, cwd, env: withAgentEnv(),
   });
   return makePseudoPty(raw, process.platform === 'win32' ? 'win' : 'unix');
 }

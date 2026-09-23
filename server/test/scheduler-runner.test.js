@@ -49,7 +49,9 @@ test('buildSpawnSpec：shell / ai / script', () => {
   assert.deepEqual(aiFileNoMsg.args, ['run', '--file', 'C:/x/run.md']);
 
   const aiEnv = buildSpawnSpec({ type: 'ai', ai: { source: 'prompt', prompt: 'x' } }, { cwd: 'C:/p', opencodeDataDir: 'C:/oc-data' });
-  assert.deepEqual(aiEnv.env, { XDG_DATA_HOME: 'C:/oc-data' });
+  assert.deepEqual(aiEnv.env, { OPENCODE_SKIP_SAFE_CHECK: '1', XDG_DATA_HOME: 'C:/oc-data' });
+  const aiNoData = buildSpawnSpec({ type: 'ai', ai: { source: 'prompt', prompt: 'x' } }, { cwd: 'C:/p' });
+  assert.deepEqual(aiNoData.env, { OPENCODE_SKIP_SAFE_CHECK: '1' });
 
   const ps = buildSpawnSpec({ type: 'script', script: { path: 'x/y.ps1' } }, { cwd: 'C:/p' });
   assert.deepEqual(ps.args.slice(0, 4), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File']);

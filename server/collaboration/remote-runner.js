@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { wrapCmdBin } from '../win-spawn.js';
+import { withAgentEnv } from '../agent-env.js';
 
 // 封装 spawn 一次性命令：默认跑 `opencode run "<text>"`。
 export function createOpenCodeRunner({
@@ -18,7 +19,7 @@ export function createOpenCodeRunner({
     const { bin: runBin, args: runArgs } = wrapCmdBin(bin, argv);   // .cmd/.bat 在 Windows 上必须经 cmd.exe
     return new Promise((resolve) => {
       let child;
-      try { child = spawnFn(runBin, runArgs, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }); }
+      try { child = spawnFn(runBin, runArgs, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: withAgentEnv() }); }
       catch (e) { return resolve({ exitCode: -1, stdout: '', stderr: String(e && e.message || e), timedOut: false, durationMs: 0, spawnError: true }); }
       const out = []; const errBuf = [];
       let done = false;

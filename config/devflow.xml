@@ -13,6 +13,8 @@
     agents：每个 agent 可选配「续会话」与「用量采集」能力（按当前默认 agent 取用对应配置）：
     - resume="opencode"：启用内建 opencode 续会话适配器（发现 id 用 `<cmd> session list --format json`，
       续接用 `<cmd> --session <id>`）。改名的 opencode（如 cmd="nga"）加这一项即可续会话。
+    - resume="claude"：启用内建 Claude 适配器（claudecode/codeagent 等，续接用 `<cmd> --resume <id>`；
+      会话 id 从 ~/.claude/projects/<cwd转义>/<uuid>.jsonl 里取最接近创建时间的那个，无需额外配置）。
     - resumeDiscover="命令"：在该会话 cwd 下执行，stdout 去空白即 agent 会话 id；缺省仅 opencode 有内建发现。
     - resumeCmd="命令模板"：恢复时注入终端；含 {id} 用发现的 id 替换，不含则原样执行（如 xxx --continue）。
     - statsCmd="命令模板"：本机用量采集命令，{days} 替换为天数；缺省回退 <cmd> stats --days {days}。
@@ -24,9 +26,9 @@
   -->
   <agents default="nga">
     <agent id="opencode" name="OpenCode" cmd="opencode" statsCmd="opencode stats --days {days}" />
-    <agent id="claudecode" name="ClaudeCode" cmd="claudecode" />
+    <agent id="claudecode" name="ClaudeCode" cmd="claudecode" resume="claude" />
     <agent id="nga" name="nga" cmd="nga" resume="opencode" statsCmd="nga stats --days {days}" />
-    <agent id="codeagent" name="codeagent" cmd="codeagent" />
+    <agent id="codeagent" name="codeagent" cmd="codeagent" resume="claude" />
   </agents>
 
   <workflows>

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { wrapCmdBin } from '../win-spawn.js';
+import { AGENT_ENV } from '../agent-env.js';
 
 export function resolveCwd(task, projectRoot, fallback) {
   return task.cwd || projectRoot || fallback;
@@ -13,7 +14,7 @@ export function stripFrontmatter(s) {
 }
 
 export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null } = {}) {
-  const ocEnv = opencodeDataDir ? { XDG_DATA_HOME: opencodeDataDir } : undefined;
+  const ocEnv = { ...AGENT_ENV, ...(opencodeDataDir ? { XDG_DATA_HOME: opencodeDataDir } : {}) };
   if (task.type === 'shell') {
     if (process.platform === 'win32') return { bin: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-Command', task.command], cwd };
     return { bin: '/bin/sh', args: ['-c', task.command], cwd };
