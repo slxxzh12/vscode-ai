@@ -2,7 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath } from '../collaboration/agent-stats.js';
+import fs from 'node:fs';
+import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath, isClaudeFamily, collectClaudeStats } from '../collaboration/agent-stats.js';
+
+function claudeHome(linesByFile) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'df-claude-'));
+  const dir = path.join(home, '.claude', 'projects', 'D--proj-app');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [name, lines] of Object.entries(linesByFile)) {
+    fs.writeFileSync(path.join(dir, name), lines.join('\n'), 'utf8');
+  }
+  return home;
+}
 
 const SAMPLE = [
   '│Sessions                                             21 │',
@@ -39,6 +50,57 @@ test('collectAgentStats 命令不存在返回 error', async () => {
   const r = await collectAgentStats({ cmd: 'definitely-not-a-cmd-xyz', env: { PATH: '' } });
   assert.ok(r.error);
   assert.equal(r.agent, 'definitely-not-a-cmd-xyz');
+});
+
+test('isClaudeFamily：claudecode/codeagent 命中，其余不命中', () => {
+  assert.equal(isClaudeFamily('claudecode'), true);
+  assert.equal(isClaudeFamily('C:\\tools\\codeagent.cmd'), true);
+  assert.equal(isClaudeFamily('opencode'), false);
+  assert.equal(isClaudeFamily('nga'), false);
+});
+
+test('collectClaudeStats：解析 ~/.claude/projects/*.jsonl 的 sessions/messages/input/output', () => {
+  const home = claudeHome({
+    'sess1.jsonl': [
+      JSON.stringify({ type: 'user', sessionId: 'sess1', message: { role: 'user', content: 'hi' } }),
+      JSON.stringify({ type: 'assistant', sessionId: 'sess1', model: 'claude-sonnet', usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 5, cache_creation_input_tokens: 2 } }),
+      JSON.stringify({ type: 'tool_use', sessionId: 'sess1' }),
+      JSON.stringify({ type: 'assistant', sessionId: 'sess1', model: 'claude-sonnet', usage: { input_tokens: 30, output_tokens: 10 } }),
+    ],
+  });
+  const m = collectClaudeStats({ home, days: 60 });
+  assert.equal(m.sessions, 1, '每个 jsonl = 1 个 session');
+  assert.equal(m.messages, 4, '每行一条 message 事件');
+  assert.equal(m.input, 130);
+  assert.equal(m.output, 30);
+  assert.equal(m.cacheRead, 5);
+  assert.equal(m.cacheWrite, 2);
+  assert.deepEqual(m.byModel['claude-sonnet'], { input: 130, output: 30 });
+});
+
+test('collectAgentStats：claudecode 走本机日志解析，不启 CLI', async () => {
+  const home = claudeHome({
+    'a.jsonl': [JSON.stringify({ type: 'assistant', sessionId: 'a', usage: { input_tokens: 7, output_tokens: 3 } })],
+  });
+  let spawned = false;
+  const r = await collectAgentStats({ cmd: 'claudecode', home, execFileFn: () => { spawned = true; throw new Error('should not spawn'); } });
+  assert.equal(spawned, false);
+  assert.equal(r.agent, 'claudecode');
+  assert.equal(r.sessions, 1);
+  assert.equal(r.messages, 1);
+  assert.equal(r.input, 7);
+  assert.equal(r.output, 3);
+});
+
+test('probeAgentStats：claudecode 返回文件解析结果且 ok', async () => {
+  const home = claudeHome({
+    'a.jsonl': [JSON.stringify({ type: 'assistant', sessionId: 'a', usage: { input_tokens: 11, output_tokens: 4 } })],
+  });
+  const r = await probeAgentStats({ cmd: 'codeagent', home });
+  assert.equal(r.ok, true);
+  assert.equal(r.parsed.input, 11);
+  assert.equal(r.parsed.output, 4);
+  assert.match(r.cmdline, /jsonl/);
 });
 
 test('collectAgentStats：在用户主目录执行（新开 cmd 的默认目录）并注入 skip-safe-check', async () => {

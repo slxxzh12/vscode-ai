@@ -89,6 +89,65 @@ export function parseStatsCmd(template, days, { env = process.env, exists = fs.e
   return { bin: resolveAgentBin(tokens[0], { env, exists, appRoot }), args: tokens.slice(1) };
 }
 
+// —— Claude 系（claudecode / codeagent）：不走 CLI，直接解析本机会话日志 ——
+// 参考 claude 的统计方式：会话日志在 ~/.claude/projects/<cwd转义>/<uuid>.jsonl，每行一条消息事件，
+// 助手消息带 message.usage.{input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}。
+const CLAUDE_CMDS = new Set(['claudecode', 'codeagent']);
+
+export function isClaudeFamily(cmd) {
+  return CLAUDE_CMDS.has(baseName(cmd));
+}
+
+export function collectClaudeStats({ days = 60, home = os.homedir(), now = Date.now(), files = fs } = {}) {
+  const root = path.join(home, '.claude', 'projects');
+  const cutoff = days > 0 ? now - days * 24 * 3600 * 1000 : 0;
+  // 递归收集所有 *.jsonl（跳过子 agent 会话 agent-*）
+  const jsonl = [];
+  const walk = (dir, depth = 0) => {
+    if (depth > 6) return;
+    let entries;
+    try { entries = files.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p, depth + 1); continue; }
+      if (!e.isFile?.() || !e.name.endsWith('.jsonl')) continue;
+      if (e.name.includes('agent-')) continue;
+      jsonl.push(p);
+    }
+  };
+  walk(root);
+
+  const byModel = {};
+  let sessions = 0, messages = 0, input = 0, output = 0, cacheRead = 0, cacheWrite = 0;
+  for (const file of jsonl) {
+    let st;
+    try { st = files.statSync(file); } catch { continue; }
+    if (cutoff && Number(st.mtimeMs) < cutoff) continue;
+    sessions += 1;   // 每个 jsonl = 一个 session
+    let text;
+    try { text = files.readFileSync(file, 'utf8'); } catch { continue; }
+    for (const line of String(text).split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      let obj;
+      try { obj = JSON.parse(t); } catch { continue; }
+      messages += 1;   // 每行一条 message 事件（user/assistant/tool_use/tool_result）
+      if (obj.type !== 'assistant') continue;
+      const usage = obj.usage || (obj.message && obj.message.usage);
+      if (!usage) continue;
+      const i = Number(usage.input_tokens) || 0;
+      const o = Number(usage.output_tokens) || 0;
+      input += i; output += o;
+      cacheRead += Number(usage.cache_read_input_tokens) || 0;
+      cacheWrite += Number(usage.cache_creation_input_tokens) || 0;
+      const model = obj.model || (obj.message && obj.message.model) || 'unknown';
+      const m = byModel[model] || (byModel[model] = { input: 0, output: 0 });
+      m.input += i; m.output += o;
+    }
+  }
+  return { sessions, messages, input, output, cacheRead, cacheWrite, totalCost: null, byModel, days, collectedAt: now, source: 'claude-files' };
+}
+
 export function parseNum(raw) {
   if (raw == null) return null;
   const s = String(raw).replace(/[$,\s]/g, '');
@@ -122,7 +181,18 @@ export function parseStats(text) {
 export function probeAgentStats({
   cmd = 'opencode', statsCmd = '', days = 60, timeoutMs = 20000, env = process.env, execFileFn = execFile,
   cwd = os.homedir(),   // 在新开 cmd 的默认目录（用户主目录）执行
+  home = os.homedir(),
 } = {}) {
+  // Claude 系：直接解析本机会话日志，不启 CLI
+  if (isClaudeFamily(cmd) && !String(statsCmd || '').trim()) {
+    const m = collectClaudeStats({ days, home });
+    return Promise.resolve({
+      agent: cmd, days, cmdline: 'scan ~/.claude/projects/*/*.jsonl',
+      ok: true, error: '', code: null,
+      raw: `sessions=${m.sessions} messages=${m.messages} input=${m.input} output=${m.output}`,
+      stderr: '', parsed: m, bin: '', args: [], durationMs: 0, collectedAt: m.collectedAt,
+    });
+  }
   const spec = parseStatsCmd(statsCmd, days, { env })
     || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
   const { bin, args } = wrapCmdBin(spec.bin, spec.args);   // .cmd/.bat 在 Windows 上必须经 cmd.exe
@@ -148,7 +218,12 @@ export function collectAgentStats({
   cmd = 'opencode', statsCmd = '', days = 60, timeoutMs = 20000, env = process.env,
   attempts = 3, retryDelayMs = 800, execFileFn = execFile, sleepFn = sleep,
   cwd = os.homedir(),   // 在新开 cmd 的默认目录（用户主目录）执行
+  home = os.homedir(),
 } = {}) {
+  // Claude 系：直接解析本机会话日志（参考 claude 统计方式），不启 CLI、不闪窗
+  if (isClaudeFamily(cmd) && !String(statsCmd || '').trim()) {
+    return { agent: cmd, ...collectClaudeStats({ days, home }) };
+  }
   const spec = parseStatsCmd(statsCmd, days, { env })
     || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
   const { bin, args } = wrapCmdBin(spec.bin, spec.args);   // .cmd/.bat 在 Windows 上必须经 cmd.exe
