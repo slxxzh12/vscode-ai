@@ -19,14 +19,15 @@ async function setup() {
   return { h, A, B, group: r.group };
 }
 
-// 直接在 hub 侧造一条 dist 消息并广播（等价 Task 5 的 _broadcastDist 效果）
-function pushDist(A, groupId, meta) {
+// 群主侧造一条 dist 消息；成员进群拉取时 ingestDist（这里直接模拟成员的 ingest）
+function pushDist(A, B, groupId, meta) {
   const msg = {
     id: meta.__id || `d-${Math.random().toString(36).slice(2)}`, groupId, kind: 'dist', fromId: A.pub.machineId,
     text: 'dist', toId: null, ts: meta.__ts || Date.now(), seq: A.store.nextChatSeq(), meta,
   };
   A.store.addChatMessage(msg);
-  return A._broadcastChat(groupId, msg).then(() => msg);
+  B.ingestDist(msg);
+  return Promise.resolve(msg);
 }
 const meta = (over = {}) => ({
   target: 'all', type: 'skills', name: 'skills/a.zip', url: 'http://h:1/d', hash: 'h1', count: 1,
@@ -36,15 +37,15 @@ const meta = (over = {}) => ({
 test('技能包 → 1 条 skills 任务；工作流包 → 1 条 workflow 任务；混合 → 2 条', async () => {
   const { h, A, B, group } = await setup();
   try {
-    await pushDist(A, group.id, meta());
+    await pushDist(A, B, group.id, meta());
     await new Promise((r) => setTimeout(r, 30));
     assert.deepEqual(B.taskStore.list().map((t) => t.kind), ['skills']);
 
-    await pushDist(A, group.id, meta({ hash: 'h2', name: 'skills/b.zip', skills: [], workflow: [{ id: 'wf', label: 'W' }] }));
+    await pushDist(A, B, group.id, meta({ hash: 'h2', name: 'skills/b.zip', skills: [], workflow: [{ id: 'wf', label: 'W' }] }));
     await new Promise((r) => setTimeout(r, 30));
     assert.deepEqual(B.taskStore.list().map((t) => t.kind).sort(), ['skills', 'workflow']);
 
-    await pushDist(A, group.id, meta({ hash: 'h3', name: 'skills/c.zip', skills: ['x'], workflow: [{ id: 'wf', label: 'W' }] }));
+    await pushDist(A, B, group.id, meta({ hash: 'h3', name: 'skills/c.zip', skills: ['x'], workflow: [{ id: 'wf', label: 'W' }] }));
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(B.taskStore.list().length, 4, '混合包建 2 条');
     assert.equal(B.taskStore.list({ status: 'pending' }).length, 4);
@@ -54,17 +55,17 @@ test('技能包 → 1 条 skills 任务；工作流包 → 1 条 workflow 任务
 test('同 hash 重复通知不新增、不动状态；hash 变则新建', async () => {
   const { h, A, B, group } = await setup();
   try {
-    await pushDist(A, group.id, meta());
-    await pushDist(A, group.id, meta({ __id: 'd-2', name: 'skills/renamed.zip' }));
+    await pushDist(A, B, group.id, meta());
+    await pushDist(A, B, group.id, meta({ __id: 'd-2', name: 'skills/renamed.zip' }));
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(B.taskStore.list().length, 1, '同 hash 一行');
     const id = B.taskStore.list()[0].id;
     B.taskStore.setStatus(id, 'done');
-    await pushDist(A, group.id, meta({ __id: 'd-3' }));
+    await pushDist(A, B, group.id, meta({ __id: 'd-3' }));
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(B.taskStore.list()[0].status, 'done', '已完成的同 hash 通知不翻回');
 
-    await pushDist(A, group.id, meta({ __id: 'd-4', hash: 'h9', name: 'skills/new.zip' }));
+    await pushDist(A, B, group.id, meta({ __id: 'd-4', hash: 'h9', name: 'skills/new.zip' }));
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(B.taskStore.list().length, 2);
     assert.equal(B.taskStore.list({ status: 'pending' }).length, 1);

@@ -40,9 +40,23 @@ export function useCollab() {
     return r.messages;
   }
   async function sendChat(groupId: string, text: string, toId: string | null) {
-    const r = await post(`/api/collab/groups/${groupId}/chat`, { text, toId });
-    await chat(groupId);
-    return r;
+    // 先在界面展示用户消息（乐观），再把消息发给群主/master；master 落库后 refetch 校正
+    const meId = state.value?.identity?.machineId || '';
+    const temp: CollabChatMessage = {
+      id: `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      groupId, kind: 'text', fromId: meId, text, toId, meta: null, ts: Date.now(), seq: Number.MAX_SAFE_INTEGER,
+    };
+    const g = ensureChat(groupId);
+    g.messages.push(temp);
+    try {
+      const r = await post(`/api/collab/groups/${groupId}/chat`, { text, toId });
+      await chat(groupId);   // 拉回服务端记录（含本条），临时消息被替换
+      return r;
+    } catch (e) {
+      const i = g.messages.findIndex((m) => m.id === temp.id);
+      if (i >= 0) g.messages.splice(i, 1);
+      throw e;
+    }
   }
   async function sendCmd(groupId: string, text: string, toId: string) {
     return post(`/api/collab/groups/${groupId}/cmd`, { text, toId });
@@ -113,6 +127,17 @@ export function useCollab() {
         try { const j = await res.json(); msg = j.error || msg; } catch { /* keep */ }
         throw new Error(msg);
       }
+      return res.json();
+    },
+    async sendImage(groupId: string, fileName: string, mime: string, blob: Blob) {
+      if (blob.size > 8 * 1024 * 1024) throw new Error(t('collab.image.too_large'));
+      const res = await fetch(`/api/collab/groups/${groupId}/image?name=${encodeURIComponent(fileName)}&mime=${encodeURIComponent(mime)}`, { method: 'POST', body: blob });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep */ }
+        throw new Error(msg);
+      }
+      await chat(groupId);
       return res.json();
     },
     getTool: () => http<{

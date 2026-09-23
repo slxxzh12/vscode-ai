@@ -49,10 +49,11 @@ test('publishPackage 后广播 kind:dist 消息：meta 结构化 + 正文含类�
     fakePackage(A, { skills: ['demo'], workflow: ['wf1'], id: 'pkg-1' });
     const r = A.publishPackage('pkg-1');
     assert.equal(r.code, 'ok');
-    await new Promise((res) => setTimeout(res, 30));   // 等 CHAT_SEND 到达 B
+    // 不广播：成员进群时从群主拉取并 apply（等价进聊天时的拉取）
+    B.applyChatPull({ groupId: group.id, messages: A.store.listChatMessages(group.id) });
 
     const bmsgs = B.store.listChatMessages(group.id).filter((m) => m.kind === 'dist');
-    assert.equal(bmsgs.length, 1, 'B 收到 dist 消息');
+    assert.equal(bmsgs.length, 1, 'B 从群主拉到 dist 消息');
     const msg = bmsgs[0];
     assert.equal(msg.meta.target, 'all');
     assert.equal(msg.meta.type, 'mixed');

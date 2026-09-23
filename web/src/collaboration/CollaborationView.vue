@@ -60,7 +60,8 @@ async function rejectUpdate() {
 
 let unsubs: (() => void)[] = [];
 onMounted(() => {
-  collab.refresh().then(() => checkUpdates()).catch(() => {});
+  // 进协作即从群主拉取消息并据此形成任务（分发任务/升级）
+  collab.refresh().then(() => { void collab.pollTasks().catch(() => {}); return checkUpdates(); }).catch(() => {});
   unsubs = [
     props.terminal.on(CollabS2C.COLLAB_SYNCED, () => { collab.refresh().then(() => checkUpdates()).catch(() => {}); }),
     props.terminal.on(CollabS2C.COLLAB_INBOX, () => collab.refresh().catch(() => {})),

@@ -18,6 +18,14 @@ test('空文件初始化默认结构', () => {
   assert.deepEqual(s.data.groupSkills, []);
 });
 
+test('addChatMessage 幂等：同 id 重复送达不重复入库', () => {
+  const s = new CollabStore({ file: tmpFile() });
+  const m = { id: 'm1', groupId: 'g1', kind: 'text', fromId: 'a', text: 'hi', toId: null, ts: 1, seq: 1 };
+  s.addChatMessage(m);
+  s.addChatMessage({ ...m, seq: 2 });
+  assert.equal(s.data.chatMessages.filter((x) => x.id === 'm1').length, 1);
+});
+
 test('旧结构群组迁移：ownerId→hubId 并去掉 role', () => {
   const f = tmpFile();
   fs.writeFileSync(f, JSON.stringify({

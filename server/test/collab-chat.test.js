@@ -12,19 +12,48 @@ async function groupUp(nodes) {
   return r.group;
 }
 
-test('sendChat 双方落历史（seq 单调）', async () => {
+test('sendChat：成员发给群主，群主落库；群主发的由成员拉取', async () => {
   const h = await createPairHarness({ skipSkills: true });
   try {
     const [A, B] = h.nodes;
     const g = await groupUp([A, B]);
-    const r = await A.sendChat({ groupId: g.id, text: '大家好' });
+    // 成员 B 发消息 → 只发给群主 A，A 落库；B 本地留缓存；不广播
+    const r = await B.sendChat({ groupId: g.id, text: '大家好' });
     assert.equal(r.code, 'ok');
-    const bmsgs = B.store.listChatMessages(g.id);
-    assert.equal(bmsgs.length, 1);
-    assert.equal(bmsgs[0].text, '大家好');
-    assert.equal(bmsgs[0].fromId, A.pub.machineId);
     const amsgs = A.store.listChatMessages(g.id);
-    assert.equal(amsgs.length, 1);
+    assert.equal(amsgs.length, 1, '群主落库');
+    assert.equal(amsgs[0].text, '大家好');
+    assert.equal(amsgs[0].fromId, B.pub.machineId);
+    assert.equal(B.store.listChatMessages(g.id).length, 1, '成员本地缓存');
+    // 群主再发一条：成员进聊天时从群主拉取（含对方）+ 本地去重
+    await A.sendChat({ groupId: g.id, text: '收到' });
+    const pulled = await B.pullChatFrom(A.pub.machineId, { groupId: g.id });
+    assert.equal(pulled.code, 'ok');
+    B.applyChatPull({ groupId: g.id, messages: pulled.messages });
+    const bmsgs = B.store.listChatMessages(g.id);
+    assert.ok(bmsgs.some((m) => m.text === '收到'), '拉到群主的新消息');
+    assert.equal(bmsgs.filter((m) => m.id === amsgs[0].id).length, 1, '同 id 不重复');
+  } finally { await h.stop(); }
+});
+
+test('sendImage：成员发图 → 群主落库（含 base64 meta）；非法 mime/空图被拒', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const g = await groupUp([A, B]);
+    const png = Buffer.from('89504e470d0a1a0a', 'hex');
+    const r = await B.sendImage({ groupId: g.id, name: 'shot.png', mime: 'image/png', data: png });
+    assert.equal(r.code, 'ok');
+    const amsgs = A.store.listChatMessages(g.id);
+    assert.equal(amsgs.length, 1, '群主落库');
+    assert.equal(amsgs[0].kind, 'image');
+    assert.equal(amsgs[0].text, 'shot.png');
+    assert.equal(amsgs[0].meta.name, 'shot.png');
+    assert.equal(amsgs[0].meta.mime, 'image/png');
+    assert.equal(amsgs[0].meta.b64, png.toString('base64'));
+    assert.equal(B.store.listChatMessages(g.id).length, 1, '成员本地缓存');
+    assert.equal((await B.sendImage({ groupId: g.id, name: 'x', mime: 'text/plain', data: png })).code, 'bad-image');
+    assert.equal((await B.sendImage({ groupId: g.id, name: 'x', mime: 'image/png', data: Buffer.alloc(0) })).code, 'empty-image');
   } finally { await h.stop(); }
 });
 

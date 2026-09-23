@@ -7,6 +7,9 @@ import { serializeWorkflowsFragment } from '@devflow/shared/workflow-xml';
 
 // 成员从群主拉聊天时的单次上限（群主侧保留全量，按需分页拉取）
 const CHAT_PULL_LIMIT = 20000;
+// 群聊图片消息：白名单 + 大小上限（base64 内嵌 meta，故限制较小）
+const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 import { CollabStore } from './store.js';
 import { loadIdentity, toPublicProfile, detectHost } from './identity.js';
 import { signEnvelope, verifyEnvelope, signHash, verifyHash } from './sign.js';
@@ -1232,22 +1235,53 @@ export function _extendChat(engine) {
     if (!me) return { code: 'not-member', group: g, me: null };
     return { code: 'ok', group: g, me };
   };
+  // 不做广播：群主是唯一权威存储。
+  // - 本机是群主：消息已在本地落库，无需外发；
+  // - 本机是成员：只把消息发给群主；其它成员进群聊时从群主拉取。
   engine._broadcastChat = async function _broadcastChat(groupId, msg) {
+    if (this._isHub(groupId)) return;
     const g = this.store.findGroup(groupId);
     if (!g) return;
-    const env = this._sign(CollabPeer.CHAT_SEND, { msg });
-    for (const m of g.members) {
-      if (m.machineId === this.pub.machineId) continue;
-      await this._post(m.host, m.port, env);
-    }
+    const hub = g.members.find((m) => m.machineId === g.hubId) || this._knownProfile(g.hubId);
+    if (!hub) { this.log?.warn?.(`chat hub profile not found: ${g.hubId}`); return; }
+    const res = await this._post(hub.host, hub.port, this._sign(CollabPeer.CHAT_SEND, { msg }));
+    if (!res.ok) this.log?.warn?.(`chat to hub ${g.hubId} failed: ${res.error || ''}`);
   };
   engine.sendChat = async function sendChat({ groupId, text, toId = null }) {
     const r = this._requireMember(groupId);
     if (r.code !== 'ok') return { code: r.code };
     if (toId && !r.group.members.find((m) => m.machineId === toId)) return { code: 'no-target' };
     const msg = { id: crypto.randomUUID(), groupId, kind: 'text', fromId: this.pub.machineId, text, toId, ts: Date.now(), seq: this.store.nextChatSeq() };
-    this.store.addChatMessage(msg);
+    this.store.addChatMessage(msg);   // 本地先落地（成员侧作为缓存，群主侧即权威）
     if (this._isHub(groupId)) this._logMessage({ groupId, id: msg.id, src: msg.fromId, target: msg.toId, message: msg.text, ts: msg.ts });
+    this._emit('chat', { groupId, msg });
+    // 不做广播：成员只把消息发给群主；群主本机即权威存储
+    if (!this._isHub(groupId)) {
+      const hub = r.group.members.find((m) => m.machineId === r.group.hubId) || this._knownProfile(r.group.hubId);
+      if (hub) {
+        const res = await this._post(hub.host, hub.port, this._sign(CollabPeer.CHAT_SEND, { msg }));
+        if (!res.ok) this.log?.warn?.(`chat send to hub ${r.group.hubId} failed: ${res.error || ''}`);
+      } else {
+        this.log?.warn?.(`chat hub profile not found: ${r.group.hubId}`);
+      }
+    }
+    return { code: 'ok', msg };
+  };
+  engine.sendImage = async function sendImage({ groupId, name, mime, data }) {
+    const r = this._requireMember(groupId);
+    if (r.code !== 'ok') return { code: r.code };
+    if (!Buffer.isBuffer(data) || data.length === 0) return { code: 'empty-image' };
+    if (data.length > MAX_IMAGE_BYTES) return { code: 'too-large' };
+    const mimeType = String(mime || '').toLowerCase();
+    if (!IMAGE_MIME.has(mimeType)) return { code: 'bad-image' };
+    const safeName = path.basename(String(name || '')).trim() || 'image.png';
+    const msg = {
+      id: crypto.randomUUID(), groupId, kind: 'image', fromId: this.pub.machineId,
+      text: safeName, toId: null, ts: Date.now(), seq: this.store.nextChatSeq(),
+      meta: { name: safeName, mime: mimeType, size: data.length, b64: data.toString('base64') },
+    };
+    this.store.addChatMessage(msg);
+    if (this._isHub(groupId)) this._logMessage({ groupId, id: msg.id, src: msg.fromId, target: null, message: safeName, ts: msg.ts });
     this._broadcastChat(groupId, msg);
     this._emit('chat', { groupId, msg });
     return { code: 'ok', msg };

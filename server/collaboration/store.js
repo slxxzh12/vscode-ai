@@ -133,6 +133,11 @@ export class CollabStore {
   // ---- chat ----
   nextChatSeq() { this.data.chatSeq += 1; this.save(); return this.data.chatSeq; }
   addChatMessage(msg) {
+    // 幂等：同一条消息（同 id）重复送达时不再入库，避免重复显示
+    if (msg && msg.id) {
+      const dup = this.data.chatMessages.find((x) => x.id === msg.id);
+      if (dup) return dup;
+    }
     const seq = msg.seq ?? this.data.chatSeq + 1;
     if (msg.seq == null) { this.data.chatSeq = seq; }
     const m = { id: msg.id, groupId: msg.groupId, kind: msg.kind, fromId: msg.fromId,
