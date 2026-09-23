@@ -1,8 +1,10 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { wrapCmdBin } from '../win-spawn.js';
+import { withAgentEnv } from '../agent-env.js';
 
 const MULT = { K: 1e3, M: 1e6, B: 1e9, T: 1e12 };
 
@@ -118,14 +120,15 @@ export function parseStats(text) {
 // 诊断用探针：只跑一次统计命令，把「命令行 + 原始输出 + 解析结果 + 错误」原样返回。
 // 刻意不走重试、不落库，也不并入 collectAgentStats —— 以免 raw 混进上报体。
 export function probeAgentStats({
-  cmd = 'opencode', statsCmd = '', days = 7, timeoutMs = 20000, env = process.env, execFileFn = execFile,
+  cmd = 'opencode', statsCmd = '', days = 60, timeoutMs = 20000, env = process.env, execFileFn = execFile,
+  cwd = os.homedir(),   // 在新开 cmd 的默认目录（用户主目录）执行
 } = {}) {
   const spec = parseStatsCmd(statsCmd, days, { env })
     || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
   const { bin, args } = wrapCmdBin(spec.bin, spec.args);   // .cmd/.bat 在 Windows 上必须经 cmd.exe
   const startedAt = Date.now();
   return new Promise((resolve) => {
-    execFileFn(bin, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFileFn(bin, args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024, env: withAgentEnv(env) }, (err, stdout, stderr) => {
       const raw = String(stdout || '');
       resolve({
         agent: cmd, days, cmdline: [spec.bin, ...spec.args].join(' '), bin: spec.bin, args: spec.args,
@@ -142,15 +145,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 采集本机用量。命令来自 agent 配置的 statsCmd 模板（每个 agent 一套），未配置时回退 `<cmd> stats --days N`。
 // opencode stats 偶发（并发访问数据目录时）非零退出，故默认重试几次；命令不存在（ENOENT）重试无意义，直接返回 error。
 export function collectAgentStats({
-  cmd = 'opencode', statsCmd = '', days = 7, timeoutMs = 20000, env = process.env,
+  cmd = 'opencode', statsCmd = '', days = 60, timeoutMs = 20000, env = process.env,
   attempts = 3, retryDelayMs = 800, execFileFn = execFile, sleepFn = sleep,
+  cwd = os.homedir(),   // 在新开 cmd 的默认目录（用户主目录）执行
 } = {}) {
   const spec = parseStatsCmd(statsCmd, days, { env })
     || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
   const { bin, args } = wrapCmdBin(spec.bin, spec.args);   // .cmd/.bat 在 Windows 上必须经 cmd.exe
   const cmdline = [spec.bin, ...spec.args].join(' ');
   const runOnce = () => new Promise((resolve) => {
-    execFileFn(bin, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+    execFileFn(bin, args, { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024, env: withAgentEnv(env) }, (err, stdout) => {
       const raw = String(stdout || '');
       if (err && !raw) { resolve({ error: String((err && err.message) || err), code: err && err.code, raw, cmdline }); return; }
       resolve({ ...parseStats(raw), raw, cmdline, collectedAt: Date.now() });

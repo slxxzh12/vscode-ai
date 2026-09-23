@@ -43,11 +43,11 @@ test('nextDelay 落在 60–90 分钟闭区间内', () => {
 
 test('loadReportConfig 默认值 / saveReportConfig 落盘读回', () => {
   const file = tmpFile();
-  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 7, masterPublicKey: '' });
+  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 60, masterPublicKey: '' });
   saveReportConfig(file, { masterUrl: 'http://a:1', token: 'tk', days: 3 });
   assert.deepEqual(loadReportConfig(file), { masterUrl: 'http://a:1', token: 'tk', days: 3, masterPublicKey: '' });
   fs.writeFileSync(file, 'broken', 'utf8');
-  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 7, masterPublicKey: '' });
+  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 60, masterPublicKey: '' });
 });
 
 test('未配置 master 时：仍采集并本地落库自己那份，但不 POST', async () => {

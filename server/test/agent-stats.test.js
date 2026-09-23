@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
 import path from 'node:path';
 import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath } from '../collaboration/agent-stats.js';
 
@@ -40,6 +41,16 @@ test('collectAgentStats 命令不存在返回 error', async () => {
   assert.equal(r.agent, 'definitely-not-a-cmd-xyz');
 });
 
+test('collectAgentStats：在用户主目录执行（新开 cmd 的默认目录）并注入 skip-safe-check', async () => {
+  let seen = null;
+  await collectAgentStats({
+    cmd: 'opencode', env: { PATH: '' }, sleepFn: async () => {},
+    execFileFn: (bin, args, opts, cb) => { seen = opts; cb(null, SAMPLE, ''); },
+  });
+  assert.equal(seen.cwd, os.homedir());
+  assert.equal(seen.env.OPENCODE_SKIP_SAFE_CHECK, '1');
+});
+
 test('collectAgentStats：非零退出重试，成功即返回', async () => {
   let calls = 0;
   const r = await collectAgentStats({
@@ -68,11 +79,11 @@ test('collectAgentStats：配了 statsCmd 走模板，agent 仍记 cmd', async (
     cmd: 'claudecode', statsCmd: 'claudecode usage --days {days}', env: { PATH: '' }, sleepFn: async () => {},
     execFileFn: (bin, args, opts, cb) => { calls.push([bin, args]); cb(null, SAMPLE, ''); },
   });
-  assert.deepEqual(calls[0], ['claudecode', ['usage', '--days', '7']]);
+  assert.deepEqual(calls[0], ['claudecode', ['usage', '--days', '60']]);
   assert.equal(r.agent, 'claudecode');
   assert.equal(r.sessions, 21);
   assert.equal(r.raw, SAMPLE, '本地保留原文供采集信息弹窗');
-  assert.match(r.cmdline, /claudecode usage --days 7$/);
+  assert.match(r.cmdline, /claudecode usage --days 60$/);
 });
 
 test('collectAgentStats：Windows 上 .cmd 用 cmd.exe /d /s /c 包装（CVE-2024-27980）', { skip: process.platform !== 'win32' }, async () => {
@@ -82,7 +93,7 @@ test('collectAgentStats：Windows 上 .cmd 用 cmd.exe /d /s /c 包装（CVE-202
     execFileFn: (bin, args, opts, cb) => { calls.push([bin, args]); cb(null, SAMPLE, ''); },
   });
   assert.equal(calls[0][0], process.env.ComSpec || 'cmd.exe');
-  assert.deepEqual(calls[0][1], ['/d', '/s', '/c', 'C:/tools/nga.cmd', 'stats', '--days', '7']);
+  assert.deepEqual(calls[0][1], ['/d', '/s', '/c', 'C:/tools/nga.cmd', 'stats', '--days', '60']);
 });
 
 test('collectAgentStats：ENOENT 不重试，直接返回 error', async () => {

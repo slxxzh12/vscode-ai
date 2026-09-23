@@ -4,7 +4,7 @@ import path from 'node:path';
 
 export const MIN_INTERVAL_MS = 60 * 60 * 1000;   // 60 分钟
 export const MAX_INTERVAL_MS = 90 * 60 * 1000;   // 90 分钟
-const DEFAULT_CONFIG = { masterUrl: '', token: '', days: 7, masterPublicKey: '' };
+const DEFAULT_CONFIG = { masterUrl: '', token: '', days: 60, masterPublicKey: '' };
 
 // 解析 master 的访问链接：http://<host>:<port>/?access=<token>
 export function parseInviteLink(link) {
