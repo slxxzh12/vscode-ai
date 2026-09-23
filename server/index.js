@@ -346,6 +346,13 @@ function buildWorkspace({ paths, port }) {
   function isAgentSessionIdTaken(agentSessionId, exceptDevflowId) {
     return !!findLiveByAgentSessionId(agentSessionId, exceptDevflowId);
   }
+  // 账本缺 agentSessionId 时现场发现一次：启动重建与左侧点击恢复共用，确保续会话命令带上 --session <id>
+  async function discoverForRecord(rec) {
+    const agent = (loadDevflowConfig(configFile).agents.list || []).find((a) => a.id === rec.agentId) || null;
+    if (!agent) return null;
+    const exclude = claimedAgentSessionIds(sessionLedger.read().sessions, rec.id);
+    return await discoverAgentSessionId({ agent, cwd: rec.cwd, since: rec.createdAt, exclude });
+  }
   async function restoreSessionById(id, { name } = {}) {
     const live = sessionManager.get(id);
     if (live && live.state === 'running') return { ok: true, session: live, redirected: false };
@@ -362,7 +369,7 @@ function buildWorkspace({ paths, port }) {
     try {
       const { session } = await restoreRecord({
         ledger: sessionLedger, sessionManager, agents: agentList(), logger: log, rec,
-        isAgentSessionIdTaken,
+        isAgentSessionIdTaken, discover: discoverForRecord,
       });
       return { ok: true, session, redirected: false };
     } catch (e) {
@@ -507,7 +514,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, navicatMount };
+  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount };
 }
 
 // ---- 工作区（端口档案）----
@@ -528,12 +535,7 @@ function initWorkspace(paths, port) {
     agents: loadDevflowConfig(configFile).agents.list || [],
     logger: log,
     // 账本缺 agentSessionId 时现场补发现：尽量续回原对话，而不是重开新对话
-    discover: async (rec) => {
-      const agent = (loadDevflowConfig(configFile).agents.list || []).find((a) => a.id === rec.agentId) || null;
-      if (!agent) return null;
-      const exclude = claimedAgentSessionIds(ws.sessionLedger.read().sessions, rec.id);
-      return await discoverAgentSessionId({ agent, cwd: rec.cwd, since: rec.createdAt, exclude });
-    },
+    discover: (rec) => ws.discoverForRecord(rec),
   }).then((r) => {
     if (r.restored || r.skipped.length) log.info(`session restore: restored=${r.restored} skipped=${r.skipped.length}`);
   }).catch((e) => log.warn('session restore failed', (e && e.message) || e));
