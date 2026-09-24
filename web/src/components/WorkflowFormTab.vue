@@ -9,7 +9,7 @@ import {
   type Workflow, type WorkflowStage, type ModelIssue, type GroupBand,
 } from '../workflowModel';
 
-const props = defineProps<{ model: Workflow[] }>();
+const props = defineProps<{ model: Workflow[]; activeId?: string }>();
 const emit = defineEmits<{ (e: 'update:model', m: Workflow[]): void }>();
 
 type Drag =
@@ -19,6 +19,10 @@ type Drag =
 
 const drag = ref<Drag | null>(null);
 const report = computed(() => validateModel(props.model));
+// 展示行：未指定 activeId 时展示全部；指定则只展示该工作流（保留原模型下标供增删改回写）
+const rows = computed(() => props.model
+  .map((w, wi) => ({ w, wi }))
+  .filter(({ w }) => !props.activeId || w.id === props.activeId));
 const errAt = computed(() => {
   const map = new Map<string, ModelIssue>();
   for (const e of report.value.errors) map.set(e.path, e);
@@ -135,54 +139,54 @@ function dropPrompt(wi: number, si: number, pi: number) {
     </div>
     <div v-else class="okbar">{{ $t('wfe.valid') }}</div>
 
-    <div v-for="(w, wi) in model" :key="w.id" class="wcard"
-      :class="{ dragging: drag?.kind === 'workflow' && drag.index === wi }"
-      @dragover.prevent @drop="dropWorkflow(wi)">
+    <div v-for="row in rows" :key="row.w.id" class="wcard"
+      :class="{ dragging: drag?.kind === 'workflow' && drag.index === row.wi }"
+      @dragover.prevent @drop="dropWorkflow(row.wi)">
       <div class="wrow">
         <span class="handle" draggable="true" :title="$t('wfe.drag_hint')"
-          @dragstart="onDragStart($event, { kind: 'workflow', index: wi })" @dragend="onDragEnd">⋮⋮</span>
-        <input class="in wlabel" :value="w.label" :placeholder="$t('wfe.workflow_label')" @input="setWorkflowLabel(wi, val($event))" />
-        <input class="in id" :value="w.id" :placeholder="$t('wfe.id_label')" @input="setWorkflowId(wi, val($event))" />
-        <button class="mini" @click="copyWorkflow(wi)">{{ $t('wfe.duplicate') }}</button>
-        <button class="mini danger" @click="removeWorkflow(wi)">{{ $t('wfe.del') }}</button>
+          @dragstart="onDragStart($event, { kind: 'workflow', index: row.wi })" @dragend="onDragEnd">⋮⋮</span>
+        <input class="in wlabel" :value="row.w.label" :placeholder="$t('wfe.workflow_label')" @input="setWorkflowLabel(row.wi, val($event))" />
+        <input class="in id" :value="row.w.id" :placeholder="$t('wfe.id_label')" @input="setWorkflowId(row.wi, val($event))" />
+        <button class="mini" @click="copyWorkflow(row.wi)">{{ $t('wfe.duplicate') }}</button>
+        <button class="mini danger" @click="removeWorkflow(row.wi)">{{ $t('wfe.del') }}</button>
       </div>
-      <div v-if="errAt.get(wfPath(wi))" class="ln err">{{ issueText(errAt.get(wfPath(wi))) }}</div>
-      <div v-else-if="warnAt.get(wfPath(wi))" class="ln warn">{{ issueText(warnAt.get(wfPath(wi))) }}</div>
+      <div v-if="errAt.get(wfPath(row.wi))" class="ln err">{{ issueText(errAt.get(wfPath(row.wi))) }}</div>
+      <div v-else-if="warnAt.get(wfPath(row.wi))" class="ln warn">{{ issueText(warnAt.get(wfPath(row.wi))) }}</div>
 
-      <div v-for="(band, bi) in groupBands(w.stages)" :key="bi" class="band"
-        @dragover.prevent @drop="dropOnBand(wi, band)">
+      <div v-for="(band, bi) in groupBands(row.w.stages)" :key="bi" class="band"
+        @dragover.prevent @drop="dropOnBand(row.wi, band)">
         <div class="bhead">
           <span class="bname" :class="{ unnamed: !band.name }" :title="$t('wfe.group_rename_tip')"
-            @dblclick="promptBandRename(wi, band)">
+            @dblclick="promptBandRename(row.wi, band)">
             {{ band.name || $t('wfe.group_unnamed') }}
           </span>
-          <button class="mini add" @click="addStage(wi, band.name)">{{ $t('wfe.add_stage') }}</button>
+          <button class="mini add" @click="addStage(row.wi, band.name)">{{ $t('wfe.add_stage') }}</button>
         </div>
         <div v-for="(s, sInBand) in band.stages" :key="s.id" class="scard"
-          :class="{ dragging: drag?.kind === 'stage' && drag.wfIndex === wi && drag.index === band.startIndex + sInBand }"
-          @dragover.prevent @drop.stop="dropOnStage(wi, band.startIndex + sInBand)">
+          :class="{ dragging: drag?.kind === 'stage' && drag.wfIndex === row.wi && drag.index === band.startIndex + sInBand }"
+          @dragover.prevent @drop.stop="dropOnStage(row.wi, band.startIndex + sInBand)">
           <div class="srow">
             <span class="handle" draggable="true" :title="$t('wfe.drag_hint')"
-              @dragstart="onDragStart($event, { kind: 'stage', wfIndex: wi, index: band.startIndex + sInBand })" @dragend="onDragEnd">⋮⋮</span>
-            <input class="in" :value="s.label" :placeholder="$t('wfe.stage_label')" @input="setStage(wi, band.startIndex + sInBand, { label: val($event) })" />
-            <button class="mini" @click="copyStage(wi, band.startIndex + sInBand)">{{ $t('wfe.duplicate') }}</button>
-            <button class="mini danger" @click="removeStage(wi, band.startIndex + sInBand)">{{ $t('wfe.del') }}</button>
+              @dragstart="onDragStart($event, { kind: 'stage', wfIndex: row.wi, index: band.startIndex + sInBand })" @dragend="onDragEnd">⋮⋮</span>
+            <input class="in" :value="s.label" :placeholder="$t('wfe.stage_label')" @input="setStage(row.wi, band.startIndex + sInBand, { label: val($event) })" />
+            <button class="mini" @click="copyStage(row.wi, band.startIndex + sInBand)">{{ $t('wfe.duplicate') }}</button>
+            <button class="mini danger" @click="removeStage(row.wi, band.startIndex + sInBand)">{{ $t('wfe.del') }}</button>
           </div>
-          <div v-if="errAt.get(stPath(wi, band.startIndex + sInBand))" class="ln err">{{ issueText(errAt.get(stPath(wi, band.startIndex + sInBand))) }}</div>
-          <div v-else-if="warnAt.get(stPath(wi, band.startIndex + sInBand))" class="ln warn">{{ issueText(warnAt.get(stPath(wi, band.startIndex + sInBand))) }}</div>
+          <div v-if="errAt.get(stPath(row.wi, band.startIndex + sInBand))" class="ln err">{{ issueText(errAt.get(stPath(row.wi, band.startIndex + sInBand))) }}</div>
+          <div v-else-if="warnAt.get(stPath(row.wi, band.startIndex + sInBand))" class="ln warn">{{ issueText(warnAt.get(stPath(row.wi, band.startIndex + sInBand))) }}</div>
           <div v-for="(p, pi) in s.prompts" :key="pi" class="prow"
-            @dragover.prevent @drop.stop="dropPrompt(wi, band.startIndex + sInBand, pi)">
+            @dragover.prevent @drop.stop="dropPrompt(row.wi, band.startIndex + sInBand, pi)">
             <span class="handle" draggable="true" :title="$t('wfe.drag_hint')"
-              @dragstart="onDragStart($event, { kind: 'prompt', wfIndex: wi, stageIndex: band.startIndex + sInBand, index: pi })" @dragend="onDragEnd">⋮</span>
+              @dragstart="onDragStart($event, { kind: 'prompt', wfIndex: row.wi, stageIndex: band.startIndex + sInBand, index: pi })" @dragend="onDragEnd">⋮</span>
             <span v-if="p.trim()" class="pabbr" :title="p">{{ promptAbbr(p) }}</span>
-            <CodeEditor class="ta" :model-value="p" :placeholder="$t('wfe.prompt')" @change="setPrompt(wi, band.startIndex + sInBand, pi, $event)" />
-            <button class="mini danger" @click="removePrompt(wi, band.startIndex + sInBand, pi)">×</button>
+            <CodeEditor class="ta" :model-value="p" :placeholder="$t('wfe.prompt')" @change="setPrompt(row.wi, band.startIndex + sInBand, pi, $event)" />
+            <button class="mini danger" @click="removePrompt(row.wi, band.startIndex + sInBand, pi)">×</button>
           </div>
-          <button class="mini add" @click="addPrompt(wi, band.startIndex + sInBand)">{{ $t('wfe.add_prompt') }}</button>
+          <button class="mini add" @click="addPrompt(row.wi, band.startIndex + sInBand)">{{ $t('wfe.add_prompt') }}</button>
         </div>
       </div>
     </div>
-    <button class="mini add big" @click="addWorkflow">{{ $t('wfe.add_workflow') }}</button>
+    <button v-if="!activeId" class="mini add big" @click="addWorkflow">{{ $t('wfe.add_workflow') }}</button>
   </div>
 </template>
 

@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue';
-import { newWorkflow, newStage, type Workflow } from '../workflowModel';
+import type { Workflow } from '../workflowModel';
 import { t } from '../i18n';
 import { appendPromptToWorkflow, collectToMyWorkflow, MY_WF_ID, MY_STAGE_ID } from './promptCollect';
 
@@ -54,15 +54,6 @@ export function usePromptCollect(): {
   setCurrent(workflowId: string, stageId: string): void;
   loadWorkflows(): Promise<void>;
   collect(text: string, target?: CollectTarget): Promise<CollectStatus>;
-  addWorkflow(): Promise<boolean>;
-  removeWorkflow(wfId: string): Promise<boolean>;
-  renameWorkflow(wfId: string, label: string): Promise<boolean>;
-  addStage(wfId: string): Promise<boolean>;
-  removeStage(wfId: string, stageId: string): Promise<boolean>;
-  renameStage(wfId: string, stageId: string, label: string): Promise<boolean>;
-  addPrompt(wfId: string, stageId: string): Promise<boolean>;
-  removePrompt(wfId: string, stageId: string, index: number): Promise<boolean>;
-  setPrompt(wfId: string, stageId: string, index: number, text: string): Promise<boolean>;
 } {
   function setCurrent(workflowId: string, stageId: string) {
     current.value = { workflowId, stageId };
@@ -109,84 +100,7 @@ export function usePromptCollect(): {
     writeTarget(tgt);
     return 'ok';
   }
-  async function addWorkflow(): Promise<boolean> {
-    await loadWorkflows();
-    return persist([...workflows.value, newWorkflow(t('pc.new_workflow'))]);
-  }
-  async function removeWorkflow(wfId: string): Promise<boolean> {
-    await loadWorkflows();
-    if (!workflows.value.some((w) => w.id === wfId)) return false;
-    return persist(workflows.value.filter((w) => w.id !== wfId));
-  }
-  async function renameWorkflow(wfId: string, label: string): Promise<boolean> {
-    await loadWorkflows();
-    if (!workflows.value.some((w) => w.id === wfId)) return false;
-    return persist(workflows.value.map((w) => (w.id === wfId ? { ...w, label } : w)));
-  }
-  async function addStage(wfId: string): Promise<boolean> {
-    await loadWorkflows();
-    const wi = workflows.value.findIndex((w) => w.id === wfId);
-    if (wi < 0) return false;
-    const next = workflows.value.slice();
-    next[wi] = { ...next[wi], stages: [...(next[wi].stages || []), newStage(t('pc.new_stage'))] };
-    return persist(next);
-  }
-  async function removeStage(wfId: string, stageId: string): Promise<boolean> {
-    await loadWorkflows();
-    const w = workflows.value.find((x) => x.id === wfId);
-    if (!w || !(w.stages || []).some((s) => s.id === stageId)) return false;
-    const next = workflows.value.map((x) => (x.id === wfId
-      ? { ...x, stages: (x.stages || []).filter((s) => s.id !== stageId) }
-      : x));
-    return persist(next);
-  }
-  async function renameStage(wfId: string, stageId: string, label: string): Promise<boolean> {
-    await loadWorkflows();
-    const w = workflows.value.find((x) => x.id === wfId);
-    if (!w || !(w.stages || []).some((s) => s.id === stageId)) return false;
-    const next = workflows.value.map((x) => (x.id === wfId
-      ? { ...x, stages: (x.stages || []).map((s) => (s.id === stageId ? { ...s, label } : s)) }
-      : x));
-    return persist(next);
-  }
-  async function addPrompt(wfId: string, stageId: string): Promise<boolean> {
-    await loadWorkflows();
-    const w = workflows.value.find((x) => x.id === wfId);
-    if (!w) return false;
-    const si = (w.stages || []).findIndex((s) => s.id === stageId);
-    if (si < 0) return false;
-    const next = workflows.value.map((x) => (x.id === wfId
-      ? { ...x, stages: (x.stages || []).map((s, i) => (i === si ? { ...s, prompts: [...(s.prompts || []), ''] } : s)) }
-      : x));
-    return persist(next);
-  }
-  async function removePrompt(wfId: string, stageId: string, index: number): Promise<boolean> {
-    await loadWorkflows();
-    const w = workflows.value.find((x) => x.id === wfId);
-    if (!w) return false;
-    const si = (w.stages || []).findIndex((s) => s.id === stageId);
-    if (si < 0) return false;
-    const prompts = (w.stages || [])[si].prompts || [];
-    if (index < 0 || index >= prompts.length) return false;
-    const next = workflows.value.map((x) => (x.id === wfId
-      ? { ...x, stages: (x.stages || []).map((s, i) => (i === si ? { ...s, prompts: prompts.filter((_, pi) => pi !== index) } : s)) }
-      : x));
-    return persist(next);
-  }
-  async function setPrompt(wfId: string, stageId: string, index: number, text: string): Promise<boolean> {
-    await loadWorkflows();
-    const w = workflows.value.find((x) => x.id === wfId);
-    if (!w) return false;
-    const si = (w.stages || []).findIndex((s) => s.id === stageId);
-    if (si < 0) return false;
-    const prompts = (w.stages || [])[si].prompts || [];
-    if (index < 0 || index >= prompts.length) return false;
-    const next = workflows.value.map((x) => (x.id === wfId
-      ? { ...x, stages: (x.stages || []).map((s, i) => (i === si ? { ...s, prompts: prompts.map((p, pi) => (pi === index ? text : p)) } : s)) }
-      : x));
-    return persist(next);
-  }
-  return { workflows, current, lastTarget, setCurrent, loadWorkflows, collect, addWorkflow, removeWorkflow, renameWorkflow, addStage, removeStage, renameStage, addPrompt, removePrompt, setPrompt };
+  return { workflows, current, lastTarget, setCurrent, loadWorkflows, collect };
 }
 
 // 仅供测试重置模块级状态；运行时代码不要调用。

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { t } from '../i18n';
-import { sanitizeModel, validateModel, type Workflow } from '../workflowModel';
+import { sanitizeModel, validateModel, newWorkflow, type Workflow } from '../workflowModel';
 import { serializeWorkflow, parseWorkflowsXml, sortWorkflows } from '@devflow/shared/workflow-xml';
 import WorkflowFormTab from './WorkflowFormTab.vue';
 import WorkflowXmlTab from './WorkflowXmlTab.vue';
@@ -66,6 +66,17 @@ function applyWorkflow(wf: Workflow) {
   if (i >= 0) next[i] = wf; else next.push(wf);
   applyModel(sortWorkflows(next));
   currentId.value = wf.id;
+}
+
+// 左导航：新增工作流 / 删除整个工作流（选中态随增删保持有效）
+function navAddWorkflow() {
+  const wf = newWorkflow(t('wfe.new_workflow'));
+  applyModel([...model.value, wf]);
+  currentId.value = wf.id;
+}
+function navRemoveWorkflow(id: string) {
+  if (!window.confirm(t('wfe.del_confirm'))) return;
+  applyModel(model.value.filter((w) => w.id !== id));
 }
 
 const history = ref<string[]>([]);
@@ -181,18 +192,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
     <div class="webox">
       <header class="weh">
         <span class="wtitle">{{ $t('wfe.title') }}</span>
-        <select v-if="model.length" v-model="currentId" class="wsel" :title="$t('wfe.current_workflow')">
-          <option v-for="w in model" :key="w.id" :value="w.id">{{ w.label }}{{ w.priority ? ' · P' + w.priority : '' }}</option>
-        </select>
         <nav class="tabs">
           <button v-for="k in tabs" :key="k" class="tab" :class="{ on: tab === k }" @click="tab = k">{{ $t('wfe.tab.' + k) }}</button>
         </nav>
         <button class="wex" @click="close">×</button>
       </header>
       <div class="web">
-        <WorkflowFormTab v-if="tab === 'form'" :model="model" @update:model="applyModel" />
-        <WorkflowXmlTab v-else-if="tab === 'xml'" :workflow="current" @update:workflow="applyWorkflow" />
-        <WorkflowPreviewTab v-else :model="model" />
+        <aside class="wenav">
+          <div class="wnhead">
+            <span class="wnlabel">{{ $t('pc.workflow') }}</span>
+            <button class="wnadd" :title="$t('wfe.add_workflow')" @click="navAddWorkflow">＋</button>
+          </div>
+          <div class="wnlist">
+            <button v-for="w in model" :key="w.id" class="wnitem" :class="{ on: w.id === currentId }" :title="w.id" @click="currentId = w.id">
+              <span class="wnname">{{ w.label || w.id }}</span>
+              <span class="wndel" :title="$t('wfe.del')" @click.stop="navRemoveWorkflow(w.id)">×</span>
+            </button>
+            <div v-if="model.length === 0" class="wnempty">{{ $t('wfe.preview.empty') }}</div>
+          </div>
+        </aside>
+        <div class="wemain">
+          <WorkflowFormTab v-if="tab === 'form'" :model="model" :active-id="currentId" @update:model="applyModel" />
+          <WorkflowXmlTab v-else-if="tab === 'xml'" :workflow="current" @update:workflow="applyWorkflow" />
+          <WorkflowPreviewTab v-else :model="model" />
+        </div>
       </div>
       <div class="wesched">
         <label class="wechk"><input type="checkbox" v-model="schedOn" />{{ $t('wfe.sched.enable') }}</label>
@@ -239,12 +262,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 .webox { width: 94vw; height: 90vh; max-width: 1600px; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.45); display: flex; flex-direction: column; overflow: hidden; }
 .weh { display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: var(--bg4); }
 .wtitle { font-weight: 700; }
-.wsel { background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; font-size: 12px; font-family: inherit; max-width: 260px; }
 .tabs { display: flex; gap: 4px; margin-left: auto; }
 .tab { background: none; border: 1px solid transparent; color: var(--tx3); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .tab.on { background: var(--bg1); border-color: var(--bd); color: var(--tx1); }
 .wex { background: none; border: none; color: var(--tx3); font-size: 18px; cursor: pointer; }
-.web { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 14px; }
+.web { flex: 1; min-height: 0; display: flex; padding: 12px 14px; gap: 12px; }
+.wenav { flex: none; width: 200px; display: flex; flex-direction: column; border: 1px solid var(--bd); border-radius: 6px; overflow: hidden; background: var(--bg2); }
+.wnhead { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid var(--bd2); }
+.wnlabel { font-size: 11px; text-transform: uppercase; color: var(--ac2); }
+.wnadd { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; width: 22px; height: 22px; line-height: 1; cursor: pointer; font-size: 14px; }
+.wnadd:hover { border-color: var(--ac2); color: var(--ac2); }
+.wnlist { flex: 1; min-height: 0; overflow-y: auto; padding: 4px; }
+.wnitem { display: flex; align-items: center; gap: 4px; width: 100%; background: none; border: 1px solid transparent; border-radius: 4px; color: var(--tx1); padding: 5px 6px; cursor: pointer; font-size: 12px; font-family: inherit; text-align: left; }
+.wnitem:hover { background: var(--bg3); }
+.wnitem.on { color: var(--ac2); border-color: var(--ac2); }
+.wnname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wndel { flex: none; color: var(--tx5); font-size: 14px; line-height: 1; opacity: 0; }
+.wnitem:hover .wndel { opacity: 1; }
+.wndel:hover { color: var(--err); }
+.wnempty { color: var(--tx6); font-size: 12px; padding: 12px 6px; }
+.wemain { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
 .wef { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--bd2); }
 .wemsg { flex: 1; min-width: 0; color: var(--tx3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hidden { display: none; }

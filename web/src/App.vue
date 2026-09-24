@@ -193,7 +193,7 @@ const collabTab = ref<'group' | 'tasks'>('group');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
 const RAILS = ['explorer', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
-const SIDE_TABS = ['messages', 'files', 'tree', 'prompts'];
+const SIDE_TABS = ['messages', 'files', 'tree'];
 function parseHashSegs(): string[] {
   try { return decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/').filter(Boolean); }
   catch { return []; }
