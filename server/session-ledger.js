@@ -40,11 +40,16 @@ export function normalizeLedger(input) {
   return { sessions: out.slice(0, MAX_SESSIONS) };
 }
 
-export function createSessionLedger({ file = null, logsDir = null, logger = console } = {}) {
+export function createSessionLedger({ file = null, logsDir = null, logDirFor = null, logger = console } = {}) {
   const store = createJsonStore({ file, logger, normalize: normalizeLedger, defaults: () => ({ sessions: [] }) });
   const buffers = new Map();
   const dirty = new Set();
-  const logFile = (id) => (logsDir ? path.join(logsDir, `${id}.log`) : null);
+  const logFile = (id) => {
+    if (!logsDir && !logDirFor) return null;
+    if (!logDirFor) return path.join(logsDir, `${id}.log`);
+    const session = store.read().sessions.find((s) => s.id === id);
+    return path.join(logDirFor(session?.projectId || ''), `${id}.log`);
+  };
 
   function appendLog(id, chunk) {
     if (!id || typeof chunk !== 'string' || !chunk) return;
@@ -92,5 +97,23 @@ export function createSessionLedger({ file = null, logsDir = null, logger = cons
     const f = logFile(id);
     if (f) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } }
   }
-  return { read: store.read, upsert, remove, close, appendLog, flushLog, flushAll, readLog };
+  // 一次性把老 <logsDir>/<id>.log 迁到按项目分目录的位置；幂等（无日志/无 logDirFor 时不动作）
+  function migrateLogs() {
+    if (!logsDir || !logDirFor || !fs.existsSync(logsDir)) return;
+    let moved = 0;
+    for (const f of fs.readdirSync(logsDir)) {
+      if (!f.endsWith('.log')) continue;
+      const id = f.slice(0, -4);
+      const session = store.read().sessions.find((s) => s.id === id);
+      const target = path.join(logDirFor(session?.projectId || ''), f);
+      if (path.resolve(target) === path.resolve(path.join(logsDir, f))) continue;
+      try {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.renameSync(path.join(logsDir, f), target);
+        moved += 1;
+      } catch (e) { logger?.warn?.('session log migrate failed', f, (e && e.message) || e); }
+    }
+    if (moved) logger?.info?.(`session logs migrated to per-project dirs: ${moved}`);
+  }
+  return { read: store.read, upsert, remove, close, appendLog, flushLog, flushAll, readLog, migrateLogs };
 }
