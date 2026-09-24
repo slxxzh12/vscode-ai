@@ -29,7 +29,7 @@ test('老 camelCase usage 表自动迁到 snake_case 结构，数据不丢', () 
   const rows = store.query({});
   assert.equal(rows.length, 1);
   assert.deepEqual(rows[0], {
-    date: '2026-09-10', memberId: 'E1', agent: 'opencode',
+    date: '2026-09-10', memberId: 'E1', agent: 'opencode', source: 'auto',
     sessions: 1, messages: 2, input: 3, output: 4, days: 1, cost: 0.5, cacheRead: 6, cacheWrite: 7, receivedAt: 111,
   });
   assert.ok(!tables(store.db).includes('usage_legacy'), '临时表应删掉');

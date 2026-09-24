@@ -3,16 +3,20 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 const METRICS = ['sessions', 'messages', 'input', 'output', 'days', 'cost', 'cacheRead', 'cacheWrite'];
-const ALL = ['date', 'memberId', 'agent', ...METRICS, 'receivedAt'];
+const ALL = ['date', 'memberId', 'agent', 'source', ...METRICS, 'receivedAt'];
 
 // 列名：JS 侧 camelCase（API/前端契约不变），SQL 侧 snake_case
 const COL = {
-  date: 'date', memberId: 'member_id', agent: 'agent',
+  date: 'date', memberId: 'member_id', agent: 'agent', source: 'source',
   sessions: 'sessions', messages: 'messages', input: 'input', output: 'output', days: 'days',
   cost: 'cost', cacheRead: 'cache_read', cacheWrite: 'cache_write', receivedAt: 'received_at',
 };
 const COLS = ALL.map((k) => COL[k]);
-const UPDATES = [...METRICS, 'receivedAt'].map((k) => `${COL[k]}=excluded.${COL[k]}`).join(', ');
+const UPDATES = ['source', ...METRICS, 'receivedAt'].map((k) => `${COL[k]}=excluded.${COL[k]}`).join(', ');
+
+// 采集来源：'auto'（命令采集）| 'image'（图片识别采集）
+export const SOURCE_AUTO = 'auto';
+export const SOURCE_IMAGE = 'image';
 
 // 「一台机器一天一条」的合计行用该 agent 哨兵（原 peer_daily 的行）
 export const AGENT_TOTAL = '*';
@@ -38,7 +42,7 @@ function migratePeerDaily(db, insert, logger) {
   const rows = db.prepare('SELECT * FROM peer_daily').all();
   for (const r of rows) {
     insert.run(
-      r.day, r.machine_id, AGENT_TOTAL,
+      r.day, r.machine_id, AGENT_TOTAL, SOURCE_AUTO,
       r.sessions ?? null, r.messages ?? null, r.input ?? null, r.output ?? null, r.days ?? null,
       r.cost ?? null, r.cache_read ?? null, r.cache_write ?? null, r.at ?? null,
     );
@@ -55,6 +59,7 @@ export function createUsageStore({ file, logger = console } = {}) {
     member_id TEXT NOT NULL,
     date TEXT NOT NULL,
     agent TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'auto',
     sessions INTEGER,
     messages INTEGER,
     input INTEGER,
@@ -66,6 +71,10 @@ export function createUsageStore({ file, logger = console } = {}) {
     received_at INTEGER,
     PRIMARY KEY (member_id, date, agent)
   )`);
+  // 老库补 source 列（图片识别采集来源标记）
+  if (!db.prepare('PRAGMA table_info(usage)').all().some((c) => c.name === 'source')) {
+    db.exec(`ALTER TABLE usage ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'`);
+  }
   const insert = db.prepare(
     `INSERT INTO usage (${COLS.join(',')}) VALUES (${COLS.map(() => '?').join(',')})
      ON CONFLICT(member_id,date,agent) DO UPDATE SET ${UPDATES}`,
@@ -75,7 +84,7 @@ export function createUsageStore({ file, logger = console } = {}) {
     const legacy = db.prepare('SELECT * FROM usage_legacy').all();
     for (const r of legacy) {
       insert.run(
-        r.date, r.memberId, r.agent || '',
+        r.date, r.memberId, r.agent || '', SOURCE_AUTO,
         r.sessions ?? null, r.messages ?? null, r.input ?? null, r.output ?? null, r.days ?? null,
         r.cost ?? null, r.cacheRead ?? null, r.cacheWrite ?? null, r.receivedAt ?? null,
       );
@@ -86,7 +95,7 @@ export function createUsageStore({ file, logger = console } = {}) {
   migratePeerDaily(db, insert, logger);
 
   const put = (r) => insert.run(
-    r.date, r.memberId, r.agent,
+    r.date, r.memberId, r.agent, r.source ?? SOURCE_AUTO,
     r.sessions ?? null, r.messages ?? null, r.input ?? null, r.output ?? null, r.days ?? null,
     r.cost ?? null, r.cacheRead ?? null, r.cacheWrite ?? null, r.receivedAt ?? null,
   );
@@ -99,6 +108,7 @@ export function createUsageStore({ file, logger = console } = {}) {
     machineId: r.member_id, sessions: r.sessions, days: r.days, messages: r.messages,
     input: r.input, output: r.output, totalCost: r.cost,
     cacheRead: r.cache_read, cacheWrite: r.cache_write, at: r.received_at,
+    source: r.source ?? SOURCE_AUTO,
   });
   const dailyOne = db.prepare(`SELECT * FROM usage WHERE member_id = ? AND agent = ? ORDER BY date DESC LIMIT ?`);
   const dailyAll = db.prepare(`SELECT * FROM usage WHERE agent = ? ORDER BY member_id, date`);
@@ -113,7 +123,7 @@ export function createUsageStore({ file, logger = console } = {}) {
         date: day, memberId: String(machineId), agent: AGENT_TOTAL,
         sessions: usage.sessions, messages: usage.messages, input: usage.input, output: usage.output,
         days: usage.days, cost: usage.totalCost, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite,
-        receivedAt: at,
+        source: usage.source ?? SOURCE_AUTO, receivedAt: at,
       });
     },
     query({ from, to, memberId, agent } = {}) {
@@ -161,9 +171,10 @@ export function normalizeUsage(body = {}, now = Date.now()) {
     date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   }
   const num = (v, round) => { const n = Number(v); return Number.isFinite(n) ? (round ? Math.round(n) : n) : null; };
+  const source = body.source === SOURCE_IMAGE ? SOURCE_IMAGE : SOURCE_AUTO;
   return {
     record: {
-      date, memberId, agent: String(body.agent || ''),
+      date, memberId, agent: String(body.agent || ''), source,
       sessions: num(body.sessions, true), messages: num(body.messages, true),
       input: num(body.input, true), output: num(body.output, true), days: num(body.days, true),
       cost: num(body.cost, false), cacheRead: num(body.cacheRead, true), cacheWrite: num(body.cacheWrite, true),

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createUsageStore, DAILY_WINDOW_DAYS } from './usage-store.js';
+import { createUsageStore, DAILY_WINDOW_DAYS, SOURCE_IMAGE, SOURCE_AUTO } from './usage-store.js';
 
 // 趋势图读取窗口（数据不删，只限制读多少天）
 export const DAILY_KEEP_DAYS = DAILY_WINDOW_DAYS;
@@ -89,6 +89,8 @@ export class UsagePeersStore {
     for (const k of METRIC_KEYS) {
       if (!Number.isFinite(usage && usage[k]) && Number.isFinite(prev && prev[k])) merged[k] = prev[k];
     }
+    // 采集来源：图片识别优先，否则按本次上报；缺省 auto（最后写入者覆盖）
+    merged.source = (usage && usage.source) === SOURCE_IMAGE ? SOURCE_IMAGE : SOURCE_AUTO;
     // 成功的一轮（带指标）清掉上次残留的采集错误，避免 error 字段一直挂着旧的 ENOENT
     if (hasMetrics(usage)) delete merged.error;
     const rec = { ...merged, machineId, receivedAt: now };
