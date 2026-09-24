@@ -75,6 +75,7 @@ async function exportCsv() {
             <span v-if="row.machineId === hubId" class="crown">👑 {{ $t('collab.member.master') }}</span>
             <span v-if="row.machineId === me" class="mebadge">{{ $t('collab.member.me') }}</span>
             <span class="mname" :class="{ probe: row.machineId === me }" :title="row.machineId === me ? $t('usage.probe.hint') : machineFullLabel(row)">{{ machineLabel(row) }}</span>
+            <span v-if="row.source === 'image'" class="imgsrc" :title="$t('usage.source.image')">🖼</span>
             <span v-if="!row.inGroup" class="tag">{{ $t('usage.not_in_group') }}</span>
           </div>
         </template>
@@ -102,6 +103,7 @@ async function exportCsv() {
 .dot.on { background: #4caf50; }
 .mname { color: var(--tx1); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mname.probe { cursor: pointer; text-decoration: underline dotted; }
+.imgsrc { flex: none; margin-left: 6px; font-size: 12px; line-height: 1; }
 .utable :deep(tr.probe-row) { cursor: pointer; }
 .tag { flex: none; margin-left: 8px; padding: 0 6px; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx6); font-size: 11px; white-space: nowrap; }
 .crown { flex: none; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: var(--warn); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; white-space: nowrap; }

@@ -737,6 +737,7 @@ onBeforeUnmount(() => {
       <div class="head">
         <span class="meta">{{ name }}<template v-if="status === 'ok'"> · {{ (size / 1024).toFixed(1) }} KB</template></span>
         <div class="right">
+          <button v-if="status === 'error'" class="fmt-btn" :title="$t('fp.refresh')" @click="load">{{ $t('fp.refresh') }}</button>
           <div v-if="hasPreviewToggle" class="seg">
             <button type="button" :class="{ on: viewMode === 'preview' }" @click="viewMode = 'preview'">{{ $t('fp.preview') }}</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ isHtmlFile ? $t('fp.source') : $t('fp.code') }}</button>

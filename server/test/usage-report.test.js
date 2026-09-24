@@ -162,6 +162,24 @@ test('reportNow：403 bad-token 记入 lastError 且不抛错', async () => {
   assert.equal(r.status().lastError, 'bad-token');
 });
 
+test('reportImage：图片识别用量上报带 source=image（本地 + 上报体）', async () => {
+  const file = tmpFile();
+  saveReportConfig(file, { masterUrl: 'http://10.0.0.9:22222', token: 'tk' });
+  const local = [];
+  let wireBody = null;
+  const r = createUsageReporter({
+    file, identity: () => ({ machineId: 'm1', username: 'u1', host: '10.0.0.2', port: 22222 }),
+    peers: { upsert: (u) => { local.push(u); return u; } },
+    fetchFn: async (_url, opts) => { wireBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ ok: true }) }; },
+  });
+  const out = await r.reportImage({ agent: 'opencode', days: 60, sessions: 21, messages: 3986 });
+  assert.equal(out.ok, true);
+  assert.equal(wireBody.usage.source, 'image');
+  assert.equal(wireBody.usage.sessions, 21);
+  assert.equal(local[0].source, 'image');
+  assert.equal(local[0].sessions, 21);
+});
+
 test('setConfig：保存配置并回读', () => {
   const file = tmpFile();
   const r = createUsageReporter({ file, identity: () => ({ machineId: 'm1' }) });
@@ -170,7 +188,7 @@ test('setConfig：保存配置并回读', () => {
   assert.deepEqual(loadReportConfig(file), cfg);
 });
 
-test('start：启动立即上报一次，下一次延迟落在 60–90 分钟', async () => {
+test('start：启动立即上报一次，下一次延迟 4 小时', async () => {
   const file = tmpFile();
   saveReportConfig(file, { masterUrl: 'http://a:22222', token: 'tk' });
   const delays = [];

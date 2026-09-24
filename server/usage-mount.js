@@ -1,6 +1,7 @@
 import { parseInviteLink } from './usage-report.js';
 
 const MAX_BODY = 1024 * 1024;   // 上报体只放用量数字，1MB 足够
+const MAX_IMAGE_BODY = 10 * 1024 * 1024;   // 统计截图（多模态识别）上限
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -16,13 +17,27 @@ function readBody(req) {
   });
 }
 
+function readRaw(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    req.on('data', (c) => {
+      total += c.length;
+      if (total > MAX_IMAGE_BODY) { reject(new Error('image too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 function sendJson(res, status, obj) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(obj));
 }
 
 // /api/usage/* 的 HTTP 面：远端收上报（令牌），本机界面看汇总/配上报器
-export function createUsageMount({ peers, reporter, checkToken, onReport, pullFromHub = null, probe = null, loadProbe = null, saveProbe = null, logger = console }) {
+export function createUsageMount({ peers, reporter, checkToken, onReport, pullFromHub = null, probe = null, loadProbe = null, saveProbe = null, onImage = null, setCwd = null, logger = console }) {
   const freshCache = new Map();   // masterId -> 最近一次成功拉到的 members
   async function route(req, res, url) {
     const m = req.method;
@@ -111,6 +126,32 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, pullFr
     if (seg[0] === 'reporter' && seg[1] === 'now' && seg.length === 2 && m === 'POST') {
       await reporter.reportNow();
       return sendJson(res, 200, { status: reporter.status() });
+    }
+
+    // 记录用户当前选中目录（根）：stats 采集从该目录向上找 .git 执行，找不到回退用户主目录
+    if (seg[0] === 'cwd' && seg.length === 1 && m === 'POST') {
+      let body = {};
+      try { body = JSON.parse((await readBody(req)) || '{}'); } catch { body = {}; }
+      const root = typeof body.root === 'string' ? body.root.trim() : '';
+      try { setCwd?.(root); } catch (e) { logger?.warn?.('usage setCwd failed', (e && e.message) || e); }
+      return sendJson(res, 200, { ok: true, root });
+    }
+
+    // 统计截图多模态识别：识别结果写回用量库（source=image）并上报 master
+    if (seg[0] === 'image' && seg.length === 1 && m === 'POST') {
+      if (typeof onImage !== 'function') return sendJson(res, 500, { error: 'unavailable' });
+      let data;
+      try { data = await readRaw(req); } catch { return sendJson(res, 413, { error: 'image too large' }); }
+      const mime = String(url.searchParams.get('mime') || '');
+      try {
+        const r = await onImage({ data, mime });
+        return sendJson(res, 200, r);
+      } catch (e) {
+        const code = (e && e.code) || 'internal';
+        const status = ['no-provider', 'no-key', 'bad-model', 'empty-image', 'image-too-large', 'bad-json', 'empty-result'].includes(code)
+          ? 400 : code === 'timeout' ? 504 : code === 'upstream' ? 502 : 500;
+        return sendJson(res, status, { error: code, message: (e && e.message) || '' });
+      }
     }
 
     return sendJson(res, 404, { error: 'not found' });

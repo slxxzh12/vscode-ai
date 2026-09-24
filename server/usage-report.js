@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { collectAgentStats } from './collaboration/agent-stats.js';
+import { SOURCE_AUTO, SOURCE_IMAGE } from './usage-store.js';
 import path from 'node:path';
 
 export const INTERVAL_MS = 4 * 60 * 60 * 1000;   // 4 小时
@@ -51,9 +52,11 @@ export function saveReportConfig(file, cfg) {
   return next;
 }
 
-// slave 侧上报器：启动即报一次（先本地落库自己这份，再发给 master），之后 60–90 分钟随机再报
+// slave 侧上报器：启动即报一次（先本地落库自己这份，再发给 master），之后每 4 小时左右再报
 export function createUsageReporter({
   file, identity, peers = null, onLocal = null, onCollected = null, cmd = 'opencode', statsCmd = '', resolveAgent = null, collect = collectAgentStats,
+  getStartDir = null,   // () => 用户当前选中目录根；采集时作为 stats 命令的起始目录（无则回退用户主目录）
+  statsFile = null,     // 采集原文落盘路径（如 <数据目录>/cache/collaboration/stats.txt），传给采集器
   fetchFn = fetch, logger = console, random = Math.random,
   now = () => Date.now(), scheduleFn = (fn, ms) => setTimeout(fn, ms),
 } = {}) {
@@ -72,19 +75,13 @@ export function createUsageReporter({
     };
   };
 
-  async function reportNow() {
+  // 上报一份已采集的用量（本地落库 + 发给 master）；source 缺省 auto，图片识别显式传 image
+  async function submit(usage) {
     const cfg = config();
-    const a = currentAgent();
-    let usage;
-    try { usage = await collect({ cmd: a.cmd, statsCmd: a.statsCmd, days: cfg.days }); }
-    catch (e) { usage = { agent: a.cmd, days: cfg.days, error: String((e && e.message) || e) }; }
-    // 本机缓存一份带原文的采集结果，供「采集信息」弹窗即时展示
-    try { onCollected?.(usage); } catch (e) { logger?.warn?.('usage onCollected failed', (e && e.message) || e); }
-    // raw/cmdline 只留本机，不进 peers/上报体
-    const { raw: _raw, cmdline: _cmdline, ...usageClean } = usage || {};
+    const clean = { ...(usage || {}), source: (usage && usage.source) === SOURCE_IMAGE ? SOURCE_IMAGE : SOURCE_AUTO };
     const me = (typeof identity === 'function' ? identity() : identity) || {};
     const self = {
-      ...usageClean,
+      ...clean,
       machineId: me.machineId || '', employeeId: me.employeeId || '', username: me.username || '',
       host: me.host || '', port: me.port || 0,
     };
@@ -102,7 +99,7 @@ export function createUsageReporter({
     }
     const wire = {
       machineId: self.machineId, employeeId: self.employeeId, username: self.username,
-      host: self.host, port: self.port, usage: usageClean,
+      host: self.host, port: self.port, usage: clean,
     };
     try {
       const res = await fetchFn(`${cfg.masterUrl}/api/usage/report`, {
@@ -122,6 +119,24 @@ export function createUsageReporter({
     }
   }
 
+  async function reportNow() {
+    const cfg = config();
+    const a = currentAgent();
+    let usage;
+    try { usage = await collect({ cmd: a.cmd, statsCmd: a.statsCmd, days: cfg.days, startDir: (typeof getStartDir === 'function' ? getStartDir() : null) || undefined, statsFile }); }
+    catch (e) { usage = { agent: a.cmd, days: cfg.days, error: String((e && e.message) || e) }; }
+    // 本机缓存一份带原文的采集结果，供「采集信息」弹窗即时展示
+    try { onCollected?.(usage); } catch (e) { logger?.warn?.('usage onCollected failed', (e && e.message) || e); }
+    // raw/cmdline 只留本机，不进 peers/上报体
+    const { raw: _raw, cmdline: _cmdline, ...usageClean } = usage || {};
+    return submit(usageClean);
+  }
+
+  // 图片识别采集：直接把识别出的用量上报（来源标记 image）
+  async function reportImage(usage) {
+    return submit({ ...(usage || {}), source: SOURCE_IMAGE });
+  }
+
   function schedule() {
     if (stopped) return;
     const delay = nextDelay(random);
@@ -135,6 +150,7 @@ export function createUsageReporter({
     status: statusOf,
     setConfig(patch) { return saveReportConfig(file, { ...config(), ...patch }); },
     reportNow,
+    reportImage,
     start() { stopped = false; reportNow().then(schedule); },
     stop() { stopped = true; if (timer) { clearTimeout(timer); timer = null; } },
   };

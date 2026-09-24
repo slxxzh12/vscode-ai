@@ -12,13 +12,13 @@ function tmp(name) {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-umount-')), name);
 }
 
-async function start({ token = 'good', peers, reporter, onReport, pullFromHub, probe, loadProbe, saveProbe } = {}) {
+async function start({ token = 'good', peers, reporter, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd } = {}) {
   const p = peers || new UsagePeersStore({ file: tmp('usage-peers.json') });
   const r = reporter || createUsageReporter({
     file: tmp('usage-report.json'), identity: () => ({ machineId: 'm1' }),
     collect: async () => ({ sessions: 1 }), fetchFn: async () => ({ ok: true, json: async () => ({ ok: true }) }),
   });
-  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport, pullFromHub, probe, loadProbe, saveProbe });
+  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd });
   const server = http.createServer((req, res) => mount(req, res, new URL(req.url, 'http://localhost')));
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   return { peers: p, reporter: r, port: server.address().port, server };
@@ -130,6 +130,16 @@ test('GET/POST /api/usage/probe：GET 空缓存回 none；POST 现场采集并�
   const got = await call(A.port, 'GET', '/api/usage/probe');
   assert.equal(got.body.cached, true);
   assert.equal(got.body.cmdline, 'opencode stats --days 7');
+});
+
+test('POST /api/usage/cwd：记录用户当前选中目录根并回显', async (t) => {
+  const seen = [];
+  const A = await start({ setCwd: (root) => seen.push(root) });
+  t.after(() => A.server.close());
+  const r = await call(A.port, 'POST', '/api/usage/cwd', { body: { root: '  C:\\proj\\app  ' } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { ok: true, root: 'C:\\proj\\app' });
+  assert.deepEqual(seen, ['C:\\proj\\app']);
 });
 
 test('未知 /api/usage/* 路径 → 404', async (t) => {

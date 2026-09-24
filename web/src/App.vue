@@ -188,12 +188,12 @@ const NEW_WINDOW = (() => {
     return true;
   } catch { return false; }
 })();
-const historyTab = ref<'files' | 'messages' | 'tree'>(NEW_WINDOW ? 'messages' : 'tree');
+const historyTab = ref<HistoryTab>(NEW_WINDOW ? 'messages' : 'tree');
 const collabTab = ref<'group' | 'tasks'>('group');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
 const RAILS = ['explorer', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
-const SIDE_TABS = ['messages', 'files', 'tree'];
+const SIDE_TABS = ['messages', 'files', 'tree', 'prompts'];
 function parseHashSegs(): string[] {
   try { return decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/').filter(Boolean); }
   catch { return []; }
@@ -468,6 +468,11 @@ function openFromHistory(it: FileRec & { name: string; projName: string }) {
 }
 
 const currentProjectInfo = computed(() => projects.value.find((p) => p.id === currentProject.value) || null);
+// 把当前选中项目根通知服务端：用量 stats 采集从该目录向上找 .git 执行，找不到回退用户主目录
+watch(currentProjectInfo, (info) => {
+  const root = info?.root || '';
+  try { void fetch('/api/usage/cwd', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root }) }); } catch { /* ignore */ }
+}, { immediate: true });
 // 顶栏展示：优先「选中文件的绝对路径」，无选中文件则显示项目根绝对路径
 const displayPath = computed(() => {
   const root = currentProjectInfo.value?.root || '';

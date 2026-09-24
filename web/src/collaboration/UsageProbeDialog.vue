@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { t } from '../i18n';
+import { fmtTime } from './usagePeers';
 
 interface ProbeResult {
   agent?: string; days?: number; cmdline?: string;
@@ -9,6 +10,7 @@ interface ProbeResult {
   parsed?: Record<string, number | null> | null;
   durationMs?: number;
   collectedAt?: number;
+  cwd?: string; statsFileMtime?: number | null;
   cached?: boolean;
 }
 
@@ -35,6 +37,38 @@ const parsedRows = computed(() => fields.map((f) => {
   const v = result.value?.parsed ? result.value.parsed[f.key] : null;
   return { label: f.label, value: v == null ? '-' : String(v) };
 }));
+
+// —— 截图识别统计：多模态识别截图 → 写回用量库 ——
+const imgInput = ref<HTMLInputElement | null>(null);
+const imageLoading = ref(false);
+const imageResult = ref<{ metrics: Record<string, number | null>; model: string; reported: boolean } | null>(null);
+const imageErr = ref('');
+const imageRows = computed(() => fields.map((f) => {
+  const v = imageResult.value?.metrics ? imageResult.value.metrics[f.key] : null;
+  return { label: f.label, value: v == null ? '-' : String(v) };
+}));
+
+function pickImage() { imgInput.value?.click(); }
+async function onImageChosen(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const f = input.files?.[0];
+  input.value = '';
+  if (!f) return;
+  imageLoading.value = true;
+  imageErr.value = '';
+  imageResult.value = null;
+  try {
+    const mime = f.type || 'image/png';
+    const res = await fetch(`/api/usage/image?mime=${encodeURIComponent(mime)}`, { method: 'POST', body: f });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    imageResult.value = data;
+  } catch (err) {
+    imageErr.value = (err as Error)?.message || String(err);
+  } finally {
+    imageLoading.value = false;
+  }
+}
 
 // 打开即取上次采集缓存（本机落盘），点「重新采集」才现场跑一次
 async function load() {
@@ -87,10 +121,18 @@ watch(() => props.open, (v) => { if (v) load(); });
             <code class="v">{{ result.cmdline || '-' }}</code>
           </div>
           <div class="kv">
+            <span class="k">{{ $t('usage.probe.cwd') }}</span>
+            <code class="v">{{ result.cwd || '-' }}</code>
+          </div>
+          <div class="kv">
             <span class="k">{{ $t('usage.probe.status') }}</span>
             <span class="v" :class="result.ok ? 'ok' : 'bad'">
               {{ result.ok ? $t('usage.probe.ok') : $t('usage.probe.failed', { msg: result.error || result.code || '' }) }}
             </span>
+          </div>
+          <div class="kv">
+            <span class="k">{{ $t('usage.probe.file_mtime') }}</span>
+            <span class="v">{{ result.statsFileMtime ? fmtTime(result.statsFileMtime) : '-' }}</span>
           </div>
 
           <div class="sec">{{ $t('usage.probe.raw') }}</div>
@@ -110,8 +152,23 @@ watch(() => props.open, (v) => { if (v) load(); });
           </div>
         </template>
 
+        <div v-if="imageLoading" class="hint">{{ $t('usage.probe.image_loading') }}</div>
+        <div v-else-if="imageErr" class="err">{{ $t('usage.probe.image_failed', { msg: imageErr }) }}</div>
+        <template v-else-if="imageResult">
+          <div class="sec">{{ $t('usage.probe.parsed') }}</div>
+          <div class="ptable">
+            <div v-for="r in imageRows" :key="r.label" class="prow">
+              <span class="pk">{{ t(r.label) }}</span>
+              <span class="pv">{{ r.value }}</span>
+            </div>
+          </div>
+          <div class="hint">{{ imageResult.reported ? $t('usage.probe.image_success') : $t('usage.probe.image_failed', { msg: '' }) }}</div>
+        </template>
+
         <div class="foot">
           <button class="btn" :disabled="loading" @click="recollect">{{ $t('usage.probe.recollect') }}</button>
+          <button class="btn" :disabled="imageLoading" @click="pickImage">{{ $t('usage.probe.image') }}</button>
+          <input ref="imgInput" type="file" accept="image/*" class="hidden-input" @change="onImageChosen" />
           <button class="btn primary" @click="emit('close')">{{ $t('common.ok') }}</button>
         </div>
       </div>
@@ -143,6 +200,7 @@ watch(() => props.open, (v) => { if (v) load(); });
 .foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .btn { padding: 6px 16px; border-radius: 4px; border: 1px solid var(--bd); background: var(--bg2); color: var(--tx2); cursor: pointer; font-size: 13px; font-family: inherit; }
 .btn.primary { background: var(--ac); border-color: var(--ac); color: #fff; }
+.hidden-input { display: none; }
 .fade-enter-active, .fade-leave-active { transition: opacity .18s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>

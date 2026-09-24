@@ -37,9 +37,11 @@ import { mergeWorkflowList } from './collaboration/workflow-merge.js';
 import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
 import { createUsageMount } from './usage-mount.js';
+import { createUsageVision } from './usage-vision.js';
 import { loadProbe, saveProbe, toProbeRecord } from './usage-probe-store.js';
 import { createNotepadStore } from './notepad-store.js';
 import { ensureAgentOnPath, probeAgentStats } from './collaboration/agent-stats.js';
+import { projectDir } from './project-data.js';
 import { createTranslator, createTranslateMount, defaultCatalog, defaultProviderResolver } from './translate.js';
 import { loadInvite, saveInvite, clearInvite, isInviteActive } from './remote-invite.js';
 import { CollabS2C } from '@devflow/shared/collab';
@@ -268,13 +270,71 @@ function buildWorkspace({ paths, port }) {
     try { fs.writeFileSync(projectsFile, JSON.stringify({ projects: projects.rawProjects() }, null, 2), 'utf8'); }
     catch (e) { log.warn?.('save projects failed', e && e.message); }
   };
+  // projectId → 项目根目录（权威来源 projects 列表）；对话数据按项目分目录存，键 = sha256(根路径)
+  const projectRootOf = (projectId) => {
+    if (!projectId) return '';
+    const p = projects.listProjects().find((x) => x.id === projectId);
+    return p ? p.root : '';
+  };
+  // 项目数据目录：<port>/projects/<sha256(root)>；无项目（全局）落 <port>/projects/_global
+  const projectDataDirOf = (projectId) => {
+    const root = projectRootOf(projectId);
+    return root ? projectDir(paths.dir, root) : path.join(paths.projectsDataDir, '_global');
+  };
+  // 统计采集公用一个目录（与 projectId 无关）：用户选中目录根，从它向上找 .git 执行，找不到回退用户主目录
+  let statsStartDir = '';
+  const setStatsCwd = (root) => { statsStartDir = String(root || ''); };
+  const getStatsStartDir = () => statsStartDir || os.homedir();
   const workflows = loadWorkflows(workflowsFile);
   const codeGroups = createCodeGroups({ file: paths.codeGroupsFile, logger: log });
   const codePrefs = createCodePrefs({ file: paths.codePrefsFile, logger: log });
   const composerPrefs = createComposerPrefs({ file: paths.composerPrefsFile, logger: log });
   const sessionProjects = createSessionProjects({ file: paths.sessionProjectsFile, logger: log });
   const windowState = createWindowState({ file: paths.windowStateFile, logger: log });
-  const sessionLedger = createSessionLedger({ file: paths.sessionsFile, logsDir: paths.sessionLogsDir, logger: log });
+  const sessionLedger = createSessionLedger({ file: paths.sessionsFile, logsDir: paths.sessionLogsDir, logDirFor: (projectId) => path.join(projectDataDirOf(projectId), 'session-logs'), logger: log });
+  // 一次性迁移：老单文件 message-history.jsonc 搬到按项目分目录的位置（按 sessionId 归属，无归属落 _global）
+  function migrateHistoryToProjects() {
+    const old = paths.historyFile;
+    if (!fs.existsSync(old)) return;
+    let msgs;
+    try { msgs = readHistory(old); } catch { msgs = []; }
+    if (!msgs.length) { try { fs.rmSync(old, { force: true }); } catch { /* ignore */ } return; }
+    const byId = new Map(sessionLedger.read().sessions.map((s) => [s.id, s.projectId || '']));
+    const buckets = new Map();
+    for (const m of msgs) {
+      const projectId = (m.sessionId && byId.get(m.sessionId)) || '';
+      if (!buckets.has(projectId)) buckets.set(projectId, []);
+      buckets.get(projectId).push(m);
+    }
+    for (const [projectId, list] of buckets) {
+      const file = path.join(projectDataDirOf(projectId), 'message-history.jsonc');
+      if (!fs.existsSync(file)) writeHistory(file, list);
+    }
+    try { fs.rmSync(old, { force: true }); } catch { /* ignore */ }
+  }
+  sessionLedger.migrateLogs();
+  migrateHistoryToProjects();
+  // 合并读取：所有项目 + _global 的 message-history（前端一次拉全量再按项目筛选，保持旧行为）
+  function readHistoryAll() {
+    const dirs = new Set([path.join(paths.projectsDataDir, '_global')]);
+    for (const p of projects.listProjects()) dirs.add(projectDir(paths.dir, p.root));
+    const all = [];
+    for (const dir of dirs) all.push(...readHistory(path.join(dir, 'message-history.jsonc')));
+    return all.sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+  }
+  // 拆分写入：按 sessionId 归属项目，把全量列表写回各项目文件（无归属落 _global）
+  function writeHistorySplit(messages) {
+    const list = Array.isArray(messages) ? messages : [];
+    const byId = new Map(sessionLedger.read().sessions.map((s) => [s.id, s.projectId || '']));
+    const buckets = new Map();
+    for (const m of list) {
+      const projectId = (m && m.sessionId && byId.get(m.sessionId)) || '';
+      if (!buckets.has(projectId)) buckets.set(projectId, []);
+      buckets.get(projectId).push(m);
+    }
+    for (const [projectId, items] of buckets) writeHistory(path.join(projectDataDirOf(projectId), 'message-history.jsonc'), items);
+    return readHistoryAll();
+  }
   const agentList = () => loadDevflowConfig(configFile).agents.list || [];
   let discoveryQueue = Promise.resolve();
   function runDiscovery(session, { requireAlive = true } = {}) {
@@ -424,6 +484,8 @@ function buildWorkspace({ paths, port }) {
     cmd: agent.cmd,
     statsCmd: agent.statsCmd,
     resolveAgent: () => defaultAgent(),
+    getStartDir: getStatsStartDir,
+    statsFile: paths.statsFile,
     onCollected: (u) => saveProbe(paths.usageProbeFile, toProbeRecord(u)),
   });
   const usageMount = createUsageMount({
@@ -437,9 +499,18 @@ function buildWorkspace({ paths, port }) {
       }
       return engine.pullUsageFrom(masterId);
     },
-    probe: () => probeAgentStats({ ...defaultAgent(), days: usageReporter.config().days }),
+    probe: () => probeAgentStats({ ...defaultAgent(), days: usageReporter.config().days, startDir: getStatsStartDir(), statsFile: paths.statsFile }),
     loadProbe: () => loadProbe(paths.usageProbeFile),
     saveProbe: (r) => saveProbe(paths.usageProbeFile, r),
+    setCwd: setStatsCwd,
+    onImage: async ({ data, mime }) => {
+      const vision = createUsageVision({ resolveProvider: defaultProviderResolver() });
+      const { metrics, model } = await vision.recognize({ data, mime });
+      const a = defaultAgent();
+      const usage = { agent: a.cmd, ...metrics, days: usageReporter.config().days };
+      const rep = await usageReporter.reportImage(usage);
+      return { metrics, model, reported: !!rep.ok, reportError: rep.error || '' };
+    },
     logger: log,
   });
   // 默认上报目标：入群时记住 master 的地址与邀请令牌（无需手填链接），并立刻补报一次
@@ -514,7 +585,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount };
+  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, projectDataDirOf, readHistoryAll, writeHistorySplit };
 }
 
 // ---- 工作区（端口档案）----
@@ -551,7 +622,7 @@ function initWorkspace(paths, port) {
   const distPollTimer = setInterval(() => { ws.engine.pollDistTasks?.().catch(() => { /* 单次失败忽略 */ }); }, distPollMs);
   distPollTimer.unref?.();
   remoteInvite = loadInvite(paths.inviteFile);   // 令牌落盘：重启后仍有效（expiresAt=0 为长期）
-  // 用量上报：启动即报一次，之后 60–90 分钟随机再报
+  // 用量上报：启动即报一次，之后每 4 小时左右再报
   if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }
   if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
     ws.scheduler.engine.start();
@@ -903,8 +974,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/history' && req.method === 'GET') {
+    const projectId = url.searchParams.get('project') || '';
+    const messages = projectId
+      ? readHistory(path.join(ws.projectDataDirOf(projectId), 'message-history.jsonc'))
+      : ws.readHistoryAll();
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ messages: readHistory(ws.historyFile), file: ws.historyFile }));
+    res.end(JSON.stringify({ messages, file: ws.historyFile, projectId }));
     return;
   }
   if (url.pathname === '/api/history' && req.method === 'POST') {
@@ -913,9 +988,10 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const projectId = typeof body.projectId === 'string' ? body.projectId : (url.searchParams.get('project') || '');
       let messages;
-      if (typeof body.append === 'string') messages = appendHistory(ws.historyFile, body.append);
-      else if (Array.isArray(body.messages)) messages = writeHistory(ws.historyFile, body.messages);
+      if (typeof body.append === 'string') messages = appendHistory(path.join(ws.projectDataDirOf(projectId), 'message-history.jsonc'), body.append);
+      else if (Array.isArray(body.messages)) messages = ws.writeHistorySplit(body.messages);
       else { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'messages[] or append required' })); return; }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ messages }));
