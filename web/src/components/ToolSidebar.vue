@@ -13,6 +13,7 @@ const props = defineProps<{ tool: ToolId }>();
 
 // 各工具的 workbench 都暴露 treeSource/activeId/activeFolder，统一取用。
 const wb = computed(() => {
+  if (props.tool === 'base64') return null;
   if (props.tool === 'postman') return usePostmanWorkbench();
   if (props.tool === 'navicat') return useNavicatWorkbench();
   return useToolWorkbench(props.tool as FileTool);
@@ -27,16 +28,21 @@ function onFolder(k: string) {
 
 <template>
   <div class="tside">
-    <PostmanSidebarBar v-if="tool === 'postman'" />
-    <NavicatSidebarBar v-else-if="tool === 'navicat'" />
-    <TreeView
-      :source="wb.treeSource"
-      :title="$t('tools.' + tool)"
-      :active-key="wb.activeId.value"
-      :active-folder="wb.activeFolder.value"
-      :storage-key="'devflow-' + tool + '-collapsed'"
-      @update:active-folder="onFolder"
-    />
+    <template v-if="!wb">
+      <!-- base64 等无文件树工具：留空侧栏 -->
+    </template>
+    <template v-else>
+      <PostmanSidebarBar v-if="tool === 'postman'" />
+      <NavicatSidebarBar v-else-if="tool === 'navicat'" />
+      <TreeView
+        :source="wb.treeSource"
+        :title="$t('tools.' + tool)"
+        :active-key="wb.activeId.value"
+        :active-folder="wb.activeFolder.value"
+        :storage-key="'devflow-' + tool + '-collapsed'"
+        @update:active-folder="onFolder"
+      />
+    </template>
   </div>
 </template>
 

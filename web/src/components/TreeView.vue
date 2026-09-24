@@ -111,10 +111,13 @@ function promptCreate(kind: 'file' | 'folder', dir = props.activeFolder) {
   if (!fn) return;
   const label = kind === 'file' ? t('tree.file_name') : t('tree.dir_name');
   const where = dir ? t('tree.in_dir', { dir }) : t('tree.in_root');
-  const name = window.prompt(t('tree.prompt_create', { label, where }));
-  if (!name) return;
-  if (/[\\/:*?"<>|]/.test(name)) { alert(t('tree.bad_name')); return; }
-  fn.call(props.source, dir, name)
+  const def = kind === 'file' ? (props.source.defaultName?.() ?? '') : '';
+  const name = window.prompt(t('tree.prompt_create', { label, where }), def);
+  if (name === null) return;
+  const final = name.trim() || def;
+  if (!final) return;
+  if (/[\\/:*?"<>|]/.test(final)) { alert(t('tree.bad_name')); return; }
+  fn.call(props.source, dir, final)
     .then(() => refresh())
     .catch((e: unknown) => alert(t('tree.create_failed', { msg: (e as Error)?.message || String(e) })));
 }

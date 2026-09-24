@@ -591,6 +591,7 @@ function buildWorkspace({ paths, port }) {
     yaml: createNotepadStore({ dir: paths.yamlDir }),
     js: createNotepadStore({ dir: paths.jsDir }),
     translate: createNotepadStore({ dir: paths.translateDir }),
+    markdown: createNotepadStore({ dir: paths.markdownDir }),
   };
   const navicatCrypto = createNavicatCrypto({ keyFile: path.join(paths.navicatDir, '.key') });
   const navicatStore = createNavicatStore({ file: path.join(paths.navicatDir, 'profiles.json'), crypto: navicatCrypto });

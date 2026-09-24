@@ -20,6 +20,9 @@ export interface ToolWorkbench {
 
 const cache = new Map<FileTool, ToolWorkbench>();
 
+// 各工具新建文件的默认扩展名：缺省则新建时用空文件名（用户手输）
+const DEFAULT_EXT: Partial<Record<FileTool, string>> = { markdown: '.md' };
+
 export function useToolWorkbench(tool: FileTool): ToolWorkbench {
   const hit = cache.get(tool);
   if (hit) return hit;
@@ -30,7 +33,7 @@ export function useToolWorkbench(tool: FileTool): ToolWorkbench {
   const treeSource = toolFileTreeSource(files, {
     onOpen: (node: TreeSourceNode) => { activeId.value = node.key; },
     onChanged: () => { void files.load(); },
-  });
+  }, DEFAULT_EXT[tool]);
   const docSource = toolDocSource(tool);
   const leafName = computed(() => activeId.value.slice(activeId.value.lastIndexOf('/') + 1));
   const title = computed(() => leafName.value);

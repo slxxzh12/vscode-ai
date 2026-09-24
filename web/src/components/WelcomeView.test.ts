@@ -6,10 +6,10 @@ import WelcomeView from './WelcomeView.vue';
 function mount() { return mountC(WelcomeView); }
 
 describe('WelcomeView', () => {
-  it('渲染主按钮与 5 张工具卡片', () => {
+  it('渲染主按钮与 7 张工具卡片', () => {
     const w = mount();
     expect(w.find('.wprimary').exists()).toBe(true);
-    expect(w.findAll('.tcard')).toHaveLength(5);
+    expect(w.findAll('.tcard')).toHaveLength(7);
   });
 
   it('点主按钮 emit new-agent', async () => {

@@ -23,6 +23,7 @@ export interface TreeSource {
 
   createFile?(dirKey: string, name: string): Promise<void>;
   createFolder?(dirKey: string, name: string): Promise<void>;
+  defaultName?(): string;
   rename?(node: TreeSourceNode, name: string): Promise<void>;
   remove?(node: TreeSourceNode): Promise<void>;
   move?(node: TreeSourceNode, dirKey: string): Promise<void>;

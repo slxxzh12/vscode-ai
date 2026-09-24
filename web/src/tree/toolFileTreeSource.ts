@@ -15,6 +15,7 @@ export interface ToolTreeHooks {
 export function toolFileTreeSource(
   files: ReturnType<typeof useToolFiles>,
   hooks: ToolTreeHooks,
+  defaultExt?: string,
 ): TreeSource {
   const changed = () => hooks.onChanged?.();
   const fmt = (iso?: string) => {
@@ -22,6 +23,13 @@ export function toolFileTreeSource(
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? '' : d.toLocaleString();
   };
+  // 未命名时的默认文件名：当前日期+时间（如 20260920-153012.md）
+  function defaultName(): string {
+    if (!defaultExt) return '';
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}${defaultExt}`;
+  }
   // '' = 根；只取直接子级
   return {
     async loadChildren(dirKey) {
@@ -45,6 +53,7 @@ export function toolFileTreeSource(
     open(node) { hooks.onOpen(node); },
     async createFile(dirKey, name) { await files.createFile(dirKey, name); changed(); },
     async createFolder(dirKey, name) { await files.createFolder(dirKey, name); changed(); },
+    defaultName,
     async rename(node, name) {
       if (node.kind === 'dir') await files.renameFolder(node.key, name);
       else await files.renameItem(node.key, name);

@@ -16,6 +16,7 @@ import { useLocalSources } from '../local/useLocalSources';
 import { localRootDocSource, localFileDocSource } from '../local/localDocSource';
 import type { DocSource } from '../tools/doc/docSource';
 import TextToolBody from '../tools/text/TextToolBody.vue';
+import Base64Tool from '../tools/base64/Base64Tool.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
@@ -91,10 +92,10 @@ const localFileSource = computed<DocSource | null>(() => {
   const e = localFileEntry.value;
   return e ? localFileDocSource(e.key) : null;
 });
-// 文档型工具（notepad/yaml）在主区用 DocViewer 展示
+// 文档型工具（notepad/yaml/markdown）在主区用 DocViewer 展示
 const activeDocTool = computed(() => {
   const x = activeTool.value?.tool;
-  return x === 'notepad' || x === 'yaml' ? x : null;
+  return x === 'notepad' || x === 'yaml' || x === 'markdown' ? x : null;
 });
 const activeToolName = computed(() => activeTool.value?.tool ?? '');
 const isSessionView = computed(() => props.center.activeKind.value === 'session');
@@ -633,7 +634,7 @@ function onWelcomeNewAgent() {
   void startAgent();
 }
 function onWelcomeOpenTool(id: ToolId) {
-  if (id === 'notepad' || id === 'yaml' || id === 'translate') { requestToolTab(id); return; }
+  if (id === 'notepad' || id === 'yaml' || id === 'translate' || id === 'markdown' || id === 'base64') { requestToolTab(id); return; }
   requestTool(id);
   window.location.hash = '#mobile';
 }
@@ -1390,6 +1391,7 @@ onBeforeUnmount(() => {
     <div v-show="!!activeTool" class="tool-layer">
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
       <TextToolBody v-else-if="activeToolName === 'translate'" />
+      <Base64Tool v-else-if="activeToolName === 'base64'" />
       <PostmanTool v-else-if="activeToolName === 'postman'" />
       <NavicatTool v-else-if="activeToolName === 'navicat'" />
     </div>

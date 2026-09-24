@@ -4,7 +4,7 @@ import type { FileTreeActionResult } from '../../fileTree';
 export type ToolFile = { id: string; folder: string; name: string; updatedAt?: string };
 
 // 拥有左侧文件树的小工具，各自一份独立目录（服务端 /api/files/<tool>/*）
-export type FileTool = 'notepad' | 'yaml' | 'js' | 'translate';
+export type FileTool = 'notepad' | 'yaml' | 'js' | 'translate' | 'markdown';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
