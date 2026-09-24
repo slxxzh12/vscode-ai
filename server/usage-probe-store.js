@@ -32,6 +32,8 @@ export function toProbeRecord(u = {}, now = Date.now()) {
     raw: typeof src.raw === 'string' ? src.raw : '',
     stderr: '',
     parsed,
+    cwd: typeof src.cwd === 'string' ? src.cwd : '',
+    statsFileMtime: Number(src.statsFileMtime) || null,
     collectedAt: Number(src.collectedAt) || now,
   };
 }

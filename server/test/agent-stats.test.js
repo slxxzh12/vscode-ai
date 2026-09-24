@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath, isClaudeFamily, collectClaudeStats } from '../collaboration/agent-stats.js';
+import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath, isClaudeFamily, collectClaudeStats, resolveStatsCwd } from '../collaboration/agent-stats.js';
 
 function claudeHome(linesByFile) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'df-claude-'));
@@ -103,14 +103,63 @@ test('probeAgentStats：claudecode 返回文件解析结果且 ok', async () => 
   assert.match(r.cmdline, /jsonl/);
 });
 
-test('collectAgentStats：在用户主目录执行（新开 cmd 的默认目录）并注入 skip-safe-check', async () => {
+test('collectAgentStats：默认用 resolveStatsCwd 作为执行目录并注入 skip-safe-check', async () => {
   let seen = null;
   await collectAgentStats({
-    cmd: 'opencode', env: { PATH: '' }, sleepFn: async () => {},
+    cmd: 'opencode', env: { PATH: '' }, sleepFn: async () => {}, resolveCwd: () => '/git/root',
     execFileFn: (bin, args, opts, cb) => { seen = opts; cb(null, SAMPLE, ''); },
   });
-  assert.equal(seen.cwd, os.homedir());
+  assert.equal(seen.cwd, '/git/root');
   assert.equal(seen.env.OPENCODE_SKIP_SAFE_CHECK, '1');
+});
+
+test('collectAgentStats：startDir 传给 resolveCwd（从选中目录向下找 .git）', async () => {
+  let seenArgs = null;
+  await collectAgentStats({
+    cmd: 'opencode', env: { PATH: '' }, sleepFn: async () => {},
+    startDir: '/selected/root',
+    resolveCwd: (args) => { seenArgs = args; return '/git/root'; },
+    execFileFn: (bin, args, opts, cb) => { cb(null, SAMPLE, ''); },
+  });
+  assert.equal(seenArgs.startDir, '/selected/root');
+  assert.equal(seenArgs.home, os.homedir());
+});
+
+test('probeAgentStats：startDir 传给 resolveCwd', async () => {
+  let seenArgs = null;
+  await probeAgentStats({
+    cmd: 'opencode', env: { PATH: '' },
+    startDir: '/selected/root',
+    resolveCwd: (args) => { seenArgs = args; return '/git/root'; },
+    execFileFn: (bin, args, opts, cb) => { cb(null, SAMPLE, ''); },
+  });
+  assert.equal(seenArgs.startDir, '/selected/root');
+});
+
+test('resolveStatsCwd：当前目录含 .git 直接命中', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-git-'));
+  fs.mkdirSync(path.join(root, '.git'));
+  assert.equal(resolveStatsCwd({ startDir: root, home: '/home/u', exists: fs.existsSync }), root);
+});
+
+test('resolveStatsCwd：子目录含 .git 向下命中', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-git-'));
+  const sub = path.join(root, 'a', 'b');
+  fs.mkdirSync(sub, { recursive: true });
+  fs.mkdirSync(path.join(sub, '.git'));
+  assert.equal(resolveStatsCwd({ startDir: root, home: '/home/u', exists: fs.existsSync }), sub);
+});
+
+test('resolveStatsCwd：无 .git 时回退 home', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-nogit-'));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  assert.equal(resolveStatsCwd({ startDir: root, home: '/home/u', exists: fs.existsSync }), '/home/u');
+});
+
+test('resolveStatsCwd：worktree 的 .git 文件也算命中', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-wt-'));
+  fs.writeFileSync(path.join(root, '.git'), 'gitdir: /somewhere/.git/worktrees/x\n');
+  assert.equal(resolveStatsCwd({ startDir: root, home: '/home/u', exists: fs.existsSync }), root);
 });
 
 test('collectAgentStats：非零退出重试，成功即返回', async () => {
@@ -259,4 +308,46 @@ test('ensureAgentOnPath：命中后把目录插到 PATH 最前且不重复', () 
   assert.equal(env.PATH, path.dirname(bin) + path.delimiter + '/other');
   assert.equal(ensureAgentOnPath('opencode', { env, exists: (p) => p === bin }), bin);
   assert.equal(env.PATH, path.dirname(bin) + path.delimiter + '/other', '已在 PATH 里不重复插入');
+});
+
+test('collectAgentStats：statsFile 落盘采集原文并回读，返回 cwd 与文件 mtime', async () => {
+  const statsFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-stats-')), 'cache', 'collaboration', 'stats.txt');
+  const r = await collectAgentStats({
+    cmd: 'opencode', env: { PATH: '' }, sleepFn: async () => {}, resolveCwd: () => '/git/root',
+    statsFile,
+    execFileFn: (bin, args, opts, cb) => { cb(null, SAMPLE, ''); },
+  });
+  assert.equal(r.sessions, 21);
+  assert.equal(r.cwd, '/git/root');
+  assert.ok(r.statsFileMtime > 0);
+  assert.equal(fs.readFileSync(statsFile, 'utf8'), SAMPLE);
+});
+
+test('collectAgentStats：失败无输出时回读上次 statsFile 内容并带 error 与 mtime', async () => {
+  const statsFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-stats-')), 'cache', 'collaboration', 'stats.txt');
+  fs.mkdirSync(path.dirname(statsFile), { recursive: true });
+  fs.writeFileSync(statsFile, SAMPLE, 'utf8');
+  const r = await collectAgentStats({
+    cmd: 'opencode', env: { PATH: '' }, sleepFn: async () => {}, resolveCwd: () => '/git/root',
+    statsFile,
+    execFileFn: (bin, args, opts, cb) => { cb(Object.assign(new Error('boom'), { code: 1 }), '', ''); },
+  });
+  assert.ok(r.error);
+  assert.equal(r.raw, SAMPLE);
+  assert.equal(r.cwd, '/git/root');
+  assert.ok(r.statsFileMtime > 0);
+});
+
+test('probeAgentStats：statsFile 落盘并返回 cwd 与文件 mtime', async () => {
+  const statsFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-stats-')), 'cache', 'collaboration', 'stats.txt');
+  const r = await probeAgentStats({
+    cmd: 'opencode', env: { PATH: '' }, resolveCwd: () => '/git/root',
+    statsFile,
+    execFileFn: (bin, args, opts, cb) => { cb(null, SAMPLE, ''); },
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.parsed.sessions, 21);
+  assert.equal(r.cwd, '/git/root');
+  assert.ok(r.statsFileMtime > 0);
+  assert.equal(fs.readFileSync(statsFile, 'utf8'), SAMPLE);
 });
