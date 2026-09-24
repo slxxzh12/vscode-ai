@@ -102,3 +102,30 @@ test('文件损坏回退空账本', () => {
   const ledger = createSessionLedger({ file, logsDir: path.join(dir, 'session-logs') });
   assert.deepEqual(ledger.read(), { sessions: [] });
 });
+
+test('分片会话账本：写按项目拆分、读合并，重启后可回读', () => {
+  const dir = tmpDir();
+  const dirFor = (pid) => path.join(dir, 'projects', pid || '_global');
+  const dirs = () => ['_global', 'p1', 'p2'].map((k) => path.join(dir, 'projects', k));
+  const ledger = createSessionLedger({ sessionsDirs: dirs, sessionsDirFor: dirFor });
+  ledger.upsert(entry('s1', { projectId: 'p1' }));
+  ledger.upsert(entry('s2', { projectId: 'p2' }));
+  ledger.upsert(entry('s3', { projectId: '' }));
+  assert.deepEqual(ledger.read().sessions.map((s) => s.id).sort(), ['s1', 's2', 's3']);
+  assert.equal(fs.existsSync(path.join(dir, 'projects', 'p1', 'sessions.json')), true);
+  assert.equal(fs.existsSync(path.join(dir, 'projects', 'p2', 'sessions.json')), true);
+  assert.equal(fs.existsSync(path.join(dir, 'projects', '_global', 'sessions.json')), true);
+  const fresh = createSessionLedger({ sessionsDirs: dirs, sessionsDirFor: dirFor });
+  assert.deepEqual(fresh.read().sessions.map((s) => s.id).sort(), ['s1', 's2', 's3']);
+});
+
+test('分片会话账本：删除某项目最后一个会话后清理其分片文件', () => {
+  const dir = tmpDir();
+  const dirFor = (pid) => path.join(dir, 'projects', pid || '_global');
+  const dirs = () => ['_global', 'p1'].map((k) => path.join(dir, 'projects', k));
+  const ledger = createSessionLedger({ sessionsDirs: dirs, sessionsDirFor: dirFor });
+  ledger.upsert(entry('s1', { projectId: 'p1' }));
+  assert.equal(fs.existsSync(path.join(dir, 'projects', 'p1', 'sessions.json')), true);
+  ledger.remove('s1');
+  assert.equal(fs.existsSync(path.join(dir, 'projects', 'p1', 'sessions.json')), false);
+});

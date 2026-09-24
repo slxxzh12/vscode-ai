@@ -40,8 +40,55 @@ export function normalizeLedger(input) {
   return { sessions: out.slice(0, MAX_SESSIONS) };
 }
 
-export function createSessionLedger({ file = null, logsDir = null, logDirFor = null, logger = console } = {}) {
-  const store = createJsonStore({ file, logger, normalize: normalizeLedger, defaults: () => ({ sessions: [] }) });
+// 会话账本按项目分片存储：读时合并各项目目录 + _global 的 sessions.json，写时按 projectId 拆分写回，并清理已空分片。
+function createShardedSessionsStore({ dirs = () => [], dirFor = (projectId) => '', logger = console } = {}) {
+  const writeJson = (f, obj) => {
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    const tmp = `${f}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
+    fs.renameSync(tmp, f);
+  };
+  const loadAll = () => {
+    const sessions = [];
+    for (const dir of new Set(dirs())) {
+      const f = path.join(dir, 'sessions.json');
+      if (!fs.existsSync(f)) continue;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(f, 'utf8'));
+        if (Array.isArray(parsed && parsed.sessions)) sessions.push(...parsed.sessions);
+      } catch (e) { logger?.warn?.('sessions load failed', f, (e && e.message) || e); }
+    }
+    return normalizeLedger({ sessions });
+  };
+  let data = loadAll();
+  const save = () => {
+    const buckets = new Map();
+    for (const s of data.sessions) {
+      const key = s.projectId || '';
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(s);
+    }
+    const written = new Set();
+    for (const [projectId, list] of buckets) {
+      const dir = dirFor(projectId);
+      written.add(path.resolve(dir));
+      try { writeJson(path.join(dir, 'sessions.json'), { sessions: list }); }
+      catch (e) { logger?.warn?.('sessions save failed', projectId, (e && e.message) || e); }
+    }
+    for (const dir of new Set(dirs())) {
+      if (written.has(path.resolve(dir))) continue;
+      const f = path.join(dir, 'sessions.json');
+      if (fs.existsSync(f)) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } }
+    }
+  };
+  return { read: () => data, write: (next) => { data = normalizeLedger(next); save(); return data; } };
+}
+
+export function createSessionLedger({ file = null, logsDir = null, logDirFor = null, sessionsDirs = null, sessionsDirFor = null, logger = console } = {}) {
+  // 提供 sessionsDirs + sessionsDirFor 时：会话账本按项目分片存（读合并、写拆分），否则退回单文件
+  const store = (sessionsDirs && sessionsDirFor)
+    ? createShardedSessionsStore({ dirs: sessionsDirs, dirFor: sessionsDirFor, logger })
+    : createJsonStore({ file, logger, normalize: normalizeLedger, defaults: () => ({ sessions: [] }) });
   const buffers = new Map();
   const dirty = new Set();
   const logFile = (id) => {

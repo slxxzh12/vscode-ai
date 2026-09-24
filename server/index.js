@@ -281,6 +281,34 @@ function buildWorkspace({ paths, port }) {
     const root = projectRootOf(projectId);
     return root ? projectDir(paths.dir, root) : path.join(paths.projectsDataDir, '_global');
   };
+  // 所有项目数据目录（含 _global）：供按项目分片存储的会话账本/消息历史合并读取
+  const listProjectDataDirs = () => {
+    const dirs = new Set([path.join(paths.projectsDataDir, '_global')]);
+    for (const p of projects.listProjects()) dirs.add(projectDir(paths.dir, p.root));
+    return [...dirs];
+  };
+  // 一次性迁移：老单文件 sessions.json 按 projectId 拆到各项目目录（在 sessionLedger 加载前执行）
+  function migrateSessionsToProjects() {
+    const old = paths.sessionsFile;
+    if (!fs.existsSync(old)) return;
+    let sessions = [];
+    try { const j = JSON.parse(fs.readFileSync(old, 'utf8')); sessions = Array.isArray(j && j.sessions) ? j.sessions : []; } catch { sessions = []; }
+    const buckets = new Map();
+    for (const s of sessions) {
+      const projectId = (s && typeof s.projectId === 'string' && s.projectId) || '';
+      if (!buckets.has(projectId)) buckets.set(projectId, []);
+      buckets.get(projectId).push(s);
+    }
+    for (const [projectId, list] of buckets) {
+      const f = path.join(projectDataDirOf(projectId), 'sessions.json');
+      try {
+        fs.mkdirSync(path.dirname(f), { recursive: true });
+        fs.writeFileSync(f, JSON.stringify({ sessions: list }, null, 2), 'utf8');
+      } catch (e) { log.warn?.('sessions migrate failed', f, (e && e.message) || e); }
+    }
+    try { fs.rmSync(old, { force: true }); } catch { /* ignore */ }
+  }
+  migrateSessionsToProjects();
   // 统计采集公用一个目录（与 projectId 无关）：用户选中目录根，从它向上找 .git 执行，找不到回退用户主目录
   let statsStartDir = '';
   const setStatsCwd = (root) => { statsStartDir = String(root || ''); };
@@ -291,7 +319,7 @@ function buildWorkspace({ paths, port }) {
   const composerPrefs = createComposerPrefs({ file: paths.composerPrefsFile, logger: log });
   const sessionProjects = createSessionProjects({ file: paths.sessionProjectsFile, logger: log });
   const windowState = createWindowState({ file: paths.windowStateFile, logger: log });
-  const sessionLedger = createSessionLedger({ file: paths.sessionsFile, logsDir: paths.sessionLogsDir, logDirFor: (projectId) => path.join(projectDataDirOf(projectId), 'session-logs'), logger: log });
+  const sessionLedger = createSessionLedger({ file: paths.sessionsFile, logsDir: paths.sessionLogsDir, logDirFor: (projectId) => path.join(projectDataDirOf(projectId), 'session-logs'), sessionsDirs: listProjectDataDirs, sessionsDirFor: projectDataDirOf, logger: log });
   // 一次性迁移：老单文件 message-history.jsonc 搬到按项目分目录的位置（按 sessionId 归属，无归属落 _global）
   function migrateHistoryToProjects() {
     const old = paths.historyFile;
@@ -316,10 +344,8 @@ function buildWorkspace({ paths, port }) {
   migrateHistoryToProjects();
   // 合并读取：所有项目 + _global 的 message-history（前端一次拉全量再按项目筛选，保持旧行为）
   function readHistoryAll() {
-    const dirs = new Set([path.join(paths.projectsDataDir, '_global')]);
-    for (const p of projects.listProjects()) dirs.add(projectDir(paths.dir, p.root));
     const all = [];
-    for (const dir of dirs) all.push(...readHistory(path.join(dir, 'message-history.jsonc')));
+    for (const dir of listProjectDataDirs()) all.push(...readHistory(path.join(dir, 'message-history.jsonc')));
     return all.sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
   }
   // 拆分写入：按 sessionId 归属项目，把全量列表写回各项目文件（无归属落 _global）
