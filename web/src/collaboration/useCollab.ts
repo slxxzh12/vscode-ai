@@ -162,7 +162,7 @@ export function useCollab() {
     getWorkflowSeed: () => http<{ version: number; workflows: { id: string; label: string; hash: string }[] }>('/api/workflows-seed'),
     sendPackage: (id: string, groupId: string) => post<{ code: string; pushed: number; failures: unknown[] }>(`/api/collab/packages/${id}/send`, { groupId }),
     publishPackage: (id: string) => post<{ code: string; name?: string; version?: string }>(`/api/collab/packages/${id}/publish`),
-    uploadPackage: (id: string, groupId: string) => post<{ code: string; packageId?: string }>(`/api/collab/packages/${id}/upload`, { groupId }),
+    uploadPackage: (id: string, groupId: string) => post<{ code: string; packageId?: string; name?: string; url?: string }>(`/api/collab/packages/${id}/upload`, { groupId }),
     installDownload: (name: string) => post<{ code: string }>('/api/collab/downloads/install', { name }),
     pollTasks: () => post<{ code: string; tasks?: number; updates?: { groupId: string; masterId?: string; version: string }[] }>('/api/collab/tasks/poll'),
     listTasks: (status?: string) => http<{ tasks: import('./distTasks').DistTask[] }>(`/api/collab/tasks${status ? `?status=${encodeURIComponent(status)}` : ''}`),

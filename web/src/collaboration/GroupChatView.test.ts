@@ -49,4 +49,14 @@ describe('GroupChatView 身份标识', () => {
     expect(meta.text()).toContain('alice');
     expect(meta.text()).toContain(t('collab.chat.me'));
   });
+
+  it('图片消息渲染缩略图并可点击放大', async () => {
+    const w = mountChat([msg({ id: 'i', kind: 'image', text: 'shot.png', meta: { name: 'shot.png', mime: 'image/png', size: 4, b64: 'aGk=' } })]);
+    await flushPromises();
+    const img = w.find('.imsg img.ithumb');
+    expect(img.exists()).toBe(true);
+    expect(img.attributes('src')).toBe('data:image/png;base64,aGk=');
+    await img.trigger('click');
+    expect(w.find('.lbox').exists()).toBe(true);
+  });
 });

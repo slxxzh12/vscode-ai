@@ -75,6 +75,27 @@ async function decide(p: { id: string }, approve: boolean) {
   await props.collab.approveCmd(p.id, approve);
   await props.collab.loadPendingCmds().catch(() => {});
 }
+
+// —— 发图 ——
+const fileInput = ref<HTMLInputElement | null>(null);
+const lightbox = ref<CollabChatMessage | null>(null);
+function pickImage() { fileInput.value?.click(); }
+async function onImageChosen(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const f = input.files?.[0];
+  input.value = '';
+  if (!f) return;
+  const mime = f.type || 'image/png';
+  try {
+    await props.collab.sendImage(props.groupId, f.name || 'image.png', mime, f);
+    await scrollBottom();
+  } catch (err) {
+    alert((err as Error)?.message || String(err));
+  }
+}
+function imageSrc(m: CollabChatMessage) {
+  return `data:${m.meta?.mime || 'image/png'};base64,${m.meta?.b64 || ''}`;
+}
 function fmtTime(ts: number) { return new Date(ts).toLocaleTimeString(); }
 function isMine(m: CollabChatMessage) { return m.fromId === me.value; }
 function nameOf(machineId: string) { return nameById.value[machineId] || machineId.slice(0, 6); }
@@ -141,6 +162,10 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
           <a v-if="distCards[m.id].url" class="dlink" :href="distCards[m.id].url" target="_blank" rel="noopener">{{ $t('collab.task.download_addr') }}: {{ distCards[m.id].url }}</a>
           <button v-if="showAccept(m, me)" class="dtasks" @click="openTasks">{{ $t('collab.task.goto_tasks') }}</button>
         </div>
+        <div v-else-if="m.kind === 'image'" class="imsg">
+          <img :src="imageSrc(m)" :alt="m.meta?.name || ''" class="ithumb" :title="$t('collab.chat.image_hint')" @click="lightbox = m" />
+          <div class="iname">{{ m.meta?.name || '' }}</div>
+        </div>
         <div v-else class="bubble">
           <span v-for="(seg, i) in highlightMentions(m.text, nameById)" :key="i" :class="{ at: seg.mention }">{{ seg.text }}</span>
         </div>
@@ -154,6 +179,8 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
         <div v-if="mentionMembers.length === 0" class="empty">{{ $t('collab.chat.no_match') }}</div>
       </div>
       <div class="row">
+        <button class="cimg" :title="$t('collab.chat.send_image')" @click="pickImage">{{ $t('collab.chat.send_image') }}</button>
+        <input ref="fileInput" type="file" accept="image/*" class="hidden-input" @change="onImageChosen" />
         <div class="cinputwrap">
           <textarea
             v-model="composer"
@@ -165,6 +192,11 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
         </div>
         <button class="csend" @click="submit">{{ $t('common.send') }}</button>
       </div>
+    </div>
+
+    <div v-if="lightbox" class="lbox" @click.self="lightbox = null">
+      <img :src="imageSrc(lightbox)" :alt="lightbox.meta?.name || ''" class="lbox-img" />
+      <button class="lbox-close" @click="lightbox = null">{{ $t('common.close') }}</button>
     </div>
   </div>
 </template>
@@ -210,4 +242,14 @@ button.ghost { background: none; border: 1px solid var(--bd); color: var(--tx2);
 .dmeta { color: var(--tx6); font-size: 11px; }
 .dlink { color: var(--ac2); font-size: 11px; word-break: break-all; text-decoration: none; }
 .dtasks { align-self: flex-start; background: var(--ac); color: var(--onac); border: none; border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+.cimg { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 10px; padding: 0 12px; cursor: pointer; font-size: 13px; flex: none; }
+.cimg:hover { border-color: var(--ac); color: var(--ac); }
+.hidden-input { display: none; }
+.imsg { align-self: flex-start; display: flex; flex-direction: column; gap: 4px; max-width: 260px; }
+.msg.mine .imsg { align-self: flex-end; }
+.ithumb { max-width: 240px; max-height: 240px; border-radius: 8px; border: 1px solid var(--bd); cursor: zoom-in; object-fit: contain; background: var(--bg3); }
+.iname { color: var(--tx6); font-size: 11px; word-break: break-all; }
+.lbox { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: flex; align-items: center; justify-content: center; z-index: 4000; }
+.lbox-img { max-width: 92vw; max-height: 88vh; border-radius: 6px; }
+.lbox-close { position: absolute; top: 16px; right: 20px; background: var(--bg2); color: var(--tx); border: 1px solid var(--bd); border-radius: 6px; padding: 6px 14px; cursor: pointer; }
 </style>

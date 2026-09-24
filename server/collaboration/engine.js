@@ -780,8 +780,9 @@ export class CollabEngine {
     const abs = path.join(this.uploadDir, path.basename(rec.storedFile));
     if (!fs.existsSync(abs)) return { code: 'file-missing' };
     const buf = fs.readFileSync(abs);
-    const name = `skills/${crypto.randomUUID()}-${path.basename(rec.fileName || 'assets.zip')}`;
-    this.writeDownload(name, buf, 'skill');
+    // 上传的包在上传时已落共享下载目录（rec.downloadName）：复用同一 name，避免重复写一份
+    const name = rec.downloadName || `skills/${crypto.randomUUID()}-${path.basename(rec.fileName || 'assets.zip')}`;
+    if (!rec.downloadName || !fs.existsSync(path.join(this.downloadsDir, name))) this.writeDownload(name, buf, 'skill');
     const up = this.publishUpdate([name]);
     const version = up.code === 'ok' ? up.update.version : '';
     const pkg = rec.package || {};
@@ -827,18 +828,20 @@ export class CollabEngine {
     const res = await this._post(hub.host, hub.port, env);
     if (!res.ok) return { code: 'unreachable', error: res.error };
     const masterPackageId = (res.data && res.data.packageId) || '';
-    this._sendPkgUploadNotice(g, rec, pkg, masterPackageId);
-    return { code: 'ok', packageId: masterPackageId };
+    const masterName = (res.data && res.data.name) || '';
+    const masterUrl = (res.data && res.data.url) || '';
+    this._sendPkgUploadNotice(g, rec, pkg, masterPackageId, masterUrl);
+    return { code: 'ok', packageId: masterPackageId, name: masterName, url: masterUrl };
   }
   // 群内通知群主：我上传了一个待审核的包（kind:'pkg-upload'）
-  _sendPkgUploadNotice(g, rec, pkg, masterPackageId) {
+  _sendPkgUploadNotice(g, rec, pkg, masterPackageId, masterUrl = '') {
     const count = (pkg.skills || []).length + (pkg.command || []).length + (pkg.agent || []).length + (pkg.workflow || []).length;
     const master = g.members.find((m) => m.machineId === g.hubId);
     const text = t('collab.dist.upload_notice', { name: rec.fileName || '', count, master: master ? profileLabel(master) : '' });
     const msg = {
       id: crypto.randomUUID(), groupId: g.id, kind: 'pkg-upload', fromId: this.pub.machineId,
       text, toId: g.hubId, ts: Date.now(), seq: this.store.nextChatSeq(),
-      meta: { type: distTypeOf(pkg), name: rec.fileName || '', hash: rec.hash || '', size: Number(rec.size) || 0, count, packageId: masterPackageId, ...pkg },
+      meta: { type: distTypeOf(pkg), name: rec.fileName || '', hash: rec.hash || '', size: Number(rec.size) || 0, count, packageId: masterPackageId, url: masterUrl, ...pkg },
     };
     this.store.addChatMessage(msg);
     this._broadcastChat(g.id, msg);
@@ -883,13 +886,18 @@ export class CollabEngine {
     fs.mkdirSync(this.uploadDir, { recursive: true });
     const label = `assets-${String(p.machineId).slice(0, 8)}-${Date.now().toString(36)}.zip`;
     fs.writeFileSync(path.join(this.uploadDir, label), data);
+    // 上传即写入共享下载目录并生成下载地址，供群主审阅/应用（尚未发布：不进升级种子、不广播）
+    const downloadName = `skills/${crypto.randomUUID()}-${path.basename(name || 'assets.zip')}`;
+    let downloadUrl = '';
+    try { this.writeDownload(downloadName, data, 'skill'); downloadUrl = distUrl(this.pub.host, this.pub.port, downloadName); } catch { /* downloads 不可写时忽略 */ }
     const rec = this.store.addOutbox({
       id: crypto.randomUUID(), kind: 'file', groupId, skillName: null, fileName: name,
       storedFile: label, size: data.length, hash, createdAt: Date.now(),
+      downloadName, downloadUrl,
       package: { sent: false, skills: pkg.skills || [], command: pkg.command || [], agent: pkg.agent || [], workflow: pkg.workflow || [] },
     });
     this._emit('synced', {});
-    return { ok: true, data: { packageId: rec.id } };
+    return { ok: true, data: { packageId: rec.id, name: downloadName, url: downloadUrl } };
   }
   // slave 从本地 downloads 缓存安装捆绑包
   installDownload(name) {
@@ -974,9 +982,11 @@ export class CollabEngine {
     this._emit('tasks', { groupId: task.groupId, created: [], accepted: id });
     return { code: 'ok', counts: r.counts };
   }
-  // 群主接受成员上传：发布到群（写共享下载 + 生成升级种子 + 广播）
+  // 群主接受成员上传：先在本机「应用」这份包（解包装 skills/command/agent + 融合 workflow），
+  // 再发布到群（写共享下载 + 生成升级种子 + 广播）；先应用可让广播正文解析出正确的 workflow label
   _acceptUploadTask(task) {
     if (task.status !== 'pending' && task.status !== 'failed') return { code: 'not-pending' };
+    this._applyUploadToSelf(task.payload && task.payload.packageId);
     const r = this.publishPackage(task.payload && task.payload.packageId);
     if (r.code !== 'ok') {
       this.taskStore.setStatus(task.id, 'failed', { payload: { ...task.payload, lastError: r.code } });
@@ -986,6 +996,21 @@ export class CollabEngine {
     this._addSystemMessage(task.groupId, t('collab.sys.upload_accepted', { name: task.name || '' }));
     this._emit('tasks', { groupId: task.groupId, created: [], accepted: task.id });
     return { code: 'ok', version: r.version };
+  }
+  // 把成员上传的包解包应用到群主本机（等同成员侧 installDownload），失败只告警不阻断发布
+  _applyUploadToSelf(packageId) {
+    const rec = this.store.listOutbox().find((r) => r.id === packageId);
+    if (!rec || !rec.storedFile || !this.uploadDir) return;
+    const abs = path.join(this.uploadDir, path.basename(rec.storedFile));
+    if (!fs.existsSync(abs)) return;
+    try {
+      installBundleZip({
+        zip: fs.readFileSync(abs),
+        skillRoot: this.skillRoot(),
+        configRoot: this.configRoot(),
+        installWorkflows: (list) => (this.mergeWorkflows ? this.mergeWorkflows(list) : null),
+      });
+    } catch (e) { this.log?.warn?.('apply upload to master failed', (e && e.message) || e); }
   }
   ignoreTask(id) {
     const task = this.taskStore?.get?.(id);

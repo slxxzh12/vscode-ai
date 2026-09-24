@@ -114,3 +114,46 @@ test('acceptTask：拉不到包 → failed + lastError；已 done/ignored → no
     assert.equal((await B.acceptTask('task-x')).code, 'not-pending');
   } finally { await h.stop(); }
 });
+
+test('群主接受成员上传：把 workflow 合并进群主本地 workflowStore', async () => {
+  const h = await createPairHarness({ skipSkills: true });
+  try {
+    const [A, B] = h.nodes;
+    const dir = tmpDir('df-accept-upload-');
+    A.taskStore = createTaskStore({ file: path.join(dir, 'a.db'), logger: { warn() {} } });
+    B.taskStore = createTaskStore({ file: path.join(dir, 'b.db'), logger: { warn() {} } });
+
+    A.getWorkflows = () => [];
+    B.getWorkflows = () => [{ id: 'dev', label: '开发流程', stages: [{ id: 's1', label: 'S1', group: '', prompts: ['p'] }] }];
+    const mergedA = [];
+    A.mergeWorkflows = (list) => { mergedA.push(...list); return list; };
+    B.mergeWorkflows = (list) => list;
+
+    A.verifyAccessToken = (tk) => tk === 'good';
+    A.ensureGroup();
+    const r = await B.joinByLink({ host: '127.0.0.1', port: 39991, token: 'good' });
+    const group = r.group;
+
+    const rec = await B.buildPackage({ workflow: ['dev'] });
+    const up = await B.uploadPackageToMaster(rec.id, group.id);
+    assert.equal(up.code, 'ok');
+    assert.ok(up.packageId, '上传应返回群主侧 packageId');
+    assert.ok(up.name && up.name.startsWith('skills/'), '上传应返回群主侧下载 name');
+    assert.ok(up.url && up.url.includes('/api/collab/downloads/file/'), '上传应返回群主侧下载 url');
+
+    // 群主侧 ingest 上传请求 → 建 upload 任务（带下载地址）
+    const notices = A.store.listChatMessages(group.id).filter((m) => m.kind === 'pkg-upload');
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].meta.url, up.url, '上传通知 meta 应带下载地址');
+    for (const m of notices) A.ingestUploadRequest(m);
+    const upTask = A.taskStore.list({ kind: 'upload' })[0];
+    assert.ok(upTask, '群主应有 upload 任务');
+    assert.equal(upTask.url, up.url, '群主 upload 任务应带下载地址');
+
+    const accept = await A.acceptTask(upTask.id);
+    assert.equal(accept.code, 'ok');
+    assert.equal(mergedA.length, 1, '群主本地应融合 workflow');
+    assert.equal(mergedA[0].id, 'dev');
+    assert.equal(mergedA[0].label, '开发流程');
+  } finally { await h.stop(); }
+});

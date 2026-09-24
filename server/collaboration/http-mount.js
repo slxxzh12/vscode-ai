@@ -64,7 +64,7 @@ export function createCollabMount({ engine, logger = console }) {
     const seg = url.pathname.replace(/^\/api\/collab/, '').split('/').filter(Boolean);
     // 仅 POST/PUT 读 body，避免 GET/DELETE 无 body 时挂起；群发文件走 raw body（另读）
     const isBodyMethod = ['POST', 'PUT'].includes(m);
-    const isFileUpload = seg[0] === 'groups' && seg[2] === 'files' && m === 'POST';
+    const isFileUpload = seg[0] === 'groups' && (seg[2] === 'files' || seg[2] === 'image') && m === 'POST';
     const isAssetImport = seg[0] === 'import' && seg.length === 1 && m === 'POST';
     let body = {};
     if (isBodyMethod && !isFileUpload && !isAssetImport) {
@@ -240,6 +240,15 @@ export function createCollabMount({ engine, logger = console }) {
         const data = await readRaw(req).catch((e) => null);
         if (!data) return sendJson(res, 413, { error: 'file too large or read failed' });
         const r = await engine.sendFileToGroup(seg[1], { fileName: name, data });
+        if (r.code !== 'ok') return sendJson(res, 400, { error: r.code });
+        return ok(res, r);
+      }
+      if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'image' && m === 'POST') {
+        const name = url.searchParams.get('name') || '';
+        const mime = url.searchParams.get('mime') || '';
+        const data = await readRaw(req).catch((e) => null);
+        if (!data) return sendJson(res, 413, { error: 'file too large or read failed' });
+        const r = await engine.sendImage({ groupId: seg[1], name, mime, data });
         if (r.code !== 'ok') return sendJson(res, 400, { error: r.code });
         return ok(res, r);
       }

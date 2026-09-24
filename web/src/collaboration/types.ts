@@ -10,6 +10,7 @@ export interface CollabUsage {
   input?: number; output?: number; cacheRead?: number; cacheWrite?: number;
   collectedAt?: number; receivedAt?: number; error?: string;
   machineId?: string; employeeId?: string; username?: string; host?: string; port?: number;
+  source?: 'auto' | 'image';
 }
 export interface CollabSnapshot {
   identity: CollabProfile;
@@ -26,8 +27,8 @@ export const EMPTY_SNAPSHOT: CollabSnapshot = {
   group: null, groups: [], heartbeats: {}, skillsInbox: [], outbox: [], groupSkills: [],
 };
 
-export interface CollabChatMeta { reqId: string | null; exitCode: number | null; stderr: string | null; durationMs: number | null; }
-export type CollabChatKind = 'text' | 'cmd-result' | 'system';
+export interface CollabChatMeta { reqId?: string | null; exitCode?: number | null; stderr?: string | null; durationMs?: number | null; name?: string; mime?: string; size?: number; b64?: string; }
+export type CollabChatKind = 'text' | 'cmd-result' | 'system' | 'image';
 export interface CollabChatMessage {
   id: string; groupId: string; kind: CollabChatKind;
   fromId: string; text: string; toId: string | null;
