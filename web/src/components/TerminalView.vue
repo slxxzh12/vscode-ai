@@ -624,7 +624,7 @@ watch(() => props.projectId, (nid, oid) => {
   if (nid === oid) return;
   if (!agentSid.value || !agentActive()) return;
   if (agentProjectId.value === nid) return;
-  void restartAgentForProject();
+  // 切换项目目录：不自动重启/重建固定 Agent 会话（由用户手动开启）
 });
 // —— 空白首页：无页签时显示欢迎页（不再自动强开 Agent）——
 const showWelcome = computed(() => !props.phone && props.center.tabs.value.length === 0);
@@ -1056,8 +1056,7 @@ function init() {
     if (existing) {
       agentSid.value = existing.id;                       // 重新挂载后绑定回固定 Agent 会话
       agentProjectId.value = existing.projectId ?? null;
-      props.terminal.switchTo(existing.id);               // 复用已存在的 Agent 会话
-      if (props.projectId && existing.projectId !== props.projectId) void restartAgentForProject();   // 项目已切换：换到当前目录
+      props.terminal.switchTo(existing.id);               // 复用已存在的 Agent 会话（项目不同也不自动重建）
     }
   });
   unsubCfg = props.terminal.on(S2C.CONFIG_CHANGED, async () => {
