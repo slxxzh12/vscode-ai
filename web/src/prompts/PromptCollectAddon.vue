@@ -73,8 +73,6 @@ function toast(status: string, target: CollectTarget | null) {
     ElMessage.success(t('pc.ok', { wf: wfLabel(target.workflowId), stage: stageLabel(target.workflowId, target.stageId) }));
   } else if (status === 'exists') {
     ElMessage.warning(t('pc.exists', { stage: target ? stageLabel(target.workflowId, target.stageId) : '' }));
-  } else if (status === 'no-workflow') {
-    ElMessage.error(t('pc.no_workflows'));
   } else if (status === 'no-stage') {
     ElMessage.error(t('pc.no_stages'));
   } else {
@@ -83,10 +81,10 @@ function toast(status: string, target: CollectTarget | null) {
 }
 
 async function quickAdd() {
-  if (!hasWorkflows.value) { ElMessage.error(t('pc.no_workflows')); return; }
   const status = await pc.collect(props.text);
   toast(status, pc.lastTarget.value);
 }
+function addToMine() { open.value = false; void quickAdd(); }
 async function pick(target: CollectTarget) {
   const status = await pc.collect(props.text, target);
   toast(status, target);
@@ -144,7 +142,9 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </template>
-      <div v-else class="pcempty">{{ $t('pc.no_workflows') }}</div>
+      <div v-else class="pcnone">
+        <button class="pcaddmine" @click="addToMine">{{ $t('pc.add_to_mine') }}</button>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -165,4 +165,7 @@ onBeforeUnmount(() => {
 .pcwf:hover, .pcst:hover { background: var(--bg3); }
 .pcwf.on { color: var(--ac2); border-color: var(--ac2); }
 .pcempty { color: var(--tx6); padding: 8px; }
+.pcnone { padding: 4px; }
+.pcaddmine { width: 100%; text-align: left; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 5px 8px; cursor: pointer; font-family: inherit; font-size: 12px; }
+.pcaddmine:hover { border-color: var(--ac2); color: var(--ac2); }
 </style>

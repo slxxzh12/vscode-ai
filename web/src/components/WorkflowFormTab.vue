@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { t } from '../i18n';
+import { promptAbbr } from '../prompts/promptCollect';
 import CodeEditor from './CodeEditor.vue';
 import {
   groupBands, moveItem, moveStageToIndex, duplicateWorkflow, duplicateStage,
@@ -173,6 +174,7 @@ function dropPrompt(wi: number, si: number, pi: number) {
             @dragover.prevent @drop.stop="dropPrompt(wi, band.startIndex + sInBand, pi)">
             <span class="handle" draggable="true" :title="$t('wfe.drag_hint')"
               @dragstart="onDragStart($event, { kind: 'prompt', wfIndex: wi, stageIndex: band.startIndex + sInBand, index: pi })" @dragend="onDragEnd">⋮</span>
+            <span v-if="p.trim()" class="pabbr" :title="p">{{ promptAbbr(p) }}</span>
             <CodeEditor class="ta" :model-value="p" :placeholder="$t('wfe.prompt')" @change="setPrompt(wi, band.startIndex + sInBand, pi, $event)" />
             <button class="mini danger" @click="removePrompt(wi, band.startIndex + sInBand, pi)">×</button>
           </div>
@@ -212,4 +214,5 @@ function dropPrompt(wi: number, si: number, pi: number) {
 .ln { font-size: 11px; }
 .ln.err { color: var(--err); }
 .ln.warn { color: var(--warn, #d19a00); }
+.pabbr { flex: none; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--tx3); align-self: center; }
 </style>

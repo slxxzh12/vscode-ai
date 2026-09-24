@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
 import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
 import { t } from '../i18n';
+import { __resetPromptCollect } from '../prompts/usePromptCollect';
 import HistoryList from './HistoryList.vue';
 
 type Entry = { projectId: string; path: string; name: string; projName: string; ts: number };
@@ -51,16 +53,18 @@ describe('HistoryList', () => {
     expect(w.emitted('clear')).toHaveLength(1);
   });
 
-  it('页签切换 emit update:tab（消息 / 目录 / 最近文件 三个页签）', async () => {
+  it('页签切换 emit update:tab（我的工作流 / 消息 / 目录 / 最近文件 四个页签）', async () => {
     const w = mount();
     const items = w.findAll('.el-tabs__item');
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(4);
     await items[0].trigger('click');
-    expect(w.emitted('update:tab')?.[0]).toEqual(['messages']);
+    expect(w.emitted('update:tab')?.[0]).toEqual(['prompts']);
     await items[1].trigger('click');
-    expect(w.emitted('update:tab')?.[1]).toEqual(['tree']);
+    expect(w.emitted('update:tab')?.[1]).toEqual(['messages']);
     await items[2].trigger('click');
-    expect(w.emitted('update:tab')?.[2]).toEqual(['files']);
+    expect(w.emitted('update:tab')?.[2]).toEqual(['tree']);
+    await items[3].trigger('click');
+    expect(w.emitted('update:tab')?.[3]).toEqual(['files']);
   });
 
   it('目录页签渲染文件树（无项目时显示空态，不请求）', async () => {
@@ -278,5 +282,14 @@ describe('HistoryList', () => {
     await w.vm.$nextTick();
     await w.find('.tnode').trigger('click');
     expect(w.find('.mrow .pcadd').exists()).toBe(true);
+  });
+
+  it('我的工作流页签：渲染内联工作流树组件', async () => {
+    __resetPromptCollect();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ workflows: [] }) })));
+    const w = mount({ tab: 'prompts' });
+    await flushPromises();
+    expect(w.find('.wlp').exists()).toBe(true);
+    vi.unstubAllGlobals();
   });
 });

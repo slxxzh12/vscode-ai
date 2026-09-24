@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appendPromptToWorkflow } from './promptCollect';
+import { appendPromptToWorkflow, promptAbbr, collectToMyWorkflow, MY_WF_ID, MY_STAGE_ID } from './promptCollect';
 import type { Workflow } from '../workflowModel';
 
 function seed(): Workflow[] {
@@ -63,5 +63,71 @@ describe('appendPromptToWorkflow', () => {
     expect(appendPromptToWorkflow(seed(), 'w1', 'nope', 'x').status).toBe('no-stage');
     expect(appendPromptToWorkflow(seed(), 'w2', 's1', 'x').status).toBe('no-stage');
     expect(appendPromptToWorkflow([], 'w1', 's1', 'x').status).toBe('no-workflow');
+  });
+});
+
+const LABELS = { wfId: MY_WF_ID, wfLabel: 'Mine', stageId: MY_STAGE_ID, stageLabel: 'Common' };
+
+describe('promptAbbr', () => {
+  it('取第一个换行前的内容并 trim', () => {
+    expect(promptAbbr('  line1\nline2  ')).toBe('line1');
+  });
+  it('单行原样返回', () => {
+    expect(promptAbbr('hello')).toBe('hello');
+  });
+  it('超过 max 截断并加省略号', () => {
+    const s = promptAbbr('x'.repeat(50), 40);
+    expect(s).toBe('x'.repeat(40) + '…');
+  });
+  it('空 / 纯空白返回空串', () => {
+    expect(promptAbbr('')).toBe('');
+    expect(promptAbbr('   \n ')).toBe('');
+    expect(promptAbbr(null as unknown as string)).toBe('');
+  });
+});
+
+describe('collectToMyWorkflow', () => {
+  it('空列表 → 新建「我的工作流」，完整原文写入', () => {
+    const list: Workflow[] = [];
+    const snapshot = JSON.stringify(list);
+    const r = collectToMyWorkflow(list, 'hello', LABELS);
+    expect(r.status).toBe('ok');
+    expect(r.workflowId).toBe(MY_WF_ID);
+    expect(r.stageId).toBe(MY_STAGE_ID);
+    expect(r.list[0].id).toBe(MY_WF_ID);
+    expect(r.list[0].label).toBe('Mine');
+    expect(r.list[0].stages[0].id).toBe(MY_STAGE_ID);
+    expect(r.list[0].stages[0].label).toBe('Common');
+    expect(r.list[0].stages[0].prompts).toEqual(['hello']);
+    expect(JSON.stringify(list)).toBe(snapshot);
+  });
+
+  it('已有同 id 工作流 → 复用它并追加（不新建重复）', () => {
+    const list: Workflow[] = [{ id: MY_WF_ID, label: 'Mine', stages: [{ id: MY_STAGE_ID, label: 'Common', prompts: ['a'] }] }];
+    const r = collectToMyWorkflow(list, 'b', LABELS);
+    expect(r.status).toBe('ok');
+    expect(r.list).toHaveLength(1);
+    expect(r.list[0].stages[0].prompts).toEqual(['a', 'b']);
+  });
+
+  it('已有同 id 工作流但无阶段 → 补一个阶段后写入', () => {
+    const list: Workflow[] = [{ id: MY_WF_ID, label: 'Mine', stages: [] }];
+    const r = collectToMyWorkflow(list, 'b', LABELS);
+    expect(r.status).toBe('ok');
+    expect(r.list[0].stages[0].id).toBe(MY_STAGE_ID);
+    expect(r.list[0].stages[0].prompts).toEqual(['b']);
+  });
+
+  it('重复文本 → exists 且列表不变', () => {
+    const list: Workflow[] = [{ id: MY_WF_ID, label: 'Mine', stages: [{ id: MY_STAGE_ID, label: 'Common', prompts: ['a'] }] }];
+    const r = collectToMyWorkflow(list, '  a  ', LABELS);
+    expect(r.status).toBe('exists');
+    expect(r.list[0].stages[0].prompts).toEqual(['a']);
+  });
+
+  it('空 / 纯空白文本 → exists 且不创建工作流', () => {
+    const r = collectToMyWorkflow([], '   ', LABELS);
+    expect(r.status).toBe('exists');
+    expect(r.list).toEqual([]);
   });
 });

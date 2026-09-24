@@ -6,9 +6,10 @@ import { buildSessionTree, type SessionNode, type SessionExtra } from '../sessio
 import TreeView from './TreeView.vue';
 import { projectTreeSource } from '../tree/projectTreeSource';
 import PromptCollectAddon from '../prompts/PromptCollectAddon.vue';
+import WorkflowListPane from '../prompts/WorkflowListPane.vue';
 
 export interface HistoryEntry { projectId: string; path: string; name: string; projName: string; ts: number; }
-export type SideTab = 'files' | 'messages' | 'tree';
+export type SideTab = 'files' | 'messages' | 'tree' | 'prompts';
 const props = withDefaults(defineProps<{
   items: HistoryEntry[]; tab: SideTab; messages: HistoryMessage[];
   filter?: boolean; liveSessionIds?: string[]; sessions?: SessionExtra[];
@@ -37,7 +38,7 @@ const emit = defineEmits<{
   (e: 'edit-session', sessionId: string, name: string): void;
   (e: 'open-file', projectId: string, path: string, name: string): void;
   (e: 'detail-file', projectId: string, path: string, name: string): void;
-  (e: 'open-file-at', projectId: string, path: string, name: string, line?: number): void;
+  (e: 'open-file-at', projectId: string, path: string, name: string, line?: number, query?: string, caseSensitive?: boolean): void;
 }>();
 
 // 目录页签的数据源：项目文件树（统一 TreeView）
@@ -45,7 +46,7 @@ const treeSource = computed(() => projectTreeSource({
   projectId: props.projectId || '',
   onOpenFile: (pid, p, name) => emit('open-file', pid, p, name),
   onDetailFile: (pid, p, name) => emit('detail-file', pid, p, name),
-  onOpenFileAt: (pid, p, name, line) => emit('open-file-at', pid, p, name, line),
+  onOpenFileAt: (pid, p, name, line, query, caseSensitive) => emit('open-file-at', pid, p, name, line, query, caseSensitive),
 }));
 
 // 页签交给 Element Plus 的 el-tabs 渲染，切页签仍由父组件持有的 tab 决定
@@ -82,11 +83,14 @@ const filteredMessages = computed(() => {
 
 const shownItems = computed(() => filteredItems.value.slice(0, fileLimit.value));
 const shownMessages = computed(() => filteredMessages.value.slice(0, msgLimit.value));
-const hasMore = computed(() => props.tab === 'files'
-  ? fileLimit.value < filteredItems.value.length
-  : msgLimit.value < (treeView.value ? treeTotal.value : filteredMessages.value.length));
+const hasMore = computed(() => {
+  if (props.tab === 'files') return fileLimit.value < filteredItems.value.length;
+  if (props.tab === 'prompts') return false;
+  return msgLimit.value < (treeView.value ? treeTotal.value : filteredMessages.value.length);
+});
 const searching = computed(() => query.value.trim().length > 0);
 const noMatch = computed(() => {
+  if (props.tab === 'prompts') return false;
   if (!searching.value) return false;
   if (props.tab === 'files') return props.items.length > 0 && filteredItems.value.length === 0;
   if (treeView.value) return (props.messages.length > 0 || props.sessions.length > 0) && treeNodes.value.length === 0;
@@ -109,6 +113,8 @@ function onScroll(e: Event) {
   if (el.scrollTop + el.clientHeight < el.scrollHeight - 40) return;
   if (props.tab === 'files') {
     if (fileLimit.value < filteredItems.value.length) fileLimit.value += PAGE;
+  } else if (props.tab === 'prompts') {
+    return;
   } else if (msgLimit.value < (treeView.value ? treeTotal.value : filteredMessages.value.length)) {
     msgLimit.value += PAGE;
   }
@@ -208,6 +214,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
   <div class="hl">
     <header class="hh">
       <el-tabs v-model="activeTab" class="hltabs">
+        <el-tab-pane :label="$t('pc.my_workflow')" name="prompts" />
         <el-tab-pane :label="$t('hist.tab.messages')" name="messages" />
         <el-tab-pane :label="$t('hist.tab.tree')" name="tree" />
         <el-tab-pane :label="$t('hist.tab.files')" name="files" />
@@ -251,6 +258,9 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
         </div>
       </template>
 
+      <template v-else-if="tab === 'prompts'">
+        <WorkflowListPane />
+      </template>
       <template v-else>
         <template v-if="treeView">
           <div v-if="treeNodes.length === 0" class="empty">{{ $t('hist.empty_messages') }}</div>
