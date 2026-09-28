@@ -258,12 +258,12 @@ export function probeAgentStats({
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 采集本机用量。命令来自 agent 配置的 statsCmd 模板（每个 agent 一套），未配置时回退 `<cmd> stats --days N`。
-// opencode stats 偶发（并发访问数据目录时）非零退出，故默认重试几次；命令不存在（ENOENT）重试无意义，直接返回 error。
+// 默认只跑一次（启动即报一次 + 每 4 小时定时）；失败时由 statsFile 落盘回读兜底，不再重复拉起进程（避免弹窗）。
 export function collectAgentStats({
   cmd = 'opencode', statsCmd = '', days = 60, timeoutMs = 20000, env = process.env,
-  attempts = 3, retryDelayMs = 800, execFileFn = execFile, sleepFn = sleep,
+  attempts = 1, retryDelayMs = 800, execFileFn = execFile, sleepFn = sleep,
   cwd = null, resolveCwd = resolveStatsCwd,   // 默认在 git 根目录执行（无 git 回退用户主目录）
-  startDir = undefined,                       // 起始目录：从用户选中目录向上找 .git；空则交给 resolveStatsCwd 默认（process.cwd()）
+  startDir = undefined,                       // 起始目录：从用户选中目录向下找 .git；空则交给 resolveStatsCwd 默认（process.cwd()）
   home = os.homedir(),
   statsFile = null,                           // 采集原文落盘路径（如 <数据目录>/cache/collaboration/stats.txt）
 } = {}) {

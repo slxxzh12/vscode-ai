@@ -162,10 +162,21 @@ test('resolveStatsCwd：worktree 的 .git 文件也算命中', () => {
   assert.equal(resolveStatsCwd({ startDir: root, home: '/home/u', exists: fs.existsSync }), root);
 });
 
-test('collectAgentStats：非零退出重试，成功即返回', async () => {
+test('collectAgentStats：默认只跑一次（不重试），失败带 error 与回退原文', async () => {
   let calls = 0;
   const r = await collectAgentStats({
     cmd: 'opencode', env: { PATH: '' }, sleepFn: async () => {},
+    execFileFn: (bin, args, opts, cb) => { calls += 1; cb(Object.assign(new Error('Command failed'), { code: 'ERR' }), '', ''); },
+  });
+  assert.equal(calls, 1);
+  assert.equal(r.error, 'Command failed');
+  assert.equal(r.code, 'ERR');
+});
+
+test('collectAgentStats：配 attempts=3 时非零退出重试，成功即返回', async () => {
+  let calls = 0;
+  const r = await collectAgentStats({
+    cmd: 'opencode', env: { PATH: '' }, sleepFn: async () => {}, attempts: 3,
     execFileFn: (bin, args, opts, cb) => {
       calls += 1;
       if (calls < 3) cb(Object.assign(new Error('Command failed'), { code: 'ERR' }), '', '');
