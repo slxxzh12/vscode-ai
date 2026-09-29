@@ -57,7 +57,7 @@ import { setLocale, t } from './i18n.js';
 import { isPeerRequest, resolveInviteDaysAllowForever, resolveBindHost, hostRestartNeeded } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
-import { instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
+import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
 import { APP_DIR, resolvePort, validPort, writePortFile, writeRuntimePort, readPortFile } from './port-file.js';
 import { seedPlugins } from './relay-plugins.js';
 import { publicFingerprint } from './collaboration/identity.js';
@@ -471,7 +471,9 @@ function buildWorkspace({ paths, port }) {
     logger: log,
   });
 
-  const identity = loadIdentity({ file: paths.identityFile, employeeId: detectEmployeeId(), host: HOST, port });
+  // 机器级密钥文件：同机各端口共用同一 machineId/公私钥（NODE 多实例模式保持各自隔离）
+  const identityKeyFile = NODE ? null : path.join(dataHome(), 'identity.json');
+  const identity = loadIdentity({ file: paths.identityFile, keyFile: identityKeyFile, employeeId: detectEmployeeId(), host: HOST, port });
   const eventBus = createEventBus();
   const engine = new CollabEngine({
     store: new CollabStore({ file: paths.storeFile, logger: log }),
