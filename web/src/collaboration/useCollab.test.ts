@@ -159,3 +159,20 @@ describe('useCollab chat', () => {
     await expect(c.sendGroupFile('g1', 'f.bin', { size: 1 } as Blob)).resolves.toEqual({ code: 'ok' });
   });
 });
+
+describe('useCollab 清理成员', () => {
+  it('removeMembers / removeUsagePeers 命中正确路由', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((async (url: unknown, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return jsonRes({});
+    }) as typeof fetch);
+    const c = useCollab();
+    await c.removeMembers('g1', ['m1']);
+    await c.removeUsagePeers('g1', ['m1']);
+    expect(calls[0].url).toContain('/api/collab/groups/g1/members/remove');
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ machineIds: ['m1'] });
+    expect(calls[1].url).toContain('/api/usage/peers/remove');
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ groupId: 'g1', machineIds: ['m1'] });
+  });
+});

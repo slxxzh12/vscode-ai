@@ -170,6 +170,10 @@ export function useCollab() {
     ignoreTask: (id: string) => post<{ code: string }>(`/api/collab/tasks/${id}/ignore`),
     getDirs: () => http<{ upload: string | null; download: string | null }>('/api/collab/dirs'),
     distributeToGroup: (groupId: string, skillNames: string[]) => post(`/api/collab/groups/${groupId}/distribute`, { skillNames }),
+    removeMembers: (groupId: string, machineIds: string[]) =>
+      post<{ code: string; removed?: string[] }>(`/api/collab/groups/${groupId}/members/remove`, { machineIds }),
+    removeUsagePeers: (groupId: string, machineIds: string[]) =>
+      post<{ removed: string[] }>('/api/usage/peers/remove', { groupId, machineIds }),
     installInbox: (id: string) => post(`/api/collab/inbox/${id}/install`),
     ignoreInbox: (id: string) => post(`/api/collab/inbox/${id}/ignore`),
     async removeInbox(id: string) { await http(`/api/collab/inbox/${id}`, { method: 'DELETE' }); return refresh(); },
