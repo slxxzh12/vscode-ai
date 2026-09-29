@@ -4,9 +4,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDevflowConfig } from '../devflow-config.js';
+import { sortWorkflows } from '@devflow/shared/workflow-xml';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SEED = path.join(ROOT, 'config', 'devflow.xml');
+
+test('seed 配置：工作流默认顺序 开发(500) > 测试(400) > 文档(300)', () => {
+  const cfg = parseDevflowConfig(fs.readFileSync(SEED, 'utf8'));
+  const byId = new Map(cfg.workflows.map((w) => [w.id, w]));
+  assert.equal(byId.get('dev').priority, 500);
+  assert.equal(byId.get('test').priority, 400);
+  assert.equal(byId.get('doc').priority, 300);
+  assert.deepEqual(sortWorkflows(cfg.workflows).map((w) => w.id), ['dev', 'test', 'doc']);
+});
 
 test('seed 配置：开发工作流首阶段为「基础环境检查」（env-check/需求）', () => {
   const cfg = parseDevflowConfig(fs.readFileSync(SEED, 'utf8'));

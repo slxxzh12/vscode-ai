@@ -32,7 +32,7 @@
   </agents>
 
   <workflows>
-    <workflow id="dev" label="开发工作流">
+    <workflow id="dev" label="开发工作流" priority="500">
       <stage id="env-check" label="基础环境检查" group="需求">
         <prompt>【基础环境检查】请对当前工作目录做一次基础环境检查与初始化。除缺失内容外一律不覆盖，保持幂等。
 
@@ -88,7 +88,7 @@
       </stage>
     </workflow>
 
-    <workflow id="test" label="测试工作流">
+    <workflow id="test" label="测试工作流" priority="400">
       <stage id="scope" label="测试范围">
         <prompt>请梳理本次改动的影响面，产出测试范围与优先级清单。</prompt>
         <prompt>请识别高风险模块与回归重点，说明依据。</prompt>
@@ -106,7 +106,7 @@
       </stage>
     </workflow>
 
-    <workflow id="doc" label="文档工作流">
+    <workflow id="doc" label="文档工作流" priority="300">
       <stage id="scan" label="盘点文档">
         <prompt>请梳理本次改动涉及哪些文档（README/AGENTS/CHANGELOG/API 等）需要更新。</prompt>
       </stage>
