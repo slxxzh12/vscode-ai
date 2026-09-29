@@ -37,7 +37,8 @@ import { mergeWorkflowList } from './collaboration/workflow-merge.js';
 import { createCollabDb } from './collab-db.js';
 import { createUsageReporter } from './usage-report.js';
 import { createUsageMount } from './usage-mount.js';
-import { createUsageVision } from './usage-vision.js';
+import { createUsageVision, callChat } from './usage-vision.js';
+import { recognizeViaMaster } from './usage-recognize.js';
 import { loadProbe, saveProbe, toProbeRecord } from './usage-probe-store.js';
 import { createNotepadStore } from './notepad-store.js';
 import { ensureAgentOnPath, probeAgentStats } from './collaboration/agent-stats.js';
@@ -64,7 +65,7 @@ import { publicFingerprint } from './collaboration/identity.js';
 import { createVault } from './llm-vault.js';
 import { createUsageStore, normalizeUsage } from './usage-store.js';
 import { createLlmMount } from './llm-mount.js';
-import { detectEmployeeId } from './llm-config.js';
+import { detectEmployeeId, resolveRelayModel } from './llm-config.js';
 import { portPaths, ensurePortDirs } from './port-paths.js';
 import { restartGuard, spawnRestart } from './port-restart.js';
 import { available as fileAssocAvailable, getState as getFileAssocState, loadPref as loadFileAssocPref, savePref as saveFileAssocPref, runAssoc as runFileAssoc } from './file-assoc.js';
@@ -534,12 +535,21 @@ function buildWorkspace({ paths, port }) {
     saveProbe: (r) => saveProbe(paths.usageProbeFile, r),
     setCwd: setStatsCwd,
     onImage: async ({ data, mime }) => {
+      const cfg = usageReporter.config();
+      if (cfg && cfg.masterUrl && cfg.token) {
+        return recognizeViaMaster({ masterUrl: cfg.masterUrl, token: cfg.token, data, mime, identity: engine.pub, days: usageReporter.config().days });
+      }
       const vision = createUsageVision({ resolveProvider: defaultProviderResolver() });
       const { metrics, model } = await vision.recognize({ data, mime });
       const a = defaultAgent();
       const usage = { agent: a.cmd, ...metrics, days: usageReporter.config().days };
       const rep = await usageReporter.reportImage(usage);
       return { metrics, model, reported: !!rep.ok, reportError: rep.error || '' };
+    },
+    onMultimodal: async ({ messages, model }) => {
+      const r = resolveRelayModel(model);
+      if (!r) { const e = new Error('bad-model'); e.code = 'bad-model'; throw e; }
+      return callChat({ resolveProvider: async () => r.provider, messages, model: r.model || 'image' });
     },
     logger: log,
   });
