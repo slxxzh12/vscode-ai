@@ -850,6 +850,7 @@ export const messages = {
   'files.new': '新建文件',
   'files.name': '文件名',
   'files.no_file': '未选择文件',
+  'files.dblclick_new': '双击此处新建文件',
   'files.save': '保存',
   'files.saved': '已保存',
   'files.save_failed': '保存失败：{msg}',

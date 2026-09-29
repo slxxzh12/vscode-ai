@@ -850,6 +850,7 @@ export const messages = {
   'files.new': 'New file',
   'files.name': 'File name',
   'files.no_file': 'No file selected',
+  'files.dblclick_new': 'Double-click to create a file',
   'files.save': 'Save',
   'files.saved': 'Saved',
   'files.save_failed': 'Save failed: {msg}',
