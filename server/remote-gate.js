@@ -1,7 +1,7 @@
 // è¿œç¨‹è®¿é—®é—¨ç¦çš„çº¯åˆ¤å®šï¼ˆä¾¿äºå•æµ‹ï¼›index.js æ¶ˆè´¹ï¼‰
 export function isPeerRequest(pathname, method) {
   if (method !== 'POST') return false;
-  return pathname === '/api/collab/peer' || pathname === '/api/usage/report';
+  return pathname === '/api/collab/peer' || pathname === '/api/usage/report' || pathname === '/api/usage/multimodal';
 }
 
 export function matchAccessToken(access, invite, safeEqual) {
@@ -35,15 +35,15 @@ export function resolveInviteDaysAllowForever(input = {}) {
 export const LOOPBACK_HOST = '127.0.0.1';
 export const PUBLIC_HOST = '0.0.0.0';
 
-// ¼àÌıµØÖ·¹æÔò£ºÖ»ÓĞ master Ä£Ê½£¨ÑûÇëÁËÓĞĞ§/ÒÑ¿ªÆô·ÃÎÊ£©²Å¶Ô¾ÖÓòÍø¼àÌı£¬·ñÔòÖ»°ó»Ø»·
-// DEVFLOW_HOST ÏÔÊ½ÉèÖÃÊ±ÓÅÏÈ£¨ÌÓÉúÍ¨µÀ£©
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½Ö»ï¿½ï¿½ master Ä£Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ§/ï¿½Ñ¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê£ï¿½ï¿½Å¶Ô¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö»ï¿½ï¿½Ø»ï¿½
+// DEVFLOW_HOST ï¿½ï¿½Ê½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½È£ï¿½ï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½ï¿½ï¿½
 export function resolveBindHost({ masterOn = false, envHost = '' } = {}) {
   const env = String(envHost || '').trim();
   if (env) return env;
   return masterOn ? PUBLIC_HOST : LOOPBACK_HOST;
 }
 
-// ÇĞ»» master ¿ª¹ØºóĞèÒªÖØÆô·şÎñ²ÅÄÜ»»°ó¶¨µØÖ·
+// ï¿½Ğ»ï¿½ master ï¿½ï¿½ï¿½Øºï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ü»ï¿½ï¿½ó¶¨µï¿½Ö·
 export function hostRestartNeeded({ current = '', masterOn = false, envHost = '' } = {}) {
   return resolveBindHost({ masterOn, envHost }) !== String(current || '');
 }

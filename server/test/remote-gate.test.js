@@ -21,10 +21,12 @@ test('resolveInviteDaysï¼šå…¼å®¹æ—§ hours å­—æ®µ', () => {
   assert.equal(resolveInviteDays({ hours: 4 }), 1);
 });
 
-test('isPeerRequestï¼špeer ä¸Žç”¨é‡ä¸ŠæŠ¥çš„ POST æ”¾è¡Œï¼Œå…¶ä½™æ‹’ç»', () => {
+test('isPeerRequestï¼špeer ä¸Žç”¨é‡ä¸ŠæŠ¥/å¤šæ¨¡æ€è¯†åˆ«çš„ POST æ”¾è¡Œï¼Œå…¶ä½™æ‹’ç»', () => {
   assert.equal(isPeerRequest('/api/collab/peer', 'POST'), true);
   assert.equal(isPeerRequest('/api/usage/report', 'POST'), true);
+  assert.equal(isPeerRequest('/api/usage/multimodal', 'POST'), true);
   assert.equal(isPeerRequest('/api/usage/report', 'GET'), false);
+  assert.equal(isPeerRequest('/api/usage/multimodal', 'GET'), false);
   assert.equal(isPeerRequest('/api/collab/downloads', 'POST'), false);
   assert.equal(isPeerRequest('/api/collab/stats', 'POST'), false);
 });
@@ -37,7 +39,7 @@ test('resolveInviteDaysAllowForeverï¼šdays=0 è¡¨ç¤ºé•¿æœŸï¼Œå…¶å®ƒæ²¿ç”¨ resolve
   assert.equal(resolveInviteDaysAllowForever({ days: 9999 }), MAX_INVITE_DAYS);
 });
 
-test('resolveBindHost£ºmaster ¹ØÖ»°ó»Ø»·£¬master ¿ª°ó 0.0.0.0£¬env ¸²¸ÇÓÅÏÈ', () => {
+test('resolveBindHostï¿½ï¿½master ï¿½ï¿½Ö»ï¿½ï¿½Ø»ï¿½ï¿½ï¿½master ï¿½ï¿½ï¿½ï¿½ 0.0.0.0ï¿½ï¿½env ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½', () => {
   assert.equal(LOOPBACK_HOST, '127.0.0.1');
   assert.equal(PUBLIC_HOST, '0.0.0.0');
   assert.equal(resolveBindHost({ masterOn: false }), '127.0.0.1');
@@ -47,7 +49,7 @@ test('resolveBindHost£ºmaster ¹ØÖ»°ó»Ø»·£¬master ¿ª°ó 0.0.0.0£¬env ¸²¸ÇÓÅÏÈ', ()
   assert.equal(resolveBindHost({ masterOn: false, envHost: '   ' }), '127.0.0.1');
 });
 
-test('hostRestartNeeded£ºÇÐ»» master ×´Ì¬Óëµ±Ç°°ó¶¨²»Ò»ÖÂÊ±ÒªÇóÖØÆô', () => {
+test('hostRestartNeededï¿½ï¿½ï¿½Ð»ï¿½ master ×´Ì¬ï¿½ëµ±Ç°ï¿½ó¶¨²ï¿½Ò»ï¿½ï¿½Ê±Òªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½', () => {
   assert.equal(hostRestartNeeded({ current: '127.0.0.1', masterOn: true }), true);
   assert.equal(hostRestartNeeded({ current: '0.0.0.0', masterOn: true }), false);
   assert.equal(hostRestartNeeded({ current: '0.0.0.0', masterOn: false }), true);
