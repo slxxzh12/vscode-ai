@@ -88,6 +88,15 @@ export class CollabStore {
     this.save();
     return g;
   }
+  removeGroupMembers(groupId, machineIds) {
+    const g = this.findGroup(groupId);
+    if (!g) return null;
+    const drop = new Set((Array.isArray(machineIds) ? machineIds : [machineIds])
+      .map((x) => String(x || '')).filter(Boolean));
+    g.members = (g.members || []).filter((m) => !drop.has(String(m && m.machineId)));
+    this.save();
+    return g;
+  }
 
   // inbox
   listInbox() { return this.data.skillsInbox; }

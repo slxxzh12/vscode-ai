@@ -133,3 +133,17 @@ test('空文件 tool 默认为 null，setTool 落盘可回读', () => {
   const s2 = new CollabStore({ file: f });
   assert.deepEqual(s2.getTool(), { agentId: 'opencode', customRoot: null });
 });
+
+test('removeGroupMembers 移除指定成员并落盘；未知群返回 null', () => {
+  const f = tmpFile();
+  const s = new CollabStore({ file: f });
+  const self = { machineId: 'me', username: 'u', host: 'h', port: 1, publicKey: 'k' };
+  s.ensureGroup({ name: 'g', hubId: 'me', self });
+  s.addGroupMember('me', { machineId: 'p1' });
+  s.addGroupMember('me', { machineId: 'p2' });
+  const g = s.removeGroupMembers('me', ['p1']);
+  assert.deepEqual(g.members.map((m) => m.machineId), ['me', 'p2']);
+  const again = new CollabStore({ file: f });
+  assert.deepEqual(again.getGroup('me').members.map((m) => m.machineId), ['me', 'p2']);
+  assert.equal(s.removeGroupMembers('nope', ['x']), null);
+});
