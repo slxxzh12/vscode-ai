@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadOpencodeProviders, resolveApiKey, resolveApiKeys, listProviders, getProvider, buildOpencodeConfig, buildOpencodeConfigMulti, detectEmployeeId } from '../llm-config.js';
+import { loadOpencodeProviders, resolveApiKey, resolveApiKeys, listProviders, getProvider, buildOpencodeConfig, buildOpencodeConfigMulti, detectEmployeeId, resolveRelayModel } from '../llm-config.js';
 
 function dirWith(obj, name = 'opencode.json') {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dfoc-'));
@@ -129,4 +129,30 @@ test('buildOpencodeConfigMulti 生成多个 provider 条目', () => {
   assert.equal(c.provider['devflow-deepseek'].options.baseURL, 'http://192.168.1.5:22222/api/llm/deepseek/v1');
   assert.deepEqual(Object.keys(c.provider['devflow-glm'].models), ['glm-4', 'glm-4-flash']);
   assert.deepEqual(Object.keys(c.provider).sort(), ['devflow-deepseek', 'devflow-glm']);
+});
+
+test('resolveRelayModel：image → 默认 provider（model 空）', () => {
+  const opts = {
+    loadProviders: () => ({ defaultProvider: 'a', providers: [{ id: 'a' }, { id: 'b' }] }),
+    resolveProvider: (id) => ({ id, baseURL: 'https://' + id, apiKey: 'k', models: ['va', 'v1'] }),
+  };
+  assert.deepEqual(resolveRelayModel('image', opts), { provider: { id: 'a', baseURL: 'https://a', apiKey: 'k', models: ['va', 'v1'] }, model: '' });
+});
+
+test('resolveRelayModel：pid/model 用对应 provider + 裸名；裸名命中 provider；无命中回退默认', () => {
+  const opts = {
+    loadProviders: () => ({ defaultProvider: 'a', providers: [{ id: 'a' }, { id: 'b' }] }),
+    resolveProvider: (id) => (id === 'b' ? { id: 'b', baseURL: 'https://b', apiKey: 'k', models: ['glm-4v-plus'] } : { id: 'a', baseURL: 'https://a', apiKey: 'k', models: ['x'] }),
+  };
+  assert.equal(resolveRelayModel('b/glm-4v-plus', opts).provider.id, 'b');
+  assert.equal(resolveRelayModel('b/glm-4v-plus', opts).model, 'glm-4v-plus');
+  assert.equal(resolveRelayModel('glm-4v-plus', opts).provider.id, 'b');
+  assert.equal(resolveRelayModel('unknown-model', opts).provider.id, 'a');
+  assert.equal(resolveRelayModel('unknown-model', opts).model, 'unknown-model');
+});
+
+test('resolveRelayModel：无 provider 返回 null', () => {
+  const opts = { loadProviders: () => ({ defaultProvider: null, providers: [] }), resolveProvider: () => null };
+  assert.equal(resolveRelayModel('x', opts), null);
+  assert.equal(resolveRelayModel('image', opts), null);
 });

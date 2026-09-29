@@ -128,3 +128,27 @@ export function buildOpencodeConfigMulti({ host, port, token, providers = [] }) 
   }
   return { $schema: 'https://opencode.ai/config.json', provider };
 }
+
+// 把请求 model 解析到 LLM 中转站 provider：
+//   '' / 'image' → 默认 provider（model 留空，由调用方挑多模态）
+//   'pid/model'  → 该 provider + 裸 model
+//   裸 model     → 命中某 provider 的模型清单即用；否则默认 provider + 该 model
+// 返回 { provider, model }（provider 为 getProvider 结果：baseURL/apiKey/models）；解析不到返回 null
+export function resolveRelayModel(model, { loadProviders = loadOpencodeProviders, resolveProvider = getProvider } = {}) {
+  const all = loadProviders();
+  const ids = all.providers.map((p) => p.id);
+  const defaultId = all.defaultProvider || ids[0] || null;
+  const raw = String(model || '').trim();
+  if (!raw || raw === 'image') {
+    const p = defaultId ? resolveProvider(defaultId) : null;
+    return p ? { provider: p, model: '' } : null;
+  }
+  if (raw.includes('/')) {
+    const i = raw.indexOf('/');
+    const p = resolveProvider(raw.slice(0, i));
+    return p ? { provider: p, model: raw.slice(i + 1) } : null;
+  }
+  const hitId = ids.find((id) => { const p = resolveProvider(id); return p && (p.models || []).includes(raw); });
+  const p = resolveProvider(hitId || defaultId);
+  return p ? { provider: p, model: raw } : null;
+}
