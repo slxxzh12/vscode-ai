@@ -37,7 +37,7 @@ function sendJson(res, status, obj) {
 }
 
 // /api/usage/* 的 HTTP 面：远端收上报（令牌），本机界面看汇总/配上报器
-export function createUsageMount({ peers, reporter, checkToken, onReport, pullFromHub = null, probe = null, loadProbe = null, saveProbe = null, onImage = null, setCwd = null, logger = console }) {
+export function createUsageMount({ peers, reporter, checkToken, onReport, pullFromHub = null, probe = null, loadProbe = null, saveProbe = null, onImage = null, setCwd = null, isHub = null, selfId = null, logger = console }) {
   const freshCache = new Map();   // masterId -> 最近一次成功拉到的 members
   async function route(req, res, url) {
     const m = req.method;
@@ -152,6 +152,20 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, pullFr
           ? 400 : code === 'timeout' ? 504 : code === 'upstream' ? 502 : 500;
         return sendJson(res, status, { error: code, message: (e && e.message) || '' });
       }
+    }
+
+    // 群主清理：删除指定机器的用量快照与历史（仅当前群 hub 可调用，且不能删自己）
+    if (seg[0] === 'peers' && seg[1] === 'remove' && seg.length === 2 && m === 'POST') {
+      let body = {};
+      try { body = JSON.parse((await readBody(req)) || '{}'); } catch { body = {}; }
+      const groupId = String(body.groupId || '');
+      if (typeof isHub !== 'function' || !isHub(groupId)) return sendJson(res, 403, { error: 'not-master' });
+      const me = typeof selfId === 'function' ? String(selfId() || '') : '';
+      const ids = (Array.isArray(body.machineIds) ? body.machineIds : [])
+        .map((x) => String(x || '')).filter((id) => id && id !== me);
+      if (!ids.length) return sendJson(res, 400, { error: 'no-target' });
+      peers.remove(ids);
+      return sendJson(res, 200, { removed: ids });
     }
 
     return sendJson(res, 404, { error: 'not found' });

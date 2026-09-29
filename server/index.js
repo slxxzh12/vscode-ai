@@ -528,6 +528,8 @@ function buildWorkspace({ paths, port }) {
       return engine.pullUsageFrom(masterId);
     },
     probe: () => probeAgentStats({ ...defaultAgent(), days: usageReporter.config().days, startDir: getStatsStartDir(), statsFile: paths.statsFile }),
+    isHub: (groupId) => { try { const g = engine.store.findGroup(groupId); return !!g && g.hubId === engine.pub.machineId; } catch { return false; } },
+    selfId: () => engine.pub.machineId,
     loadProbe: () => loadProbe(paths.usageProbeFile),
     saveProbe: (r) => saveProbe(paths.usageProbeFile, r),
     setCwd: setStatsCwd,

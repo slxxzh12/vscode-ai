@@ -12,13 +12,13 @@ function tmp(name) {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-umount-')), name);
 }
 
-async function start({ token = 'good', peers, reporter, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd } = {}) {
+async function start({ token = 'good', peers, reporter, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd, isHub, selfId } = {}) {
   const p = peers || new UsagePeersStore({ file: tmp('usage-peers.json') });
   const r = reporter || createUsageReporter({
     file: tmp('usage-report.json'), identity: () => ({ machineId: 'm1' }),
     collect: async () => ({ sessions: 1 }), fetchFn: async () => ({ ok: true, json: async () => ({ ok: true }) }),
   });
-  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd });
+  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd, isHub, selfId });
   const server = http.createServer((req, res) => mount(req, res, new URL(req.url, 'http://localhost')));
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   return { peers: p, reporter: r, port: server.address().port, server };
@@ -195,4 +195,25 @@ test('GET /api/usage/peers?fresh=1：成功后缓存，失败回退缓存', asyn
   const b = await call(A.port, 'GET', '/api/usage/peers?fresh=1&masterId=M');
   assert.equal(b.body.peers.m2.messages, 9);
   assert.equal(b.body.stale, true);
+});
+
+test('POST /api/usage/peers/remove：仅 hub 可删，过滤自身，空目标 400', async (t) => {
+  const A = await start({ isHub: (g) => g === 'g1', selfId: () => 'me' });
+  t.after(() => A.server.close());
+  A.peers.upsert({ machineId: 'm1', sessions: 1 }, 1000);
+  A.peers.upsert({ machineId: 'me', sessions: 9 }, 1000);
+
+  const bad = await call(A.port, 'POST', '/api/usage/peers/remove', { body: { groupId: 'nope', machineIds: ['m1'] } });
+  assert.equal(bad.status, 403);
+  assert.equal(bad.body.error, 'not-master');
+
+  const none = await call(A.port, 'POST', '/api/usage/peers/remove', { body: { groupId: 'g1', machineIds: ['me'] } });
+  assert.equal(none.status, 400);
+  assert.equal(none.body.error, 'no-target');
+
+  const r = await call(A.port, 'POST', '/api/usage/peers/remove', { body: { groupId: 'g1', machineIds: ['m1', 'me'] } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.removed, ['m1']);
+  assert.equal(A.peers.get('m1'), null);
+  assert.ok(A.peers.get('me'));
 });
