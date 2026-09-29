@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { fmtSize, groupClients, groupDownloadFiles, installableOf, marketKindKey, MARKET_CLIENTS } from './marketApps';
+import { fmtSize, fmtTime, groupClients, groupDownloadFiles, installableOf, marketKindKey, MARKET_CLIENTS } from './marketApps';
 
 test('fmtSize：B/KB/MB 分档与小数位', () => {
   expect(fmtSize(0)).toBe('0 B');
@@ -7,6 +7,16 @@ test('fmtSize：B/KB/MB 分档与小数位', () => {
   expect(fmtSize(1024)).toBe('1.0 KB');
   expect(fmtSize(1536)).toBe('1.5 KB');
   expect(fmtSize(10 * 1024 * 1024)).toBe('10 MB');
+});
+
+test('fmtTime：格式化为 YYYY-MM-DD HH:MM，空/非法回空', () => {
+  const d = new Date(2026, 8, 29, 15, 30);
+  const p = (x: number) => String(x).padStart(2, '0');
+  expect(fmtTime(d.getTime())).toBe(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`);
+  expect(fmtTime(undefined)).toBe('');
+  expect(fmtTime(null)).toBe('');
+  expect(fmtTime(0)).toBe('');
+  expect(fmtTime(NaN)).toBe('');
 });
 
 test('installableOf / marketKindKey', () => {

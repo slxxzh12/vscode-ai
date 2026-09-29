@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
+import { fmtTime } from '../marketApps';
 
 const props = defineProps<{
   open: boolean;
-  files: { name: string; kind: string; size: number }[];
+  files: { name: string; kind: string; size: number; updatedAt?: number }[];
   version: string;
 }>();
 const emit = defineEmits<{
@@ -41,6 +42,7 @@ function fmtSize(n: number) {
             <input type="checkbox" v-model="selected[f.name]" />
             <span class="n">{{ f.name }}</span>
             <span class="s">{{ fmtSize(f.size) }}</span>
+            <span class="s">{{ fmtTime(f.updatedAt) }}</span>
             <button v-if="f.kind === 'skill'" class="ghost" @click="emit('install', f.name)">{{ $t('collab.downloads.install') }}</button>
           </div>
         </div>

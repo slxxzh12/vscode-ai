@@ -53,6 +53,15 @@ export function fmtSize(bytes: number): string {
   return `${v >= 10 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
 }
 
+export function fmtTime(ms?: number | null): string {
+  const n = Number(ms) || 0;
+  if (!n) return '';
+  const d = new Date(n);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 export interface MarketGroups { skill: DownloadFile[]; other: DownloadFile[] }
 
 // 这些类型不在应用市场「扩展」里展示：用量明细、群组分发包

@@ -9,6 +9,7 @@ import UsageTrendChart from './UsageTrendChart.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import SyncSeedDialog from './SyncSeedDialog.vue';
+import { fmtTime } from '../marketApps';
 import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi }>();
@@ -249,7 +250,7 @@ onMounted(async () => {
         <div class="cfghint">{{ $t('collab.downloads.dir_hint') }}</div>
         <div v-if="dirFiles.length === 0" class="empty">{{ $t('collab.downloads.dir_empty') }}</div>
         <div v-for="f in dirFiles" :key="f.name" class="rowline">
-          <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}<span class="sub">{{ fmtSize(f.size) }}</span></a>
+          <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}<span class="sub">{{ fmtSize(f.size) }}</span><span class="sub">{{ fmtTime(f.updatedAt) }}</span></a>
         </div>
       </details>
 
