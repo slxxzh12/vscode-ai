@@ -11,7 +11,7 @@
 
 ## 范围与取舍
 
-- 识别模型：群主本机 `opencode.json` 默认 provider，优先多模态模型。
+- 识别模型：群主**从 LLM 中转站配置**（`server/llm-config.js`：`loadOpencodeProviders` 取默认 provider，`getProvider` 取 baseURL/key/models）的模型清单里挑多模态模型（哨兵名 `image`）。
 - 解析位置：成员机服务器（`parseMetrics`）；落库位置：群主（按成员 machineId + username/host/port，`source='image'`）。
 - 通道与鉴权：复用成员已有的上报目标（`reporter.config().masterUrl` + `token`），令牌 `X-DF-Token`（与 `/api/usage/report` 同把）。
 - 群主本机上传截图：无 master 配置 → 走本机识别（原逻辑不变）。
@@ -71,8 +71,14 @@ export async function callChat({ resolveProvider, messages, model = 'image', fet
 
 ### `index.js` 装配
 ```js
-onMultimodal: ({ messages, model }) => callChat({ resolveProvider: defaultProviderResolver(), messages, model }),
+onMultimodal: async ({ messages, model }) => {
+  // 从 LLM 中转站配置取默认 provider（与中转站同一份 opencode.json / provider 解析）
+  const { defaultProvider } = loadOpencodeProviders();
+  const p = defaultProvider ? getProvider(defaultProvider) : null;
+  return callChat({ resolveProvider: async () => p, messages, model });
+},
 ```
+（`loadOpencodeProviders` / `getProvider` 来自 `server/llm-config.js`。）
 
 ## 成员端：识别 + 上报
 
@@ -149,7 +155,7 @@ onImage: async ({ data, mime }) => {
 
 提取指标的系统提示词沿用 `usage-vision.js` 的 `VISION_SYSTEM`（要求模型只返回固定 JSON），由成员机在 `buildVisionMessages` 里带上；`parseMetrics` 复用同一 JSON 契约。
 
-模型名约定：请求未指定 `model` 或传哨兵名 `"image"` 时，群主从本机 `opencode.json` 默认 provider 的模型清单里挑一个多模态模型（`pickModel`：预设 `vision` 标记或模型名含 `vision/vl/4v/omni`，无则回退第一个）；传真实模型名时直接使用。
+模型名约定：请求未指定 `model` 或传哨兵名 `"image"` 时，群主从 LLM 中转站（`llm-config.js`：`loadOpencodeProviders` 默认 provider + `getProvider`）的模型清单里挑一个多模态模型（`pickModel`：预设 `vision` 标记或模型名含 `vision/vl/4v/omni`，无则回退第一个）；传真实模型名时直接使用。
 
 ## i18n
 
