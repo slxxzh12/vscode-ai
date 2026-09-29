@@ -137,3 +137,17 @@ test('daily���� JSON ���ÿ�������һ����Ǩ�
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).daily, undefined);
   s.close();
 });
+
+test('remove 删快照键并联动删当日合计行；不存在返回 0', () => {
+  const s = new UsagePeersStore({ file: tmpFile() });
+  const day = Date.UTC(2026, 8, 17, 3, 0, 0);
+  s.upsert({ machineId: 'm1', sessions: 1, messages: 2 }, day);
+  s.upsert({ machineId: 'm2', sessions: 3, messages: 4 }, day);
+  assert.equal(s.remove(['nope']), 0);
+  const n = s.remove(['m1']);
+  assert.equal(n, 1);
+  assert.deepEqual(Object.keys(s.snapshot().peers), ['m2']);
+  assert.deepEqual(Object.keys(s.listDaily('m1')), []);
+  assert.equal(Object.keys(s.listDaily('m2')).length, 1);
+  s.close();
+});

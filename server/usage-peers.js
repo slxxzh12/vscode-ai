@@ -110,6 +110,19 @@ export class UsagePeersStore {
     return this.store ? this.store.listDaily(machineId, days) : {};
   }
 
+  // 群主清理：删除指定机器的快照与历史上报行（usage 表按 member_id）
+  remove(machineIds) {
+    const ids = (Array.isArray(machineIds) ? machineIds : [machineIds])
+      .map((x) => String(x || '')).filter(Boolean);
+    let n = 0;
+    for (const id of ids) {
+      if (this.data.peers[id]) { delete this.data.peers[id]; n += 1; }
+      try { this.store?.deleteByMember?.(id); } catch (e) { this.log?.warn?.('peer usage delete failed', (e && e.message) || e); }
+    }
+    if (n) { this.data.updatedAt = Date.now(); this.save(); }
+    return n;
+  }
+
   snapshot() { return { updatedAt: this.data.updatedAt, peers: this.data.peers }; }
   close() {
     // 共享的 store 由装配方（index.js）负责关闭
