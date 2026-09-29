@@ -23,11 +23,12 @@
 把现有 `createUsageVision.recognize` 里的「解析 provider → 选模型 → 请求 chat/completions → 取 content」抽成独立函数，供本机识别与多模态转发共用：
 
 ```js
-export async function callChat({ resolveProvider, messages, model = '', fetchFn = fetch, timeoutMs = 60000 }) {
+export async function callChat({ resolveProvider, messages, model = 'image', fetchFn = fetch, timeoutMs = 60000 }) {
   const p = (await resolveProvider()) || null;
   if (!p || !p.baseURL) throw fail('no-provider');
   if (!p.apiKey) throw fail('no-key');
-  const chosen = model || pickModel(p).model;
+  // model 缺省或哨兵名 'image' → 从本机 opencode.json 挑一个多模态模型；传了真实模型名则直接用
+  const chosen = (!model || model === 'image') ? pickModel(p).model : model;
   if (!chosen) throw fail('bad-model');
   const url = `${String(p.baseURL).replace(/\/+$/, '')}/chat/completions`;
   const ctl = new AbortController();
@@ -64,8 +65,8 @@ export async function callChat({ resolveProvider, messages, model = '', fetchFn 
 ### `usage-mount.js` 新增端点
 `POST /api/usage/multimodal`：
 - 头 `X-DF-Token` 走 `checkToken`，失败 `403 bad-token`。
-- body JSON（本路由上限放宽到 10MB）：`{ messages: Array, model?: string }`；`messages` 非数组/空 → `400 bad-body`。
-- 调注入回调 `onMultimodal({ messages, model })`，返回 `{ content, model }`。
+- body JSON（本路由上限放宽到 10MB）：`{ messages: Array, model?: string }`，`model` 缺省为哨兵名 `"image"`；`messages` 非数组/空 → `400 bad-body`。
+- 调注入回调 `onMultimodal({ messages, model })`，返回 `{ content, model }`。`model === 'image'` 时由 `callChat` 从群主本机 `opencode.json` 挑多模态模型，否则用给定模型名。
 - 错误映射沿用 vision：`no-provider/no-key/bad-model/empty-result` → 400，`timeout` → 504，`upstream` → 502，其它 500。
 
 ### `index.js` 装配
@@ -115,7 +116,7 @@ async function postJson(fetchFn, url, token, body, timeoutMs = 60000) {
 export async function recognizeViaMaster({ masterUrl, token, data, mime, identity, days, fetchFn = fetch, timeoutMs = 60000 }) {
   const base = String(masterUrl || '').replace(/\/+$/, '');
   const messages = buildVisionMessages({ mime, data });
-  const r = await postJson(fetchFn, `${base}/api/usage/multimodal`, token, { messages }, timeoutMs);
+  const r = await postJson(fetchFn, `${base}/api/usage/multimodal`, token, { messages, model: 'image' }, timeoutMs);
   const metrics = parseMetrics(r.content);
   await postJson(fetchFn, `${base}/api/usage/report`, token, {
     machineId: identity.machineId, username: identity.username || '',
@@ -144,9 +145,11 @@ onImage: async ({ data, mime }) => {
 
 前端 `UsageProbeDialog.vue` 上传交互不变；识别结果区当 `via === 'master'` 时额外显示一行 `usage.probe.image_via_master`。
 
-## 提示词
+## 提示词与模型哨兵
 
 提取指标的系统提示词沿用 `usage-vision.js` 的 `VISION_SYSTEM`（要求模型只返回固定 JSON），由成员机在 `buildVisionMessages` 里带上；`parseMetrics` 复用同一 JSON 契约。
+
+模型名约定：请求未指定 `model` 或传哨兵名 `"image"` 时，群主从本机 `opencode.json` 默认 provider 的模型清单里挑一个多模态模型（`pickModel`：预设 `vision` 标记或模型名含 `vision/vl/4v/omni`，无则回退第一个）；传真实模型名时直接使用。
 
 ## i18n
 
