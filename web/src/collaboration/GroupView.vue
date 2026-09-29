@@ -334,7 +334,7 @@ onMounted(async () => {
         </nav>
         <div class="mbody">
           <div v-if="peersStale" class="cfghint">{{ $t('usage.pull_failed') }}</div>
-          <MemberUsageTable v-if="mtab === 'members'" class="mtable" :collab="collab" :peers="peers" :group="group" />
+          <MemberUsageTable v-if="mtab === 'members'" class="mtable" :collab="collab" :peers="peers" :group="group" @removed="loadPeers" />
           <UsageTrendChart v-else :collab="collab" :peers="peers" />
         </div>
       </aside>

@@ -591,28 +591,25 @@ git commit -m "feat(i18n): 成员清理相关中英词条"
   });
 
   it('选中成员后确认：调用 removeMembers + removeUsagePeers 并刷新', async () => {
-    const calls: string[] = [];
-    const fetchMock = vi.fn(async (url: unknown) => {
-      const u = String(url);
-      calls.push(u);
-      if (u.includes('/api/collab/snapshot')) return { ok: true, json: async () => ({ ...EMPTY_SNAPSHOT }) };
-      return { ok: true, json: async () => ({}) };
-    });
-    vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal('confirm', () => true);
     const group = { id: 'g', name: 'G', hubId: 'h', createdAt: 1, members: [{ machineId: 'h' }, { machineId: 'p1' }] };
     const peers = { p1: { agent: '*', days: 1, machineId: 'p1', username: 'bob', host: 'h', port: 1, messages: 1, receivedAt: Date.now() } };
-    const w = mountWithIdentity(peers, group, 'h');
+    const removeMembers = vi.fn(async () => ({ code: 'ok' }));
+    const removeUsagePeers = vi.fn(async () => ({ removed: [] as string[] }));
+    const refresh = vi.fn(async () => EMPTY_SNAPSHOT);
+    const snap = { ...EMPTY_SNAPSHOT, group: group as never, identity: { ...EMPTY_SNAPSHOT.identity, machineId: 'h' } };
+    const collab = { state: ref(snap), removeMembers, removeUsagePeers, refresh } as unknown as CollabApi;
+    const w = mountC(MemberUsageTable, { props: { collab, peers, group: group as never }, global: { plugins: [ElementPlus], stubs: { teleport: true } } });
     await flushPromises();
     await w.findAll('button').find((b) => b.text() === t('collab.member.clean'))!.trigger('click');
     await flushPromises();
-    const cb = w.find('.el-table__body .el-checkbox__original');
-    await cb.setValue(true);
+    (w.vm as unknown as { onSelectionChange: (s: { machineId: string }[]) => void }).onSelectionChange([{ machineId: 'p1' }]);
     await flushPromises();
     await w.findAll('button').find((b) => b.text().includes(t('collab.member.clean_delete')))!.trigger('click');
     await flushPromises();
-    expect(calls.some((c) => c.includes('/api/collab/groups/g/members/remove'))).toBe(true);
-    expect(calls.some((c) => c.includes('/api/usage/peers/remove'))).toBe(true);
+    expect(removeMembers).toHaveBeenCalledWith('g', ['p1']);
+    expect(removeUsagePeers).toHaveBeenCalledWith('g', ['p1']);
+    expect(refresh).toHaveBeenCalled();
   });
 ```
 
@@ -654,6 +651,7 @@ async function confirmClean() {
     cleaning.value = false;
   }
 }
+defineExpose({ onSelectionChange, confirmClean });
 ```
 
 - [ ] **Step 4: 实现模板**
