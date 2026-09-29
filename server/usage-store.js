@@ -154,6 +154,10 @@ export function createUsageStore({ file, logger = console } = {}) {
       }
       return out;
     },
+    deleteByMember(machineId) {
+      const r = db.prepare('DELETE FROM usage WHERE member_id = ?').run(String(machineId));
+      return Number(r.changes) || 0;
+    },
     close() { try { db.close(); } catch { /* ignore */ } },
     db,
   };

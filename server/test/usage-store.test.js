@@ -83,3 +83,15 @@ test('normalizeUsage 校验与归一', () => {
   const img = normalizeUsage({ memberId: 'E1', source: 'image', sessions: 2 });
   assert.equal(img.record.source, 'image');
 });
+
+test('deleteByMember 只删指定机器，其它机器与合计行按机器区分', () => {
+  const store = createUsageStore({ file: tmpDb() });
+  store.upsert({ date: '2026-09-12', memberId: 'E1', agent: 'opencode', messages: 1 });
+  store.upsert({ date: '2026-09-12', memberId: 'E1', agent: '*', messages: 2 });
+  store.upsert({ date: '2026-09-12', memberId: 'E2', agent: 'opencode', messages: 3 });
+  const removed = store.deleteByMember('E1');
+  assert.equal(removed, 2);
+  assert.deepEqual(store.query({}).map((r) => r.memberId), ['E2']);
+  assert.equal(store.query({ agent: '*' }).length, 0);
+  store.close();
+});
