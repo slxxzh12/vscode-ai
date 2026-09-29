@@ -72,13 +72,39 @@ export async function callChat({ resolveProvider, messages, model = 'image', fet
 ### `index.js` 装配
 ```js
 onMultimodal: async ({ messages, model }) => {
-  // 从 LLM 中转站配置取默认 provider（与中转站同一份 opencode.json / provider 解析）
-  const { defaultProvider } = loadOpencodeProviders();
-  const p = defaultProvider ? getProvider(defaultProvider) : null;
-  return callChat({ resolveProvider: async () => p, messages, model });
+  const r = resolveRelayModel(model);   // 见下：把 model 解析到中转站 provider
+  if (!r) { const e = new Error('bad-model'); e.code = 'bad-model'; throw e; }
+  return callChat({ resolveProvider: async () => r.provider, messages, model: r.model || 'image' });
 },
 ```
-（`loadOpencodeProviders` / `getProvider` 来自 `server/llm-config.js`。）
+
+`server/llm-config.js` 新增：
+
+```js
+// 把请求 model 解析到 LLM 中转站 provider：
+//   '' / 'image' → 默认 provider（model 留空，由 callChat 挑多模态）
+//   'pid/model'  → 该 provider + 裸 model
+//   裸 model     → 命中某 provider 的模型清单即用；否则默认 provider + 该 model
+// 返回 { provider, model }（provider 为 getProvider 结果：baseURL/apiKey/models）；解析不到返回 null
+export function resolveRelayModel(model, { loadProviders = loadOpencodeProviders, resolveProvider = getProvider } = {}) {
+  const all = loadProviders();
+  const ids = all.providers.map((p) => p.id);
+  const defaultId = all.defaultProvider || ids[0] || null;
+  const raw = String(model || '').trim();
+  if (!raw || raw === 'image') {
+    const p = defaultId ? resolveProvider(defaultId) : null;
+    return p ? { provider: p, model: '' } : null;
+  }
+  if (raw.includes('/')) {
+    const i = raw.indexOf('/');
+    const p = resolveProvider(raw.slice(0, i));
+    return p ? { provider: p, model: raw.slice(i + 1) } : null;
+  }
+  const hitId = ids.find((id) => { const p = resolveProvider(id); return p && (p.models || []).includes(raw); });
+  const p = resolveProvider(hitId || defaultId);
+  return p ? { provider: p, model: raw } : null;
+}
+```
 
 ## 成员端：识别 + 上报
 
@@ -155,7 +181,13 @@ onImage: async ({ data, mime }) => {
 
 提取指标的系统提示词沿用 `usage-vision.js` 的 `VISION_SYSTEM`（要求模型只返回固定 JSON），由成员机在 `buildVisionMessages` 里带上；`parseMetrics` 复用同一 JSON 契约。
 
-模型名约定：请求未指定 `model` 或传哨兵名 `"image"` 时，群主从 LLM 中转站（`llm-config.js`：`loadOpencodeProviders` 默认 provider + `getProvider`）的模型清单里挑一个多模态模型（`pickModel`：预设 `vision` 标记或模型名含 `vision/vl/4v/omni`，无则回退第一个）；传真实模型名时直接使用。
+模型名约定（`llm-config.js` 新增 `resolveRelayModel(model)`，把请求 model 解析到中转站 provider）：
+- 未指定 / 哨兵名 `"image"` → 默认 provider + `pickModel` 挑多模态模型。
+- `"provider/model"` → 用该 provider，模型名取 `model`（裸名）。
+- 裸模型名 → 在默认 provider 或任一 provider 的模型清单里命中即用该 provider；未命中则回退默认 provider + 该模型名。
+- 解析不到 provider → `bad-model`。
+
+即：只要请求的模型能对应到 LLM 中转站里的 provider/model，就直接按用户提供的模型中转。
 
 ## i18n
 
@@ -163,10 +195,11 @@ onImage: async ({ data, mime }) => {
 
 ## 测试
 
-- `server/test/usage-vision.test.js`：`recognize` 回归仍过（`callChat` 抽取后行为不变）。
+- `server/test/usage-vision.test.js`：`recognize` 回归仍过（`callChat` 抽取后行为不变）；`callChat` 哨兵/显式模型用例。
+- `server/test/llm-config.test.js`：`resolveRelayModel`——`image` → 默认 provider（model 空）；`pid/model` → 对应 provider + 裸名；裸名命中 provider；无命中回退默认；无 provider → null。
 - `server/test/usage-recognize.test.js`：`buildVisionMessages` 结构；`recognizeViaMaster` 调两次 fetch（multimodal + report）且 URL/头/体正确、返回 `via:'master'`；403 → `bad-token`；非 2xx → `upstream`；abort → `timeout`；`parseMetrics` 错误传播（`bad-json`）。
 - `server/test/usage-report-http.test.js`：`POST /api/usage/multimodal` 令牌错误 403、坏 body 400、成功调 `onMultimodal` 并回内容、错误码映射。
-- web：`UsageProbeDialog` 上传交互不变；当返回 `via === 'master'` 时显示一行 `usage.probe.image_via_master`，并断言该文案。
+- web：`UsageProbeDialog` 上传交互不变；当返回 `via === 'master'` 时显示一行 `usage.probe.image_via_master`。该对话框无现成测试且文件选择交互在 happy-dom 下不稳定，本次不新增自动化用例（人工验证）。
 
 ## 边界
 
