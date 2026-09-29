@@ -166,6 +166,7 @@ export const messages = {
   'usage.probe.image_loading': 'Recognizing…',
   'usage.probe.image_success': 'Recognized and saved to usage store',
   'usage.probe.image_failed': 'Recognition failed: {msg}',
+  'usage.probe.image_via_master': 'Recognized by master',
   'usage.source.image': 'Recognized from image',
   'collab.downloads.title': 'Sync config to Slave group members',
   'collab.downloads.sync': 'Sync from master',

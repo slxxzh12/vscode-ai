@@ -166,6 +166,7 @@ export const messages = {
   'usage.probe.image_loading': '识别中…',
   'usage.probe.image_success': '已识别并写入用量库',
   'usage.probe.image_failed': '识别失败：{msg}',
+  'usage.probe.image_via_master': '识别来源：群主',
   'usage.source.image': '图片识别采集',
   'collab.downloads.title': '同步配置到 Slave 群成员',
   'collab.downloads.sync': '同步 master',

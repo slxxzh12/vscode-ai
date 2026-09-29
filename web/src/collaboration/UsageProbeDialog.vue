@@ -41,7 +41,7 @@ const parsedRows = computed(() => fields.map((f) => {
 // —— 截图识别统计：多模态识别截图 → 写回用量库 ——
 const imgInput = ref<HTMLInputElement | null>(null);
 const imageLoading = ref(false);
-const imageResult = ref<{ metrics: Record<string, number | null>; model: string; reported: boolean } | null>(null);
+const imageResult = ref<{ metrics: Record<string, number | null>; model: string; reported: boolean; via?: string } | null>(null);
 const imageErr = ref('');
 const imageRows = computed(() => fields.map((f) => {
   const v = imageResult.value?.metrics ? imageResult.value.metrics[f.key] : null;
@@ -163,6 +163,7 @@ watch(() => props.open, (v) => { if (v) load(); });
             </div>
           </div>
           <div class="hint">{{ imageResult.reported ? $t('usage.probe.image_success') : $t('usage.probe.image_failed', { msg: '' }) }}</div>
+          <div v-if="imageResult.via === 'master'" class="hint">{{ $t('usage.probe.image_via_master') }}</div>
         </template>
 
         <div class="foot">
