@@ -17,11 +17,15 @@ const wb = useToolWorkbench(props.tool);
       :path="wb.activeId.value"
       :name="wb.leafName.value"
     />
-    <div v-else class="tdp-empty">{{ $t('files.no_file') }}</div>
+    <div v-else class="tdp-empty" @dblclick="wb.newFile()">
+      <div class="tdp-empty-main">{{ $t('files.no_file') }}</div>
+      <div class="tdp-empty-hint">{{ $t('files.dblclick_new') }}</div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .tdp { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-.tdp-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--tx4); font-size: 13px; }
+.tdp-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--tx4); font-size: 13px; cursor: pointer; }
+.tdp-empty-hint { font-size: 12px; opacity: .8; }
 </style>
