@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMetrics, pickModel, createUsageVision, VISION_SYSTEM } from '../usage-vision.js';
+import { parseMetrics, pickModel, createUsageVision, callChat, VISION_SYSTEM } from '../usage-vision.js';
 
 function okJson(obj) { return { ok: true, status: 200, json: async () => obj }; }
 
@@ -56,4 +56,19 @@ test('recognize：错误码映射（无 provider/key、上游失败）', async (
   assert.equal(await codeOf(createUsageVision({ resolveProvider: () => ({ baseURL: 'https://x', apiKey: '' }), fetchFn: async () => okJson({}) }), Buffer.from('x')), 'no-key');
   assert.equal(await codeOf(createUsageVision({ resolveProvider: () => ({ baseURL: 'https://x', apiKey: 'k', models: [] }), fetchFn: async () => okJson({}) }), Buffer.from('x')), 'bad-model');
   assert.equal(await codeOf(createUsageVision({ resolveProvider: () => ({ baseURL: 'https://x', apiKey: 'k', models: ['m'] }), fetchFn: async () => ({ ok: false, status: 500, json: async () => ({}) }) }), Buffer.from('x')), 'upstream');
+});
+
+test('callChat：哨兵 image 走多模态模型，显式模型名直接用；空 messages 报 bad-messages', async () => {
+  const seen = [];
+  const fetchFn = async (url, init) => { seen.push(JSON.parse(init.body)); return okJson({ choices: [{ message: { content: 'hi' } }] }); };
+  const resolveProvider = () => ({ id: 'deepseek', baseURL: 'https://gw/v1', apiKey: 'K', models: ['deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'] });
+  const a = await callChat({ resolveProvider, messages: [{ role: 'user', content: 'x' }], fetchFn });
+  assert.equal(a.model, 'deepseek-v4-flash-vision-exp');
+  assert.equal(a.content, 'hi');
+  const b = await callChat({ resolveProvider, messages: [{ role: 'user', content: 'x' }], model: 'deepseek-v4-pro', fetchFn });
+  assert.equal(b.model, 'deepseek-v4-pro');
+  assert.equal(seen[0].model, 'deepseek-v4-flash-vision-exp');
+  assert.equal(seen[1].model, 'deepseek-v4-pro');
+  const codeOf = async () => { try { await callChat({ resolveProvider, messages: [], fetchFn }); return 'ok'; } catch (e) { return e.code; } };
+  assert.equal(await codeOf(), 'bad-messages');
 });

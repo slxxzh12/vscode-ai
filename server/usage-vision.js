@@ -57,56 +57,57 @@ export function parseMetrics(text) {
   return out;
 }
 
+// 通用 chat/completions 调用：model 缺省或哨兵名 'image' → 从 provider 模型清单挑多模态模型
+export async function callChat({ resolveProvider, messages, model = 'image', fetchFn = fetch, timeoutMs = 60000 }) {
+  if (!Array.isArray(messages) || !messages.length) throw fail('bad-messages');
+  const p = (await resolveProvider()) || null;
+  if (!p || !p.baseURL) throw fail('no-provider');
+  if (!p.apiKey) throw fail('no-key');
+  const chosen = (!model || model === 'image') ? pickModel(p).model : model;
+  if (!chosen) throw fail('bad-model');
+  const url = `${String(p.baseURL).replace(/\/+$/, '')}/chat/completions`;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetchFn(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${p.apiKey}` },
+      body: JSON.stringify({ model: chosen, stream: false, messages }),
+      signal: ctl.signal,
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e && (e.name === 'AbortError' || e.code === 'ABORT_ERR')) throw fail('timeout');
+    throw fail('upstream', (e && e.message) || String(e));
+  }
+  clearTimeout(timer);
+  if (!res || !res.ok) {
+    let detail = '';
+    try { const j = await res.json(); detail = (j && (j.error?.message || j.message || j.error)) || ''; } catch { /* keep empty */ }
+    throw fail('upstream', `HTTP ${res ? res.status : '?'}${detail ? `: ${String(detail).slice(0, 300)}` : ''}`);
+  }
+  let json;
+  try { json = await res.json(); } catch { throw fail('upstream', 'invalid JSON response'); }
+  const content = json?.choices?.[0]?.message?.content;
+  if (typeof content !== 'string') throw fail('empty-result');
+  return { content, model: chosen };
+}
+
 export function createUsageVision({ resolveProvider = () => null, fetchFn = fetch, timeoutMs = 60000 } = {}) {
   async function recognize({ data, mime = 'image/png' }) {
     if (!Buffer.isBuffer(data) || data.length === 0) throw fail('empty-image');
     if (data.length > MAX_IMAGE_BYTES) throw fail('image-too-large');
-    const p = (await resolveProvider()) || null;
-    if (!p || !p.baseURL) throw fail('no-provider');
-    if (!p.apiKey) throw fail('no-key');
-    const { model } = pickModel(p);
-    if (!model) throw fail('bad-model');
-    const url = `${String(p.baseURL).replace(/\/+$/, '')}/chat/completions`;
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), timeoutMs);
     const dataUrl = `data:${mime};base64,${data.toString('base64')}`;
-    let res;
-    try {
-      res = await fetchFn(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${p.apiKey}` },
-        body: JSON.stringify({
-          model,
-          stream: false,
-          messages: [
-            { role: 'system', content: VISION_SYSTEM },
-            { role: 'user', content: [
-              { type: 'text', text: 'Extract the stats from this screenshot.' },
-              { type: 'image_url', image_url: { url: dataUrl } },
-            ] },
-          ],
-        }),
-        signal: ctl.signal,
-      });
-    } catch (e) {
-      clearTimeout(timer);
-      if (e && (e.name === 'AbortError' || e.code === 'ABORT_ERR')) throw fail('timeout');
-      throw fail('upstream', (e && e.message) || String(e));
-    }
-    clearTimeout(timer);
-    if (!res || !res.ok) {
-      let detail = '';
-      try {
-        const j = await res.json();
-        detail = (j && (j.error?.message || j.message || j.error)) || '';
-      } catch { /* keep empty */ }
-      throw fail('upstream', `HTTP ${res ? res.status : '?'}${detail ? `: ${String(detail).slice(0, 300)}` : ''}`);
-    }
-    let json;
-    try { json = await res.json(); } catch { throw fail('upstream', 'invalid JSON response'); }
-    const content = json?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') throw fail('empty-result');
-    return { metrics: parseMetrics(content), model };
+    const messages = [
+      { role: 'system', content: VISION_SYSTEM },
+      { role: 'user', content: [
+        { type: 'text', text: 'Extract the stats from this screenshot.' },
+        { type: 'image_url', image_url: { url: dataUrl } },
+      ] },
+    ];
+    const r = await callChat({ resolveProvider, messages, model: 'image', fetchFn, timeoutMs });
+    return { metrics: parseMetrics(r.content), model: r.model };
   }
   return { recognize };
 }
