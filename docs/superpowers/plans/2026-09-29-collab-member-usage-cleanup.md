@@ -428,8 +428,8 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, pullFr
       const ids = (Array.isArray(body.machineIds) ? body.machineIds : [])
         .map((x) => String(x || '')).filter((id) => id && id !== me);
       if (!ids.length) return sendJson(res, 400, { error: 'no-target' });
-      const removed = peers.remove(ids);
-      return sendJson(res, 200, { removed });
+      peers.remove(ids);
+      return sendJson(res, 200, { removed: ids });
     }
 ```
 
