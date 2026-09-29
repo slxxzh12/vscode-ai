@@ -15,6 +15,35 @@ const activeGroup = computed(() => props.group ?? snap.value.group);
 const rows = computed(() => mergeMachines(props.peers, activeGroup.value?.members || []));
 const hubId = computed(() => activeGroup.value?.hubId || '');
 const me = computed(() => snap.value.identity.machineId);
+const emit = defineEmits<{ (e: 'removed'): void }>();
+const isHub = computed(() => !!hubId.value && hubId.value === me.value);
+const cleanMode = ref(false);
+const selected = ref<string[]>([]);
+const cleaning = ref(false);
+function toggleClean() { cleanMode.value = !cleanMode.value; selected.value = []; }
+function onSelectionChange(sel: MachineRow[]) { selected.value = sel.map((r) => r.machineId); }
+function selectable(row: MachineRow) { return row.machineId !== me.value; }
+async function confirmClean() {
+  const g = activeGroup.value;
+  const ids = selected.value.slice();
+  if (!g || !ids.length) return;
+  if (!confirm(t('collab.member.clean_confirm', { count: String(ids.length) }))) return;
+  const memberIds = ids.filter((id) => (g.members || []).some((m) => m.machineId === id));
+  cleaning.value = true;
+  try {
+    if (memberIds.length) await props.collab.removeMembers(g.id, memberIds);
+    await props.collab.removeUsagePeers(g.id, ids);
+    await props.collab.refresh();
+    emit('removed');
+    cleanMode.value = false;
+    selected.value = [];
+  } catch (e) {
+    alert(t('collab.member.clean_failed', { msg: (e as Error)?.message || String(e) }));
+  } finally {
+    cleaning.value = false;
+  }
+}
+defineExpose({ onSelectionChange, confirmClean });
 
 function rowClassName({ row }: { row: MachineRow }): string {
   const cls = [];
@@ -55,6 +84,16 @@ async function exportCsv() {
 <template>
   <div class="mwrap">
     <div class="mtool">
+      <span v-if="cleanMode" class="selhint">{{ $t('collab.member.clean_select') }}</span>
+      <template v-if="cleanMode">
+        <button class="mini" :disabled="cleaning || !selected.length" @click="confirmClean">
+          {{ $t('collab.member.clean_delete') }} ({{ selected.length }})
+        </button>
+        <button class="mini" :disabled="cleaning" @click="toggleClean">{{ $t('common.cancel') }}</button>
+      </template>
+      <button v-else-if="isHub" class="mini" :disabled="!rows.length" @click="toggleClean">
+        {{ $t('collab.member.clean') }}
+      </button>
       <button class="mini" :disabled="exporting || !rows.length" @click="exportCsv">
         {{ $t('collab.member.export') }}
       </button>
@@ -67,7 +106,9 @@ async function exportCsv() {
       :row-class-name="rowClassName"
       :empty-text="t('collab.member.empty')"
       @row-click="onRowClick"
+      @selection-change="onSelectionChange"
     >
+      <el-table-column v-if="cleanMode" type="selection" :selectable="selectable" width="40" />
       <el-table-column :label="$t('usage.machine')" sortable :sort-by="(r: any) => machineLabel(r)" min-width="190">
         <template #default="{ row }">
           <div class="mcell">
@@ -112,6 +153,7 @@ async function exportCsv() {
 .mtool { flex: none; display: flex; justify-content: flex-end; padding: 4px 8px; }
 .mtool .mini { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 11px; font-family: inherit; }
 .mtool .mini:disabled { opacity: 0.5; cursor: default; }
+.selhint { color: var(--tx6); font-size: 11px; margin-right: auto; }
 .utable { width: 100%; flex: 1; min-height: 0; }
 .utable :deep(.cell) { white-space: nowrap; word-break: normal; }
 .utable :deep(tr.master-row) td.el-table__cell { background: color-mix(in srgb, var(--warn) 14%, transparent); }

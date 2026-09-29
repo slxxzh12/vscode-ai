@@ -116,4 +116,43 @@ describe('MemberUsageTable', () => {
     expect(csv).toContain('alice');
     expect(csv).toContain(fmtTime(now));
   });
+
+  it('「清理」仅群主可见，进入后出现多选与删除按钮', async () => {
+    const group = { id: 'g', name: 'G', hubId: 'h', createdAt: 1, members: [{ machineId: 'h' }, { machineId: 'p1' }] };
+    const peers = { p1: { agent: '*', days: 1, machineId: 'p1', username: 'bob', host: 'h', port: 1, messages: 1, receivedAt: Date.now() } };
+    const hub = mountWithIdentity(peers, group, 'h');
+    await flushPromises();
+    const clean = hub.findAll('button').find((b) => b.text() === t('collab.member.clean'));
+    expect(clean).toBeTruthy();
+    await clean!.trigger('click');
+    await flushPromises();
+    expect(hub.text()).toContain(t('collab.member.clean_select'));
+    expect(hub.findAll('button').some((b) => b.text().includes(t('collab.member.clean_delete')))).toBe(true);
+
+    const member = mountWithIdentity(peers, group, 'p1');
+    await flushPromises();
+    expect(member.findAll('button').some((b) => b.text() === t('collab.member.clean'))).toBe(false);
+  });
+
+  it('选中成员后确认：调用 removeMembers + removeUsagePeers 并刷新', async () => {
+    vi.stubGlobal('confirm', () => true);
+    const group = { id: 'g', name: 'G', hubId: 'h', createdAt: 1, members: [{ machineId: 'h' }, { machineId: 'p1' }] };
+    const peers = { p1: { agent: '*', days: 1, machineId: 'p1', username: 'bob', host: 'h', port: 1, messages: 1, receivedAt: Date.now() } };
+    const removeMembers = vi.fn(async () => ({ code: 'ok' }));
+    const removeUsagePeers = vi.fn(async () => ({ removed: [] as string[] }));
+    const refresh = vi.fn(async () => EMPTY_SNAPSHOT);
+    const snap = { ...EMPTY_SNAPSHOT, group: group as never, identity: { ...EMPTY_SNAPSHOT.identity, machineId: 'h' } };
+    const collab = { state: ref(snap), removeMembers, removeUsagePeers, refresh } as unknown as CollabApi;
+    const w = mountC(MemberUsageTable, { props: { collab, peers, group: group as never }, global: { plugins: [ElementPlus], stubs: { teleport: true } } });
+    await flushPromises();
+    await w.findAll('button').find((b) => b.text() === t('collab.member.clean'))!.trigger('click');
+    await flushPromises();
+    (w.vm as unknown as { onSelectionChange: (s: { machineId: string }[]) => void }).onSelectionChange([{ machineId: 'p1' }]);
+    await flushPromises();
+    await w.findAll('button').find((b) => b.text().includes(t('collab.member.clean_delete')))!.trigger('click');
+    await flushPromises();
+    expect(removeMembers).toHaveBeenCalledWith('g', ['p1']);
+    expect(removeUsagePeers).toHaveBeenCalledWith('g', ['p1']);
+    expect(refresh).toHaveBeenCalled();
+  });
 });
