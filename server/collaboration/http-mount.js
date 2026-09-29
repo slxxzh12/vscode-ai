@@ -235,6 +235,12 @@ export function createCollabMount({ engine, logger = console }) {
         const r = await engine.renameGroup(body.name);
         return r.ok ? ok(res, { group: r.group }) : sendJson(res, 400, { error: r.error });
       }
+      if (seg[0] === 'groups' && seg.length === 4 && seg[2] === 'members' && seg[3] === 'remove' && m === 'POST') {
+        const r = engine.removeMembers({ groupId: seg[1], machineIds: body.machineIds || [] });
+        if (r.code === 'not-master') return sendJson(res, 403, { error: r.code });
+        if (r.code !== 'ok') return sendJson(res, 400, { error: r.code });
+        return ok(res, r);
+      }
       if (seg[0] === 'groups' && seg.length === 3 && seg[2] === 'files' && m === 'POST') {
         const name = url.searchParams.get('name') || '';
         const data = await readRaw(req).catch((e) => null);

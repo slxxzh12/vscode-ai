@@ -281,3 +281,30 @@ test('/tool GET 返回 agents 列表；POST 切 agent / 未知 agent 400', async
   } finally { server.close(); }
 });
 
+test('群主移除成员：hub 成功并同步移除，非 hub 返回 403', async () => {
+  const A = await startNode('hub');
+  const B = await startNode('mem');
+  try {
+    const g = await joinGroup(A, B);
+    const okRes = await post(`http://127.0.0.1:${A.port}/api/collab/groups/${g.id}/members/remove`, { machineIds: [B.engine.pub.machineId] });
+    assert.equal(okRes.status, 200, JSON.stringify(okRes.body));
+    assert.deepEqual(okRes.body.removed, [B.engine.pub.machineId]);
+    assert.equal(A.engine.store.findGroup(g.id).members.some((m) => m.machineId === B.engine.pub.machineId), false);
+
+    const bad = await post(`http://127.0.0.1:${B.port}/api/collab/groups/${g.id}/members/remove`, { machineIds: [A.engine.pub.machineId] });
+    assert.equal(bad.status, 403);
+    assert.equal(bad.body.error, 'not-master');
+  } finally { A.server.close(); B.server.close(); }
+});
+
+test('群主移除成员：空目标 400，且不会删除自己', async () => {
+  const A = await startNode('hub2');
+  try {
+    const g = A.engine.ensureGroup();
+    const selfOnly = await post(`http://127.0.0.1:${A.port}/api/collab/groups/${g.id}/members/remove`, { machineIds: [A.engine.pub.machineId] });
+    assert.equal(selfOnly.status, 400);
+    assert.equal(selfOnly.body.error, 'no-target');
+    assert.ok(A.engine.store.findGroup(g.id).members.some((m) => m.machineId === A.engine.pub.machineId));
+  } finally { A.server.close(); }
+});
+

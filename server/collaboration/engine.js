@@ -1248,6 +1248,17 @@ export class CollabEngine {
       this.store.upsertGroup(g);
     }
   }
+  // 群主清退成员：仅 hub 可调用；移除群成员身份并删成员表/命令缓存（用量数据由 usage 面另删）
+  removeMembers({ groupId, machineIds } = {}) {
+    const g = this.store.findGroup(groupId);
+    if (!g || g.hubId !== this.pub.machineId) return { code: 'not-master' };
+    const ids = (Array.isArray(machineIds) ? machineIds : [machineIds])
+      .map((x) => String(x || '')).filter((id) => id && id !== this.pub.machineId);
+    if (!ids.length) return { code: 'no-target' };
+    this.store.removeGroupMembers(groupId, ids);
+    try { this.collabDb?.removeMembers?.({ groupId, machineIds: ids }); } catch (e) { this.log?.warn?.('collab member delete failed', (e && e.message) || e); }
+    return { code: 'ok', removed: ids };
+  }
 }
 
 // ================= 群聊 与 @ 远程执行（追加到 CollabEngine 的方法以 mixin 形式扩展） =================
