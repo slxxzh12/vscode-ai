@@ -138,6 +138,28 @@ test('daily���� JSON ���ÿ�������һ����Ǩ�
   s.close();
 });
 
+test('截图统计优先：image 覆盖 auto，auto 不覆盖 image', () => {
+  const s = new UsagePeersStore({ file: tmpFile() });
+  const day = Date.UTC(2026, 8, 17, 3, 0, 0);
+  // 先来命令行统计（auto）
+  s.upsert({ machineId: 'm1', source: 'auto', sessions: 10, messages: 100, input: 1000, output: 50 }, day);
+  // 截图统计（image）覆盖 auto
+  s.upsert({ machineId: 'm1', source: 'image', sessions: 21, messages: 3986, input: 9000, output: 200 }, day + 1000);
+  assert.equal(s.get('m1').sessions, 21);
+  assert.equal(s.get('m1').messages, 3986);
+  assert.equal(s.get('m1').source, 'image');
+  // 又来一轮命令行统计（auto），不得覆盖 image
+  s.upsert({ machineId: 'm1', source: 'auto', sessions: 11, messages: 111, input: 1111, output: 55 }, day + 2000);
+  assert.equal(s.get('m1').sessions, 21, 'image 指标不被 auto 覆盖');
+  assert.equal(s.get('m1').messages, 3986);
+  assert.equal(s.get('m1').source, 'image');
+  assert.equal(s.listDaily('m1')['2026-09-17'].sessions, 21, '当天合计也保留 image');
+  // 新的截图统计覆盖旧的 image
+  s.upsert({ machineId: 'm1', source: 'image', sessions: 30, messages: 5000, input: 9999, output: 300 }, day + 3000);
+  assert.equal(s.get('m1').sessions, 30);
+  assert.equal(s.get('m1').source, 'image');
+});
+
 test('remove 删快照键并联动删当日合计行；不存在返回 0', () => {
   const s = new UsagePeersStore({ file: tmpFile() });
   const day = Date.UTC(2026, 8, 17, 3, 0, 0);

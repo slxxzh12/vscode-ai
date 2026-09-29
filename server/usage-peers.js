@@ -84,13 +84,16 @@ export class UsagePeersStore {
     const machineId = String((usage && usage.machineId) || '');
     if (!machineId) return null;
     const prev = this.data.peers[machineId];
+    const prevIsImage = !!prev && prev.source === SOURCE_IMAGE;
+    const usageIsImage = (usage && usage.source) === SOURCE_IMAGE;
+    // 截图统计优先于命令行统计：image 覆盖 auto；auto 不得覆盖已有 image
+    const merged = (prevIsImage && !usageIsImage) ? { ...usage, ...prev } : { ...prev, ...usage };
     // 新上报缺指标时保留上次好数据，避免采集失败把已有数字覆盖成空
-    const merged = { ...prev, ...usage };
     for (const k of METRIC_KEYS) {
       if (!Number.isFinite(usage && usage[k]) && Number.isFinite(prev && prev[k])) merged[k] = prev[k];
     }
-    // 采集来源：图片识别优先，否则按本次上报；缺省 auto（最后写入者覆盖）
-    merged.source = (usage && usage.source) === SOURCE_IMAGE ? SOURCE_IMAGE : SOURCE_AUTO;
+    // 采集来源：只要任一来源是图片识别就标记 image（图片识别优先）
+    merged.source = (usageIsImage || prevIsImage) ? SOURCE_IMAGE : SOURCE_AUTO;
     // 成功的一轮（带指标）清掉上次残留的采集错误，避免 error 字段一直挂着旧的 ENOENT
     if (hasMetrics(usage)) delete merged.error;
     const rec = { ...merged, machineId, receivedAt: now };
