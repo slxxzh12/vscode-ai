@@ -7,8 +7,16 @@ import { isVisionModel } from '@devflow/shared/llm-presets';
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export const VISION_SYSTEM = [
-  'You extract usage statistics from a screenshot of a command-line stats output.',
-  'Extract these values and reply with ONLY a JSON object using exactly these keys, with null for any value you cannot find:',
+  'You extract usage statistics from a screenshot of an AI coding tool\'s usage/stats output.',
+  'The screenshot may be one of these layouts:',
+  '1. An aggregate summary with labeled rows (e.g. Sessions, Messages, Days, Total Cost, Input, Output, Cache Read, Cache Write).',
+  '2. A list of individual sessions (session history), each showing its own input tokens and output tokens.',
+  'If the screenshot is a session list, aggregate it into totals before replying:',
+  '  "sessions" = number of sessions in the list,',
+  '  "messages" = total messages across all sessions (if shown),',
+  '  "input" = sum of all per-session input tokens,',
+  '  "output" = sum of all per-session output tokens.',
+  'Reply with ONLY a JSON object using exactly these keys, with null for any value you cannot find:',
   '{"sessions":<int>,"messages":<int>,"days":<int>,"totalCost":<number>,"input":<int>,"output":<int>,"cacheRead":<int>,"cacheWrite":<int>}',
   'No markdown, no explanation, no extra text.',
 ].join('\n');
