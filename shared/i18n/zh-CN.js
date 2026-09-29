@@ -650,6 +650,8 @@ export const messages = {
   'term.agent_hint': '启动命令会作为该固定会话的第一条命令输入（如 opencode / claudecode）。',
   'term.agent_first_run_hint': '请选择默认 Agent（点下方「设为默认」）',
   'term.agent_set_default_failed': '设置默认 Agent 失败：{msg}',
+  'term.create_failed': '创建会话失败：{msg}',
+  'term.create_cwd_missing': '项目目录不存在：{path}，请在顶部重新选择或添加项目',
   'term.service': '服务',
   'term.port': '启动端口',
   'term.service_hint': '端口改动后点「确定」保存并自动重启生效；端口写入 data/port.txt。',

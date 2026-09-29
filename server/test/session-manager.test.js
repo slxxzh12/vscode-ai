@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { SessionManager } from '../session-manager.js';
 import { makeFakePtyFactory } from './helpers/fake-pty.js';
 
@@ -102,19 +105,39 @@ test('list 返回概要并按创建倒序', async () => {
 
 test('projectResolver 决定默认 cwd；缺省回退 process.cwd()', async () => {
   const instances = [];
-  const root = 'D:\\projects\\devflow';
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-sm-proj-'));
+  const override = fs.mkdtempSync(path.join(os.tmpdir(), 'df-sm-over-'));
   const sm = new SessionManager({
     ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }),
     projectResolver: (id) => (id === 'devflow' ? root : null),
   });
-  const withProj = await sm.create({ projectId: 'devflow' });
-  assert.equal(withProj.cwd, root);
-  const noProj = await sm.create({});
-  assert.equal(noProj.cwd, process.cwd());
-  const unknown = await sm.create({ projectId: 'ghost' });
-  assert.equal(unknown.cwd, process.cwd());
-  const explicit = await sm.create({ projectId: 'devflow', cwd: 'C:\\override' });
-  assert.equal(explicit.cwd, 'C:\\override');
+  try {
+    const withProj = await sm.create({ projectId: 'devflow' });
+    assert.equal(withProj.cwd, root);
+    const noProj = await sm.create({});
+    assert.equal(noProj.cwd, process.cwd());
+    const unknown = await sm.create({ projectId: 'ghost' });
+    assert.equal(unknown.cwd, process.cwd());
+    const explicit = await sm.create({ projectId: 'devflow', cwd: override });
+    assert.equal(explicit.cwd, override);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(override, { recursive: true, force: true });
+  }
+});
+
+test('create 在 cwd 不存在时抛 cwd-missing，且不启动 pty', async () => {
+  const instances = [];
+  const gone = path.join(os.tmpdir(), `df-sm-gone-${Date.now()}`);
+  const sm = new SessionManager({
+    ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }),
+    projectResolver: (id) => (id === 'gone' ? gone : null),
+  });
+  await assert.rejects(
+    () => sm.create({ projectId: 'gone' }),
+    (e) => e && e.code === 'cwd-missing',
+  );
+  assert.equal(instances.length, 0);
 });
 
 test('create 之后调用 onCreated，携带 id/projectId', async () => {

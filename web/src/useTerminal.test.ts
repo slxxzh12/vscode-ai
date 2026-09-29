@@ -67,6 +67,19 @@ describe('useTerminal', () => {
     expect(hook.term.state.activeSessionId).toBe('sX');
   });
 
+  it('createSession 收 create-failed 时 reject（不再永久挂起），后续仍可正常创建', async () => {
+    hook.term.connect();
+    const ws = hook.sockets[0];
+    ws.emitOpen();
+    const p = hook.term.createSession({ projectId: 'gone', kind: 'agent' });
+    ws.emitMessage({ type: S2C.ERROR, code: 'cwd-missing', message: 'working directory does not exist: X' });
+    await expect(p).rejects.toMatchObject({ code: 'cwd-missing' });
+    // 失败后再建：create 槽已清理，不应被上一次失败影响
+    const p2 = hook.term.createSession({ projectId: null, kind: 'shell' });
+    ws.emitMessage({ type: S2C.SESSION_CREATED, session: { id: 'sOK', name: 'ok', projectId: null, state: 'running', cwd: '', cols: 80, rows: 24, exitCode: null } });
+    await expect(p2).resolves.toMatchObject({ id: 'sOK' });
+  });
+
   it('replay 走 on 事件订阅者', () => {
     hook.term.connect();
     const ws = hook.sockets[0];

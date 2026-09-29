@@ -650,6 +650,8 @@ export const messages = {
   'term.agent_hint': 'The launch command is sent as the first command to the fixed session (e.g. opencode / claudecode).',
   'term.agent_first_run_hint': 'Choose the default Agent (click "Set as default" below)',
   'term.agent_set_default_failed': 'Failed to set default Agent: {msg}',
+  'term.create_failed': 'Failed to create session: {msg}',
+  'term.create_cwd_missing': 'Project folder does not exist: {path}. Reselect or add a project in the top bar.',
   'term.service': 'Service',
   'term.port': 'Listen port',
   'term.service_hint': 'Changing the port and pressing OK saves it and restarts the backend automatically; the port is stored in data/port.txt.',

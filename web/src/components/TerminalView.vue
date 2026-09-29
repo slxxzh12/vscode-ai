@@ -5,7 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { FitAddon } from '@xterm/addon-fit';
 import { C2S, S2C } from '@devflow/shared';
 import { promptStepId } from '@devflow/shared/workflow-group';
-import type { useTerminal } from '../useTerminal';
+import type { useTerminal, SessionSummary } from '../useTerminal';
 import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
 import DocViewer from './DocViewer.vue';
@@ -471,15 +471,30 @@ function showRenameHint(msg: string) {
 }
 // Agent 侧改名没同步上（新会话还没对话、或会话正忙导致 /rename 打不开）：只提示，不误发消息
 function showRenameSyncHint() { showRenameHint(t('term.rename_sync_skipped')); }
+// 创建会话失败（服务端 reject）时的提示：项目目录不存在给专门文案，其余带原始错误
+function createErrorText(e: unknown): string {
+  const err = e as { code?: string; message?: string } | null;
+  if (err?.code === 'cwd-missing') {
+    const path = (err.message || '').replace(/^working directory does not exist:\s*/i, '') || (props.projectId || '');
+    return t('term.create_cwd_missing', { path });
+  }
+  return t('term.create_failed', { msg: err?.message || String(e) });
+}
 async function createNew(id: string) {
   newOpen.value = false;
   const c = newChoices.value.find((x) => x.id === id) || newChoices.value[0];
   const name = newName.value.trim();
   newName.value = '';
-  const s = await props.terminal.createSession({
-    projectId: props.projectId, cols: 80, rows: 24,
-    kind: c.cmd ? 'agent' : 'shell', agentId: c.cmd ? c.id : null, agentCmd: c.cmd || null,
-  });
+  let s: SessionSummary;
+  try {
+    s = await props.terminal.createSession({
+      projectId: props.projectId, cols: 80, rows: 24,
+      kind: c.cmd ? 'agent' : 'shell', agentId: c.cmd ? c.id : null, agentCmd: c.cmd || null,
+    });
+  } catch (e) {
+    alert(createErrorText(e));
+    return;
+  }
   if (c.cmd) markAgent(s.id);
   const label = c.cmd ? `◈ ${c.label}` : c.label;
   props.center.ensureSession(s.id, name || label, s.state || 'running');
@@ -573,10 +588,16 @@ async function startAgent() {
   }
   const gen = ++agentGen;
   const pid = props.projectId;
-  const s = await props.terminal.createSession({
-    projectId: pid, cols: 80, rows: 24,
-    kind: 'agent', agentId: agentId.value, agentCmd: agentCmd.value,
-  });
+  let s: SessionSummary;
+  try {
+    s = await props.terminal.createSession({
+      projectId: pid, cols: 80, rows: 24,
+      kind: 'agent', agentId: agentId.value, agentCmd: agentCmd.value,
+    });
+  } catch (e) {
+    if (gen === agentGen) alert(createErrorText(e));   // 重建代际已过期则静默丢弃
+    return;
+  }
   if (gen !== agentGen) return;   // 期间已再次切换项目/重建：丢弃本次结果
   agentSid.value = s.id;
   agentProjectId.value = pid;

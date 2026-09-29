@@ -84,7 +84,7 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
           replay(conn, session);
         }).catch((err) => {
           log.error('create failed', err);
-          conn.send({ type: S2C.ERROR, code: 'create-failed', message: String(err && err.message || err) });
+          conn.send({ type: S2C.ERROR, code: (err && err.code) || 'create-failed', message: String(err && err.message || err) });
         });
         break;
       case C2S.START: {

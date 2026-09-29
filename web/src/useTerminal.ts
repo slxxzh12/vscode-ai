@@ -35,6 +35,7 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
   const handlers = new Map<string, Set<Handler>>();
   let listResolve: ((s: SessionSummary[]) => void) | null = null;
   let createdResolve: ((s: SessionSummary) => void) | null = null;
+  let createdReject: ((e: Error) => void) | null = null;
   let restoreResolve: ((s: SessionSummary | null) => void) | null = null;
   let onOutputCb: ((data: string) => void) | null = null;
   let onReplayCb: ((data: string) => void) | null = null;
@@ -74,7 +75,7 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
       case S2C.SESSION_CREATED: {
         state.sessions = state.sessions.filter((s) => s.id !== msg.session.id).concat([msg.session]);
         state.activeSessionId = msg.session.id;
-        createdResolve?.(msg.session); createdResolve = null;
+        createdResolve?.(msg.session); createdResolve = null; createdReject = null;
         restoreResolve?.(msg.session); restoreResolve = null;
         emit(S2C.SESSION_CREATED, msg); break;
       }
@@ -88,6 +89,14 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
       case S2C.ERROR:
         state.error = `${msg.code}: ${msg.message}`;
         if (msg.code === 'restore-failed') { restoreResolve?.(null); restoreResolve = null; }
+        // create 失败必须让 await createSession 落地（否则调用方永久挂起、界面无任何反馈）
+        if (createdReject) {
+          const reject = createdReject;
+          createdReject = null; createdResolve = null;
+          const err = new Error(String(msg.message || msg.code || 'create-failed'));
+          (err as Error & { code?: string }).code = msg.code || 'create-failed';
+          reject(err);
+        }
         emit(S2C.ERROR, msg); break;
       default: emit(msg.type, msg); break;
     }
@@ -131,7 +140,7 @@ export function useTerminal(opts: UseTerminalOptions = {}) {
     },
     createSession(input: { projectId?: string | null; cols?: number; rows?: number; kind?: 'agent' | 'shell'; agentId?: string | null; agentCmd?: string | null }) {
       send(C2S.CREATE, { ...input });
-      return new Promise<SessionSummary>((resolve) => { createdResolve = resolve; });
+      return new Promise<SessionSummary>((resolve, reject) => { createdResolve = resolve; createdReject = reject; });
     },
     listSessions() {
       send(C2S.LIST);

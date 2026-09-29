@@ -152,6 +152,23 @@ test('create 透传 kind/agentId/agentCmd 并出现在 summary', async () => {
   await t.stop();
 });
 
+test('create：项目目录不存在 → ERROR cwd-missing（错误码透传，不再静默挂起）', async () => {
+  const missing = `${process.cwd()}/__df_missing_project__`;
+  const sm = new SessionManager({
+    ptyFactory: async () => makeFakePtyFactory([])({ cwd: process.cwd() }),
+    projectResolver: (id) => (id === 'gone' ? missing : null),
+  });
+  const t = await startTestServer({ sessionManager: sm });
+  try {
+    const c = await t.connect();
+    c.send(C2S.CREATE, { projectId: 'gone', kind: 'agent', agentId: 'opencode', agentCmd: 'opencode' });
+    const err = await c.wait((m) => m.type === S2C.ERROR);
+    assert.equal(err.code, 'cwd-missing');
+  } finally {
+    await t.stop();
+  }
+});
+
 test('restore：成功 → SESSION_CREATED + REPLAY，summary 带 resumed', async () => {
   const instances = [];
   const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });

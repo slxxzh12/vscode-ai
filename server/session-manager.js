@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { RingBuffer } from './ring-buffer.js';
 import { createPty } from './pty-runner.js';
 import { t, getLocale } from './i18n.js';
@@ -23,6 +24,13 @@ export class SessionManager extends EventEmitter {
                  createdAt = null, replay = null } = {}) {
     const projRoot = projectId && this.projectResolver ? (this.projectResolver(projectId) || null) : null;
     const workdir = cwd || projRoot || process.cwd();
+    // 项目目录可能已被删除/移动：此时不能把不存在的目录交给 node-pty（会抛 ERROR_DIRECTORY 267），
+    // 给出可识别的错误码，让上层提示用户重新选择/添加项目。
+    if (!fs.existsSync(workdir)) {
+      const e = new Error(`working directory does not exist: ${workdir}`);
+      e.code = 'cwd-missing';
+      throw e;
+    }
     const pty = await this.ptyFactory({ cwd: workdir, cols, rows });
     const session = {
       id: id || shortId(), name: name || (projectId ? `${projectId} · ${timeLabel()}` : `${t('session.default')} · ${timeLabel()}`),
