@@ -3,13 +3,13 @@ import { parseInviteLink } from './usage-report.js';
 const MAX_BODY = 1024 * 1024;   // 上报体只放用量数字，1MB 足够
 const MAX_IMAGE_BODY = 10 * 1024 * 1024;   // 统计截图（多模态识别）上限
 
-function readBody(req) {
+function readBody(req, max = MAX_BODY) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let total = 0;
     req.on('data', (c) => {
       total += c.length;
-      if (total > MAX_BODY) { reject(new Error('body too large')); req.destroy(); return; }
+      if (total > max) { reject(new Error('body too large')); req.destroy(); return; }
       chunks.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
@@ -37,7 +37,7 @@ function sendJson(res, status, obj) {
 }
 
 // /api/usage/* 的 HTTP 面：远端收上报（令牌），本机界面看汇总/配上报器
-export function createUsageMount({ peers, reporter, checkToken, onReport, pullFromHub = null, probe = null, loadProbe = null, saveProbe = null, onImage = null, setCwd = null, isHub = null, selfId = null, logger = console }) {
+export function createUsageMount({ peers, reporter, checkToken, onReport, pullFromHub = null, probe = null, loadProbe = null, saveProbe = null, onImage = null, onMultimodal = null, setCwd = null, isHub = null, selfId = null, logger = console }) {
   const freshCache = new Map();   // masterId -> 最近一次成功拉到的 members
   async function route(req, res, url) {
     const m = req.method;
@@ -166,6 +166,25 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, pullFr
       if (!ids.length) return sendJson(res, 400, { error: 'no-target' });
       peers.remove(ids);
       return sendJson(res, 200, { removed: ids });
+    }
+
+    // 群主通用多模态接口：成员带令牌调用，转发给群主配置的多模态模型
+    if (seg[0] === 'multimodal' && seg.length === 1 && m === 'POST') {
+      const tk = String(req.headers['x-df-token'] || '');
+      if (!checkToken || !checkToken(tk)) return sendJson(res, 403, { error: 'bad-token' });
+      if (typeof onMultimodal !== 'function') return sendJson(res, 500, { error: 'unavailable' });
+      let body = {};
+      try { body = JSON.parse((await readBody(req, MAX_IMAGE_BODY)) || '{}'); } catch { body = {}; }
+      if (!Array.isArray(body.messages) || !body.messages.length) return sendJson(res, 400, { error: 'bad-body' });
+      const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : 'image';
+      try {
+        return sendJson(res, 200, await onMultimodal({ messages: body.messages, model }));
+      } catch (e) {
+        const code = (e && e.code) || 'internal';
+        const status = ['no-provider', 'no-key', 'bad-model', 'bad-messages', 'empty-result'].includes(code)
+          ? 400 : code === 'timeout' ? 504 : code === 'upstream' ? 502 : 500;
+        return sendJson(res, status, { error: code, message: (e && e.message) || '' });
+      }
     }
 
     return sendJson(res, 404, { error: 'not found' });

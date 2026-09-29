@@ -12,13 +12,13 @@ function tmp(name) {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-umount-')), name);
 }
 
-async function start({ token = 'good', peers, reporter, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd, isHub, selfId } = {}) {
+async function start({ token = 'good', peers, reporter, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd, isHub, selfId, onMultimodal } = {}) {
   const p = peers || new UsagePeersStore({ file: tmp('usage-peers.json') });
   const r = reporter || createUsageReporter({
     file: tmp('usage-report.json'), identity: () => ({ machineId: 'm1' }),
     collect: async () => ({ sessions: 1 }), fetchFn: async () => ({ ok: true, json: async () => ({ ok: true }) }),
   });
-  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd, isHub, selfId });
+  const mount = createUsageMount({ peers: p, reporter: r, checkToken: (tk) => tk === token, onReport, pullFromHub, probe, loadProbe, saveProbe, setCwd, isHub, selfId, onMultimodal });
   const server = http.createServer((req, res) => mount(req, res, new URL(req.url, 'http://localhost')));
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   return { peers: p, reporter: r, port: server.address().port, server };
@@ -216,4 +216,32 @@ test('POST /api/usage/peers/remove：仅 hub 可删，过滤自身，空目标 4
   assert.deepEqual(r.body.removed, ['m1']);
   assert.equal(A.peers.get('m1'), null);
   assert.ok(A.peers.get('me'));
+});
+
+test('POST /api/usage/multimodal：令牌校验、bad-body、成功转发（model 缺省 image）', async (t) => {
+  let seen = null;
+  const A = await start({ onMultimodal: async ({ messages, model }) => { seen = { messages, model }; return { content: 'ok', model: 'glm-4v-plus' }; } });
+  t.after(() => A.server.close());
+
+  const bad = await call(A.port, 'POST', '/api/usage/multimodal', { headers: { 'X-DF-Token': 'bad' }, body: { messages: [{ role: 'user', content: 'x' }] } });
+  assert.equal(bad.status, 403);
+  assert.equal(bad.body.error, 'bad-token');
+
+  const nob = await call(A.port, 'POST', '/api/usage/multimodal', { headers: { 'X-DF-Token': 'good' }, body: {} });
+  assert.equal(nob.status, 400);
+  assert.equal(nob.body.error, 'bad-body');
+
+  const ok = await call(A.port, 'POST', '/api/usage/multimodal', { headers: { 'X-DF-Token': 'good' }, body: { messages: [{ role: 'user', content: 'x' }] } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.content, 'ok');
+  assert.equal(ok.body.model, 'glm-4v-plus');
+  assert.equal(seen.model, 'image');
+});
+
+test('POST /api/usage/multimodal：上游错误码映射', async (t) => {
+  const A = await start({ onMultimodal: async () => { const e = new Error('x'); e.code = 'no-key'; throw e; } });
+  t.after(() => A.server.close());
+  const r = await call(A.port, 'POST', '/api/usage/multimodal', { headers: { 'X-DF-Token': 'good' }, body: { messages: [{ role: 'user', content: 'x' }] } });
+  assert.equal(r.status, 400);
+  assert.equal(r.body.error, 'no-key');
 });
