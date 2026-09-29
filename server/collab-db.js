@@ -37,6 +37,7 @@ export function createCollabDb({ file, logger = console } = {}) {
     username=excluded.username, employee_id=excluded.employee_id, host=excluded.host, port=excluded.port,
     public_key=excluded.public_key, updated_at=excluded.updated_at`);
   const delCmd = db.prepare('DELETE FROM member_command WHERE group_id = ? AND machine_id = ?');
+  const delMember = db.prepare('DELETE FROM member WHERE group_id = ? AND machine_id = ?');
   const insCmd = db.prepare(`INSERT INTO member_command (group_id, machine_id, name, updated_at) VALUES (?,?,?,?)
     ON CONFLICT(group_id,machine_id,name) DO UPDATE SET updated_at=excluded.updated_at`);
   const listMembers = db.prepare('SELECT * FROM member WHERE group_id = ? ORDER BY username, machine_id');
@@ -71,6 +72,19 @@ export function createCollabDb({ file, logger = console } = {}) {
       return this.listCommands({ groupId, machineId });
     },
     listMembers(groupId) { return (groupId ? listMembers.all(String(groupId)) : listAllMembers.all()).map(mRow); },
+    // 群主清理：删掉成员表与命令缓存里的这些机器
+    removeMembers({ groupId, machineIds = [] } = {}) {
+      if (!groupId) return 0;
+      let n = 0;
+      for (const id of machineIds) {
+        if (!id) continue;
+        try {
+          delCmd.run(String(groupId), String(id));
+          n += Number(delMember.run(String(groupId), String(id)).changes) || 0;
+        } catch (e) { logger?.warn?.('member delete failed', (e && e.message) || e); }
+      }
+      return n;
+    },
     listCommands({ groupId, machineId = null } = {}) {
       if (!groupId) return [];
       return listCmd.all(String(groupId), machineId ? String(machineId) : null, machineId ? String(machineId) : null)

@@ -98,3 +98,16 @@ test('����һ�����ݿ��ļ���usage / peer_daily / seed 
   assert.deepEqual(seed.get('p1').detail.skills, [{ name: 'demo', files: 3 }]);
   peers.close(); usage.close(); db.close();
 });
+
+test('removeMembers：删 member 与 member_command 行，其它成员保留', () => {
+  const db = createCollabDb({ file: tmpDb(), logger: { warn() {} } });
+  db.registerMember({ groupId: 'g1', machineId: 'm1', username: 'u1' }, 1);
+  db.registerMember({ groupId: 'g1', machineId: 'm2', username: 'u2' }, 1);
+  db.setCommands({ groupId: 'g1', machineId: 'm1', commands: ['dev'] }, 1);
+  db.setCommands({ groupId: 'g1', machineId: 'm2', commands: ['doc'] }, 1);
+  const n = db.removeMembers({ groupId: 'g1', machineIds: ['m1'] });
+  assert.equal(n, 1);
+  assert.deepEqual(db.listMembers('g1').map((m) => m.machineId), ['m2']);
+  assert.deepEqual(db.listCommands({ groupId: 'g1' }).map((c) => `${c.machineId}:${c.name}`), ['m2:doc']);
+  db.close();
+});
