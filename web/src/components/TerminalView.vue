@@ -334,7 +334,7 @@ const agentCmd = computed(() => currentAgent.value.cmd || 'opencode');
 const wfKind = ref<string>('dev');
 const promptCollect = usePromptCollect();
 const PROMPT_AUTOSEND_KEY = 'devflow-prompt-autosend';
-const promptAutoSend = ref<boolean>((() => { try { return localStorage.getItem(PROMPT_AUTOSEND_KEY) !== '0'; } catch { return true; } })());
+const promptAutoSend = ref<boolean>((() => { try { return localStorage.getItem(PROMPT_AUTOSEND_KEY) === '1'; } catch { return false; } })());
 watch(promptAutoSend, (v) => { try { localStorage.setItem(PROMPT_AUTOSEND_KEY, v ? '1' : '0'); } catch { /* ignore */ } });
 const agentStarted = ref(false);
 const agentCliReady = ref(false);   // agent CLI 是否已在固定会话里启动
