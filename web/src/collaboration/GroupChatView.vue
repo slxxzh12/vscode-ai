@@ -221,6 +221,10 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
 .tag.me { background: var(--ac); color: var(--onac); font-weight: 700; }
 .bubble { background: var(--bg4); border: 1px solid var(--bd); border-radius: 8px; padding: 6px 10px; color: var(--tx); white-space: pre-wrap; word-break: break-word; align-self: flex-start; }
 .msg.mine .bubble { background: color-mix(in srgb, var(--ac) 22%, transparent); border-color: var(--ac); align-self: flex-end; }
+.msg.mine .meta { justify-content: flex-end; }
+.msg.mine .res-head { align-self: flex-end; }
+.msg.mine .res-body { align-self: flex-end; max-width: 85%; }
+.msg.mine .dcard { align-self: flex-end; }
 .at { color: var(--ac2); font-weight: 600; }
 .res-head { color: var(--tx2); font-size: 11px; }
 .res-body { background: var(--bg3); color: var(--oktx); border: 1px solid var(--bd2); border-radius: 6px; padding: 8px; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; max-height: 260px; overflow: auto; }
