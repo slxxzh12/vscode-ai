@@ -792,7 +792,7 @@ export const messages = {
   'term.about.software': '软件名称',
   'term.about.name_value': 'vscode-ai(黑洞)',
   'term.about.license': '版权协议',
-  'term.about.repo': '原始仓库',
+  'term.about.download_url': '下载地址',
   'term.about.feedback': '问题反馈',
   'term.about.mit': 'MIT License\n\nCopyright (c) 2026 Samuel Tsang\n\n特此免费授予任何获得本软件及相关文档文件（"软件"）副本的人不受限制地处理本软件的权利，包括但不限于使用、复制、修改、合并、发布、分发、再许可和/或销售本软件副本的权利，并允许向其提供本软件的人这样做，但须符合以下条件：\n\n上述版权声明和本许可声明应包含在本软件的所有副本或重要部分中。\n\n本软件按"原样"提供，不提供任何形式的明示或暗示保证，包括但不限于适销性、特定用途适用性和非侵权性的保证。在任何情况下，作者或版权持有人均不对因本软件或本软件的使用或其他交易而产生的任何索赔、损害或其他责任负责，无论是合同诉讼、侵权行为还是其他行为。',
   'term.about.note': '如基于本项目进行二次开发并用于商业用途，请在版权声明中致谢原作者并附上原始仓库地址（Gitee: https://gitee.com/slxxzh12/vscode-ai · GitHub: https://github.com/slxxzh12/vscode-ai）；否则禁止使用。',
