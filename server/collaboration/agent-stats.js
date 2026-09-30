@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { wrapCmdBin } from '../win-spawn.js';
 import { withAgentEnv } from '../agent-env.js';
@@ -214,6 +214,60 @@ export function readStatsFile(statsFile, { fsImpl = fs } = {}) {
   } catch {
     return empty;
   }
+}
+
+const refreshLocks = new Set();
+
+// 后台刷新采集文件：不等待、不超时；stdout+stderr 写 <statsFile>.tmp，子进程 close 后原子改名。
+// 同一 statsFile 已有刷新在跑时跳过（返回 started:false）。输出为空时不覆盖旧文件。
+export function refreshStatsOutput({
+  cmd = 'opencode', statsCmd = '', days = 60, env = process.env,
+  cwd = null, resolveCwd = resolveStatsCwd, startDir = undefined, home = os.homedir(),
+  statsFile = null, spawnFn = spawn, fsImpl = fs, lock = refreshLocks, onDone = null,
+} = {}) {
+  if (!statsFile) return { started: false, reason: 'no-file' };
+  if (lock.has(statsFile)) return { started: false, reason: 'busy' };
+  const spec = parseStatsCmd(statsCmd, days, { env })
+    || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };
+  const { bin, args } = wrapCmdBin(spec.bin, spec.args);
+  const runCwd = cwd || resolveCwd({ startDir, home });
+  const tmp = `${statsFile}.tmp`;
+  let fd;
+  try {
+    fsImpl.mkdirSync(path.dirname(statsFile), { recursive: true });
+    fd = fsImpl.openSync(tmp, 'w');
+  } catch (e) {
+    return { started: false, reason: 'open-failed', error: String((e && e.message) || e) };
+  }
+  let child;
+  try {
+    child = spawnFn(bin, args, { cwd: runCwd, windowsHide: true, env: withAgentEnv(env), stdio: ['ignore', fd, fd] });
+  } catch (e) {
+    try { fsImpl.closeSync(fd); } catch { /* ignore */ }
+    return { started: false, reason: 'spawn-failed', error: String((e && e.message) || e) };
+  }
+  try { fsImpl.closeSync(fd); } catch { /* ignore */ }
+  lock.add(statsFile);
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    lock.delete(statsFile);
+    let raw = '';
+    try { raw = fsImpl.readFileSync(tmp, 'utf8'); } catch { raw = ''; }
+    try {
+      if (raw.trim()) fsImpl.renameSync(tmp, statsFile);
+      else fsImpl.unlinkSync(tmp);
+    } catch { /* ignore */ }
+    try { onDone?.({ statsFile, ok: !!raw.trim() }); } catch { /* ignore */ }
+  };
+  if (typeof child.on === 'function') {
+    child.on('close', finish);
+    child.on('error', finish);
+  } else {
+    finish();
+  }
+  return { started: true, pid: child.pid, tmp };
 }
 
 // 把采集原文持久化到 statsFile（有输出才覆盖写，无输出保留上次内容），并回读文件内容与最后修改时间。

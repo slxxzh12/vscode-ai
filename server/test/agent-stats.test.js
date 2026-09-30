@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath, isClaudeFamily, collectClaudeStats, resolveStatsCwd, readStatsFile } from '../collaboration/agent-stats.js';
+import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath, isClaudeFamily, collectClaudeStats, resolveStatsCwd, readStatsFile, refreshStatsOutput } from '../collaboration/agent-stats.js';
 
 function claudeHome(linesByFile) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'df-claude-'));
@@ -381,4 +381,60 @@ test('readStatsFile：存在返回 raw/mtime/parsed；不存在 exists=false', (
   assert.equal(r.raw, SAMPLE);
   assert.equal(r.parsed.sessions, 21);
   assert.ok(r.mtimeMs > 0);
+});
+
+function fakeChild() {
+  const listeners = {};
+  return { pid: 4321, listeners, on(ev, cb) { listeners[ev] = cb; return this; } };
+}
+
+test('refreshStatsOutput：输出写 tmp，close 后原子改名到 statsFile 并释放锁', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-refresh-'));
+  const statsFile = path.join(dir, 'cache', 'collaboration', 'stats.txt');
+  const tmp = `${statsFile}.tmp`;
+  const child = fakeChild();
+  let seenStdio = null;
+  const lock = new Set();
+  const r = refreshStatsOutput({
+    cmd: 'opencode', env: { PATH: '' }, resolveCwd: () => '/git/root',
+    statsFile, lock,
+    spawnFn: (_bin, _args, opts) => { seenStdio = opts.stdio; fs.writeFileSync(tmp, SAMPLE, 'utf8'); return child; },
+  });
+  assert.equal(r.started, true);
+  assert.equal(r.tmp, tmp);
+  assert.equal(typeof seenStdio[1], 'number', 'stdout 直接指向文件 fd');
+  assert.equal(lock.has(statsFile), true);
+  child.listeners.close();
+  assert.equal(fs.readFileSync(statsFile, 'utf8'), SAMPLE);
+  assert.equal(fs.existsSync(tmp), false);
+  assert.equal(lock.has(statsFile), false);
+});
+
+test('refreshStatsOutput：命令无输出则保留旧文件并删 tmp', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-refresh-'));
+  const statsFile = path.join(dir, 'stats.txt');
+  fs.writeFileSync(statsFile, SAMPLE, 'utf8');
+  const child = fakeChild();
+  const r = refreshStatsOutput({
+    cmd: 'opencode', env: { PATH: '' }, statsFile, lock: new Set(),
+    spawnFn: () => child,
+  });
+  assert.equal(r.started, true);
+  child.listeners.close();
+  assert.equal(fs.readFileSync(statsFile, 'utf8'), SAMPLE);
+  assert.equal(fs.existsSync(`${statsFile}.tmp`), false);
+});
+
+test('refreshStatsOutput：同一文件并发第二次跳过；无 statsFile 时 no-op', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-refresh-'));
+  const statsFile = path.join(dir, 'stats.txt');
+  const child = fakeChild();
+  const lock = new Set();
+  const spawnFn = () => child;
+  const r1 = refreshStatsOutput({ cmd: 'opencode', env: { PATH: '' }, statsFile, lock, spawnFn });
+  const r2 = refreshStatsOutput({ cmd: 'opencode', env: { PATH: '' }, statsFile, lock, spawnFn });
+  assert.equal(r1.started, true);
+  assert.deepEqual(r2, { started: false, reason: 'busy' });
+  child.listeners.close();
+  assert.deepEqual(refreshStatsOutput({ statsFile: null }), { started: false, reason: 'no-file' });
 });
