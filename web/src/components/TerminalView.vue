@@ -22,6 +22,7 @@ import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
 import { useVersion } from '../useVersion';
+import { useUpgrade } from '../useUpgrade';
 import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from './portRestart';
 import { getFileAssoc, setFileAssoc } from '../fileAssoc';
 import { buildChips, appendText, type Chip } from '../phaseChips';
@@ -350,6 +351,7 @@ const agentSecRef = ref<HTMLElement | null>(null);
 const restoreTabsCount = ref(restoreTabs.value);
 function saveRestoreTabsCount() { restoreTabsCount.value = setRestoreTabs(restoreTabsCount.value); }
 const { version: appVersion } = useVersion();
+const { upgrade: upgradeInfo, loading: upgradeLoading, checkNow } = useUpgrade();
 const serverPort = ref<number | null>(null);
 const loadedPort = ref<number | null>(null);
 const portMsg = ref('');
@@ -1343,6 +1345,14 @@ onBeforeUnmount(() => {
               <div class="aboutrow"><span class="aboutk"></span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai-mobile/releases" target="_blank" rel="noopener">{{ $t('term.about.download_mobile') }}</a></div>
             </div>
             <div class="setsec">
+              <div class="settitle">{{ $t('upgrade.check') }}</div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('upgrade.current') }}</span><span class="aboutv">{{ appVersion || '-' }}</span></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('upgrade.latest') }}</span><span class="aboutv">{{ upgradeInfo?.latest || '-' }}</span></div>
+              <div class="aboutrow"><span class="aboutk"></span>
+                <button class="upgbtn" :disabled="upgradeLoading" @click="checkNow">{{ upgradeLoading ? $t('upgrade.checking') : $t('upgrade.check_now') }}</button>
+              </div>
+            </div>
+            <div class="setsec">
               <div class="settitle">{{ $t('term.about.contacts') }}</div>
               <div class="aboutrow"><span class="aboutk">QQ</span><span class="aboutv">914300336</span></div>
               <div class="aboutrow wechat">
@@ -1668,6 +1678,9 @@ onBeforeUnmount(() => {
 .aboutv { color: var(--tx1); font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
 .aboutv.link { color: var(--ac2); text-decoration: none; cursor: pointer; }
 .aboutv.link:hover { text-decoration: underline; }
+.upgbtn { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+.upgbtn:hover { border-color: var(--ac); color: var(--ac); }
+.upgbtn:disabled { opacity: .55; cursor: default; }
 .wxqrlink { display: inline-block; line-height: 0; }
 .aboutrow.wechat { align-items: flex-start; }
 .aboutcol { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }

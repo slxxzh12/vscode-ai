@@ -25,6 +25,8 @@ import LocalDropOverlay from './local/LocalDropOverlay.vue';
 import LocalSidebar from './local/LocalSidebar.vue';
 import { startDesktopRemoteCoder } from './remote-coder/useDesktopRemoteCoder';
 import { useVersion } from './useVersion';
+import { useUpgrade, shouldPopup } from './useUpgrade';
+import UpgradeDialog from './components/UpgradeDialog.vue';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
 import { useSessionProjects } from './sessionProjects';
 import { fetchWindowState, planRestore, saveWindowState, flushWindowState, toSavedTabs, type HistoryTab, type Rail, type AllStyle } from './windowState';
@@ -81,6 +83,20 @@ const activeToolTab = computed(() => (center.active.value?.kind === 'tool' ? cen
 const activeTool = computed(() => activeToolTab.value?.tool as ToolId | undefined);
 const projectsApi = useProjects();
 const { version: appVersion, loadVersion } = useVersion();
+const { upgrade: upgradeInfo, loadUpgrade } = useUpgrade();
+const showUpgrade = ref(false);
+const UPGRADE_POPUP_KEY = 'devflow-upgrade-popup-at';
+const UPGRADE_SKIP_KEY = 'devflow-upgrade-skip';
+function openUpgrade() { const u = upgradeInfo.value?.url; if (u) window.open(u, '_blank', 'noopener'); }
+function markUpgradePopup() { try { localStorage.setItem(UPGRADE_POPUP_KEY, String(Date.now())); } catch { /* ignore */ } }
+function upgradeGo() { openUpgrade(); markUpgradePopup(); showUpgrade.value = false; }
+function upgradeClose() { markUpgradePopup(); showUpgrade.value = false; }
+function upgradeSkip() { try { localStorage.setItem(UPGRADE_SKIP_KEY, upgradeInfo.value?.latest || ''); } catch { /* ignore */ } showUpgrade.value = false; }
+function maybeUpgradePopup() {
+  let skip = ''; let popupAt = 0;
+  try { skip = localStorage.getItem(UPGRADE_SKIP_KEY) || ''; popupAt = Number(localStorage.getItem(UPGRADE_POPUP_KEY) || 0); } catch { /* ignore */ }
+  showUpgrade.value = shouldPopup(upgradeInfo.value, Date.now(), { skip, popupAt });
+}
 const { theme, toggle } = useTheme();
 const { locale, setLocale, t } = useI18n();
 function toggleLang() { setLocale(locale.value === 'en' ? 'zh-CN' : 'en'); }
@@ -656,6 +672,7 @@ function releaseWindowColor() {
 }
 onMounted(async () => {
   loadVersion();
+  void loadUpgrade().finally(maybeUpgradePopup);
   writeRegistry(windowColorId.value);
   colorHeartbeat = setInterval(() => { try { writeRegistry(windowColorId.value); } catch { /* ignore */ } }, 4000);
   try {
@@ -710,6 +727,7 @@ onBeforeUnmount(() => {
     <header class="top" :class="{ colored: !!windowColorValue }" :style="windowColorValue ? { background: windowColorValue } : undefined">
       <span class="logo">◈ {{ $t('brand.title') }}</span>
       <span v-if="appVersion" class="app-ver">{{ appVersion }}</span>
+      <button v-if="upgradeInfo?.hasUpdate" class="upg-badge" :title="$t('upgrade.new')" @click="openUpgrade">↑ {{ $t('upgrade.new') }}</button>
       <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
       <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="currentProjectInfo?.root || ''" @change="(e: any) => selectProject(e.target.value)">
         <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id" :title="it.project.root">
@@ -796,11 +814,14 @@ onBeforeUnmount(() => {
     </div>
     <LocalDropOverlay v-if="localDragging" />
     <DistTaskNotifier :terminal="terminal" />
+    <UpgradeDialog :open="showUpgrade" :current="appVersion" :latest="upgradeInfo?.latest || ''" @go="upgradeGo" @close="upgradeClose" @skip="upgradeSkip" />
   </div>
 </template>
 
 <style scoped>
 .app { display: flex; flex-direction: column; height: 100%; position: relative; }
+.upg-badge { background: var(--warn); color: #fff; border: none; border-radius: 8px; padding: 1px 8px; font-size: 11px; font-weight: 700; cursor: pointer; }
+.upg-badge:hover { filter: brightness(1.08); }
 .top { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--bd); flex: none; }
 .logo { color: var(--ac3); font-weight: 700; white-space: nowrap; }
 .app-ver { color: var(--tx3); font-size: 12px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
