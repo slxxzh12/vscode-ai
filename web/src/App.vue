@@ -87,7 +87,7 @@ const { upgrade: upgradeInfo, loadUpgrade } = useUpgrade();
 const showUpgrade = ref(false);
 const UPGRADE_POPUP_KEY = 'devflow-upgrade-popup-at';
 const UPGRADE_SKIP_KEY = 'devflow-upgrade-skip';
-function openUpgrade() { const u = upgradeInfo.value?.url; if (u) window.open(u, '_blank', 'noopener'); }
+function openUpgrade() { const u = upgradeInfo.value?.downloadUrl || upgradeInfo.value?.url; if (u) window.open(u, '_blank', 'noopener'); }
 function markUpgradePopup() { try { localStorage.setItem(UPGRADE_POPUP_KEY, String(Date.now())); } catch { /* ignore */ } }
 function upgradeGo() { openUpgrade(); markUpgradePopup(); showUpgrade.value = false; }
 function upgradeClose() { markUpgradePopup(); showUpgrade.value = false; }
@@ -814,7 +814,7 @@ onBeforeUnmount(() => {
     </div>
     <LocalDropOverlay v-if="localDragging" />
     <DistTaskNotifier :terminal="terminal" />
-    <UpgradeDialog :open="showUpgrade" :current="appVersion" :latest="upgradeInfo?.latest || ''" @go="upgradeGo" @close="upgradeClose" @skip="upgradeSkip" />
+    <UpgradeDialog :open="showUpgrade" :current="appVersion" :latest="upgradeInfo?.latest || ''" :download-url="upgradeInfo?.downloadUrl || ''" @go="upgradeGo" @close="upgradeClose" @skip="upgradeSkip" />
   </div>
 </template>
 

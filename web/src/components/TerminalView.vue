@@ -1348,6 +1348,10 @@ onBeforeUnmount(() => {
               <div class="settitle">{{ $t('upgrade.check') }}</div>
               <div class="aboutrow"><span class="aboutk">{{ $t('upgrade.current') }}</span><span class="aboutv">{{ appVersion || '-' }}</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('upgrade.latest') }}</span><span class="aboutv">{{ upgradeInfo?.latest || '-' }}</span></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('upgrade.download_url') }}</span>
+                <a v-if="upgradeInfo?.downloadUrl" class="aboutv link" :href="upgradeInfo.downloadUrl" target="_blank" rel="noopener">{{ upgradeInfo.downloadUrl }}</a>
+                <span v-else class="aboutv">-</span>
+              </div>
               <div class="aboutrow"><span class="aboutk"></span>
                 <button class="upgbtn" :disabled="upgradeLoading" @click="checkNow">{{ upgradeLoading ? $t('upgrade.checking') : $t('upgrade.check_now') }}</button>
               </div>

@@ -132,6 +132,7 @@ export const messages = {
   'upgrade.current': 'Current version',
   'upgrade.latest': 'Latest version',
   'upgrade.new': 'New version',
+  'upgrade.download_url': 'Download URL',
   'upgrade.up_to_date': 'Up to date',
   'upgrade.failed': 'Check failed',
   'upgrade.go': 'Download',

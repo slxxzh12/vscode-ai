@@ -2,7 +2,7 @@ import { ref } from 'vue';
 
 export interface UpgradeInfo {
   ok: boolean; current: string; latest: string; hasUpdate: boolean;
-  url: string; checkedAt: number; stale?: boolean; error?: string;
+  url: string; downloadUrl: string; checkedAt: number; stale?: boolean; error?: string;
 }
 
 const upgrade = ref<UpgradeInfo | null>(null);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ open: boolean; current: string; latest: string }>();
+defineProps<{ open: boolean; current: string; latest: string; downloadUrl: string }>();
 const emit = defineEmits<{ (e: 'go'): void; (e: 'close'): void; (e: 'skip'): void }>();
 </script>
 
@@ -11,6 +11,10 @@ const emit = defineEmits<{ (e: 'go'): void; (e: 'close'): void; (e: 'skip'): voi
         <div class="ep-body">
           <div class="urow"><span class="uk">{{ $t('upgrade.current') }}</span><span class="uv">{{ current || '-' }}</span></div>
           <div class="urow"><span class="uk">{{ $t('upgrade.latest') }}</span><span class="uv">{{ latest || '-' }}</span></div>
+          <div class="urow"><span class="uk">{{ $t('upgrade.download_url') }}</span>
+            <a v-if="downloadUrl" class="uv ulink" :href="downloadUrl" target="_blank" rel="noopener">{{ downloadUrl }}</a>
+            <span v-else class="uv">-</span>
+          </div>
         </div>
         <div class="ep-foot">
           <button class="ep-btn upg-skip" @click="emit('skip')">{{ $t('upgrade.skip') }}</button>
@@ -32,6 +36,8 @@ const emit = defineEmits<{ (e: 'go'): void; (e: 'close'): void; (e: 'skip'): voi
 .urow { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .uk { color: var(--tx3); width: 84px; flex: none; }
 .uv { color: var(--tx1); font-family: ui-monospace, Consolas, monospace; }
+.ulink { color: var(--ac2); text-decoration: none; word-break: break-all; }
+.ulink:hover { text-decoration: underline; }
 .ep-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 .ep-btn { padding: 6px 16px; border-radius: 4px; border: 1px solid var(--bd); background: var(--bg2); color: var(--tx2); cursor: pointer; font-size: 13px; font-family: inherit; }
 .ep-btn:hover { border-color: var(--ac); color: var(--ac); }

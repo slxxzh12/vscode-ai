@@ -132,6 +132,7 @@ export const messages = {
   'upgrade.current': '当前版本',
   'upgrade.latest': '最新版本',
   'upgrade.new': '新版本',
+  'upgrade.download_url': '下载地址',
   'upgrade.up_to_date': '已是最新',
   'upgrade.failed': '检测失败',
   'upgrade.go': '去下载',

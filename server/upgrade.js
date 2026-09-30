@@ -15,6 +15,14 @@ export function compareVersion(a, b) {
   return x < y ? -1 : x > y ? 1 : 0;
 }
 
+// 从 release 的 assets 里挑产品包下载地址（名称形如 vscode-ai-*.zip）；没有则回退下载页
+export function pickDownloadUrl(assets, fallback) {
+  if (!Array.isArray(assets)) return fallback;
+  const hit = assets.find((a) => a && typeof a.browser_download_url === 'string'
+    && /^vscode-ai-.*\.zip$/i.test(String(a.name || '')));
+  return hit ? hit.browser_download_url : fallback;
+}
+
 // 升级检测器：拉远端 latest release 的 tag 与本地版本比对；带缓存、失败静默回退。
 export function createUpgradeChecker({
   apiUrl = UPGRADE_API_URL,
@@ -40,12 +48,13 @@ export function createUpgradeChecker({
       const data = await res.json();
       const latest = norm(data && data.tag_name);
       const hasUpdate = !!latest && !!current && compareVersion(latest, current) > 0;
-      const result = { ok: true, current, latest, hasUpdate, url: pageUrl, checkedAt: t };
+      const downloadUrl = pickDownloadUrl(data && data.assets, pageUrl);
+      const result = { ok: true, current, latest, hasUpdate, url: pageUrl, downloadUrl, checkedAt: t };
       cache = { result, expiresAt: t + cacheMs };
       return result;
     } catch (e) {
       if (cache) return { ...cache.result, stale: true };
-      return { ok: false, current, latest: '', hasUpdate: false, url: pageUrl, error: String((e && e.message) || e), checkedAt: t };
+      return { ok: false, current, latest: '', hasUpdate: false, url: pageUrl, downloadUrl: pageUrl, error: String((e && e.message) || e), checkedAt: t };
     }
   }
 

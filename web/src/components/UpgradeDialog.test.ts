@@ -5,8 +5,9 @@ import UpgradeDialog from './UpgradeDialog.vue';
 
 describe('UpgradeDialog', () => {
   it('三按钮分别 emit go / close / skip', async () => {
-    const w = mountC(UpgradeDialog, { props: { open: true, current: 'v1', latest: 'v2' } });
+    const w = mountC(UpgradeDialog, { props: { open: true, current: 'v1', latest: 'v2', downloadUrl: 'http://x/win.zip' } });
     expect(w.text()).toContain('v2');
+    expect(w.find('a.ulink').attributes('href')).toBe('http://x/win.zip');
     await w.find('.upg-go').trigger('click');
     await w.find('.upg-close').trigger('click');
     await w.find('.upg-skip').trigger('click');
@@ -16,7 +17,7 @@ describe('UpgradeDialog', () => {
   });
 
   it('open=false 不渲染', () => {
-    const w = mountC(UpgradeDialog, { props: { open: false, current: 'v1', latest: 'v2' } });
+    const w = mountC(UpgradeDialog, { props: { open: false, current: 'v1', latest: 'v2', downloadUrl: '' } });
     expect(w.find('.ep-box').exists()).toBe(false);
   });
 });
