@@ -185,8 +185,11 @@ export function parseNum(raw) {
 export function parseStats(text) {
   const t = stripAnsi(text || '');
   const grab = (label) => {
-    const m = t.match(new RegExp(label + '\\s+\\$?([\\d.,]+\\s*[KMBT]?)', 'i'));
-    return m ? parseNum(m[1]) : null;
+    const re = new RegExp(label + '\\s+\\$?([\\d.,]+\\s*[KMBT]?)', 'gi');
+    let m;
+    let last = null;
+    while ((m = re.exec(t)) !== null) last = m[1];
+    return last == null ? null : parseNum(last);
   };
   return {
     sessions: grab('Sessions'),

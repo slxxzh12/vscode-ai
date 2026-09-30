@@ -46,6 +46,14 @@ test('parseStats 提取关键字段', () => {
   assert.equal(s.cacheWrite, 0);
 });
 
+test('parseStats：取最后一次出现的指标，忽略前面的噪音与旧值', () => {
+  const noisy = ['error: stats failed', 'Messages 1', 'Sessions 2', 'Total Cost $9.99', SAMPLE].join('\n');
+  const s = parseStats(noisy);
+  assert.equal(s.sessions, 21, '取末尾 SAMPLE 里的 21，而不是前面的 2');
+  assert.equal(s.messages, 3986);
+  assert.equal(s.totalCost, 4.83);
+});
+
 test('collectAgentStats 命令不存在返回 error', async () => {
   const r = await collectAgentStats({ cmd: 'definitely-not-a-cmd-xyz', env: { PATH: '' } });
   assert.ok(r.error);
