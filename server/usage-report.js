@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { collectAgentStats } from './collaboration/agent-stats.js';
+import { collectAgentStats, isClaudeFamily, readStatsFile, refreshStatsOutput } from './collaboration/agent-stats.js';
 import { SOURCE_AUTO, SOURCE_IMAGE } from './usage-store.js';
 import path from 'node:path';
 
@@ -54,9 +54,11 @@ export function saveReportConfig(file, cfg) {
 
 // slave 侧上报器：启动即报一次（先本地落库自己这份，再发给 master），之后每 4 小时左右再报
 export function createUsageReporter({
-  file, identity, peers = null, onLocal = null, onCollected = null, cmd = 'opencode', statsCmd = '', resolveAgent = null, collect = collectAgentStats,
+  file, identity, peers = null, onLocal = null, onCollected = null, cmd = 'opencode', statsCmd = '', resolveAgent = null, collect = null,
   getStartDir = null,   // () => 用户当前选中目录根；采集时作为 stats 命令的起始目录（无则回退用户主目录）
   statsFile = null,     // 采集原文落盘路径（如 <数据目录>/cache/collaboration/stats.txt），传给采集器
+  readStats = readStatsFile,     // 读采集结果文件（消费）
+  refresh = refreshStatsOutput,  // 后台刷新采集文件（生产）
   fetchFn = fetch, logger = console, random = Math.random,
   now = () => Date.now(), scheduleFn = (fn, ms) => setTimeout(fn, ms),
 } = {}) {
@@ -119,14 +121,26 @@ export function createUsageReporter({
     }
   }
 
+  // 默认采集周期：claude 系本机日志同步解析；其余读 stats.txt（消费）+ 触发后台刷新（生产）
+  async function collectFromFile(args) {
+    if (isClaudeFamily(args.cmd) && !String(args.statsCmd || '').trim()) return collectAgentStats(args);
+    const snap = readStats(args.statsFile);
+    try { refresh({ cmd: args.cmd, statsCmd: args.statsCmd, days: args.days, startDir: args.startDir, statsFile: args.statsFile }); }
+    catch (e) { logger?.warn?.('usage refresh failed', (e && e.message) || e); }
+    if (!snap.exists) return { agent: args.cmd, days: args.days, error: 'no-data', raw: '', statsFileMtime: snap.mtimeMs };
+    return { agent: args.cmd, days: args.days, ...(snap.parsed || {}), raw: snap.raw, statsFileMtime: snap.mtimeMs };
+  }
+  const runCollect = typeof collect === 'function' ? collect : collectFromFile;
+
   async function reportNow() {
     const cfg = config();
     const a = currentAgent();
     let usage;
-    try { usage = await collect({ cmd: a.cmd, statsCmd: a.statsCmd, days: cfg.days, startDir: (typeof getStartDir === 'function' ? getStartDir() : null) || undefined, statsFile }); }
+    try { usage = await runCollect({ cmd: a.cmd, statsCmd: a.statsCmd, days: cfg.days, startDir: (typeof getStartDir === 'function' ? getStartDir() : null) || undefined, statsFile }); }
     catch (e) { usage = { agent: a.cmd, days: cfg.days, error: String((e && e.message) || e) }; }
     // 本机缓存一份带原文的采集结果，供「采集信息」弹窗即时展示
     try { onCollected?.(usage); } catch (e) { logger?.warn?.('usage onCollected failed', (e && e.message) || e); }
+    if (usage && usage.error === 'no-data') return { ok: false, error: 'no-data' };
     // raw/cmdline 只留本机，不进 peers/上报体
     const { raw: _raw, cmdline: _cmdline, ...usageClean } = usage || {};
     return submit(usageClean);

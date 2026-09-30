@@ -225,3 +225,42 @@ test('reportNow：resolveAgent 提供时每次上报动态取默认 agent', asyn
   assert.equal(seen[1].cmd, 'codeagent');
   assert.equal(seen[1].statsCmd, 'codeagent stats --days {days}');
 });
+
+test('reportNow：读 statsFile 解析上报，并触发一次后台刷新', async () => {
+  const file = tmpFile();
+  saveReportConfig(file, { masterUrl: 'http://h:22222', token: 'tk' });
+  const refreshed = [];
+  let wireBody = null;
+  const r = createUsageReporter({
+    file, identity: () => ({ machineId: 'm1' }),
+    statsFile: '/data/stats.txt',
+    readStats: () => ({ exists: true, raw: 'RAW', mtimeMs: 123, parsed: { sessions: 5, messages: 50 } }),
+    refresh: (args) => { refreshed.push(args); },
+    fetchFn: async (_u, opts) => { wireBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ ok: true }) }; },
+  });
+  const out = await r.reportNow();
+  assert.equal(out.ok, true);
+  assert.equal(wireBody.usage.sessions, 5);
+  assert.equal(wireBody.usage.raw, undefined);
+  assert.equal(refreshed.length, 1);
+  assert.equal(refreshed[0].statsFile, '/data/stats.txt');
+});
+
+test('reportNow：无 statsFile 数据时跳过上报但仍触发刷新', async () => {
+  const file = tmpFile();
+  saveReportConfig(file, { masterUrl: 'http://h:22222', token: 'tk' });
+  let posted = 0;
+  const refreshed = [];
+  const r = createUsageReporter({
+    file, identity: () => ({ machineId: 'm1' }),
+    statsFile: '/data/stats.txt',
+    readStats: () => ({ exists: false, raw: '', mtimeMs: null, parsed: {} }),
+    refresh: (args) => { refreshed.push(args); },
+    fetchFn: async () => { posted += 1; return { ok: true, json: async () => ({ ok: true }) }; },
+  });
+  const out = await r.reportNow();
+  assert.equal(out.ok, false);
+  assert.equal(out.error, 'no-data');
+  assert.equal(posted, 0);
+  assert.equal(refreshed.length, 1);
+});
