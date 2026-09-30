@@ -73,6 +73,7 @@ import { askPortConflict } from './native-dialog.js';
 import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
 import { VERSION } from './version.js';
 import { createNotice } from './notice.js';
+import { createUpgradeChecker } from './upgrade.js';
 import { createPostmanHistory } from './postman-history.js';
 import { createNavicatCrypto } from './navicat-crypto.js';
 import { createNavicatStore } from './navicat-store.js';
@@ -83,6 +84,7 @@ import { buildNcx, connectionString } from './navicat-ncx.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
 const notice = createNotice();
+const upgradeChecker = createUpgradeChecker({ currentVersion: VERSION });
 let configFile = resolveActiveConfigFile(APP_DIR, resolvePort());
 let BOOT_CFG = loadDevflowConfig(configFile);
 const HOST = resolveBindHost({ masterOn: isInviteActive(loadInvite(portPaths(resolvePort()).inviteFile)), envHost: process.env.DEVFLOW_HOST });
@@ -665,6 +667,10 @@ function initWorkspace(paths, port) {
   remoteInvite = loadInvite(paths.inviteFile);   // 令牌落盘：重启后仍有效（expiresAt=0 为长期）
   // 用量上报：启动即报一次，之后每 4 小时左右再报
   if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }
+  // 升级检测：启动查一次，之后每 10 天一次（非阻塞、失败静默）
+  upgradeChecker.check().catch(() => { /* ignore */ });
+  const upgradeTimer = setInterval(() => { upgradeChecker.check().catch(() => { /* ignore */ }); }, 10 * 24 * 3600 * 1000);
+  upgradeTimer.unref?.();
   if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
     ws.scheduler.engine.start();
     log.info('scheduler started');
@@ -769,6 +775,12 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/version' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ version: VERSION }));
+    return;
+  }
+  if (url.pathname === '/api/upgrade' && req.method === 'GET') {
+    const r = await upgradeChecker.check(url.searchParams.get('refresh') === '1');
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(r));
     return;
   }
   if (url.pathname === '/api/notice' && req.method === 'GET') {
