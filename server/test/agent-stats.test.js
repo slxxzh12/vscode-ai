@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath, isClaudeFamily, collectClaudeStats, resolveStatsCwd } from '../collaboration/agent-stats.js';
+import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath, isClaudeFamily, collectClaudeStats, resolveStatsCwd, readStatsFile } from '../collaboration/agent-stats.js';
 
 function claudeHome(linesByFile) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'df-claude-'));
@@ -369,4 +369,16 @@ test('probeAgentStats：statsFile 落盘并返回 cwd 与文件 mtime', async ()
   assert.equal(r.cwd, '/git/root');
   assert.ok(r.statsFileMtime > 0);
   assert.equal(fs.readFileSync(statsFile, 'utf8'), SAMPLE);
+});
+
+test('readStatsFile：存在返回 raw/mtime/parsed；不存在 exists=false', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-read-'));
+  const statsFile = path.join(dir, 'stats.txt');
+  assert.equal(readStatsFile(statsFile).exists, false);
+  fs.writeFileSync(statsFile, SAMPLE, 'utf8');
+  const r = readStatsFile(statsFile);
+  assert.equal(r.exists, true);
+  assert.equal(r.raw, SAMPLE);
+  assert.equal(r.parsed.sessions, 21);
+  assert.ok(r.mtimeMs > 0);
 });

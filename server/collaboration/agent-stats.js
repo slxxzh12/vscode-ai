@@ -203,6 +203,19 @@ export function parseStats(text) {
   };
 }
 
+// 读采集结果文件：不存在或读失败返回 exists:false（不抛错）
+export function readStatsFile(statsFile, { fsImpl = fs } = {}) {
+  const empty = { exists: false, raw: '', mtimeMs: null, parsed: parseStats('') };
+  if (!statsFile) return empty;
+  try {
+    const raw = fsImpl.readFileSync(statsFile, 'utf8');
+    const mtimeMs = fsImpl.statSync(statsFile).mtimeMs;
+    return { exists: true, raw, mtimeMs, parsed: parseStats(raw) };
+  } catch {
+    return empty;
+  }
+}
+
 // 把采集原文持久化到 statsFile（有输出才覆盖写，无输出保留上次内容），并回读文件内容与最后修改时间。
 // 目的：`opencode stats` / `nga stats` 偶发非零退出或输出为空时，仍能从文件里拿到上次的数据，
 // 且界面可展示「上次结果时间」（文件 mtime）。
