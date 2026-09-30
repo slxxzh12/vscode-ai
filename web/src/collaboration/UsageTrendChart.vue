@@ -5,7 +5,7 @@ import { LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { useTheme } from '../theme';
-import { machineLabel, mergeMachines } from './usagePeers';
+import { machineLabel, mergeMachines, fmtNum } from './usagePeers';
 import type { CollabApi } from './useCollab';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabUsage } from './types';
@@ -77,10 +77,10 @@ function draw() {
   });
   chart.setOption({
     grid: { left: 46, right: 16, top: 28, bottom: 24 },
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', valueFormatter: (v: number) => fmtNum(v) },
     legend: { type: 'scroll', right: 0, top: 0, textStyle: { color: axis, fontSize: 11 } },
     xAxis: { type: 'category', data: days, axisLabel: { color: axis, fontSize: 10 }, axisLine: { lineStyle: { color: split } } },
-    yAxis: { type: 'value', axisLabel: { color: axis, fontSize: 10 }, splitLine: { lineStyle: { color: split } } },
+    yAxis: { type: 'value', axisLabel: { color: axis, fontSize: 10, formatter: (v: number) => fmtNum(v) }, splitLine: { lineStyle: { color: split } } },
     series,
   }, true);
   chart.resize();
