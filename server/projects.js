@@ -2,6 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
+// SQLite 库文件头：前 16 字节固定为 "SQLite format 3\0"
+function isSqliteHeader(abs, size) {
+  if (!size || size < 16) return false;
+  const buf = Buffer.alloc(16);
+  const fd = fs.openSync(abs, 'r');
+  try { fs.readSync(fd, buf, 0, 16, 0); } finally { fs.closeSync(fd); }
+  return buf.toString('latin1') === 'SQLite format 3\u0000';
+}
+
 export class Projects {
   constructor({ projects = [], logger = console } = {}) {
     this.projects = projects;
@@ -114,7 +123,9 @@ export class Projects {
   meta(projectId, rel) {
     const { abs, name, isDir } = this.revealTarget(projectId, rel);
     const st = fs.statSync(abs);
-    return { name, path: rel, abs, size: st.size, mtime: st.mtimeMs, isDir };
+    const out = { name, path: rel, abs, size: st.size, mtime: st.mtimeMs, isDir };
+    if (!isDir) out.sqlite = isSqliteHeader(abs, st.size);
+    return out;
   }
   // 单趟流式计算 MD5+SHA256（仅文件；目录抛 not-file）
   hash(projectId, rel) {

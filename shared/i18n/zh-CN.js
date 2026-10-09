@@ -944,6 +944,7 @@ export const messages = {
   'nv.tab_general': '常规',
   'nv.tab_advanced': '高级',
   'nv.database_file': '数据库文件',
+  'nv.file_conn': '数据库文件',
   'nv.browse': '浏览…',
   'nv.pick_failed': '当前平台不支持文件选择，请手动输入路径',
   'nv.ok': '确定',

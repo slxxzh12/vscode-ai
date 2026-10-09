@@ -57,4 +57,33 @@ describe('useNavicatWorkbench', () => {
     await wb.browseFile();
     expect(wb.dlgMsg.value).not.toBe('');
   });
+
+  it('openSqliteFile：没有则新建 sqlite 连接并选中', async () => {
+    const bodies: any[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
+      if (String(u) === '/api/navicat/profiles' && init?.method === 'POST') {
+        bodies.push(JSON.parse(String(init.body)));
+        return okJson({ item: { id: '9', name: 'a.db', type: 'sqlite', database: 'C:\\d\\a.db' } });
+      }
+      if (String(u) === '/api/navicat/profiles') return okJson({ items: [] });
+      return okJson({});
+    }));
+    const wb = useNavicatWorkbench();
+    await wb.openSqliteFile('C:\\d\\a.db', 'a.db');
+    expect(bodies[0]).toMatchObject({ type: 'sqlite', database: 'C:\\d\\a.db', name: 'a.db' });
+    expect(wb.activeId.value).toBe('9');
+  });
+
+  it('openSqliteFile：同路径复用不新增', async () => {
+    const posts: any[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
+      if (String(u) === '/api/navicat/profiles' && init?.method === 'POST') { posts.push(1); return okJson({ item: { id: '9' } }); }
+      if (String(u) === '/api/navicat/profiles') return okJson({ items: [{ id: '9', name: 'a.db', type: 'sqlite', database: 'C:\\d\\a.db' }] });
+      return okJson({});
+    }));
+    const wb = useNavicatWorkbench();
+    await wb.openSqliteFile('C:\\d\\a.db', 'a.db');
+    expect(posts).toHaveLength(0);
+    expect(wb.activeId.value).toBe('9');
+  });
 });

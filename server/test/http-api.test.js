@@ -412,6 +412,18 @@ test('/api/file/meta 越界 403、不存在 404', async (t) => {
   assert.equal(miss.status, 404);
 });
 
+test('/api/file/meta 返回 sqlite 内容头判定', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.db'), Buffer.concat([Buffer.from('SQLite format 3\u0000'), Buffer.alloc(64, 0x2a)]));
+  fs.writeFileSync(path.join(dir, 'b.txt'), 'hello world');
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }));
+  t.after(() => server.close());
+  const rd = JSON.parse((await request(server, '/api/file/meta?project=a&path=a.db')).body);
+  assert.equal(rd.sqlite, true);
+  const rt = JSON.parse((await request(server, '/api/file/meta?project=a&path=b.txt')).body);
+  assert.equal(rt.sqlite, false);
+});
+
 test('/api/file/hash 返回 md5+sha256（大文件跨块一致）', async (t) => {
   const dir = tmpDir();
   const buf = Buffer.alloc(300 * 1024);        // 跨 64KB 块边界

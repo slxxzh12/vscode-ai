@@ -191,3 +191,33 @@ test('closeById 关闭本地根页签卸载根且不影响单文件页签', () =
   expect(s.files.value.size).toBe(1);
   expect(c.tabs.value.some((t) => t.id === `l:f:${keys[0]}`)).toBe(true);
 });
+
+test('visibleTabs 按 scopeProjectId 过滤会话页签，文件/工具始终可见', () => {
+  const c = useCenter();
+  c.ensureSession('a', 'A', 'running', 'p1');
+  c.ensureSession('b', 'B', 'running', 'p2');
+  c.openFile('p1', 'x.ts', 'x.ts');
+  c.openTool('notepad');
+  c.scopeProjectId.value = 'p1';
+  expect(c.visibleTabs.value.map((t) => t.id)).toEqual(['s:a', 'f:p1|x.ts', 't:notepad']);
+  c.scopeProjectId.value = 'p2';
+  expect(c.visibleTabs.value.map((t) => t.id)).toEqual(['s:b', 'f:p1|x.ts', 't:notepad']);
+});
+
+test('visibleTabs：null 与空串视为同作用域', () => {
+  const c = useCenter();
+  c.ensureSession('a', 'A', 'running', '');
+  c.scopeProjectId.value = null;
+  expect(c.visibleTabs.value.some((t) => t.id === 's:a')).toBe(true);
+});
+
+test('关闭活动文件页签兜底不落到隐藏会话页签', () => {
+  const c = useCenter();
+  c.ensureSession('a', 'A', 'running', 'p1');
+  c.ensureSession('b', 'B', 'running', 'p2');
+  c.scopeProjectId.value = 'p1';
+  c.activateSession('a', 'p1');
+  c.openFile('p1', 'x.ts', 'x.ts');
+  c.closeById('f:p1|x.ts');
+  expect(c.activeId.value).toBe('s:a');
+});

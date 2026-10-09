@@ -22,7 +22,10 @@ export function useCenter() {
   const activeId = ref<string | null>(null);
   const active = computed(() => tabs.value.find((t) => t.id === activeId.value) || null);
   const activeKind = computed(() => active.value?.kind ?? 'session');
-  const activeSessionTab = computed(() => tabs.value.find((t) => t.kind === 'session') || null);
+  const scopeProjectId = ref<string | null>(null);
+  const sameScope = (a: string | null | undefined, b: string | null | undefined) => (a ?? '') === (b ?? '');
+  const visibleTabs = computed(() => tabs.value.filter((t) => t.kind !== 'session' || sameScope(t.projectId, scopeProjectId.value)));
+  const activeSessionTab = computed(() => visibleTabs.value.find((t) => t.kind === 'session') || null);
 
   function setActive(id: string | null) {
     if (!id || tabs.value.some((t) => t.id === id)) activeId.value = id;
@@ -32,8 +35,8 @@ export function useCenter() {
     if (ex) { ex.label = tab.label; ex.sub = tab.sub; return; }
     tabs.value.push(tab);
   }
-  function ensureSession(sessionId: string, label: string, state: string) {
-    const t: CenterTab = { id: sid(sessionId), kind: 'session', label, sub: state };
+  function ensureSession(sessionId: string, label: string, state: string, projectId?: string | null) {
+    const t: CenterTab = { id: sid(sessionId), kind: 'session', label, sub: state, projectId: projectId ?? null };
     upsert(t);
   }
   function hasSession(sessionId: string) {
@@ -54,7 +57,7 @@ export function useCenter() {
     tabs.value = tabs.value.filter((t) => t.id !== id);
     if (activeId.value === id) {
       const s = activeSessionTab.value;
-      setActive(s ? s.id : tabs.value[0]?.id ?? null);
+      setActive(s ? s.id : visibleTabs.value[0]?.id ?? null);
     }
   }
   function openTool(tool: string, label?: string) {
@@ -75,11 +78,11 @@ export function useCenter() {
     tabs.value.push({ id, kind: 'local', label });
     setActive(id);
   }
-  function activateSession(sessionId: string) {
+  function activateSession(sessionId: string, projectId?: string | null) {
     const id = sid(sessionId);
     // 已存在的页签只激活，不改写 label/state（否则会覆盖用户双击重命名的页签名）
     if (!tabs.value.some((t) => t.id === id)) {
-      tabs.value.push({ id, kind: 'session', label: sessionId, sub: 'running' });
+      tabs.value.push({ id, kind: 'session', label: sessionId, sub: 'running', projectId: projectId ?? null });
     }
     setActive(id);
   }
@@ -92,7 +95,7 @@ export function useCenter() {
       tabs.value = tabs.value.filter((x) => x.id !== id);
       if (activeId.value === id) {
         const s = activeSessionTab.value;
-        setActive(s ? s.id : tabs.value[0]?.id ?? null);
+        setActive(s ? s.id : visibleTabs.value[0]?.id ?? null);
       }
       return;
     }
@@ -103,12 +106,12 @@ export function useCenter() {
     }
     if (id.startsWith('t:')) {
       tabs.value = tabs.value.filter((x) => x.id !== id);
-      if (activeId.value === id) { const s = activeSessionTab.value; setActive(s ? s.id : tabs.value[0]?.id ?? null); }
+      if (activeId.value === id) { const s = activeSessionTab.value; setActive(s ? s.id : visibleTabs.value[0]?.id ?? null); }
       return;
     }
     tabs.value = tabs.value.filter((x) => x.id !== id);
     if (activeId.value === id) { const s = activeSessionTab.value; setActive(s ? s.id : null); }
   }
 
-  return { tabs, activeId, active, activeKind, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab, openTool, openLocalRoot, openLocalFile };
+  return { tabs, activeId, active, activeKind, visibleTabs, scopeProjectId, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab, openTool, openLocalRoot, openLocalFile };
 }

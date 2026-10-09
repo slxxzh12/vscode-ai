@@ -944,6 +944,7 @@ export const messages = {
   'nv.tab_general': 'General',
   'nv.tab_advanced': 'Advanced',
   'nv.database_file': 'Database file',
+  'nv.file_conn': 'Database file',
   'nv.browse': 'Browse…',
   'nv.pick_failed': 'File picker is not supported on this platform; enter the path manually',
   'nv.ok': 'OK',

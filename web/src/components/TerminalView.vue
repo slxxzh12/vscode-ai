@@ -136,6 +136,9 @@ function sessionState(id: string) {
 function sessionLabel(id: string) {
   return props.terminal.state.sessions.find((s) => s.id === id)?.name || id;
 }
+function sessionProjectId(id: string): string | null {
+  return props.terminal.state.sessions.find((s) => s.id === id)?.projectId ?? null;
+}
 
 // —— 页签重命名（双击会话页签改名；按节点公钥指纹隔离持久化）——
 const tabNames = ref<Record<string, string>>({});
@@ -201,7 +204,7 @@ function onTabDialogConfirm(payload: { name: string; description: string }) {
   persistTabNames();
   // 页签改名：仅当该会话已打开页签时更新，避免给已关闭会话凭空建页签
   if (props.center.tabs.value.some((t) => t.id === `s:${sid}`)) {
-    props.center.ensureSession(sid, tabLabel(sid), sessionState(sid));
+    props.center.ensureSession(sid, tabLabel(sid), sessionState(sid), sessionProjectId(sid));
   }
   msgHistory.renameTab(sid, tabLabel(sid));   // 同步更新历史消息里记录的页签名
   if (name) syncAgentRename(sid, name);       // 同步改 Agent 内的对话名
@@ -499,7 +502,7 @@ async function createNew(id: string) {
   }
   if (c.cmd) markAgent(s.id);
   const label = c.cmd ? `◈ ${c.label}` : c.label;
-  props.center.ensureSession(s.id, name || label, s.state || 'running');
+  props.center.ensureSession(s.id, name || label, s.state || 'running', s.projectId ?? null);
   if (name) {
     const next = { ...tabNames.value };
     next[s.id] = name;
@@ -608,7 +611,7 @@ async function startAgent() {
   agentCliReady.value = false;
   agentLaunching = false;
   agentAtStart.value = agentId.value;
-  props.center.ensureSession(s.id, `◈ ${currentAgent.value.name}`, s.state || 'running');
+  props.center.ensureSession(s.id, `◈ ${currentAgent.value.name}`, s.state || 'running', s.projectId ?? null);
   ensureAgentOrder();
   props.terminal.switchTo(s.id);
   if (props.projectId !== pid) { void restartAgentForProject(); return; }   // 创建期间项目已切换：再来一次
@@ -645,12 +648,23 @@ async function restartAgentForProject() {
 }
 watch(() => props.projectId, (nid, oid) => {
   if (nid === oid) return;
-  if (!agentSid.value || !agentActive()) return;
-  if (agentProjectId.value === nid) return;
+  // 作用域切到新目录：隐藏异目录会话页签（进程保留），并纠正活动页签
+  props.center.scopeProjectId.value = nid ?? null;
+  const visible = props.center.visibleTabs.value;
+  if (!visible.some((t) => t.id === props.center.activeId.value)) {
+    const pref = visible.find((t) => t.kind === 'session' && t.id === `s:${agentSid.value}`) || visible[0] || null;
+    if (pref) {
+      props.center.setActive(pref.id);
+      if (pref.kind === 'session') props.terminal.switchTo(pref.id.slice(2));
+    } else {
+      props.center.setActive(null);
+      props.terminal.setOutput(null);
+    }
+  }
   // 切换项目目录：不自动重启/重建固定 Agent 会话（由用户手动开启）
 });
 // —— 空白首页：无页签时显示欢迎页（不再自动强开 Agent）——
-const showWelcome = computed(() => !props.phone && props.center.tabs.value.length === 0);
+const showWelcome = computed(() => !props.phone && props.center.visibleTabs.value.length === 0);
 function onWelcomeNewAgent() {
   if (props.phone) return;
   if (!props.projectId) { window.dispatchEvent(new CustomEvent('df-add-folder')); return; }
@@ -1100,7 +1114,7 @@ watch(() => props.terminal.state.sessions.map((s) => s.id), (ids) => {
   const active = props.terminal.state.activeSessionId;
   for (const id of ids) {
     if (visible && !visible.has(id) && id !== active) continue;
-    props.center.ensureSession(id, tabLabel(id), sessionState(id));
+    props.center.ensureSession(id, tabLabel(id), sessionState(id), sessionProjectId(id));
   }
   for (const old of knownSessions.value) if (!ids.includes(old)) props.center.removeSession(old);
   knownSessions.value = ids;
@@ -1113,7 +1127,7 @@ watch(tabNames, () => {
   const active = props.terminal.state.activeSessionId;
   for (const s of props.terminal.state.sessions) {
     if (visible && !visible.has(s.id) && s.id !== active) continue;
-    props.center.ensureSession(s.id, tabLabel(s.id), s.state || 'running');
+    props.center.ensureSession(s.id, tabLabel(s.id), s.state || 'running', s.projectId ?? null);
   }
 }, { deep: true });
 
@@ -1122,8 +1136,8 @@ watch(tabNames, () => {
 watch(() => props.terminal.state.activeSessionId, (id) => {
   resetAutoCompact();
   if (id) {
-    props.center.ensureSession(id, tabLabel(id), sessionState(id));
-    props.center.activateSession(id);
+    props.center.ensureSession(id, tabLabel(id), sessionState(id), sessionProjectId(id));
+    props.center.activateSession(id, sessionProjectId(id));
   }
 });
 // 从文件视图切回终端时重排尺寸
@@ -1167,7 +1181,7 @@ function onTabClick(id: string) {
   if (!t) return;
   if (t.kind === 'session' && t.id.startsWith('s:')) {
     const sid = t.id.slice(2);
-    props.center.activateSession(sid);  // 直接激活中心页签（避免 activeSessionId 未变导致 watcher 不触发）
+    props.center.activateSession(sid, sessionProjectId(sid));  // 直接激活中心页签（避免 activeSessionId 未变导致 watcher 不触发）
     props.terminal.switchTo(sid);
   } else {
     props.center.activateFileTab(id);
@@ -1207,6 +1221,7 @@ async function setDefaultAgent(id: string) {
 }
 
 onMounted(async () => {
+  props.center.scopeProjectId.value = props.projectId ?? null;
   init();
   window.addEventListener('resize', onResize);
   window.addEventListener('df-open-agent-settings', onOpenSettings);
@@ -1395,7 +1410,7 @@ onBeforeUnmount(() => {
       :name="dialogName" :description="dialogDesc" :placeholder="dialogPlaceholder"
       @confirm="onTabDialogConfirm" @cancel="onTabDialogCancel" />
     <div class="tabstrip">
-      <div v-for="t in center.tabs.value" :key="t.id" class="tab"
+      <div v-for="t in center.visibleTabs.value" :key="t.id" class="tab"
         :class="{ active: center.activeId.value === t.id }" @click="onTabClick(t.id)"
         @dblclick="t.kind === 'session' && openTabDialog(t.id)">
         <span v-if="t.kind === 'session'" :class="['dot', sessionState(t.id.slice(2))]" />

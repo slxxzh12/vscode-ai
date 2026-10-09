@@ -3,6 +3,7 @@ import { ElMessageBox } from 'element-plus';
 import { t } from '../../i18n';
 import { quoteIdent, useNavicat, type ExecResult, type NavicatProfile, type NavicatType } from './useNavicat';
 import { navicatTreeSource } from './navicatTreeSource';
+import { uniqueConnName } from './sqliteFile';
 import type { TreeSource } from '../../tree/treeSource';
 
 // Navicat 工作台：模块级单例，左侧工具条/树与右侧内容、连接弹窗共用同一份状态。
@@ -37,6 +38,7 @@ export interface NavicatWorkbench {
   doExport(): Promise<void>;
   editActive(): void;
   browseFile(): Promise<void>;
+  openSqliteFile(abs: string, name: string): Promise<void>;
 }
 
 function blank(): NavicatProfile {
@@ -115,6 +117,17 @@ export function useNavicatWorkbench(): NavicatWorkbench {
       if (r.path) { form.value = { ...form.value, database: r.path }; return; }
       if (r.error) dlgMsg.value = t('nv.pick_failed');
     } catch (e) { dlgMsg.value = (e as Error).message; }
+  }
+
+  async function openSqliteFile(abs: string, name: string) {
+    if (!abs) return;
+    await nav.load();
+    const ex = nav.profiles.value.find((p) => p.type === 'sqlite' && p.database === abs);
+    if (ex) { selectConn(ex); if (ex.id) activeFolder.value = `c:${ex.id}`; return; }
+    const names = nav.profiles.value.map((p) => p.name);
+    const saved = await nav.save({ name: uniqueConnName(name, names), type: 'sqlite', host: '', port: '', user: '', database: abs, password: '' });
+    selectConn(saved);
+    if (saved.id) activeFolder.value = `c:${saved.id}`;
   }
 
   async function doSave() {
@@ -197,7 +210,7 @@ export function useNavicatWorkbench(): NavicatWorkbench {
   cache = {
     profiles: nav.profiles, activeId, activeFolder, activeDatabase, activeProfile, sql, result, busy, msg,
     dlg, dlgTab, dlgMsg, form, saving, testing, treeSource,
-    load: nav.load, onFolder, onTypeChange, pickTable, openNew, openEdit, doSave, doTest, onRemove, doExec, copyConn, doExport, editActive, browseFile,
+    load: nav.load, onFolder, onTypeChange, pickTable, openNew, openEdit, doSave, doTest, onRemove, doExec, copyConn, doExport, editActive, browseFile, openSqliteFile,
   };
   return cache;
 }

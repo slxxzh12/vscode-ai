@@ -36,6 +36,8 @@ import { useLedgerSessions } from './ledgerSessions';
 import type { SessionExtra } from './sessionTree';
 import { allowedRestoreIds, loadRecentTabs, loadRestoreTabs, pushRecentTab, saveRecentTabs } from './restorePrefs';
 import { pendingToolTab, clearPendingToolTab } from './uiIntents';
+import { useNavicatWorkbench } from './tools/navicat/useNavicatWorkbench';
+import { shouldOpenInNavicat } from './tools/navicat/sqliteFile';
 
 const appRef = ref<HTMLDivElement | null>(null);
 const termViewRef = ref<InstanceType<typeof TerminalView> | null>(null);
@@ -106,6 +108,7 @@ const COLOR_REGISTRY = 'devflow-window-color-registry';
 const COLOR_VALUE: Record<string, string> = { none: '', red: '#7f1d1d', yellow: '#6b4e0f', blue: '#1e3a8a', green: '#14532d', purple: '#4c1d95' };
 const colorOptions = [
   { id: 'none', key: 'top.color.none' },
+  { id: 'auto', key: 'top.color.auto' },
   { id: 'red', key: 'top.color.red' },
   { id: 'yellow', key: 'top.color.yellow' },
   { id: 'blue', key: 'top.color.blue' },
@@ -154,7 +157,7 @@ function writeRegistry(colorId: string) {
 }
 function usedColors(): Set<string> {
   const s = new Set<string>();
-  for (const v of Object.values(readRegistry())) if (v && v.colorId && v.colorId !== 'none') s.add(v.colorId);
+  for (const v of Object.values(readRegistry())) if (v && v.colorId && v.colorId !== 'none' && v.colorId !== 'auto') s.add(v.colorId);
   return s;
 }
 function randomColorId(): string {
@@ -166,24 +169,17 @@ function loadWindowColor(): string {
   try {
     const v = localStorage.getItem(COLOR_STORE);
     if (v === 'random') return randomColorId();
+    if (v === 'auto') return 'auto';
     if (v && v in COLOR_VALUE) return v;
   } catch { /* ignore */ }
   return 'none';
 }
 const windowColorId = ref(loadWindowColor());
-const windowColorValue = computed(() => COLOR_VALUE[windowColorId.value] || '');
 function onColorChange() {
   if (windowColorId.value === 'random') windowColorId.value = randomColorId();
   try { localStorage.setItem(COLOR_STORE, windowColorId.value); } catch { /* ignore */ }
   writeRegistry(windowColorId.value);
 }
-// 发送按钮等强调色跟随窗口颜色（无窗口色时回退到主题主色）
-watch(windowColorValue, (v) => {
-  try {
-    if (v) document.documentElement.style.setProperty('--window-ac', v);
-    else document.documentElement.style.removeProperty('--window-ac');
-  } catch { /* ignore */ }
-}, { immediate: true });
 let colorHeartbeat: ReturnType<typeof setInterval> | null = null;
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
@@ -498,6 +494,22 @@ const displayPath = computed(() => {
   if (!af) return base;
   return base + '/' + af.replace(/\\/g, '/').replace(/^\/+/, '');
 });
+// 路径→颜色：把顶栏显示的路径散列到已有窗口色（同一路径颜色固定，不同路径尽量区分）
+function hashColorId(key: string): string {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return COLOR_IDS[h % COLOR_IDS.length];
+}
+const autoPathColorId = computed(() => (displayPath.value ? hashColorId(displayPath.value) : 'none'));
+const resolvedColorId = computed(() => (windowColorId.value === 'auto' ? autoPathColorId.value : windowColorId.value));
+const windowColorValue = computed(() => COLOR_VALUE[resolvedColorId.value] || '');
+// 发送按钮等强调色跟随窗口颜色（无窗口色时回退到主题主色）
+watch(windowColorValue, (v) => {
+  try {
+    if (v) document.documentElement.style.setProperty('--window-ac', v);
+    else document.documentElement.style.removeProperty('--window-ac');
+  } catch { /* ignore */ }
+}, { immediate: true });
 
 const RECENT_KEY = 'devflow-recent-projects';
 const RECENT_MAX = 100;
@@ -640,6 +652,18 @@ function openFile(projectId: string, path: string) {
   const q = path.replace(/\\/g, '/');
   const i = q.lastIndexOf('/');
   const name = i >= 0 ? q.slice(i + 1) : q;   // 文件名一律由 path 推导，避免上游传错标签
+  void openFileAsync(projectId, path, q, name);
+}
+async function openFileAsync(projectId: string, path: string, q: string, name: string) {
+  try {
+    const meta = await projectsApi.fileMeta(projectId, path);
+    if (meta && !meta.isDir && meta.abs && shouldOpenInNavicat(name, meta.sqlite === true)) {
+      await useNavicatWorkbench().openSqliteFile(meta.abs, name);
+      rail.value = 'explorer';
+      center.openTool('navicat');
+      return;
+    }
+  } catch { /* 探测失败：按普通文件打开 */ }
   pushFileHistory(projectId, q);
   center.openFile(projectId, path, name);
 }
