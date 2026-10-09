@@ -80,6 +80,14 @@ describe('useNavicat', () => {
     await expect(s.exec('1', 'SELECT 1')).rejects.toThrow('执行超时');
   });
 
+  it('pickFile 打 pick-file 端点', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(String(u)); return okJson({ path: 'C:\\a\\x.db' }); }));
+    const s = useNavicat();
+    expect(await s.pickFile()).toEqual({ path: 'C:\\a\\x.db' });
+    expect(urls[0]).toBe('/api/navicat/pick-file');
+  });
+
   it('reveal/connstr/exportNcx 打对应端点', async () => {
     const urls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (u: string) => {

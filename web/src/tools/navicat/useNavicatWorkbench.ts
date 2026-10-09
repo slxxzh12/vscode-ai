@@ -36,6 +36,7 @@ export interface NavicatWorkbench {
   copyConn(withPassword: boolean): Promise<void>;
   doExport(): Promise<void>;
   editActive(): void;
+  browseFile(): Promise<void>;
 }
 
 function blank(): NavicatProfile {
@@ -106,6 +107,15 @@ export function useNavicatWorkbench(): NavicatWorkbench {
     if (p.hasPassword && p.id) { try { form.value.password = await nav.reveal(p.id); } catch { /* ignore */ } }
   }
   function editActive() { if (activeProfile.value) void openEdit(activeProfile.value); }
+
+  async function browseFile() {
+    dlgMsg.value = '';
+    try {
+      const r = await nav.pickFile();
+      if (r.path) { form.value = { ...form.value, database: r.path }; return; }
+      if (r.error) dlgMsg.value = t('nv.pick_failed');
+    } catch (e) { dlgMsg.value = (e as Error).message; }
+  }
 
   async function doSave() {
     if (!form.value.name.trim()) { dlgMsg.value = t('nv.required_name'); return; }
@@ -187,7 +197,7 @@ export function useNavicatWorkbench(): NavicatWorkbench {
   cache = {
     profiles: nav.profiles, activeId, activeFolder, activeDatabase, activeProfile, sql, result, busy, msg,
     dlg, dlgTab, dlgMsg, form, saving, testing, treeSource,
-    load: nav.load, onFolder, onTypeChange, pickTable, openNew, openEdit, doSave, doTest, onRemove, doExec, copyConn, doExport, editActive,
+    load: nav.load, onFolder, onTypeChange, pickTable, openNew, openEdit, doSave, doTest, onRemove, doExec, copyConn, doExport, editActive, browseFile,
   };
   return cache;
 }

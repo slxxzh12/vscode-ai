@@ -7,7 +7,7 @@ import type { NavicatType } from './useNavicat';
 const {
   activeProfile, activeDatabase, sql, result, busy, msg,
   dlg, dlgTab, dlgMsg, form, saving, testing,
-  load, doSave, doTest, doExec, copyConn, doExport, editActive, onTypeChange,
+  load, doSave, doTest, doExec, copyConn, doExport, editActive, onTypeChange, browseFile,
 } = useNavicatWorkbench();
 
 const TYPES: NavicatType[] = ['mysql', 'postgres', 'sqlite', 'redis'];
@@ -95,6 +95,7 @@ onMounted(() => { void load(); });
               <label class="nvrow">
                 <span class="nvlbl">{{ $t('nv.database_file') }}</span>
                 <el-input v-model="form.database" size="small" class="nv-db-file" />
+                <button type="button" class="nvbtn nv-browse" @click="browseFile">{{ $t('nv.browse') }}</button>
               </label>
             </template>
             <template v-else>
@@ -168,4 +169,5 @@ onMounted(() => { void load(); });
 .nv-type:focus { outline: none; border-color: var(--ac2); }
 .nvdlg :deep(.el-dialog__footer) { display: flex; align-items: center; }
 .nv-test { margin-right: auto; }
+.nv-browse { flex: none; white-space: nowrap; }
 </style>

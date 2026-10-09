@@ -53,6 +53,13 @@ export function pickAnyFile(opts) {
   ], '$d.FileName', opts);
 }
 
+export function pickSqliteFile(opts) {
+  return runDialog([
+    '$d = New-Object System.Windows.Forms.OpenFileDialog',
+    "$d.Filter = 'SQLite|*.db;*.sqlite;*.sqlite3;*.db3|All files|*.*'",
+  ], '$d.FileName', opts);
+}
+
 export function pickFolder(opts) {
   return runDialog([
     '$d = New-Object System.Windows.Forms.FolderBrowserDialog',

@@ -80,4 +80,17 @@ describe('NavicatTool', () => {
     await flushPromises();
     expect(calls.some(([u, m]) => u === '/api/navicat/profiles' && m === 'POST')).toBe(true);
   });
+
+  it('SQLite 连接对话框：浏览按钮写回文件路径', async () => {
+    vi.stubGlobal('fetch', stubFetch((u) => (u === '/api/navicat/pick-file' ? okJson({ path: 'C:\\data\\x.db' }) : okJson({}))));
+    const wb = useNavicatWorkbench();
+    await wb.load();
+    wb.openNew();
+    wb.form.value = { ...wb.form.value, type: 'sqlite' };
+    const w = mount();
+    await flushPromises();
+    await w.find('.nv-browse').trigger('click');
+    await flushPromises();
+    expect((w.find('.nv-db-file input').element as HTMLInputElement).value).toBe('C:\\data\\x.db');
+  });
 });

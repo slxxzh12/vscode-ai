@@ -1,4 +1,5 @@
 import { t } from './i18n.js';
+import { pickSqliteFile } from './native-dialog.js';
 
 const MAX_BODY = 2 * 1024 * 1024;
 
@@ -29,7 +30,7 @@ function sendErr(res, code) {
 }
 
 // /api/navicat/*：连接档案 CRUD + 测试/执行 + 连接串/导出
-export function createNavicatMount({ store, exec, ncx, logger = console }) {
+export function createNavicatMount({ store, exec, ncx, pickFile = pickSqliteFile, logger = console }) {
   async function route(req, res, url) {
     const m = req.method;
     const seg = url.pathname.replace(/^\/api\/navicat\/?/, '').split('/').filter(Boolean);
@@ -98,6 +99,13 @@ export function createNavicatMount({ store, exec, ncx, logger = console }) {
       }
       const result = await exec.exec(p, store.password(p.id), sql);
       return sendJson(res, 200, { ok: true, result });
+    }
+
+    if (head === 'pick-file' && m === 'POST') {
+      const r = await pickFile();
+      if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
+      if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
+      return sendJson(res, 200, { path: r.path });
     }
 
     return sendJson(res, 404, { error: 'not-found', message: t('nv.err.not_found') });

@@ -54,6 +54,7 @@ export function useNavicat(): {
   exportNcx: (ids: string[]) => Promise<string>;
   listDatabases: (id: string) => Promise<string[]>;
   listTables: (id: string, database: string) => Promise<string[]>;
+  pickFile: () => Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }>;
 } {
   const profiles = ref<NavicatProfile[]>([]);
 
@@ -120,5 +121,9 @@ export function useNavicat(): {
     return Array.isArray(j.items) ? j.items.map(String) : [];
   }
 
-  return { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx, listDatabases, listTables };
+  async function pickFile(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
+    return jfetch('/api/navicat/pick-file', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+  }
+
+  return { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx, listDatabases, listTables, pickFile };
 }

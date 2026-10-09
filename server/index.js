@@ -69,7 +69,7 @@ import { detectEmployeeId, resolveRelayModel } from './llm-config.js';
 import { portPaths, ensurePortDirs } from './port-paths.js';
 import { restartGuard, spawnRestart } from './port-restart.js';
 import { available as fileAssocAvailable, getState as getFileAssocState, loadPref as loadFileAssocPref, savePref as saveFileAssocPref, runAssoc as runFileAssoc } from './file-assoc.js';
-import { askPortConflict } from './native-dialog.js';
+import { askPortConflict, pickSqliteFile } from './native-dialog.js';
 import { findPidsOnPort, killPids, isPortFree } from './port-conflict.js';
 import { VERSION } from './version.js';
 import { createNotice } from './notice.js';
@@ -615,6 +615,7 @@ function buildWorkspace({ paths, port }) {
     store: navicatStore,
     exec: createNavicatExec({}),
     ncx: { buildNcx, connectionString },
+    pickFile: pickSqliteFile,
     logger: log,
   });
   const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger, postmanHistory, notepadStore, fileStores });

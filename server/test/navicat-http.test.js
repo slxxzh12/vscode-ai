@@ -24,11 +24,14 @@ function fakeExec() {
   };
 }
 
-async function start() {
+async function start(opts = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-nvhttp-'));
   const store = createNavicatStore({ file: path.join(dir, 'profiles.json'), crypto: createNavicatCrypto({ keyFile: path.join(dir, '.key') }) });
   const exec = fakeExec();
-  const mount = createNavicatMount({ store, exec, ncx: { buildNcx, connectionString } });
+  const mount = createNavicatMount({
+    store, exec, ncx: { buildNcx, connectionString },
+    ...(opts.pickFile ? { pickFile: opts.pickFile } : {}),
+  });
   const server = http.createServer((req, res) => mount(req, res, new URL(req.url, 'http://localhost')));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   return { port: server.address().port, server, exec, store };
@@ -131,4 +134,22 @@ test('exec：database 覆盖档案并传给执行层', async (t) => {
   const id = (await call(A.port, 'POST', '/api/navicat/profiles', PROFILE)).body.item.id;
   await call(A.port, 'POST', '/api/navicat/exec', { id, sql: 'SELECT 1', database: 'other' });
   assert.equal(A.exec.calls.find((c) => c.sql === 'SELECT 1').database, 'other');
+});
+
+test('pick-file：返回路径 / 取消 / 不支持', async (t) => {
+  const A = await start({ pickFile: async () => ({ path: 'C:\\data\\a.db' }) });
+  t.after(() => A.server.close());
+  const ok = await call(A.port, 'POST', '/api/navicat/pick-file', {});
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.path, 'C:\\data\\a.db');
+
+  const B = await start({ pickFile: async () => ({ cancelled: true }) });
+  t.after(() => B.server.close());
+  const c = await call(B.port, 'POST', '/api/navicat/pick-file', {});
+  assert.equal(c.body.cancelled, true);
+
+  const C = await start({ pickFile: async () => ({ error: 'unsupported' }) });
+  t.after(() => C.server.close());
+  const e = await call(C.port, 'POST', '/api/navicat/pick-file', {});
+  assert.equal(e.body.error, 'unsupported');
 });

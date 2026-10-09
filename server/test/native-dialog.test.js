@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { pickFile, pickAnyFile, pickFolder, askPortConflict } from '../native-dialog.js';
+import { pickFile, pickAnyFile, pickFolder, askPortConflict, pickSqliteFile } from '../native-dialog.js';
 
 function fakeChild() {
   const child = new EventEmitter();
@@ -54,6 +54,25 @@ test('pickAnyFile: 无输出视为取消', async () => {
   const p = pickAnyFile({ platform: 'win32', spawnFn: spawnOnce(child) });
   child.emit('close');
   assert.deepEqual(await p, { cancelled: true });
+});
+
+test('pickSqliteFile: 非 win 返回 unsupported 且不 spawn', async () => {
+  let called = false;
+  const r = await pickSqliteFile({ platform: 'linux', spawnFn: () => { called = true; } });
+  assert.deepEqual(r, { error: 'unsupported' });
+  assert.equal(called, false);
+});
+
+test('pickSqliteFile: 脚本含 OpenFileDialog 与 sqlite 过滤，无输出视为取消', async () => {
+  const child = fakeChild();
+  const rec = [];
+  const p = pickSqliteFile({ platform: 'win32', spawnFn: spawnOnce(child, rec) });
+  child.emit('close');
+  assert.deepEqual(await p, { cancelled: true });
+  const script = rec[0].args[rec[0].args.length - 1];
+  assert.match(script, /OpenFileDialog/);
+  assert.match(script, /\*\.db/);
+  assert.match(script, /\*\.sqlite/);
 });
 
 test('pickFolder: stderr 非空返回 dialog-failed（截断 500）', async () => {
