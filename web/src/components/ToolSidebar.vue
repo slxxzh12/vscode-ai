@@ -13,7 +13,7 @@ const props = defineProps<{ tool: ToolId }>();
 
 // 各工具的 workbench 都暴露 treeSource/activeId/activeFolder，统一取用。
 const wb = computed(() => {
-  if (props.tool === 'base64') return null;
+  if (props.tool === 'base64' || props.tool === 'nginx') return null;
   if (props.tool === 'postman') return usePostmanWorkbench();
   if (props.tool === 'navicat') return useNavicatWorkbench();
   return useToolWorkbench(props.tool as FileTool);

@@ -80,6 +80,10 @@ import { createNavicatStore } from './navicat-store.js';
 import { createNavicatExec } from './navicat-exec.js';
 import { createNavicatMount } from './navicat-mount.js';
 import { buildNcx, connectionString } from './navicat-ncx.js';
+import { createProxyStore } from './proxy-store.js';
+import { createProxyCapture } from './proxy-capture.js';
+import { createProxyEngine } from './proxy-engine.js';
+import { createProxyMount } from './proxy-mount.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -243,6 +247,10 @@ const broadcastCollab = (type, payload) => {
 const broadcastSched = (type, payload) => {
   if (!gateway) return;
   for (const c of gateway.conns) c.send({ type, ...payload });
+};
+const broadcastNginx = (ev) => {
+  if (!gateway) return;
+  for (const c of gateway.conns) c.send({ type: 'nginx', ...ev });
 };
 
 // ---- 由档案路径构建所有数据模块（不监听端口、不建 gateway）----
@@ -618,6 +626,10 @@ function buildWorkspace({ paths, port }) {
     pickFile: pickSqliteFile,
     logger: log,
   });
+  const proxyStore = createProxyStore({ file: path.join(paths.proxyDir, 'rules.json') });
+  const proxyCapture = createProxyCapture({ rootDir: paths.proxyCapturesDir, onEvent: broadcastNginx });
+  const proxyEngine = createProxyEngine({ store: proxyStore, capture: proxyCapture, httpServer: server, onEvent: broadcastNginx, logger: log });
+  const proxyMount = createProxyMount({ store: proxyStore, engine: proxyEngine, capture: proxyCapture, logger: log });
   const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger, postmanHistory, notepadStore, fileStores });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
@@ -629,7 +641,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, projectDataDirOf, readHistoryAll, writeHistorySplit };
+  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, projectDataDirOf, readHistoryAll, writeHistorySplit };
 }
 
 // ---- 工作区（端口档案）----
@@ -644,6 +656,7 @@ function initWorkspace(paths, port) {
   if (!gateway) {
     gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log, restoreSessionById: ws.restoreSessionById });
   }
+  void ws.proxyEngine.startEnabled().catch((e) => log.warn('proxy start failed', (e && e.message) || e));
   void restoreSessions({
     ledger: ws.sessionLedger,
     sessionManager: ws.sessionManager,
@@ -1052,12 +1065,17 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (ws && ws.proxyEngine && ws.proxyEngine.matchPath(url.pathname)) {
+    ws.proxyEngine.handleHttp(req, res, url);
+    return;
+  }
   if (url.pathname.startsWith('/api/llm')) { await ws.llmMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/translate')) { await ws.translateMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/usage/')) { await ws.usageMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/scheduler')) { await ws.scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/navicat')) { await ws.navicatMount(req, res, url); return; }
+  if (url.pathname.startsWith('/api/nginx')) { await ws.proxyMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/')) {
     await ws.httpApi(req, res);
     return;

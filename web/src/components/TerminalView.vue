@@ -12,6 +12,7 @@ import DocViewer from './DocViewer.vue';
 import ToolDocPane from '../tools/doc/ToolDocPane.vue';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
 import NavicatTool from '../tools/navicat/NavicatTool.vue';
+import NginxTool from '../tools/nginx/NginxTool.vue';
 import { useLocalSources } from '../local/useLocalSources';
 import { localRootDocSource, localFileDocSource } from '../local/localDocSource';
 import type { DocSource } from '../tools/doc/docSource';
@@ -1442,6 +1443,7 @@ onBeforeUnmount(() => {
       <Base64Tool v-else-if="activeToolName === 'base64'" />
       <PostmanTool v-else-if="activeToolName === 'postman'" />
       <NavicatTool v-else-if="activeToolName === 'navicat'" />
+      <NginxTool v-else-if="activeToolName === 'nginx'" />
     </div>
     <div v-show="!!activeLocal" class="local-layer">
       <template v-if="localIsRoot">

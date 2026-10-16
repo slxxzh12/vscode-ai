@@ -6,10 +6,10 @@ import WelcomeView from './WelcomeView.vue';
 function mount() { return mountC(WelcomeView); }
 
 describe('WelcomeView', () => {
-  it('渲染主按钮与 7 张工具卡片', () => {
+  it('渲染主按钮与工具卡片', () => {
     const w = mount();
     expect(w.find('.wprimary').exists()).toBe(true);
-    expect(w.findAll('.tcard')).toHaveLength(7);
+    expect(w.findAll('.tcard')).toHaveLength(8);
   });
 
   it('点主按钮 emit new-agent', async () => {
@@ -20,7 +20,7 @@ describe('WelcomeView', () => {
 
   it('点工具卡片 emit open-tool 带 id', async () => {
     const w = mount();
-    await w.findAll('.tcard')[4].trigger('click');
+    await w.findAll('.tcard')[5].trigger('click');
     expect(w.emitted('open-tool')?.[0]).toEqual(['yaml']);
   });
 });

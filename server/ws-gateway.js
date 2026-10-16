@@ -26,6 +26,7 @@ export function createGateway({ httpServer, sessionManager, workflowRunner = nul
   const conns = new Set();
 
   httpServer.on('upgrade', (req, socket, head) => {
+    if (socket.__proxied) return;   // 已被 nginx 反代引擎接管（见 server/index.js）
     let authed = true;
     if (requireAuthWs) { try { authed = !!requireAuthWs(req); } catch { authed = false; } }
     if (!authed) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }

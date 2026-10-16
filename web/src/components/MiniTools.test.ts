@@ -7,12 +7,12 @@ import { pendingTool, clearPendingTool, pendingToolTab, clearPendingToolTab } fr
 
 afterEach(() => { clearPendingTool(); clearPendingToolTab(); });
 
-const IDS = ['notepad', 'postman', 'navicat', 'translate', 'yaml', 'markdown', 'base64'];
+const IDS = ['notepad', 'postman', 'navicat', 'nginx', 'translate', 'yaml', 'markdown', 'base64'];
 
 describe('MiniTools', () => {
-  it('渲染 7 个工具磁贴', () => {
+  it('渲染全部工具磁贴', () => {
     const w = mountC(MiniTools);
-    expect(w.findAll('.mticon')).toHaveLength(7);
+    expect(w.findAll('.mticon')).toHaveLength(IDS.length);
   });
 
   it('任一磁贴点击 → 请求主区工具页签', async () => {
