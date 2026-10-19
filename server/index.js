@@ -626,7 +626,7 @@ function buildWorkspace({ paths, port }) {
     pickFile: pickSqliteFile,
     logger: log,
   });
-  const proxyStore = createProxyStore({ file: path.join(paths.proxyDir, 'rules.json') });
+  const proxyStore = createProxyStore({ file: path.join(paths.proxyDir, 'rules.json'), reservedPorts: [port] });
   const proxyCapture = createProxyCapture({ rootDir: paths.proxyCapturesDir, onEvent: broadcastNginx });
   const proxyEngine = createProxyEngine({ store: proxyStore, capture: proxyCapture, httpServer: server, onEvent: broadcastNginx, logger: log });
   const proxyMount = createProxyMount({ store: proxyStore, engine: proxyEngine, capture: proxyCapture, logger: log });

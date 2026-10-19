@@ -13,8 +13,8 @@ export function normalizeRule(input) {
   if (!PROXY_MODES.includes(mode)) throw err('bad-request', 'bad mode');
   const name = String(input?.name || '').trim();
   if (!name) throw err('bad-request', 'name required');
-  const listenHost = String(input?.listenHost || '127.0.0.1');
-  if (!['127.0.0.1', '0.0.0.0'].includes(listenHost)) throw err('bad-request', 'bad listen host');
+  const listenHost = String(input?.listenHost || '0.0.0.0').trim();
+  if (!listenHost || /[\s/]/.test(listenHost)) throw err('bad-request', 'bad listen host');
 
   const t = input?.target || {};
   const protocol = String(t.protocol || 'http');
@@ -28,11 +28,25 @@ export function normalizeRule(input) {
     ? input.headers.map((h) => ({ name: String(h?.name || '').trim(), value: String(h?.value ?? '') })).filter((h) => h.name)
     : [];
 
+  const rewrites = Array.isArray(input?.rewrites)
+    ? input.rewrites.map((r) => {
+      const from = String(r?.from || '').trim();
+      if (!from) return null;
+      if (!/^\/[^/]/.test(from) || from.endsWith('/')) throw err('bad-rewrite', 'bad rewrite from');
+      let to = String(r?.to ?? '').trim();
+      if (to && !to.startsWith('/')) throw err('bad-rewrite', 'bad rewrite to');
+      if (to === '/') to = '';
+      if (to.length > 1) to = to.replace(/\/+$/, '');
+      return { from, to };
+    }).filter(Boolean)
+    : [];
+
   const base = {
     name, mode, listenHost,
     target: { protocol, host, port },
     tlsInsecure: input?.tlsInsecure !== false,
     headers,
+    rewrites,
     capture: !!input?.capture,
     enabled: !!input?.enabled,
   };
@@ -50,7 +64,8 @@ export function normalizeRule(input) {
   return { ...base, listenPort: 0, pathPrefix, stripPrefix: input?.stripPrefix !== false };
 }
 
-export function createProxyStore({ file }) {
+export function createProxyStore({ file, reservedPorts = [] }) {
+  const reserved = reservedPorts.map(Number);
   let items = null;
 
   function load() {
@@ -72,6 +87,7 @@ export function createProxyStore({ file }) {
   function checkConflict(list, rule, selfId) {
     const others = list.filter((x) => x.id !== selfId);
     if (rule.mode === 'port') {
+      if (rule.enabled && reserved.includes(Number(rule.listenPort))) throw err('port-in-use', 'reserved port (app)');
       const clash = others.some((x) => x.mode === 'port' && x.enabled && rule.enabled
         && x.listenHost === rule.listenHost && x.listenPort === rule.listenPort);
       if (clash) throw err('port-in-use', 'listen port conflict');

@@ -2,6 +2,7 @@ import { ref, type Ref } from 'vue';
 
 export type NginxMode = 'port' | 'path';
 export interface NginxHeader { name: string; value: string }
+export interface NginxRewrite { from: string; to: string }
 export interface NginxRule {
   id?: string;
   name: string;
@@ -14,6 +15,7 @@ export interface NginxRule {
   target: { protocol: 'http' | 'https'; host: string; port: number };
   tlsInsecure: boolean;
   headers: NginxHeader[];
+  rewrites: NginxRewrite[];
   capture: boolean;
 }
 export interface NginxStatus { status: 'running' | 'stopped' | 'error'; error: string | null }
@@ -39,9 +41,9 @@ async function jfetch(url: string, opt: RequestInit = {}): Promise<any> {
 
 export function emptyRule(): NginxRule {
   return {
-    name: '', mode: 'port', enabled: false, listenHost: '127.0.0.1', listenPort: 8081,
+    name: '', mode: 'port', enabled: false, listenHost: '0.0.0.0', listenPort: 8081,
     pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: 5173 },
-    tlsInsecure: true, headers: [], capture: false,
+    tlsInsecure: true, headers: [], rewrites: [], capture: false,
   };
 }
 

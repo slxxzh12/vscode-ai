@@ -30,6 +30,17 @@ test('normalizeRule：非法 mode / 端口 / 保留前缀报错', () => {
   assert.throws(() => normalizeRule({ ...PATH_RULE, pathPrefix: 'app' }), (e) => e.code === 'bad-request');
 });
 
+test('normalizeRule：路径改写（两种模式都支持，非法规则报 bad-rewrite）', () => {
+  assert.deepEqual(normalizeRule(PORT_RULE).rewrites, []);
+  assert.deepEqual(
+    normalizeRule({ ...PORT_RULE, rewrites: [{ from: '/app1', to: '/api' }, { from: '/x', to: '' }, { from: '' }] }).rewrites,
+    [{ from: '/app1', to: '/api' }, { from: '/x', to: '' }],
+  );
+  assert.equal(normalizeRule({ ...PORT_RULE, rewrites: [{ from: '/x', to: '/api/' }] }).rewrites[0].to, '/api');
+  assert.throws(() => normalizeRule({ ...PORT_RULE, rewrites: [{ from: 'app', to: '/api' }] }), (e) => e.code === 'bad-rewrite');
+  assert.throws(() => normalizeRule({ ...PORT_RULE, rewrites: [{ from: '/app', to: 'api' }] }), (e) => e.code === 'bad-rewrite');
+});
+
 test('create/update/remove：CRUD 且落盘后重载仍在', () => {
   const file = tmpFile();
   const s = createProxyStore({ file });
@@ -50,6 +61,16 @@ test('端口冲突（同 host 同端口均启用）报 port-in-use', () => {
   const s = createProxyStore({ file: tmpFile() });
   s.create(PORT_RULE);
   assert.throws(() => s.create({ ...PORT_RULE, name: 'dup' }), (e) => e.code === 'port-in-use');
+});
+
+test('监听地址允许正常 IP；缺省为 0.0.0.0', () => {
+  assert.equal(normalizeRule({ ...PORT_RULE, listenHost: '192.168.1.10' }).listenHost, '192.168.1.10');
+  assert.equal(normalizeRule({ ...PORT_RULE, listenHost: '' }).listenHost, '0.0.0.0');
+});
+
+test('监听端口占用 devflow 自身端口 → port-in-use', () => {
+  const s = createProxyStore({ file: tmpFile(), reservedPorts: [22222] });
+  assert.throws(() => s.create({ ...PORT_RULE, listenPort: 22222 }), (e) => e.code === 'port-in-use');
 });
 
 test('路径前缀冲突（互相包含）报 bad-request', () => {
