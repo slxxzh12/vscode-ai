@@ -63,10 +63,21 @@ function selectRule(r: NginxRule) {
   form.value = toForm(r);
   detail.value = null;
 }
+// 深链：选中规则时把 rule 写进地址栏，便于直接复制当前界面链接
+function syncUrl(id: string | null) {
+  const u = new URL(location.href);
+  if (id) u.searchParams.set('rule', id); else u.searchParams.delete('rule');
+  history.replaceState({}, '', u.pathname + u.search + u.hash);
+}
+function selectAndSync(r: NginxRule) {
+  selectRule(r);
+  syncUrl(r.id || null);
+}
 function blankNew() {
   activeId.value = '';
   form.value = emptyRule();
   detail.value = null;
+  syncUrl(null);
 }
 
 async function refresh() {
@@ -120,6 +131,19 @@ function removeRewrite(i: number) { form.value = { ...form.value, rewrites: form
 
 async function copyUrl() { if (accessUrl.value) { await copyText(accessUrl.value); msg.value = t('nginx.copied'); } }
 
+// 复制「进入本软件该规则界面」的深链：#tools/nginx + ?rule=<id>（hash 路由由 App 处理）
+function uiLink(): string {
+  const u = new URL(location.href);
+  if (activeId.value) u.searchParams.set('rule', activeId.value); else u.searchParams.delete('rule');
+  u.hash = '#tools/nginx';
+  return u.toString();
+}
+async function copyLink() {
+  if (!activeId.value) return;
+  await copyText(uiLink());
+  msg.value = t('nginx.copied');
+}
+
 function tsText(ts: number | string) { return new Date(ts).toLocaleTimeString(); }
 function statusText() {
   const s = activeStatus.value;
@@ -129,8 +153,10 @@ function statusText() {
 }
 
 onMounted(async () => {
+  const wanted = new URLSearchParams(location.search).get('rule');
   await api.load();
-  if (api.rules.value[0]) selectRule(api.rules.value[0]);
+  const pick = (wanted && api.rules.value.find((r) => r.id === wanted)) || api.rules.value[0];
+  if (pick) selectRule(pick);
   await refresh();
   timer = setInterval(() => { void api.load().then(refresh); }, 2000);
 });
@@ -141,7 +167,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
   <div class="ngbody">
     <div class="ngrules">
       <div class="ngrulelist">
-        <button v-for="r in api.rules.value" :key="r.id" class="ngitem" :class="{ on: r.id === activeId }" @click="selectRule(r)">
+        <button v-for="r in api.rules.value" :key="r.id" class="ngitem" :class="{ on: r.id === activeId }" @click="selectAndSync(r)">
           <span class="ngdot" :class="(api.status.value[r.id!]?.status) || 'stopped'" />
           <span class="ngname">{{ r.name }}</span>
           <span class="ngmode">{{ r.mode === 'port' ? r.listenHost + ':' + r.listenPort : r.pathPrefix }}</span>
@@ -213,6 +239,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
       <div v-if="activeId" class="ngurl">
         <span>{{ $t('nginx.access_url') }}: <code>{{ accessUrl }}</code></span>
         <button class="ngbtn" @click="copyUrl">{{ $t('nginx.copy') }}</button>
+        <button class="ngbtn" @click="copyLink">{{ $t('nginx.copy_link') }}</button>
         <span v-if="activeStatus" class="ngstat" :class="activeStatus.status">{{ statusText() }}</span>
       </div>
     </div>

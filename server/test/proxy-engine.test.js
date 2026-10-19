@@ -16,6 +16,18 @@ test('buildForwardPath：去前缀', () => {
   assert.equal(buildForwardPath({ ...RULE, mode: 'port' }, '/foo'), '/foo');
 });
 
+test('buildForwardPath：路径改写按顺序命中第一条', () => {
+  const r = { ...RULE, mode: 'port', rewrites: [{ from: '/app1', to: '/api' }] };
+  assert.equal(buildForwardPath(r, '/app1/foo?x=1'), '/api/foo?x=1');
+  assert.equal(buildForwardPath(r, '/app1'), '/api');
+  assert.equal(buildForwardPath(r, '/app1/'), '/api/');
+  assert.equal(buildForwardPath(r, '/app10/x'), '/app10/x');
+  assert.equal(buildForwardPath({ ...r, rewrites: [{ from: '/app1', to: '' }] }, '/app1/foo'), '/foo');
+  const multi = { ...r, rewrites: [{ from: '/app1', to: '/api' }, { from: '/app1/deep', to: '/other' }] };
+  assert.equal(buildForwardPath(multi, '/app1/deep/x'), '/api/deep/x');
+  assert.equal(buildForwardPath({ ...RULE, rewrites: [{ from: '/app1', to: '/api' }] }, '/app1/foo'), '/api/foo');
+});
+
 test('forwardHeaders：加 X-Forwarded-* 且应用自定义头', () => {
   const req = { headers: { host: 'me:2222', 'x-forwarded-for': '1.1.1.1' }, socket: { remoteAddress: '2.2.2.2' } };
   const h = forwardHeaders(RULE, req);

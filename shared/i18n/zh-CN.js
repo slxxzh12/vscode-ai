@@ -1035,6 +1035,7 @@ export const messages = {
   'nginx.add_rewrite': '添加改写',
   'nginx.access_url': '访问地址',
   'nginx.copy': '复制',
+  'nginx.copy_link': '复制界面链接',
   'nginx.copied': '已复制',
   'nginx.start': '启用',
   'nginx.stop': '停用',

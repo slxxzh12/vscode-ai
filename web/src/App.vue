@@ -10,7 +10,7 @@ import SchedulerView from './scheduler/SchedulerView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import ToolSidebar from './components/ToolSidebar.vue';
-import type { ToolId } from './tools/catalog';
+import { MINI_TOOLS, type ToolId } from './tools/catalog';
 import CodeStats from './components/CodeStats.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
@@ -205,6 +205,7 @@ const collabTab = ref<'group' | 'tasks'>('group');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
 const RAILS = ['explorer', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
+const TOOL_IDS = MINI_TOOLS.map((m) => m.id);
 const SIDE_TABS = ['messages', 'files', 'tree'];
 function parseHashSegs(): string[] {
   try { return decodeURIComponent(window.location.hash.replace(/^#/, '')).split('/').filter(Boolean); }
@@ -221,16 +222,30 @@ function hashHistoryTabOf(): HistoryTab | null {
   const [r, sub] = parseHashSegs();
   return (r === 'explorer' || r === 'history') && isSideTab(sub) ? sub : null;
 }
+function hashToolOf(): ToolId | null {
+  const [r, sub] = parseHashSegs();
+  return r === 'tools' && sub && (TOOL_IDS as string[]).includes(sub) ? (sub as ToolId) : null;
+}
 function applyHash() {
   const [r, sub] = parseHashSegs();
   const historyAlias = r === 'history';
+  if (r === 'tools') {
+    rail.value = 'explorer';
+    const tool = hashToolOf();
+    if (tool) center.openTool(tool);
+    return;
+  }
   if (!r || (!RAILS.includes(r) && !historyAlias)) return;
   rail.value = (historyAlias ? 'explorer' : r) as typeof rail.value;
   if ((r === 'explorer' || historyAlias) && isSideTab(sub)) historyTab.value = sub;
   if (r === 'contacts' && (sub === 'group' || sub === 'tasks')) collabTab.value = sub;
 }
 function currentHash() {
-  if (rail.value === 'explorer') return `#explorer/${historyTab.value}`;
+  if (rail.value === 'explorer') {
+    const a = center.active.value;
+    if (a?.kind === 'tool' && a.tool) return `#tools/${a.tool}`;
+    return `#explorer/${historyTab.value}`;
+  }
   if (rail.value === 'contacts') return `#contacts/${collabTab.value}`;
   return `#${rail.value}`;
 }
@@ -240,7 +255,7 @@ function syncHash() {
     window.history.replaceState({}, '', window.location.pathname + window.location.search + next);
   }
 }
-watch([rail, historyTab, collabTab], syncHash);
+watch([rail, historyTab, collabTab, () => center.activeId.value], syncHash);
 const msgHistory = useMessageHistory();
 
 // —— 窗口状态：上次页签/激活页签/左侧栏位/消息筛选 ——
@@ -352,6 +367,9 @@ async function restoreWindowState(projectsReady: Promise<void>) {
     center.setActive(tab?.id ?? null);
   }
   windowRestored = true;
+  // 深链 #tools/<id> 优先于存档的激活页签
+  const tool = hashToolOf();
+  if (tool) { rail.value = 'explorer'; center.openTool(tool); }
 }
 watch(
   [() => center.tabs.value.map((t) => `${t.id}|${t.label}`).join(','), center.activeId, rail, historyTab, msgFilter, msgAllStyle],
@@ -494,6 +512,14 @@ const displayPath = computed(() => {
   if (!af) return base;
   return base + '/' + af.replace(/\\/g, '/').replace(/^\/+/, '');
 });
+// 双击顶栏路径：在系统文件管理器打开对应目录（文件则定位到其所在目录）
+async function revealDisplayPath() {
+  const pid = currentProject.value;
+  if (!pid) return;
+  const a = center.active.value;
+  const rel = a && a.kind === 'file' && a.projectId === pid ? (a.path || '') : '';
+  try { await projectsApi.reveal(pid, rel); } catch { /* ignore */ }
+}
 // 路径→颜色：把顶栏显示的路径散列到已有窗口色（同一路径颜色固定，不同路径尽量区分）
 function hashColorId(key: string): string {
   let h = 0;
@@ -758,7 +784,7 @@ onBeforeUnmount(() => {
           {{ it.project.name }}{{ it.ts ? ' · ' + fmtRecent(it.ts) : '' }}
         </option>
       </select>
-      <span v-if="displayPath" class="projpath" :title="displayPath">{{ displayPath }}</span>
+      <span v-if="displayPath" class="projpath" :title="displayPath + '\n' + $t('top.path_open_dir')" @dblclick="revealDisplayPath">{{ displayPath }}</span>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
       <select v-model="windowColorId" class="color-sel" :title="$t('top.color.title')" @change="onColorChange">
@@ -846,12 +872,13 @@ onBeforeUnmount(() => {
 .app { display: flex; flex-direction: column; height: 100%; position: relative; }
 .upg-badge { background: var(--warn); color: #fff; border: none; border-radius: 8px; padding: 1px 8px; font-size: 11px; font-weight: 700; cursor: pointer; }
 .upg-badge:hover { filter: brightness(1.08); }
-.top { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--bd); flex: none; }
+.top { display: flex; align-items: center; gap: 12px; min-height: 42px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--bd); flex: none; }
 .logo { color: var(--ac3); font-weight: 700; white-space: nowrap; }
 .app-ver { color: var(--tx3); font-size: 12px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
 .addproj { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
 .addproj:hover { border-color: var(--ac2); color: var(--ac2); }
-.projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; flex: 0 1 auto; min-width: 0; white-space: normal; word-break: break-all; line-height: 1.35; cursor: pointer; padding: 6px 0; }
+.projpath:hover { color: var(--tx2); }
 .proj-sel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; max-width: 320px; }
 .spacer { flex: 1; }
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }

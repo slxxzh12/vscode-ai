@@ -1035,6 +1035,7 @@ export const messages = {
   'nginx.add_rewrite': 'Add rewrite',
   'nginx.access_url': 'Access URL',
   'nginx.copy': 'Copy',
+  'nginx.copy_link': 'Copy UI link',
   'nginx.copied': 'Copied',
   'nginx.start': 'Enable',
   'nginx.stop': 'Disable',

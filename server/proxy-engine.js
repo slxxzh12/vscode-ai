@@ -9,12 +9,26 @@ export function matchPrefix(prefix, pathname) {
   return pathname === prefix || pathname.startsWith(prefix + '/');
 }
 
+export function applyRewrites(rewrites, pathname) {
+  for (const rw of rewrites || []) {
+    if (!rw || !rw.from || !matchPrefix(rw.from, pathname)) continue;
+    let rest = pathname.slice(rw.from.length);
+    const to = rw.to || '';
+    if (rest === '') return to || '/';
+    if (!rest.startsWith('/')) rest = '/' + rest;
+    return to ? to + rest : rest;
+  }
+  return null;
+}
+
 export function buildForwardPath(rule, reqUrl) {
   const url = reqUrl || '/';
-  if (rule.mode !== 'path' || !rule.stripPrefix || !rule.pathPrefix) return url;
   const qi = url.indexOf('?');
   const pathPart = qi >= 0 ? url.slice(0, qi) : url;
   const search = qi >= 0 ? url.slice(qi) : '';
+  const rewritten = applyRewrites(rule.rewrites, pathPart);
+  if (rewritten !== null) return rewritten + search;
+  if (rule.mode !== 'path' || !rule.stripPrefix || !rule.pathPrefix) return url;
   let rest = pathPart.slice(rule.pathPrefix.length);
   if (!rest.startsWith('/')) rest = '/' + rest;
   if (rest === '') rest = '/';
