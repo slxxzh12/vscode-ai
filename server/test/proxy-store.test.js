@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createProxyStore, normalizeRule } from '../proxy-store.js';
+import { createProxyStore, normalizeRule, deepseekFlashSample } from '../proxy-store.js';
 
 function tmpFile() { return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxystore-')), 'rules.json'); }
 
@@ -71,6 +71,21 @@ test('监听地址允许正常 IP；缺省为 0.0.0.0', () => {
 test('监听端口占用 devflow 自身端口 → port-in-use', () => {
   const s = createProxyStore({ file: tmpFile(), reservedPorts: [22222] });
   assert.throws(() => s.create({ ...PORT_RULE, listenPort: 22222 }), (e) => e.code === 'port-in-use');
+});
+
+test('首次创建（文件不存在）写入 DeepSeek 样例，且不会重复 seed', () => {
+  const file = tmpFile();
+  const s = createProxyStore({ file, seed: [deepseekFlashSample()] });
+  const list = s.list();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].name, 'deepseek-flash');
+  assert.equal(list[0].enabled, false);
+  assert.equal(list[0].target.host, 'api.deepseek.com');
+  assert.equal(list[0].target.protocol, 'https');
+  assert.equal(list[0].headers[0].value, 'Bearer ak-123456');
+  assert.deepEqual(list[0].rewrites, [{ from: '/v1', to: '/v2' }]);
+  const s2 = createProxyStore({ file, seed: [deepseekFlashSample()] });
+  assert.equal(s2.list().length, 1);
 });
 
 test('路径前缀冲突（互相包含）报 bad-request', () => {

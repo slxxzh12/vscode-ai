@@ -12,6 +12,7 @@ const messages = ref<HistoryMessage[]>([]);
 const names = ref<Record<string, string>>({});
 let loadPromise: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingEvents: { ts: number; chars: number }[] = [];
 
 function norm(x: unknown): HistoryMessage | null {
   if (typeof x === 'string') return { text: x, ts: 0 };
@@ -38,14 +39,19 @@ async function load(): Promise<void> {
 
 async function flush(): Promise<void> {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  const events = pendingEvents;
+  pendingEvents = [];
   try {
-    await fetch('/api/history', {
+    const r = await fetch('/api/history', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: messages.value.slice(0, MAX) }),
+      body: JSON.stringify({ messages: messages.value.slice(0, MAX), ...(events.length ? { events } : {}) }),
       keepalive: true,
     });
-  } catch { /* ignore */ }
+    if (r && r.ok === false) throw new Error('flush-failed');
+  } catch {
+    pendingEvents = [...events, ...pendingEvents];
+  }
 }
 
 function scheduleFlush(delay = 800): void {
@@ -61,6 +67,8 @@ export function useMessageHistory() {
   async function push(text: string, opts: { sessionId?: string; tabName?: string } = {}) {
     const t = text.trim();
     if (!t) return;
+    pendingEvents.push({ ts: Date.now(), chars: t.length });
+    scheduleFlush();
     await load();
     if (messages.value[0]?.text === t) return;           // 连续重复不记录
     const m: HistoryMessage = { text: t, ts: Date.now() };

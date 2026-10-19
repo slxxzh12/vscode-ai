@@ -64,7 +64,23 @@ export function normalizeRule(input) {
   return { ...base, listenPort: 0, pathPrefix, stripPrefix: input?.stripPrefix !== false };
 }
 
-export function createProxyStore({ file, reservedPorts = [] }) {
+// 默认样例：把 DeepSeek 官方 API 代理到本机端口，客户端用 deepseek-flash 模型调用
+export function deepseekFlashSample() {
+  return {
+    name: 'deepseek-flash',
+    mode: 'port',
+    listenHost: '0.0.0.0',
+    listenPort: 18090,
+    target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
+    tlsInsecure: false,
+    headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }],
+    rewrites: [{ from: '/v1', to: '/v2' }],
+    capture: false,
+    enabled: false,
+  };
+}
+
+export function createProxyStore({ file, reservedPorts = [], seed = [] }) {
   const reserved = reservedPorts.map(Number);
   let items = null;
 
@@ -82,6 +98,15 @@ export function createProxyStore({ file, reservedPorts = [] }) {
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify({ items }, null, 2), 'utf8');
     fs.renameSync(tmp, file);
+  }
+
+  // 首次（文件不存在）才写入样例；之后用户删光也不会自动加回
+  if (seed.length && !fs.existsSync(file)) {
+    items = seed.map((input) => {
+      const rule = normalizeRule(input);
+      return { id: crypto.randomUUID(), ...rule, createdAt: nowIso(), updatedAt: nowIso() };
+    });
+    persist();
   }
 
   function checkConflict(list, rule, selfId) {

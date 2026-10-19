@@ -124,6 +124,33 @@ test('reportNow：带 X-DF-Token POST 到 /api/usage/report，body 带机器身�
   assert.equal(r.status().lastError, '');
 });
 
+test('reportNow：chatDaily 上报当天聊天数，并写入 usage.chatMessages 与每日落库', async () => {
+  const file = tmpFile();
+  saveReportConfig(file, { masterUrl: 'http://10.0.0.9:22222', token: 'tk' });
+  const nowTs = new Date(2026, 9, 19, 10, 0, 0).getTime();
+  const d = new Date(nowTs);
+  const p = (n) => String(n).padStart(2, '0');
+  const today = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  let wireBody = null;
+  const chatDays = [];
+  const r = createUsageReporter({
+    file,
+    identity: () => ({ machineId: 'm1' }),
+    peers: {
+      upsert: (u) => u,
+      upsertChatDay: (id, day, n) => chatDays.push({ id, day, n }),
+    },
+    collect: async ({ cmd, days }) => ({ agent: cmd, days, sessions: 3 }),
+    getChatDaily: () => ({ [today]: 7 }),
+    now: () => nowTs,
+    fetchFn: async (_url, opts) => { wireBody = JSON.parse(opts.body); return { ok: true, json: async () => ({ ok: true }) }; },
+  });
+  await r.reportNow();
+  assert.equal(wireBody.chatDaily[today], 7);
+  assert.equal(wireBody.usage.chatMessages, 7);
+  assert.deepEqual(chatDays, [{ id: 'm1', day: today, n: 7 }]);
+});
+
 test('reportNow：onCollected 拿到带原文的采集结果，peers/上报体不含 raw/cmdline', async () => {
   const file = tmpFile();
   saveReportConfig(file, { masterUrl: 'http://10.0.0.9:22222', token: 'tk' });

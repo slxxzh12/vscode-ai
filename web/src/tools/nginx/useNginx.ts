@@ -47,6 +47,18 @@ export function emptyRule(): NginxRule {
   };
 }
 
+// DeepSeek 官方 API 代理样例：客户端用 deepseek-flash 模型调用，Authorization 用 ak-123456 占位
+export function deepseekFlashRule(): NginxRule {
+  return {
+    name: 'deepseek-flash', mode: 'port', enabled: false, listenHost: '0.0.0.0', listenPort: 18090,
+    pathPrefix: '', stripPrefix: true,
+    target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
+    tlsInsecure: false,
+    headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }],
+    rewrites: [], capture: false,
+  };
+}
+
 export function useNginx(): {
   rules: Ref<NginxRule[]>;
   status: Ref<Record<string, NginxStatus>>;

@@ -68,9 +68,9 @@ async function exportCsv() {
   if (!rows.value.length) return;
   exporting.value = true;
   try {
-    const header = [t('usage.machine'), t('usage.host'), t('usage.port'), t('usage.sessions'), t('usage.messages'), t('usage.input'), t('usage.output'), t('usage.cost'), t('usage.last_report')];
+    const header = [t('usage.machine'), t('usage.host'), t('usage.port'), t('usage.sessions'), t('usage.messages'), t('usage.chat_messages'), t('usage.input'), t('usage.output'), t('usage.cost'), t('usage.last_report')];
     const data = rows.value.map((r) => [
-      machineLabel(r), r.host || '', r.port || '', r.sessions ?? '', r.messages ?? '', r.input ?? '', r.output ?? '', r.totalCost ?? '', fmtTime(r.receivedAt),
+      machineLabel(r), r.host || '', r.port || '', r.sessions ?? '', r.messages ?? '', r.chatMessages ?? '', r.input ?? '', r.output ?? '', r.totalCost ?? '', fmtTime(r.receivedAt),
     ]);
     await downloadZip(`group-members-${zipStamp()}.zip`, [{ name: 'group-members.csv', content: toCsv(header, data) }]);
   } catch (e) {
@@ -123,6 +123,9 @@ async function exportCsv() {
       </el-table-column>
       <el-table-column prop="messages" :label="$t('usage.messages')" sortable width="80" align="right">
         <template #default="{ row }">{{ num(row.messages) }}</template>
+      </el-table-column>
+      <el-table-column prop="chatMessages" :label="$t('usage.chat_messages')" sortable width="96" align="right">
+        <template #default="{ row }">{{ num(row.chatMessages) }}</template>
       </el-table-column>
       <el-table-column prop="input" :label="$t('usage.input')" sortable width="64" align="right">
         <template #default="{ row }">{{ num(row.input) }}</template>

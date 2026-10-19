@@ -45,6 +45,7 @@ import { ensureAgentOnPath, probeAgentStats } from './collaboration/agent-stats.
 import { projectDir } from './project-data.js';
 import { createTranslator, createTranslateMount, defaultCatalog, defaultProviderResolver } from './translate.js';
 import { loadInvite, saveInvite, clearInvite, isInviteActive } from './remote-invite.js';
+import { createRemoteUsers } from './remote-users.js';
 import { CollabS2C } from '@devflow/shared/collab';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import { S2C } from '@devflow/shared';
@@ -58,6 +59,8 @@ import { setLocale, t } from './i18n.js';
 import { isPeerRequest, resolveInviteDaysAllowForever, resolveBindHost, hostRestartNeeded } from './remote-gate.js';
 import { LOCALES } from '@devflow/shared/i18n';
 import { readHistory, writeHistory, appendHistory } from './message-history.js';
+import { summarizeHistory, dayKey } from './history-stats.js';
+import { createInputStats } from './input-stats.js';
 import { dataHome, instanceName, instanceSeedDir, instanceFpRoot } from './data-home.js';
 import { APP_DIR, resolvePort, validPort, writePortFile, writeRuntimePort, readPortFile } from './port-file.js';
 import { seedPlugins } from './relay-plugins.js';
@@ -80,7 +83,7 @@ import { createNavicatStore } from './navicat-store.js';
 import { createNavicatExec } from './navicat-exec.js';
 import { createNavicatMount } from './navicat-mount.js';
 import { buildNcx, connectionString } from './navicat-ncx.js';
-import { createProxyStore } from './proxy-store.js';
+import { createProxyStore, deepseekFlashSample } from './proxy-store.js';
 import { createProxyCapture } from './proxy-capture.js';
 import { createProxyEngine } from './proxy-engine.js';
 import { createProxyMount } from './proxy-mount.js';
@@ -128,6 +131,7 @@ const MAX_TTL_MS = 100 * 24 * 3600 * 1000;   // 密码/链接最长 100 天
 const LOCK_MS = 5 * 60 * 1000;             // 连续错误锁定 5 分钟
 const MAX_FAILS = 5;
 let remoteInvite = null;   // { token, password, expiresAt }（内存态，重启即失效）
+let remoteUsers = null;    // 多用户登录（<数据目录>/collab/users.json）
 let remoteFails = 0;
 let remoteLockedUntil = 0;
 function activeInvite() { return isInviteActive(remoteInvite, Date.now()) ? remoteInvite : null; }
@@ -139,8 +143,16 @@ function denyRemote(res) {
 }
 function remoteAllowed(req) {
   const inv = activeInvite();
-  if (!inv) return false;
-  return parseCookies(req)[ACCESS_COOKIE] === inv.token;
+  const tk = parseCookies(req)[ACCESS_COOKIE];
+  if (!tk) return false;
+  if (inv && safeEqual(tk, inv.token)) return true;
+  return !!(remoteUsers && remoteUsers.findByToken(tk));
+}
+// 当前请求对应的登录用户（本机 / 邀请密码登录返回 null，视为主机本人）
+function remoteUserOf(req) {
+  if (isLocalReq(req)) return null;
+  const tk = parseCookies(req)[ACCESS_COOKIE];
+  return tk && remoteUsers ? remoteUsers.findByToken(tk) : null;
 }
 // 文档请求（打开/刷新页面）即使持 Cookie 也要求重新输密码：登录后发一次性页面令牌随 302 带回
 const PAGE_TOKEN_MS = 60 * 1000;
@@ -230,7 +242,7 @@ function remoteLoginPage(showError, next = '/') {
     : (showError ? `<p class="err">${t('remote.login_wrong')}</p>` : '');
   const dis = lockedMs > 0 ? ' disabled' : '';
   return pageShell(t('remote.login_title'),
-    `<p>${t('remote.login_hint')}</p><form method="POST" action="/__access"><input type="hidden" name="next" value="${escapeAttr(next)}" /><input type="password" name="password" autocomplete="off" placeholder="${t('remote.password')}"${dis} /><button type="submit"${dis}>${t('remote.login_submit')}</button></form>${note}`);
+    `<p>${t('remote.login_hint')}</p><form method="POST" action="/__access"><input type="hidden" name="next" value="${escapeAttr(next)}" /><input type="text" name="username" autocomplete="username" placeholder="${t('remote.username')}"${dis} /><input type="password" name="password" autocomplete="current-password" placeholder="${t('remote.token_or_password')}"${dis} /><button type="submit"${dis}>${t('remote.login_submit')}</button></form>${note}`);
 }
 
 // requireAuth 占位钩子（spec §11）：HTTP 用 requireAuthHttp；WS 走 upgrade 处，远程需邀请 Cookie
@@ -264,6 +276,7 @@ function buildWorkspace({ paths, port }) {
   } catch { /* 迁移失败就按新库启动 */ }
   // usage 表既是 agent 明细，也存每台每天的合计行（agent='*'，原 peer_daily），故先建 store 供各方共用
   const usageStore = createUsageStore({ file: usageDbFile, logger: log });
+  const inputStats = createInputStats({ file: paths.inputStatsFile, logger: log });
   const taskStore = createTaskStore({ file: usageDbFile, logger: log });
   // 协作元数据（下载索引/同步种子/工作流种子）一律进 void.db，不再落 json 文件
   const downloadStore = createDownloadStore({ file: usageDbFile, logger: log });
@@ -354,13 +367,16 @@ function buildWorkspace({ paths, port }) {
   sessionLedger.migrateLogs();
   migrateHistoryToProjects();
   // 合并读取：所有项目 + _global 的 message-history（前端一次拉全量再按项目筛选，保持旧行为）
-  function readHistoryAll() {
+  // 登录用户各用一份文件（message-history.<userId>.jsonc），主机本人沿用原文件
+  function historyFileName(userId) { return userId ? `message-history.${userId}.jsonc` : 'message-history.jsonc'; }
+  function historyFileFor(projectId, userId = '') { return path.join(projectDataDirOf(projectId), historyFileName(userId)); }
+  function readHistoryAll(userId = '') {
     const all = [];
-    for (const dir of listProjectDataDirs()) all.push(...readHistory(path.join(dir, 'message-history.jsonc')));
+    for (const dir of listProjectDataDirs()) all.push(...readHistory(path.join(dir, historyFileName(userId))));
     return all.sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
   }
   // 拆分写入：按 sessionId 归属项目，把全量列表写回各项目文件（无归属落 _global）
-  function writeHistorySplit(messages) {
+  function writeHistorySplit(messages, userId = '') {
     const list = Array.isArray(messages) ? messages : [];
     const byId = new Map(sessionLedger.read().sessions.map((s) => [s.id, s.projectId || '']));
     const buckets = new Map();
@@ -369,8 +385,72 @@ function buildWorkspace({ paths, port }) {
       if (!buckets.has(projectId)) buckets.set(projectId, []);
       buckets.get(projectId).push(m);
     }
-    for (const [projectId, items] of buckets) writeHistory(path.join(projectDataDirOf(projectId), 'message-history.jsonc'), items);
-    return readHistoryAll();
+    for (const [projectId, items] of buckets) writeHistory(historyFileFor(projectId, userId), items);
+    return readHistoryAll(userId);
+  }
+  const localUsername = (() => { try { return os.userInfo().username || 'host'; } catch { return 'host'; } })();
+  function listHistoryScopes() {
+    const out = [{ projectId: '', dir: path.join(paths.projectsDataDir, '_global') }];
+    for (const p of projects.listProjects()) out.push({ projectId: p.id, dir: projectDataDirOf(p.id) });
+    return out;
+  }
+  function historyFileList() {
+    const files = [];
+    const remote = remoteUsers ? remoteUsers.list() : [];
+    for (const scope of listHistoryScopes()) {
+      files.push({ file: path.join(scope.dir, historyFileName('')), userId: '', userName: localUsername, projectId: scope.projectId });
+      for (const u of remote) files.push({ file: path.join(scope.dir, historyFileName(u.id)), userId: u.id, userName: u.username, projectId: scope.projectId });
+    }
+    return files;
+  }
+  function historyStats() {
+    const base = summarizeHistory(historyFileList());
+    if (!inputStats.seeded()) inputStats.seed(base.days);
+    const exact = inputStats.summary();
+    const merged = new Map();
+    const ensure = (userId, userName) => {
+      const id = String(userId || '');
+      if (!merged.has(id)) merged.set(id, { userId: id, userName: '', messages: 0, chars: 0, sessions: 0, firstTs: 0, lastTs: 0 });
+      const u = merged.get(id);
+      if (userName && !u.userName) u.userName = userName;
+      return u;
+    };
+    for (const u of base.users) {
+      const m = ensure(u.userId, u.userName);
+      m.messages = u.messages;
+      m.chars = u.chars;
+      m.sessions = u.sessions;
+      m.firstTs = u.firstTs;
+      m.lastTs = u.lastTs;
+    }
+    for (const u of exact.users) {
+      const m = ensure(u.userId, u.userName);
+      m.messages = u.messages;
+      m.chars = u.chars;
+    }
+    const users = [...merged.values()];
+    const hasExact = exact.users.length > 0;
+    return {
+      totals: {
+        messages: hasExact ? exact.totals.messages : base.totals.messages,
+        chars: hasExact ? exact.totals.chars : base.totals.chars,
+        sessions: base.totals.sessions,
+        users: hasExact ? users.length : base.totals.users,
+      },
+      users,
+      sessions: base.sessions,
+      months: hasExact ? exact.months : base.months,
+      days: hasExact ? exact.days : base.days,
+    };
+  }
+  function chatDailyCounts() {
+    const nowTs = Date.now();
+    const wanted = new Set([dayKey(nowTs), dayKey(nowTs - 24 * 3600 * 1000)]);
+    const out = {};
+    for (const d of historyStats().days) {
+      if (wanted.has(d.day)) out[d.day] = (out[d.day] || 0) + d.messages;
+    }
+    return out;
   }
   const agentList = () => loadDevflowConfig(configFile).agents.list || [];
   let discoveryQueue = Promise.resolve();
@@ -525,6 +605,7 @@ function buildWorkspace({ paths, port }) {
     resolveAgent: () => defaultAgent(),
     getStartDir: getStatsStartDir,
     statsFile: paths.statsFile,
+    getChatDaily: () => chatDailyCounts(),
     onCollected: (u) => saveProbe(paths.usageProbeFile, toProbeRecord(u)),
   });
   const usageMount = createUsageMount({
@@ -626,7 +707,7 @@ function buildWorkspace({ paths, port }) {
     pickFile: pickSqliteFile,
     logger: log,
   });
-  const proxyStore = createProxyStore({ file: path.join(paths.proxyDir, 'rules.json'), reservedPorts: [port] });
+  const proxyStore = createProxyStore({ file: path.join(paths.proxyDir, 'rules.json'), reservedPorts: [port], seed: [deepseekFlashSample()] });
   const proxyCapture = createProxyCapture({ rootDir: paths.proxyCapturesDir, onEvent: broadcastNginx });
   const proxyEngine = createProxyEngine({ store: proxyStore, capture: proxyCapture, httpServer: server, onEvent: broadcastNginx, logger: log });
   const proxyMount = createProxyMount({ store: proxyStore, engine: proxyEngine, capture: proxyCapture, logger: log });
@@ -641,7 +722,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, projectDataDirOf, readHistoryAll, writeHistorySplit };
+  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
 }
 
 // ---- 工作区（端口档案）----
@@ -679,6 +760,7 @@ function initWorkspace(paths, port) {
   const distPollTimer = setInterval(() => { ws.engine.pollDistTasks?.().catch(() => { /* 单次失败忽略 */ }); }, distPollMs);
   distPollTimer.unref?.();
   remoteInvite = loadInvite(paths.inviteFile);   // 令牌落盘：重启后仍有效（expiresAt=0 为长期）
+  remoteUsers = createRemoteUsers({ file: path.join(path.dirname(paths.inviteFile), 'users.json'), logger: log });
   // 用量上报：启动即报一次，之后每 4 小时左右再报
   if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }
   // 升级检测：启动查一次，之后每 10 天一次（非阻塞、失败静默）
@@ -712,8 +794,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (isDocumentReq(url, req.method)) {
-        // 文档请求：Cookie 不顶用，必须带登录后下发的一次性页面令牌；否则重新输密码
-        if (!consumePageToken(url.searchParams.get('__df'))) {
+        // 文档请求：邀请密码登录需带登录后下发的一次性页面令牌；多用户令牌 Cookie 可直接续用
+        if (!consumePageToken(url.searchParams.get('__df')) && !remoteUserOf(req)) {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(remoteLoginPage(false, pageNext(url)));
           return;
@@ -726,13 +808,21 @@ const server = http.createServer(async (req, res) => {
             const form = new URLSearchParams(body);
             const next = safeNextPath(form.get('next'));
             if (remoteLocked()) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(remoteLoginPage(true, next)); return; }
-            const pw = form.get('password') || '';
-            if (safeEqual(pw, inv.password)) {
+            const username = String(form.get('username') || '').trim();
+            const secret = form.get('password') || '';
+            let cookieValue = '';
+            if (username) {
+              const u = remoteUsers ? remoteUsers.findByLogin(username, secret) : null;
+              if (u) cookieValue = u.token;
+            } else if (safeEqual(secret, inv.password)) {
+              cookieValue = inv.token;
+            }
+            if (cookieValue) {
               remoteFails = 0;
               // 会话级 Cookie（供资源和 /api、/ws 使用）；文档每次加载都靠一次性页面令牌重新验证
               const loc = new URL(next, 'http://localhost');
               loc.searchParams.set('__df', issuePageToken());
-              res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${inv.token}; HttpOnly; SameSite=Lax; Path=/`, Location: loc.pathname + (loc.search || '') });
+              res.writeHead(302, { 'Set-Cookie': `${ACCESS_COOKIE}=${cookieValue}; HttpOnly; SameSite=Lax; Path=/`, Location: loc.pathname + (loc.search || '') });
               res.end();
             } else {
               remoteFails += 1;
@@ -903,6 +993,7 @@ const server = http.createServer(async (req, res) => {
       expiresAt: inv ? inv.expiresAt : null,
       forever: !!inv && inv.expiresAt === 0,
       address: lanAddress(),
+      users: remoteUsers ? remoteUsers.list().length : 0,
       needRestart: hostRestartNeeded({ current: HOST, masterOn: !!inv, envHost: process.env.DEVFLOW_HOST }),
       locked: remoteLocked(),
       lockedUntil: remoteLocked() ? remoteLockedUntil : null,
@@ -920,6 +1011,61 @@ const server = http.createServer(async (req, res) => {
     const { address, link, publicKey: pk } = inviteLink(inv);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ enabled: true, password: inv.password, token: inv.token, link, address, publicKey: pk, expiresAt: inv.expiresAt, forever: inv.expiresAt === 0 }));
+    return;
+  }
+  if (url.pathname === '/api/master/stats' && req.method === 'GET') {
+    if (!isLocalReq(req)) { denyRemote(res); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ stats: ws ? ws.historyStats() : { totals: { messages: 0, chars: 0, sessions: 0, users: 0 }, users: [], sessions: [], months: [], days: [] } }));
+    return;
+  }
+  if (url.pathname === '/api/remote/users' && req.method === 'GET') {
+    if (!isLocalReq(req)) { denyRemote(res); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ items: remoteUsers ? remoteUsers.list() : [] }));
+    return;
+  }
+  if (url.pathname === '/api/remote/users' && req.method === 'POST') {
+    if (!isLocalReq(req)) { denyRemote(res); return; }
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      try {
+        const item = remoteUsers.create({ username: body.username, token: body.token });
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ item }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: e.code || 'bad-request' }));
+      }
+    });
+    return;
+  }
+  if (url.pathname === '/api/remote/users' && req.method === 'PATCH') {
+    if (!isLocalReq(req)) { denyRemote(res); return; }
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      try {
+        const item = remoteUsers.update(url.searchParams.get('id') || '', body);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ item }));
+      } catch (e) {
+        res.writeHead(e.code === 'not-found' ? 404 : 400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: e.code || 'bad-request' }));
+      }
+    });
+    return;
+  }
+  if (url.pathname === '/api/remote/users' && req.method === 'DELETE') {
+    if (!isLocalReq(req)) { denyRemote(res); return; }
+    const removed = remoteUsers ? remoteUsers.remove(url.searchParams.get('id') || '') : false;
+    res.writeHead(removed ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: removed, error: removed ? undefined : 'not-found' }));
     return;
   }
   if (url.pathname === '/api/remote/invite' && req.method === 'POST') {
@@ -1042,11 +1188,12 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/history' && req.method === 'GET') {
     const projectId = url.searchParams.get('project') || '';
+    const uid = remoteUserOf(req)?.id || '';
     const messages = projectId
-      ? readHistory(path.join(ws.projectDataDirOf(projectId), 'message-history.jsonc'))
-      : ws.readHistoryAll();
+      ? readHistory(ws.historyFileFor(projectId, uid))
+      : ws.readHistoryAll(uid);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ messages, file: ws.historyFile, projectId }));
+    res.end(JSON.stringify({ messages, file: ws.historyFileFor(projectId, uid), projectId }));
     return;
   }
   if (url.pathname === '/api/history' && req.method === 'POST') {
@@ -1056,9 +1203,14 @@ const server = http.createServer(async (req, res) => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       const projectId = typeof body.projectId === 'string' ? body.projectId : (url.searchParams.get('project') || '');
+      const ru = remoteUserOf(req);
+      const uid = ru?.id || '';
+      if (Array.isArray(body.events)) {
+        ws.inputStats?.recordMany({ userId: uid, userName: ru?.username || '', events: body.events });
+      }
       let messages;
-      if (typeof body.append === 'string') messages = appendHistory(path.join(ws.projectDataDirOf(projectId), 'message-history.jsonc'), body.append);
-      else if (Array.isArray(body.messages)) messages = ws.writeHistorySplit(body.messages);
+      if (typeof body.append === 'string') messages = appendHistory(ws.historyFileFor(projectId, uid), body.append);
+      else if (Array.isArray(body.messages)) messages = ws.writeHistorySplit(body.messages, uid);
       else { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'messages[] or append required' })); return; }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ messages }));

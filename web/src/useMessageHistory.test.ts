@@ -4,12 +4,13 @@ import { useMessageHistory } from './useMessageHistory';
 describe('useMessageHistory', () => {
   const hook = useMessageHistory();
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn(async (url: unknown) => {
       void url;
-      return { json: async () => ({ messages: [] }) } as any;
+      return { ok: true, json: async () => ({ messages: [] }) } as any;
     }));
+    await hook.flush();
     hook.clear();
     hook.setNames({});
   });
@@ -31,6 +32,21 @@ describe('useMessageHistory', () => {
     hook.renameTab('s1', 'renamed');
     const byText = Object.fromEntries(hook.messages.value.map((m) => [m.text, m.tabName]));
     expect(byText).toEqual({ a: 'renamed', b: 'renamed', c: 'bar' });
+  });
+
+  it('重复文本也逐条记录输入事件（统计不去重）', async () => {
+    const fetchMock = vi.fn(async (_url: unknown, opts?: any) => {
+      if (opts?.method === 'POST') return { ok: true, json: async () => ({}) } as any;
+      return { ok: true, json: async () => ({ messages: [] }) } as any;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await hook.push('same');
+    await hook.push('same');
+    await vi.advanceTimersByTimeAsync(900);
+    const posts = fetchMock.mock.calls.filter((c) => (c[1] as any)?.method === 'POST');
+    expect(posts.length).toBeGreaterThan(0);
+    const body = JSON.parse((posts[posts.length - 1][1] as any).body);
+    expect(body.events).toHaveLength(2);
   });
 
   it('renameTab 记录会话自定义名，setNames 批量写入', async () => {

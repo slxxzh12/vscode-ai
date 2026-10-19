@@ -16,7 +16,7 @@ import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
 import { useI18n } from './i18n';
 import { parseOpenParam } from './deeplink';
-import ProxyView from './components/ProxyView.vue';
+import ProxyHubView from './components/ProxyHubView.vue';
 import AppMarketView from './components/AppMarketView.vue';
 import { useLocalSources } from './local/useLocalSources';
 import { useLocalDrop, type LocalDropPayload } from './local/useLocalDrop';
@@ -201,7 +201,7 @@ const NEW_WINDOW = (() => {
   } catch { return false; }
 })();
 const historyTab = ref<HistoryTab>(NEW_WINDOW ? 'messages' : 'tree');
-const collabTab = ref<'group' | 'tasks'>('group');
+const collabTab = ref<'group' | 'tasks' | 'master'>('group');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
 const RAILS = ['explorer', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
@@ -238,7 +238,7 @@ function applyHash() {
   if (!r || (!RAILS.includes(r) && !historyAlias)) return;
   rail.value = (historyAlias ? 'explorer' : r) as typeof rail.value;
   if ((r === 'explorer' || historyAlias) && isSideTab(sub)) historyTab.value = sub;
-  if (r === 'contacts' && (sub === 'group' || sub === 'tasks')) collabTab.value = sub;
+  if (r === 'contacts' && (sub === 'group' || sub === 'tasks' || sub === 'master')) collabTab.value = sub;
 }
 function currentHash() {
   if (rail.value === 'explorer') {
@@ -822,7 +822,7 @@ onBeforeUnmount(() => {
       </template>
       <template v-else-if="rail === 'proxy'">
         <section class="center">
-          <ProxyView />
+          <ProxyHubView />
         </section>
       </template>
       <template v-else-if="rail === 'mobile'">

@@ -59,6 +59,13 @@ export function createUsageMount({ peers, reporter, checkToken, onReport, pullFr
         host: typeof body.host === 'string' ? body.host : '',
         port: Number(body.port) || 0,
       });
+      if (body.chatDaily && typeof body.chatDaily === 'object' && !Array.isArray(body.chatDaily)) {
+        for (const [day, n] of Object.entries(body.chatDaily)) {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Number(n))) {
+            peers.upsertChatDay?.(body.machineId, day, Number(n));
+          }
+        }
+      }
       try { onReport?.(rec); } catch (e) { logger?.warn?.('usage onReport failed', (e && e.message) || e); }
       return sendJson(res, 200, { ok: true });
     }

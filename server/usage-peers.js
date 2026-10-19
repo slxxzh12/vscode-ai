@@ -10,7 +10,7 @@ export function emptyPeers() {
 }
 
 // 采集失败（opencode 缺失等）时上报体只有 agent/days/error，没有这些指标 → 用它判断这份上报是否可用
-const METRIC_KEYS = ['sessions', 'messages', 'input', 'output', 'totalCost', 'cacheRead', 'cacheWrite'];
+const METRIC_KEYS = ['sessions', 'messages', 'input', 'output', 'totalCost', 'cacheRead', 'cacheWrite', 'chatMessages'];
 
 export function hasMetrics(u) {
   return METRIC_KEYS.some((k) => Number.isFinite(u && u[k]));
@@ -111,6 +111,10 @@ export class UsagePeersStore {
   // 某台机器的每日留存（无参时返回全部机器），默认最近 DAILY_KEEP_DAYS 天
   listDaily(machineId, days = DAILY_KEEP_DAYS) {
     return this.store ? this.store.listDaily(machineId, days) : {};
+  }
+
+  upsertChatDay(machineId, day, chatMessages) {
+    this.store?.upsertChatDay?.(machineId, day, chatMessages);
   }
 
   // 群主清理：删除指定机器的快照与历史上报行（usage 表按 member_id）

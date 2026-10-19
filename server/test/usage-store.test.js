@@ -47,6 +47,17 @@ test('老库无 source 列时迁移补列，默认 auto', () => {
   store.close();
 });
 
+test('chatMessages：每日聊天数单独更新，不覆盖 agent 指标', () => {
+  const store = createUsageStore({ file: tmpDb() });
+  store.upsertDaily('E1', '2026-09-12', { sessions: 5, messages: 10, chatMessages: 2 });
+  store.upsertChatDay('E1', '2026-09-12', 7);
+  const daily = store.listDaily('E1');
+  assert.equal(daily['2026-09-12'].sessions, 5);
+  assert.equal(daily['2026-09-12'].messages, 10);
+  assert.equal(daily['2026-09-12'].chatMessages, 7);
+  store.close();
+});
+
 test('同 key 快照覆盖，行数不变', () => {
   const store = createUsageStore({ file: tmpDb() });
   store.upsert({ date: '2026-09-12', memberId: 'E1', agent: 'a', input: 1, output: 1, messages: 1, sessions: 1, days: 1, receivedAt: 1 });

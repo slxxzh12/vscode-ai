@@ -27,6 +27,12 @@ export function nextDelay(random = Math.random) {
   return MIN_INTERVAL_MS + Math.floor(random() * (MAX_INTERVAL_MS - MIN_INTERVAL_MS));
 }
 
+function localDayKey(ts = Date.now()) {
+  const d = new Date(ts);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 export function loadReportConfig(file) {
   if (!file || !fs.existsSync(file)) return { ...DEFAULT_CONFIG };
   try {
@@ -57,6 +63,7 @@ export function createUsageReporter({
   file, identity, peers = null, onLocal = null, onCollected = null, cmd = 'opencode', statsCmd = '', resolveAgent = null, collect = null,
   getStartDir = null,   // () => 用户当前选中目录根；采集时作为 stats 命令的起始目录（无则回退用户主目录）
   statsFile = null,     // 采集原文落盘路径（如 <数据目录>/cache/collaboration/stats.txt），传给采集器
+  getChatDaily = null,  // () => { 'YYYY-MM-DD': 当天用户聊天消息数 }（上报前一天），与 agent stats 一起上报
   readStats = readStatsFile,     // 读采集结果文件（消费）
   refresh = refreshStatsOutput,  // 后台刷新采集文件（生产）
   fetchFn = fetch, logger = console, random = Math.random,
@@ -80,7 +87,14 @@ export function createUsageReporter({
   // 上报一份已采集的用量（本地落库 + 发给 master）；source 缺省 auto，图片识别显式传 image
   async function submit(usage) {
     const cfg = config();
-    const clean = { ...(usage || {}), source: (usage && usage.source) === SOURCE_IMAGE ? SOURCE_IMAGE : SOURCE_AUTO };
+    const chatDaily = typeof getChatDaily === 'function' ? (getChatDaily() || {}) : {};
+    const today = localDayKey(now());
+    const todayChat = Number(chatDaily[today]);
+    const clean = {
+      ...(usage || {}),
+      ...(Number.isFinite(todayChat) ? { chatMessages: Math.round(todayChat) } : {}),
+      source: (usage && usage.source) === SOURCE_IMAGE ? SOURCE_IMAGE : SOURCE_AUTO,
+    };
     const me = (typeof identity === 'function' ? identity() : identity) || {};
     const self = {
       ...clean,
@@ -93,6 +107,11 @@ export function createUsageReporter({
         const rec = peers.upsert(self);
         onLocal?.(rec);
       }
+      if (peers && typeof peers.upsertChatDay === 'function' && self.machineId) {
+        for (const [day, n] of Object.entries(chatDaily)) {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Number(n))) peers.upsertChatDay(self.machineId, day, Number(n));
+        }
+      }
     } catch (e) { logger?.warn?.('usage local upsert failed', (e && e.message) || e); }
 
     if (!cfg.masterUrl || !cfg.token) {
@@ -102,6 +121,7 @@ export function createUsageReporter({
     const wire = {
       machineId: self.machineId, employeeId: self.employeeId, username: self.username,
       host: self.host, port: self.port, usage: clean,
+      ...(Object.keys(chatDaily).length ? { chatDaily } : {}),
     };
     try {
       const res = await fetchFn(`${cfg.masterUrl}/api/usage/report`, {

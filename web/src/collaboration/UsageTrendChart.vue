@@ -14,7 +14,7 @@ echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, Canvas
 
 // 趋势图最多画多少台机器（按所选指标合计从高到低）
 const TOP_N = 10;
-type MetricKey = 'messages' | 'output' | 'input' | 'sessions';
+type MetricKey = 'messages' | 'output' | 'input' | 'sessions' | 'chatMessages';
 type Days = Record<string, Record<string, number | undefined> | undefined>;
 
 const props = defineProps<{ collab: CollabApi; peers: Record<string, CollabUsage> }>();
@@ -104,6 +104,7 @@ onBeforeUnmount(() => { window.removeEventListener('resize', onResize); chart?.d
         <el-option value="output" :label="$t('usage.output')" />
         <el-option value="input" :label="$t('usage.input')" />
         <el-option value="sessions" :label="$t('usage.sessions')" />
+        <el-option value="chatMessages" :label="$t('usage.chat_messages')" />
       </el-select>
     </h4>
     <div ref="el" class="chart" />

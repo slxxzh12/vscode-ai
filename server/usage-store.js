@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-const METRICS = ['sessions', 'messages', 'input', 'output', 'days', 'cost', 'cacheRead', 'cacheWrite'];
+const METRICS = ['sessions', 'messages', 'input', 'output', 'days', 'cost', 'cacheRead', 'cacheWrite', 'chatMessages'];
 const ALL = ['date', 'memberId', 'agent', 'source', ...METRICS, 'receivedAt'];
 
 // 列名：JS 侧 camelCase（API/前端契约不变），SQL 侧 snake_case
 const COL = {
   date: 'date', memberId: 'member_id', agent: 'agent', source: 'source',
   sessions: 'sessions', messages: 'messages', input: 'input', output: 'output', days: 'days',
-  cost: 'cost', cacheRead: 'cache_read', cacheWrite: 'cache_write', receivedAt: 'received_at',
+  cost: 'cost', cacheRead: 'cache_read', cacheWrite: 'cache_write', chatMessages: 'chat_messages', receivedAt: 'received_at',
 };
 const COLS = ALL.map((k) => COL[k]);
 const UPDATES = ['source', ...METRICS, 'receivedAt'].map((k) => `${COL[k]}=excluded.${COL[k]}`).join(', ');
@@ -44,7 +44,7 @@ function migratePeerDaily(db, insert, logger) {
     insert.run(
       r.day, r.machine_id, AGENT_TOTAL, SOURCE_AUTO,
       r.sessions ?? null, r.messages ?? null, r.input ?? null, r.output ?? null, r.days ?? null,
-      r.cost ?? null, r.cache_read ?? null, r.cache_write ?? null, r.at ?? null,
+      r.cost ?? null, r.cache_read ?? null, r.cache_write ?? null, null, r.at ?? null,
     );
   }
   db.exec('DROP TABLE peer_daily');
@@ -68,12 +68,16 @@ export function createUsageStore({ file, logger = console } = {}) {
     cost REAL,
     cache_read INTEGER,
     cache_write INTEGER,
+    chat_messages INTEGER,
     received_at INTEGER,
     PRIMARY KEY (member_id, date, agent)
   )`);
   // 老库补 source 列（图片识别采集来源标记）
   if (!db.prepare('PRAGMA table_info(usage)').all().some((c) => c.name === 'source')) {
     db.exec(`ALTER TABLE usage ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'`);
+  }
+  if (!db.prepare('PRAGMA table_info(usage)').all().some((c) => c.name === 'chat_messages')) {
+    db.exec(`ALTER TABLE usage ADD COLUMN chat_messages INTEGER`);
   }
   const insert = db.prepare(
     `INSERT INTO usage (${COLS.join(',')}) VALUES (${COLS.map(() => '?').join(',')})
@@ -86,7 +90,7 @@ export function createUsageStore({ file, logger = console } = {}) {
       insert.run(
         r.date, r.memberId, r.agent || '', SOURCE_AUTO,
         r.sessions ?? null, r.messages ?? null, r.input ?? null, r.output ?? null, r.days ?? null,
-        r.cost ?? null, r.cacheRead ?? null, r.cacheWrite ?? null, r.receivedAt ?? null,
+        r.cost ?? null, r.cacheRead ?? null, r.cacheWrite ?? null, r.chatMessages ?? null, r.receivedAt ?? null,
       );
     }
     db.exec('DROP TABLE usage_legacy');
@@ -97,17 +101,18 @@ export function createUsageStore({ file, logger = console } = {}) {
   const put = (r) => insert.run(
     r.date, r.memberId, r.agent, r.source ?? SOURCE_AUTO,
     r.sessions ?? null, r.messages ?? null, r.input ?? null, r.output ?? null, r.days ?? null,
-    r.cost ?? null, r.cacheRead ?? null, r.cacheWrite ?? null, r.receivedAt ?? null,
+    r.cost ?? null, r.cacheRead ?? null, r.cacheWrite ?? null, r.chatMessages ?? null, r.receivedAt ?? null,
   );
   const toRow = (r) => {
     const out = {};
     for (const k of ALL) out[k] = r[COL[k]];
+    if (out.chatMessages == null) delete out.chatMessages;
     return out;
   };
   const dailyRow = (r) => ({
     machineId: r.member_id, sessions: r.sessions, days: r.days, messages: r.messages,
     input: r.input, output: r.output, totalCost: r.cost,
-    cacheRead: r.cache_read, cacheWrite: r.cache_write, at: r.received_at,
+    cacheRead: r.cache_read, cacheWrite: r.cache_write, chatMessages: r.chat_messages, at: r.received_at,
     source: r.source ?? SOURCE_AUTO,
   });
   const dailyOne = db.prepare(`SELECT * FROM usage WHERE member_id = ? AND agent = ? ORDER BY date DESC LIMIT ?`);
@@ -123,8 +128,17 @@ export function createUsageStore({ file, logger = console } = {}) {
         date: day, memberId: String(machineId), agent: AGENT_TOTAL,
         sessions: usage.sessions, messages: usage.messages, input: usage.input, output: usage.output,
         days: usage.days, cost: usage.totalCost, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite,
+        chatMessages: usage.chatMessages,
         source: usage.source ?? SOURCE_AUTO, receivedAt: at,
       });
+    },
+    // 只更新某天的聊天消息数，保留该天已有的 agent 指标
+    upsertChatDay(machineId, day, chatMessages) {
+      const n = Number(chatMessages);
+      if (!machineId || !day || !Number.isFinite(n)) return;
+      db.prepare(`INSERT INTO usage (member_id, date, agent, source, chat_messages, received_at) VALUES (?,?,?,?,?,?)
+        ON CONFLICT(member_id, date, agent) DO UPDATE SET chat_messages = excluded.chat_messages`)
+        .run(String(machineId), String(day), AGENT_TOTAL, SOURCE_AUTO, Math.round(n), Date.now());
     },
     query({ from, to, memberId, agent } = {}) {
       const where = [];
@@ -182,6 +196,7 @@ export function normalizeUsage(body = {}, now = Date.now()) {
       sessions: num(body.sessions, true), messages: num(body.messages, true),
       input: num(body.input, true), output: num(body.output, true), days: num(body.days, true),
       cost: num(body.cost, false), cacheRead: num(body.cacheRead, true), cacheWrite: num(body.cacheWrite, true),
+      chatMessages: num(body.chatMessages, true),
       receivedAt: now,
     },
   };

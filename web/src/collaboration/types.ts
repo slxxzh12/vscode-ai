@@ -7,7 +7,7 @@ export interface CollabOutItem { id: string; kind: 'skill' | 'file'; groupId: st
 export interface CollabUsage {
   agent: string; days: number;
   sessions?: number; messages?: number; totalCost?: number;
-  input?: number; output?: number; cacheRead?: number; cacheWrite?: number;
+  input?: number; output?: number; cacheRead?: number; cacheWrite?: number; chatMessages?: number;
   collectedAt?: number; receivedAt?: number; error?: string;
   machineId?: string; employeeId?: string; username?: string; host?: string; port?: number;
   source?: 'auto' | 'image';

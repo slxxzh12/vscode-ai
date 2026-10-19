@@ -1006,7 +1006,7 @@ onBeforeUnmount(() => {
 .binwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; }
 .binic { font-size: 42px; line-height: 1; opacity: .5; }
 .bintxt { color: var(--tx3); font-size: 13px; }
-.binpath { color: var(--ac2); font-family: ui-monospace, Consolas, monospace; font-size: 12px; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-decoration: underline dotted; }
+.binpath { color: var(--ac2); font-family: ui-monospace, Consolas, monospace; font-size: 12px; max-width: 92%; white-space: normal; word-break: break-all; text-align: center; line-height: 1.4; cursor: pointer; text-decoration: underline dotted; }
 .binpath:hover { color: var(--ac); }
 .binbtn { padding: 4px 14px; font-size: 12px; }
 .diffpanel { position: relative; flex: none; display: flex; flex-direction: column; height: 380px; border-top: 1px solid var(--bd); background: var(--bg2); box-sizing: border-box; }

@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { t } from '../../i18n';
 import { copyText } from '../../clipboard';
-import { useNginx, emptyRule, type CaptureDetail, type CaptureSummary, type NginxLogEntry, type NginxRule } from './useNginx';
+import { useNginx, emptyRule, deepseekFlashRule, type CaptureDetail, type CaptureSummary, type NginxLogEntry, type NginxRule } from './useNginx';
 
 const api = useNginx();
 const activeId = ref('');
@@ -17,6 +17,7 @@ const msg = ref('');
 let timer: ReturnType<typeof setInterval> | null = null;
 
 const activeStatus = computed(() => (activeId.value ? api.status.value[activeId.value] : null));
+const isDeepseekSample = computed(() => form.value.name === 'deepseek-flash');
 const accessUrl = computed(() => {
   const r = api.rules.value.find((x) => x.id === activeId.value);
   if (!r) return '';
@@ -79,6 +80,17 @@ function blankNew() {
   detail.value = null;
   syncUrl(null);
 }
+async function deepseekNew() {
+  try { await ElMessageBox.confirm(t('nginx.sample_confirm'), t('nginx.sample_deepseek'), { type: 'warning' }); } catch { return; }
+  msg.value = '';
+  await api.load();
+  const ex = api.rules.value.find((r) => r.name === 'deepseek-flash');
+  if (ex) { selectAndSync(ex); return; }
+  try {
+    const saved = await api.save(deepseekFlashRule());
+    selectAndSync(saved);
+  } catch (e) { msg.value = errText(e); }
+}
 
 async function refresh() {
   if (!activeId.value) return;
@@ -90,7 +102,10 @@ async function doSave() {
   if (!form.value.name.trim()) { msg.value = t('nginx.required_name'); return; }
   busy.value = true; msg.value = '';
   try {
-    const saved = await api.save(form.value);
+    // 新建的独立端口规则默认启用：服务重启后 startEnabled() 会自动把端口拉起来
+    const payload = { ...form.value };
+    if (!payload.id && payload.mode === 'port') payload.enabled = true;
+    const saved = await api.save(payload);
     activeId.value = saved.id || '';
     form.value = toForm(saved);
     msg.value = t('nginx.saved');
@@ -110,6 +125,16 @@ async function toggle() {
     if (running) await api.stop(activeId.value); else await api.start(activeId.value);
     const r = api.rules.value.find((x) => x.id === activeId.value);
     if (r) form.value = toForm(r);
+  } catch (e) { msg.value = errText(e); }
+}
+
+async function toggleRule(r: NginxRule) {
+  if (!r.id) return;
+  const running = api.status.value[r.id]?.status === 'running';
+  try {
+    if (running) await api.stop(r.id); else await api.start(r.id);
+    const cur = api.rules.value.find((x) => x.id === r.id);
+    if (cur && activeId.value === r.id) form.value = toForm(cur);
   } catch (e) { msg.value = errText(e); }
 }
 
@@ -167,17 +192,24 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
   <div class="ngbody">
     <div class="ngrules">
       <div class="ngrulelist">
-        <button v-for="r in api.rules.value" :key="r.id" class="ngitem" :class="{ on: r.id === activeId }" @click="selectAndSync(r)">
+        <div v-for="r in api.rules.value" :key="r.id" class="ngitem" :class="{ on: r.id === activeId }" @click="selectAndSync(r)">
           <span class="ngdot" :class="(api.status.value[r.id!]?.status) || 'stopped'" />
           <span class="ngname">{{ r.name }}</span>
           <span class="ngmode">{{ r.mode === 'port' ? r.listenHost + ':' + r.listenPort : r.pathPrefix }}</span>
-        </button>
+          <button class="ngstart" :class="{ stop: api.status.value[r.id!]?.status === 'running' }" @click.stop="toggleRule(r)">
+            {{ api.status.value[r.id!]?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}
+          </button>
+        </div>
         <div v-if="!api.rules.value.length" class="ngempty">{{ $t('nginx.empty') }}</div>
       </div>
-      <button class="ngbtn ngnew" @click="blankNew">{{ $t('nginx.new') }}</button>
+      <div class="ngnewrow">
+        <button class="ngbtn ngnew" @click="blankNew">{{ $t('nginx.new') }}</button>
+        <button class="ngbtn" @click="deepseekNew">{{ $t('nginx.sample_deepseek') }}</button>
+      </div>
     </div>
 
     <div class="ngform">
+      <div v-if="isDeepseekSample" class="nghint">{{ $t('nginx.sample_hint') }}</div>
       <div class="ngrow">
         <label>{{ $t('nginx.name') }}<input v-model="form.name" class="ngin" /></label>
         <label>{{ $t('nginx.mode') }}
@@ -299,7 +331,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 </template>
 
 <style scoped>
-.ngbody { display: flex; flex-direction: column; height: calc(100vh - 150px); gap: 10px; overflow: auto; padding: 4px 2px; }
+.ngbody { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; overflow: auto; padding: 4px 2px; box-sizing: border-box; }
 .ngrules { display: flex; flex-direction: column; gap: 6px; flex: none; }
 .ngrulelist { max-height: 200px; overflow: auto; border: 1px solid var(--bd); border-radius: 6px; }
 .ngitem { display: flex; align-items: center; gap: 8px; width: 100%; background: transparent; border: 0; border-bottom: 1px solid var(--bd); color: var(--tx2); padding: 6px 8px; cursor: pointer; text-align: left; }
@@ -310,7 +342,10 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 .ngdot.error { background: #e74c3c; }
 .ngname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ngmode { opacity: .6; font-size: 12px; }
-.ngnew { align-self: flex-start; }
+.ngstart { flex: none; background: var(--bg3); border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 1px 7px; font-size: 11px; cursor: pointer; }
+.ngstart:hover { border-color: var(--ac2); color: var(--ac2); }
+.ngstart.stop { color: var(--err); border-color: var(--err); }
+.ngnewrow { display: flex; gap: 6px; flex-wrap: wrap; }
 .ngempty { padding: 12px; opacity: .6; }
 .ngform { display: flex; flex-direction: column; gap: 8px; flex: none; }
 .ngrow { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }

@@ -29,6 +29,7 @@ export function portPaths(port, { root = dataHome() } = {}) {
     downloadsDir: path.join(dir, 'downloads'),
     relayPluginsDir: path.join(dir, 'downloads', 'relay-plugins'),
     historyFile: path.join(dir, 'message-history.jsonc'),
+    inputStatsFile: path.join(dir, 'input-stats.json'),
     sessionProjectsFile: path.join(dir, 'session-projects.json'),
     windowStateFile: path.join(dir, 'window-state.json'),
     sessionsFile: path.join(dir, 'sessions.json'),
