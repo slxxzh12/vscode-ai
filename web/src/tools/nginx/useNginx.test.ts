@@ -11,7 +11,8 @@ describe('useNginx', () => {
     expect(emptyRule().enabled).toBe(true);
     expect(deepseekFlashRule().listenPort).toBe(22224);
     expect(deepseekFlashRule().enabled).toBe(true);
-    expect(deepseekFlashRule().rewrites).toEqual([]);
+    expect(deepseekFlashRule().tlsInsecure).toBe(true);
+    expect(deepseekFlashRule().rewrites).toEqual([{ from: '/rest/v1', to: '/v1' }, { from: '/v2', to: '/v1' }]);
   });
 
   it('load 读取规则与状态', async () => {

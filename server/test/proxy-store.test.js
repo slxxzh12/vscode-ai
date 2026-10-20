@@ -30,6 +30,11 @@ test('normalizeRule：非法 mode / 端口 / 保留前缀报错', () => {
   assert.throws(() => normalizeRule({ ...PATH_RULE, pathPrefix: 'app' }), (e) => e.code === 'bad-request');
 });
 
+test('normalizeRule：路径改写允许根路径 / 到 /', () => {
+  const r = normalizeRule({ ...PORT_RULE, rewrites: [{ from: '/', to: '/' }] });
+  assert.deepEqual(r.rewrites, [{ from: '/', to: '' }]);
+});
+
 test('normalizeRule：路径改写（两种模式都支持，非法规则报 bad-rewrite）', () => {
   assert.deepEqual(normalizeRule(PORT_RULE).rewrites, []);
   assert.deepEqual(
@@ -82,10 +87,11 @@ test('首次创建（文件不存在）写入 DeepSeek 样例，且不会重复 
   assert.equal(list[0].name, 'deepseek-flash');
   assert.equal(list[0].enabled, true);
   assert.equal(list[0].listenPort, 22224);
+  assert.equal(list[0].tlsInsecure, true);
   assert.equal(list[0].target.host, 'api.deepseek.com');
   assert.equal(list[0].target.protocol, 'https');
   assert.equal(list[0].headers[0].value, 'Bearer ak-123456');
-  assert.deepEqual(list[0].rewrites, []);
+  assert.deepEqual(list[0].rewrites, [{ from: '/rest/v1', to: '/v1' }, { from: '/v2', to: '/v1' }]);
   const s2 = createProxyStore({ file, seed: [deepseekFlashSample()] });
   assert.equal(s2.list().length, 1);
 });
@@ -97,17 +103,18 @@ test('旧 DeepSeek 样例自动迁移到新默认端口并默认启用', () => {
     id: 'old', name: 'deepseek-flash', mode: 'port', listenHost: '0.0.0.0', listenPort: 18090,
     pathPrefix: '', stripPrefix: true, target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
     tlsInsecure: false, headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }],
-    rewrites: [{ from: '/v1', to: '/v2' }], capture: false, enabled: false,
+    rewrites: [], capture: false, enabled: false,
   }] }), 'utf8');
   const s = createProxyStore({ file });
   const r = s.list()[0];
   assert.equal(r.listenPort, 22224);
   assert.equal(r.enabled, true);
-  assert.deepEqual(r.rewrites, []);
+  assert.equal(r.tlsInsecure, true);
+  assert.deepEqual(r.rewrites, [{ from: '/rest/v1', to: '/v1' }, { from: '/v2', to: '/v1' }]);
   assertEqualsReload(file, 1);
 });
 
-test('DeepSeek 样例已有的错误 /v1→/v2 改写会被清空', () => {
+test('DeepSeek 样例已有的错误 /v1→/v2 改写会替换为 /rest/v1 样例', () => {
   const file = tmpFile();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify({ items: [{
@@ -116,7 +123,19 @@ test('DeepSeek 样例已有的错误 /v1→/v2 改写会被清空', () => {
     tlsInsecure: false, headers: [], rewrites: [{ from: '/v1', to: '/v2' }], capture: false, enabled: true,
   }] }), 'utf8');
   const s = createProxyStore({ file });
-  assert.deepEqual(s.list()[0].rewrites, []);
+  assert.deepEqual(s.list()[0].rewrites, [{ from: '/rest/v1', to: '/v1' }, { from: '/v2', to: '/v1' }]);
+});
+
+test('新端口的样例只保留部分样例改写时补齐 v2', () => {
+  const file = tmpFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ items: [{
+    id: 'partial', name: 'deepseek-flash', mode: 'port', listenHost: '0.0.0.0', listenPort: 22224,
+    pathPrefix: '', stripPrefix: true, target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
+    tlsInsecure: false, headers: [], rewrites: [{ from: '/rest/v1', to: '/v1' }], capture: false, enabled: true,
+  }] }), 'utf8');
+  const s = createProxyStore({ file });
+  assert.deepEqual(s.list()[0].rewrites, [{ from: '/rest/v1', to: '/v1' }, { from: '/v2', to: '/v1' }]);
 });
 
 test('路径前缀冲突（互相包含）报 bad-request', () => {

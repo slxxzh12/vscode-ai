@@ -1,5 +1,6 @@
 export declare const LLM_RELAY_DEFAULT_PORT: number;
 export declare const NGINX_DEFAULT_PORT: number;
+export declare const NGINX_SAMPLE_REWRITES: ReadonlyArray<Readonly<{ from: string; to: string }>>;
 
 export declare const C2S: Readonly<{
   LIST: 'list'; CREATE: 'create'; START: 'start'; INPUT: 'input';

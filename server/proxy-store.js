@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { NGINX_DEFAULT_PORT } from '@devflow/shared';
+import { NGINX_DEFAULT_PORT, NGINX_SAMPLE_REWRITES } from '@devflow/shared';
 
 export const PROXY_MODES = ['port', 'path'];
 export const RESERVED_PREFIXES = ['/api', '/ws'];
@@ -33,7 +33,7 @@ export function normalizeRule(input) {
     ? input.rewrites.map((r) => {
       const from = String(r?.from || '').trim();
       if (!from) return null;
-      if (!/^\/[^/]/.test(from) || from.endsWith('/')) throw err('bad-rewrite', 'bad rewrite from');
+      if (from !== '/' && (!/^\/[^/]/.test(from) || from.endsWith('/'))) throw err('bad-rewrite', 'bad rewrite from');
       let to = String(r?.to ?? '').trim();
       if (to && !to.startsWith('/')) throw err('bad-rewrite', 'bad rewrite to');
       if (to === '/') to = '';
@@ -73,9 +73,9 @@ export function deepseekFlashSample() {
     listenHost: '0.0.0.0',
     listenPort: NGINX_DEFAULT_PORT,
     target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
-    tlsInsecure: false,
+    tlsInsecure: true,
     headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }],
-    rewrites: [],
+    rewrites: NGINX_SAMPLE_REWRITES.map((r) => ({ ...r })),
     capture: false,
     enabled: true,
   };
@@ -91,15 +91,27 @@ export function createProxyStore({ file, reservedPorts = [], seed = [] }) {
       const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
       items = Array.isArray(raw?.items) ? raw.items : [];
     } catch { items = []; }
-    // 旧版 DeepSeek 样例一次性升级：18090/未启用 → 新默认端口并启用；清掉错误的 /v1→/v2 改写
+    // 旧版 DeepSeek 样例一次性升级：18090/未启用 → 新默认端口并启用；
+    // 错误的 /v1→/v2 或空改写 → 换成 /rest/v1 → /v1 样例
     let changed = false;
     items = items.map((x) => {
       const sample = x && x.name === 'deepseek-flash' && x.mode === 'port'
         && x.target && x.target.host === 'api.deepseek.com';
       if (!sample) return x;
       const patch = {};
-      if (Array.isArray(x.rewrites) && x.rewrites.some((r) => r && r.from === '/v1' && r.to === '/v2')) patch.rewrites = [];
-      if (Number(x.listenPort) === 18090) { patch.listenPort = NGINX_DEFAULT_PORT; patch.enabled = true; }
+      if (x.tlsInsecure !== true) patch.tlsInsecure = true;
+      const rewrites = Array.isArray(x.rewrites) ? x.rewrites : [];
+      const hasAllSample = NGINX_SAMPLE_REWRITES.every((s) => rewrites.some((r) => r && r.from === s.from && r.to === s.to));
+      const hasBad = rewrites.some((r) => r && r.from === '/v1' && r.to === '/v2');
+      const onlySample = rewrites.length > 0
+        && rewrites.every((r) => r && NGINX_SAMPLE_REWRITES.some((s) => r.from === s.from && r.to === s.to));
+      const oldPort = Number(x.listenPort) === 18090;
+      if (hasBad || (oldPort && !hasAllSample) || (!hasAllSample && onlySample)) {
+        const custom = rewrites.filter((r) => r && r.from !== '/v1'
+          && !NGINX_SAMPLE_REWRITES.some((s) => r.from === s.from && r.to === s.to));
+        patch.rewrites = [...NGINX_SAMPLE_REWRITES.map((s) => ({ ...s })), ...custom];
+      }
+      if (oldPort) { patch.listenPort = NGINX_DEFAULT_PORT; patch.enabled = true; }
       if (!Object.keys(patch).length) return x;
       changed = true;
       return { ...x, ...patch, updatedAt: nowIso() };

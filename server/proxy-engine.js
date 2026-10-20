@@ -88,7 +88,11 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {} }) {
     emit({ method: req.method, url: req.url, status: 502, durationMs, kind: 'http' });
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: 'bad-gateway', message: e.message }));
+      res.end(JSON.stringify({
+        error: 'bad-gateway',
+        message: e.message,
+        target: `${target.protocol}//${target.host}:${target.port}`,
+      }));
     } else if (!res.writableEnded) res.end();
   });
 

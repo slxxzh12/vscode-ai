@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue';
-import { NGINX_DEFAULT_PORT } from '@devflow/shared';
+import { NGINX_DEFAULT_PORT, NGINX_SAMPLE_REWRITES } from '@devflow/shared';
 
 export type NginxMode = 'port' | 'path';
 export interface NginxHeader { name: string; value: string }
@@ -54,9 +54,9 @@ export function deepseekFlashRule(): NginxRule {
     name: 'deepseek-flash', mode: 'port', enabled: true, listenHost: '0.0.0.0', listenPort: NGINX_DEFAULT_PORT,
     pathPrefix: '', stripPrefix: true,
     target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
-    tlsInsecure: false,
+    tlsInsecure: true,
     headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }],
-    rewrites: [], capture: false,
+    rewrites: NGINX_SAMPLE_REWRITES.map((r) => ({ ...r })), capture: false,
   };
 }
 

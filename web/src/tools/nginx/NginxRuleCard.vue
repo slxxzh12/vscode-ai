@@ -8,6 +8,8 @@ import {
   type NginxLogEntry, type NginxRule, type NginxStatus,
 } from './useNginx';
 import { nginxErrText } from './errors';
+import { usePostmanWorkbench } from '../postman/usePostmanWorkbench';
+import { requestToolTab } from '../../uiIntents';
 
 const props = defineProps<{
   rule: NginxRule;
@@ -38,6 +40,44 @@ const accessUrl = computed(() => {
   if (r.mode === 'port') return `http://${r.listenHost === '0.0.0.0' ? location.hostname : r.listenHost}:${r.listenPort}/`;
   return `${location.origin}${r.pathPrefix}/`;
 });
+const testBase = computed(() => {
+  const r = props.rule;
+  if (!r.id) return '';
+  if (r.mode === 'port') {
+    const host = r.listenHost === '0.0.0.0' ? '127.0.0.1' : r.listenHost;
+    return `http://${host}:${r.listenPort}`;
+  }
+  return `${location.origin}${r.pathPrefix}`;
+});
+const isDeepseekRule = computed(() => props.rule.name === 'deepseek-flash' || props.rule.target.host === 'api.deepseek.com');
+function deepseekCurl(stream: boolean) {
+  const r = props.rule;
+  if (!r.id || !testBase.value || !isDeepseekRule.value) return '';
+  const hasRest = (r.rewrites || []).some((x) => x.from === '/rest/v1');
+  const path = hasRest ? '/rest/v1/chat/completions' : '/v1/chat/completions';
+  const body = JSON.stringify({
+    model: 'deepseek-chat',
+    messages: [{ role: 'user', content: 'hi' }],
+    max_tokens: stream ? 32 : 8,
+    ...(stream ? { stream: true } : {}),
+  });
+  return `curl -sS${stream ? ' -N' : ''} -X POST "${testBase.value}${path}" -H "Content-Type: application/json" -d "${body.replace(/"/g, '\\"')}"`;
+}
+const testCurl = computed(() => {
+  if (!props.rule.id || !testBase.value) return '';
+  return isDeepseekRule.value ? deepseekCurl(false) : `curl -sS "${testBase.value}/"`;
+});
+const testStreamCurl = computed(() => (isDeepseekRule.value ? deepseekCurl(true) : ''));
+
+function openTestCurl(stream = false) {
+  const cmd = stream ? testStreamCurl.value : testCurl.value;
+  if (!cmd) return;
+  const wb = usePostmanWorkbench();
+  wb.curlCmd.value = cmd;
+  wb.activeId.value = '';
+  wb.clearResult();
+  requestToolTab('postman');
+}
 
 const listenText = computed({
   get: () => `${form.value.listenHost}:${form.value.listenPort}`,
@@ -255,6 +295,15 @@ function statusText() {
         <span v-if="activeStatus" class="ngstat" :class="activeStatus.status">{{ statusText() }}</span>
       </div>
 
+      <div v-if="id" class="ngtest">
+        <button class="ngbtn" :title="$t('nginx.test_hint')" @click="openTestCurl(false)">{{ $t('nginx.test') }}</button>
+        <code class="ngcurl">{{ testCurl }}</code>
+      </div>
+      <div v-if="testStreamCurl" class="ngtest">
+        <button class="ngbtn" :title="$t('nginx.test_stream_hint')" @click="openTestCurl(true)">{{ $t('nginx.test_stream') }}</button>
+        <code class="ngcurl">{{ testStreamCurl }}</code>
+      </div>
+
       <div v-if="id" class="ngpanels">
         <div class="ngtabs">
           <button class="ngtab" :class="{ on: panel === 'log' }" @click="setPanel('log')">{{ $t('nginx.tab_log') }}</button>
@@ -338,6 +387,8 @@ function statusText() {
 .ngactions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .ngmsg { color: var(--ac2); }
 .ngurl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ngtest { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ngcurl { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--tx3); background: var(--bg2); border: 1px solid var(--bd); border-radius: 6px; padding: 4px 6px; overflow-wrap: anywhere; }
 .ngstat.running { color: #2ecc71; }
 .ngstat.error { color: #e74c3c; }
 .ngpanels { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
