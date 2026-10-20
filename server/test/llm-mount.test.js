@@ -29,6 +29,19 @@ function jget(server, url) {
   });
 }
 
+test('relay() 只暴露中转路径，不暴露管理接口', async (t) => {
+  const vault = tmpVault();
+  vault.init('pw');
+  const mount = createLlmMount({ vault, host: '127.0.0.1', port: 22223 });
+  await mount.ready;
+  assert.equal(typeof mount.relay, 'function');
+  const server = http.createServer((req, res) => { const url = new URL(req.url, 'http://x'); mount.relay(req, res, url); });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => server.close());
+  assert.equal((await jget(server, '/api/llm-admin/status')).status, 404);
+  assert.equal((await jget(server, '/api/llm/deepseek/v1/chat/completions')).status, 401);
+});
+
 test('init/secret/token 流程', async (t) => {
   const vault = tmpVault();
   const server = await start(vault);

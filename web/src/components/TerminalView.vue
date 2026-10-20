@@ -40,7 +40,7 @@ import { createReadyGate, paletteOffersRename, renameDialogOpen, waitForScreen }
 import TabRenameDialog from './TabRenameDialog.vue';
 import { setTabDescription } from './tabDescriptions';
 import WelcomeView from './WelcomeView.vue';
-import { pendingStartAgent, clearPendingStartAgent, requestTool, requestToolTab } from '../uiIntents';
+import { pendingStartAgent, clearPendingStartAgent, requestTool, requestToolTab, requestProxyTab } from '../uiIntents';
 import type { ToolId } from '../tools/catalog';
 
 const props = defineProps<{
@@ -672,6 +672,7 @@ function onWelcomeNewAgent() {
   void startAgent();
 }
 function onWelcomeOpenTool(id: ToolId) {
+  if (id === 'nginx') { requestProxyTab('nginx'); return; }
   if (id === 'notepad' || id === 'yaml' || id === 'translate' || id === 'markdown' || id === 'base64') { requestToolTab(id); return; }
   requestTool(id);
   window.location.hash = '#mobile';

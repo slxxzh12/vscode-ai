@@ -41,7 +41,7 @@ export function createVault({ file }) {
       const salt = crypto.randomBytes(16);
       const kek = deriveKek(passphrase, salt);
       dek = crypto.randomBytes(32);
-      data = { enabled: false, jwtSecret: '', tokens: [] };
+      data = { enabled: true, jwtSecret: '', tokens: [] };
       const raw = { v: 1, salt: b64(salt), kdf: { ...KDF }, wrappedDek: encrypt(kek, dek), data: null };
       raw.data = encrypt(dek, Buffer.from(JSON.stringify(data), 'utf8'));
       write(raw);

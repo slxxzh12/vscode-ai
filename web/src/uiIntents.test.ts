@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  pendingTool, pendingToolTab, pendingStartAgent,
+  pendingTool, pendingToolTab, pendingProxyTab, pendingStartAgent,
   requestTool, clearPendingTool,
   requestToolTab, clearPendingToolTab,
+  requestProxyTab, clearPendingProxyTab,
   requestStartAgent, clearPendingStartAgent,
 } from './uiIntents';
 
-beforeEach(() => { clearPendingTool(); clearPendingToolTab(); clearPendingStartAgent(); });
+beforeEach(() => { clearPendingTool(); clearPendingToolTab(); clearPendingProxyTab(); clearPendingStartAgent(); });
 
 describe('uiIntents', () => {
   it('requestTool 置位并可清除', () => {
@@ -23,6 +24,14 @@ describe('uiIntents', () => {
     expect(pendingToolTab.value).toBe('notepad');
     clearPendingToolTab();
     expect(pendingToolTab.value).toBeNull();
+  });
+
+  it('requestProxyTab 置位并可清除', () => {
+    expect(pendingProxyTab.value).toBeNull();
+    requestProxyTab('nginx');
+    expect(pendingProxyTab.value).toBe('nginx');
+    clearPendingProxyTab();
+    expect(pendingProxyTab.value).toBeNull();
   });
 
   it('requestStartAgent 置位并可清除', () => {

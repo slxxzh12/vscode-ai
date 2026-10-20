@@ -1,3 +1,6 @@
+export declare const LLM_RELAY_DEFAULT_PORT: number;
+export declare const NGINX_DEFAULT_PORT: number;
+
 export declare const C2S: Readonly<{
   LIST: 'list'; CREATE: 'create'; START: 'start'; INPUT: 'input';
   RESIZE: 'resize'; STOP: 'stop'; KILL: 'kill'; PING: 'ping'; RESTORE: 'restore';

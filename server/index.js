@@ -68,6 +68,7 @@ import { publicFingerprint } from './collaboration/identity.js';
 import { createVault } from './llm-vault.js';
 import { createUsageStore, normalizeUsage } from './usage-store.js';
 import { createLlmMount } from './llm-mount.js';
+import { createLlmRelayServer, DEFAULT_LLM_RELAY_PORT } from './llm-relay-server.js';
 import { detectEmployeeId, resolveRelayModel } from './llm-config.js';
 import { portPaths, ensurePortDirs } from './port-paths.js';
 import { restartGuard, spawnRestart } from './port-restart.js';
@@ -99,6 +100,9 @@ const PORT = resolvePort();
 const PORT_SOURCE = validPort(process.env.DEVFLOW_PORT) ? 'env' : (readPortFile() ? 'file' : 'default');
 setLocale(BOOT_CFG.server.language);
 const NODE = instanceName();
+const LLM_RELAY_PORT = validPort(process.env.DEVFLOW_LLM_PORT) || DEFAULT_LLM_RELAY_PORT;
+let llmRelayMount = null;
+const llmRelay = createLlmRelayServer({ getMount: () => llmRelayMount, host: HOST, port: LLM_RELAY_PORT, logger: log });
 
 // 默认 agent 配置（终端启动命令 + 用量采集命令 statsCmd 共用同一份）；每次实时读配置，
 // 设置默认 agent 后无需重启即生效
@@ -707,14 +711,14 @@ function buildWorkspace({ paths, port }) {
     pickFile: pickSqliteFile,
     logger: log,
   });
-  const proxyStore = createProxyStore({ file: path.join(paths.proxyDir, 'rules.json'), reservedPorts: [port], seed: [deepseekFlashSample()] });
+  const proxyStore = createProxyStore({ file: path.join(paths.proxyDir, 'rules.json'), reservedPorts: [port, LLM_RELAY_PORT], seed: [deepseekFlashSample()] });
   const proxyCapture = createProxyCapture({ rootDir: paths.proxyCapturesDir, onEvent: broadcastNginx });
   const proxyEngine = createProxyEngine({ store: proxyStore, capture: proxyCapture, httpServer: server, onEvent: broadcastNginx, logger: log });
   const proxyMount = createProxyMount({ store: proxyStore, engine: proxyEngine, capture: proxyCapture, logger: log });
   const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger, postmanHistory, notepadStore, fileStores });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
-  const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
+  const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port: LLM_RELAY_PORT, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
   const translateMount = createTranslateMount({
     translator: createTranslator({ provider: defaultProviderResolver() }),
     catalog: defaultCatalog(),
@@ -732,6 +736,8 @@ let actualPort = null;       // 实际监听端口
 function initWorkspace(paths, port) {
   ws = buildWorkspace({ paths, port });
   actualPort = port;
+  llmRelayMount = ws.llmMount;
+  void llmRelay.start();
   // 远程访问令牌校验注入：slave 入群时校对本机活跃邀请
   ws.engine.verifyAccessToken = (tk) => { const inv = activeInvite(); return !!inv && safeEqual(tk, inv.token); };
   if (!gateway) {

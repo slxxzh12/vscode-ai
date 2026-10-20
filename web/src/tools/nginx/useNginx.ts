@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue';
+import { NGINX_DEFAULT_PORT } from '@devflow/shared';
 
 export type NginxMode = 'port' | 'path';
 export interface NginxHeader { name: string; value: string }
@@ -41,7 +42,7 @@ async function jfetch(url: string, opt: RequestInit = {}): Promise<any> {
 
 export function emptyRule(): NginxRule {
   return {
-    name: '', mode: 'port', enabled: false, listenHost: '0.0.0.0', listenPort: 8081,
+    name: '', mode: 'port', enabled: true, listenHost: '0.0.0.0', listenPort: NGINX_DEFAULT_PORT,
     pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: 5173 },
     tlsInsecure: true, headers: [], rewrites: [], capture: false,
   };
@@ -50,7 +51,7 @@ export function emptyRule(): NginxRule {
 // DeepSeek 官方 API 代理样例：客户端用 deepseek-flash 模型调用，Authorization 用 ak-123456 占位
 export function deepseekFlashRule(): NginxRule {
   return {
-    name: 'deepseek-flash', mode: 'port', enabled: false, listenHost: '0.0.0.0', listenPort: 18090,
+    name: 'deepseek-flash', mode: 'port', enabled: true, listenHost: '0.0.0.0', listenPort: NGINX_DEFAULT_PORT,
     pathPrefix: '', stripPrefix: true,
     target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
     tlsInsecure: false,
@@ -59,7 +60,7 @@ export function deepseekFlashRule(): NginxRule {
   };
 }
 
-export function useNginx(): {
+export interface NginxApi {
   rules: Ref<NginxRule[]>;
   status: Ref<Record<string, NginxStatus>>;
   load: () => Promise<void>;
@@ -71,7 +72,9 @@ export function useNginx(): {
   captures: (id: string) => Promise<CaptureSummary[]>;
   capture: (ruleId: string, id: string) => Promise<CaptureDetail>;
   clearCaptures: (id: string) => Promise<void>;
-} {
+}
+
+export function useNginx(): NginxApi {
   const rules = ref<NginxRule[]>([]);
   const status = ref<Record<string, NginxStatus>>({});
 

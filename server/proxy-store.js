@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { NGINX_DEFAULT_PORT } from '@devflow/shared';
 
 export const PROXY_MODES = ['port', 'path'];
 export const RESERVED_PREFIXES = ['/api', '/ws'];
@@ -52,7 +53,7 @@ export function normalizeRule(input) {
   };
 
   if (mode === 'port') {
-    const listenPort = Number(input?.listenPort);
+    const listenPort = Number(input?.listenPort ?? NGINX_DEFAULT_PORT);
     if (!Number.isInteger(listenPort) || listenPort < 1 || listenPort > 65535) throw err('bad-request', 'bad listen port');
     return { ...base, listenPort, pathPrefix: '', stripPrefix: true };
   }
@@ -70,13 +71,13 @@ export function deepseekFlashSample() {
     name: 'deepseek-flash',
     mode: 'port',
     listenHost: '0.0.0.0',
-    listenPort: 18090,
+    listenPort: NGINX_DEFAULT_PORT,
     target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
     tlsInsecure: false,
     headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }],
-    rewrites: [{ from: '/v1', to: '/v2' }],
+    rewrites: [],
     capture: false,
-    enabled: false,
+    enabled: true,
   };
 }
 
@@ -90,6 +91,20 @@ export function createProxyStore({ file, reservedPorts = [], seed = [] }) {
       const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
       items = Array.isArray(raw?.items) ? raw.items : [];
     } catch { items = []; }
+    // 旧版 DeepSeek 样例一次性升级：18090/未启用 → 新默认端口并启用；清掉错误的 /v1→/v2 改写
+    let changed = false;
+    items = items.map((x) => {
+      const sample = x && x.name === 'deepseek-flash' && x.mode === 'port'
+        && x.target && x.target.host === 'api.deepseek.com';
+      if (!sample) return x;
+      const patch = {};
+      if (Array.isArray(x.rewrites) && x.rewrites.some((r) => r && r.from === '/v1' && r.to === '/v2')) patch.rewrites = [];
+      if (Number(x.listenPort) === 18090) { patch.listenPort = NGINX_DEFAULT_PORT; patch.enabled = true; }
+      if (!Object.keys(patch).length) return x;
+      changed = true;
+      return { ...x, ...patch, updatedAt: nowIso() };
+    });
+    if (changed) persist();
     return items;
   }
 

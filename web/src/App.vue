@@ -35,7 +35,7 @@ import { openRestoredSession } from './sessionRestore';
 import { useLedgerSessions } from './ledgerSessions';
 import type { SessionExtra } from './sessionTree';
 import { allowedRestoreIds, loadRecentTabs, loadRestoreTabs, pushRecentTab, saveRecentTabs } from './restorePrefs';
-import { pendingToolTab, clearPendingToolTab } from './uiIntents';
+import { pendingToolTab, clearPendingToolTab, pendingProxyTab, requestProxyTab } from './uiIntents';
 import { useNavicatWorkbench } from './tools/navicat/useNavicatWorkbench';
 import { shouldOpenInNavicat } from './tools/navicat/sqliteFile';
 
@@ -191,6 +191,11 @@ watch(pendingToolTab, (id) => {
   center.openTool(id);
   clearPendingToolTab();
 }, { immediate: true });
+// 合并后的代理页：由 ProxyHubView 消费 pendingProxyTab 并选中子页签，这里只负责切 rail
+watch(pendingProxyTab, (tab) => {
+  if (!tab) return;
+  rail.value = 'proxy';
+}, { immediate: true });
 // 新窗口（新标签/新浏览器窗口）与刷新的区分：sessionStorage 每标签独立，刷新保留、新开为空 → 左侧默认「消息」子页
 const NEW_WINDOW = (() => {
   try {
@@ -230,9 +235,15 @@ function applyHash() {
   const [r, sub] = parseHashSegs();
   const historyAlias = r === 'history';
   if (r === 'tools') {
-    rail.value = 'explorer';
     const tool = hashToolOf();
+    if (tool === 'nginx') { rail.value = 'proxy'; requestProxyTab('nginx'); return; }
+    rail.value = 'explorer';
     if (tool) center.openTool(tool);
+    return;
+  }
+  if (r === 'proxy') {
+    rail.value = 'proxy';
+    if (sub === 'nginx' || sub === 'llm') requestProxyTab(sub);
     return;
   }
   if (!r || (!RAILS.includes(r) && !historyAlias)) return;
@@ -369,7 +380,8 @@ async function restoreWindowState(projectsReady: Promise<void>) {
   windowRestored = true;
   // 深链 #tools/<id> 优先于存档的激活页签
   const tool = hashToolOf();
-  if (tool) { rail.value = 'explorer'; center.openTool(tool); }
+  if (tool === 'nginx') { rail.value = 'proxy'; requestProxyTab('nginx'); }
+  else if (tool) { rail.value = 'explorer'; center.openTool(tool); }
 }
 watch(
   [() => center.tabs.value.map((t) => `${t.id}|${t.label}`).join(','), center.activeId, rail, historyTab, msgFilter, msgAllStyle],

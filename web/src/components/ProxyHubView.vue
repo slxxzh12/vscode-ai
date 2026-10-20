@@ -1,23 +1,29 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { ref, watch } from 'vue';
 import NginxTool from '../tools/nginx/NginxTool.vue';
 import LlmProxyView from './ProxyView.vue';
+import { pendingProxyTab, clearPendingProxyTab, type ProxyTab } from '../uiIntents';
 
-type ProxyTab = 'nginx' | 'llm';
 const KEY = 'devflow-proxy-tab';
-const tab = ref<ProxyTab>('nginx');
-
-onMounted(() => {
+function loadTab(): ProxyTab {
   try {
     const v = sessionStorage.getItem(KEY);
-    if (v === 'nginx' || v === 'llm') tab.value = v;
+    if (v === 'nginx' || v === 'llm') return v;
   } catch { /* ignore */ }
-});
+  return 'nginx';
+}
+const tab = ref<ProxyTab>(loadTab());
 
 function setTab(v: ProxyTab) {
   tab.value = v;
   try { sessionStorage.setItem(KEY, v); } catch { /* ignore */ }
 }
+
+watch(pendingProxyTab, (v) => {
+  if (!v) return;
+  setTab(v);
+  clearPendingProxyTab();
+}, { immediate: true });
 </script>
 
 <template>

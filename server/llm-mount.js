@@ -288,6 +288,14 @@ export function createLlmMount({ vault, host, port, logger = console, pluginsDir
     }
   }
 
+  // 独立监听只走中转：/api/llm/<provider>/...；管理接口不在这里暴露
+  async function relay(req, res, url) {
+    const m = url.pathname.match(/^\/api\/llm\/([^/]+)(\/.*)?$/);
+    if (!m) return sendJson(res, 404, { error: 'not found' });
+    return proxy(req, res, { providerId: decodeURIComponent(m[1]), rest: m[2] || '/', query: url.search.replace(/^\?/, '') });
+  }
+
+  mount.relay = relay;
   mount.reloadPlugins = reloadPlugins;
   mount.ready = reloadPlugins().catch((e) => { logger?.warn?.('relay plugins load failed', e && e.message); return []; });
   return mount;

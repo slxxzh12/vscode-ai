@@ -13,6 +13,7 @@ test('init/unlock/lock 往返，数据可读写', () => {
   assert.deepEqual(v.status(), { initialized: false, unlocked: false });
   v.init('pw1');
   assert.equal(v.status().unlocked, true);
+  assert.equal(v.getData().enabled, true);
   v.update((d) => { d.jwtSecret = 'S'; d.tokens = [{ id: 'a' }]; });
   v.lock();
   assert.equal(v.status().unlocked, false);

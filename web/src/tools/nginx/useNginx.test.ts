@@ -1,11 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useNginx, type NginxRule } from './useNginx';
+import { useNginx, emptyRule, deepseekFlashRule, type NginxRule } from './useNginx';
 
 function okJson(body: unknown) { return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response); }
 
 beforeEach(() => vi.restoreAllMocks());
 
 describe('useNginx', () => {
+  it('默认监听 22224，且新建规则与样例默认启用', () => {
+    expect(emptyRule().listenPort).toBe(22224);
+    expect(emptyRule().enabled).toBe(true);
+    expect(deepseekFlashRule().listenPort).toBe(22224);
+    expect(deepseekFlashRule().enabled).toBe(true);
+    expect(deepseekFlashRule().rewrites).toEqual([]);
+  });
+
   it('load 读取规则与状态', async () => {
     const calls: string[] = [];
     vi.stubGlobal('fetch', vi.fn((u: string) => { calls.push(String(u)); return okJson({ items: [{ id: '1', name: 'a' }], status: { '1': { status: 'running' } } }); }));

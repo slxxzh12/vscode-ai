@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { watch } from 'vue';
 import { MINI_TOOLS, type ToolId } from '../tools/catalog';
-import { pendingTool, clearPendingTool, requestToolTab } from '../uiIntents';
+import { pendingTool, clearPendingTool, requestToolTab, requestProxyTab } from '../uiIntents';
 
 const TOOLS = MINI_TOOLS;
 
 function openTool(id: ToolId) {
   if (TOOLS.find((x) => x.id === id)?.disabled) return;
+  if (id === 'nginx') { requestProxyTab('nginx'); return; }
   requestToolTab(id);
 }
 
