@@ -40,6 +40,7 @@ export function createProxyCapture({ rootDir, maxBody = DEFAULT_MAX_BODY, onEven
       id, ts: new Date().toISOString(),
       method: meta.method || 'GET', url: meta.url || '/',
       reqHeaders: meta.headers || {},
+      forwardUrl: '', forwardHeaders: null,
       resHeaders: null, status: 0, kind: meta.kind || 'http', state: 'active',
       reqBodySize: 0, resBodySize: 0, frameCount: 0,
       hasReqBody: false, hasResBody: false, hasFrames: false,
@@ -52,6 +53,10 @@ export function createProxyCapture({ rootDir, maxBody = DEFAULT_MAX_BODY, onEven
     onEvent({ kind: 'capture', ruleId, record: summary(record) });
     return {
       id,
+      forward(url, headers) {
+        record.forwardUrl = String(url || '');
+        record.forwardHeaders = headers ? { ...headers } : null;
+      },
       reqBody(buf) {
         if (state.reqTrunc) return;
         const room = maxBody - state.reqSize;

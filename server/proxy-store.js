@@ -6,6 +6,22 @@ import { NGINX_DEFAULT_PORT, NGINX_SAMPLE_REWRITES } from '@devflow/shared';
 export const PROXY_MODES = ['port', 'path'];
 export const RESERVED_PREFIXES = ['/api', '/ws'];
 
+const COOKIE_ATTRS = new Set(['expires', 'max-age', 'domain', 'path', 'secure', 'httponly', 'samesite', 'priority', 'partitioned', 'comment']);
+
+export function splitCookieHeader(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  if (/\r?\n/.test(raw)) return raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const parts = raw.split(';').map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) return [raw];
+  const allPairs = parts.every((p) => {
+    const i = p.indexOf('=');
+    if (i <= 0) return false;
+    const key = p.slice(0, i).trim().toLowerCase();
+    return key && !COOKIE_ATTRS.has(key);
+  });
+  return allPairs ? parts : [raw];
+}
 function err(code, message) { const e = new Error(message || code); e.code = code; return e; }
 function nowIso() { return new Date().toISOString(); }
 
@@ -38,7 +54,18 @@ export function normalizeRule(input) {
       if (to && !to.startsWith('/')) throw err('bad-rewrite', 'bad rewrite to');
       if (to === '/') to = '';
       if (to.length > 1) to = to.replace(/\/+$/, '');
-      return { from, to };
+      const out = { from, to };
+      if (r?.directResponse) {
+        const ds = Number(r.directStatus);
+        out.directResponse = true;
+        out.directStatus = Number.isInteger(ds) && ds >= 100 && ds <= 599 ? ds : 200;
+        out.directContentType = String(r.directContentType || '').trim() || 'application/json; charset=utf-8';
+        out.directBody = String(r.directBody ?? '');
+        out.directHeaders = Array.isArray(r.directHeaders)
+          ? r.directHeaders.map((h) => ({ name: String(h?.name || '').trim(), value: String(h?.value ?? '') })).filter((h) => h.name)
+          : [];
+      }
+      return out;
     }).filter(Boolean)
     : [];
 
@@ -46,10 +73,26 @@ export function normalizeRule(input) {
     ? input.responseReplace.map((r) => ({ from: String(r?.from ?? ''), to: String(r?.to ?? '') })).filter((r) => r.from.trim())
     : [];
 
-  const responseHeaders = Array.isArray(input?.responseHeaders)
-    ? input.responseHeaders.map((h) => ({ name: String(h?.name || '').trim(), value: String(h?.value ?? '') })).filter((h) => h.name)
+  const locationReplace = Array.isArray(input?.locationReplace)
+    ? input.locationReplace.map((r) => ({ from: String(r?.from ?? ''), to: String(r?.to ?? '') })).filter((r) => r.from.trim())
     : [];
 
+  const responseHeaders = [];
+  if (Array.isArray(input?.responseHeaders)) {
+    for (const h of input.responseHeaders) {
+      const name = String(h?.name || '').trim();
+      if (!name) continue;
+      const value = String(h?.value ?? '');
+      if (name.toLowerCase() === 'set-cookie') {
+        for (const v of splitCookieHeader(value)) responseHeaders.push({ name, value: v });
+      } else {
+        responseHeaders.push({ name, value });
+      }
+    }
+  }
+
+  const directStatus = Number(input?.directStatus);
+  const directContentType = String(input?.directContentType || '').trim() || 'application/json; charset=utf-8';
   const base = {
     name, mode, listenHost,
     target: { protocol, host, port },
@@ -58,7 +101,14 @@ export function normalizeRule(input) {
     headers,
     rewrites,
     responseReplace,
+    locationReplace,
     responseHeaders,
+    directResponse: !!input?.directResponse,
+    directStatus: Number.isInteger(directStatus) && directStatus >= 100 && directStatus <= 599 ? directStatus : 200,
+    directContentType,
+    directBody: String(input?.directBody ?? ''),
+    corsPreflight: !!input?.corsPreflight,
+    logRequests: !!input?.logRequests,
     capture: !!input?.capture,
     enabled: !!input?.enabled,
   };
@@ -95,9 +145,15 @@ export function deepseekFlashSample() {
 export function createProxyStore({ file, reservedPorts = [], seed = [] }) {
   const reserved = reservedPorts.map(Number);
   let items = null;
+  let loadedMtimeMs = 0;
+
+  function fileMtimeMs() {
+    try { return fs.statSync(file).mtimeMs; } catch { return 0; }
+  }
 
   function load() {
     if (items) return items;
+    loadedMtimeMs = fileMtimeMs();
     try {
       const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
       items = Array.isArray(raw?.items) ? raw.items : [];
@@ -136,6 +192,20 @@ export function createProxyStore({ file, reservedPorts = [], seed = [] }) {
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify({ items }, null, 2), 'utf8');
     fs.renameSync(tmp, file);
+    loadedMtimeMs = fileMtimeMs();
+  }
+
+  function refreshFromDisk() {
+    const mtime = fileMtimeMs();
+    if (!mtime || mtime <= loadedMtimeMs) return false;
+    try {
+      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+      items = Array.isArray(raw?.items) ? raw.items : [];
+      loadedMtimeMs = fileMtimeMs();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // 首次（文件不存在）才写入样例；之后用户删光也不会自动加回
@@ -165,6 +235,7 @@ export function createProxyStore({ file, reservedPorts = [], seed = [] }) {
 
   return {
     list() { return load().map((x) => ({ ...x })); },
+    refreshFromDisk,
     get(id) {
       const it = load().find((x) => x.id === id);
       if (!it) throw err('not-found');

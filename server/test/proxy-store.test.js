@@ -23,11 +23,46 @@ test('normalizeRule：默认值（tlsInsecure=true / capture=false / stripPrefix
   assert.equal(r.preserveHost, true);
   assert.deepEqual(r.headers, []);
   assert.deepEqual(r.responseReplace, []);
+  assert.deepEqual(r.locationReplace, []);
   assert.deepEqual(r.responseHeaders, []);
+  assert.equal(r.corsPreflight, false);
+  assert.equal(r.directResponse, false);
+  assert.equal(r.directStatus, 200);
+  assert.equal(r.directContentType, 'application/json; charset=utf-8');
+  assert.equal(r.directBody, '');
   assert.equal(normalizeRule({ ...PATH_RULE, preserveHost: false }).preserveHost, false);
+  assert.equal(normalizeRule({ ...PATH_RULE, corsPreflight: true }).corsPreflight, true);
+  const direct = normalizeRule({ ...PATH_RULE, directResponse: true, directStatus: 404, directContentType: 'text/plain', directBody: 'nope' });
+  assert.equal(direct.directResponse, true);
+  assert.equal(direct.directStatus, 404);
+  assert.equal(direct.directContentType, 'text/plain');
+  assert.equal(direct.directBody, 'nope');
+  assert.equal(normalizeRule({ ...PATH_RULE, directStatus: 999 }).directStatus, 200);
+  const rw = normalizeRule({
+    ...PORT_RULE,
+    rewrites: [{ from: '/mock', to: '', directResponse: true, directStatus: 201, directContentType: 'text/plain', directBody: 'ok', directHeaders: [{ name: 'Location', value: 'https://x' }, { name: '' }] }],
+  }).rewrites[0];
+  assert.equal(rw.directResponse, true);
+  assert.equal(rw.directStatus, 201);
+  assert.equal(rw.directContentType, 'text/plain');
+  assert.equal(rw.directBody, 'ok');
+  assert.deepEqual(rw.directHeaders, [{ name: 'Location', value: 'https://x' }]);
+  assert.deepEqual(normalizeRule({ ...PORT_RULE, rewrites: [{ from: '/x', to: '/y' }] }).rewrites, [{ from: '/x', to: '/y' }]);
   assert.deepEqual(
     normalizeRule({ ...PATH_RULE, responseHeaders: [{ name: 'X-Test', value: '1' }, { name: '' }] }).responseHeaders,
     [{ name: 'X-Test', value: '1' }],
+  );
+  assert.deepEqual(
+    normalizeRule({ ...PATH_RULE, responseHeaders: [{ name: 'Set-Cookie', value: 'a=1; b=2' }] }).responseHeaders,
+    [{ name: 'Set-Cookie', value: 'a=1' }, { name: 'Set-Cookie', value: 'b=2' }],
+  );
+  assert.deepEqual(
+    normalizeRule({ ...PATH_RULE, responseHeaders: [{ name: 'Set-Cookie', value: 'a=1; Path=/; HttpOnly' }] }).responseHeaders,
+    [{ name: 'Set-Cookie', value: 'a=1; Path=/; HttpOnly' }],
+  );
+  assert.deepEqual(
+    normalizeRule({ ...PATH_RULE, locationReplace: [{ from: 'https://a', to: 'http://b' }, { from: '  ' }] }).locationReplace,
+    [{ from: 'https://a', to: 'http://b' }],
   );
   assert.deepEqual(
     normalizeRule({ ...PATH_RULE, responseReplace: [{ from: 'old', to: 'new' }, { from: '  ' }, {}] }).responseReplace,
@@ -148,6 +183,19 @@ test('新端口的样例只保留部分样例改写时补齐 v2', () => {
   }] }), 'utf8');
   const s = createProxyStore({ file });
   assert.deepEqual(s.list()[0].rewrites, [{ from: '/rest/v1', to: '/v1' }, { from: '/v2', to: '/v1' }]);
+});
+
+test('refreshFromDisk：手动改文件且 mtime 更新后重新加载', () => {
+  const file = tmpFile();
+  const s = createProxyStore({ file });
+  const a = s.create(PORT_RULE);
+  assert.equal(s.refreshFromDisk(), false);
+  fs.writeFileSync(file, JSON.stringify({ items: [{ ...a, name: 'manual' }] }), 'utf8');
+  const future = new Date(Date.now() + 5000);
+  fs.utimesSync(file, future, future);
+  assert.equal(s.refreshFromDisk(), true);
+  assert.equal(s.list()[0].name, 'manual');
+  assert.equal(s.refreshFromDisk(), false);
 });
 
 test('路径前缀冲突（互相包含）报 bad-request', () => {

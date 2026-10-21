@@ -3,7 +3,15 @@ import { NGINX_DEFAULT_PORT, NGINX_SAMPLE_REWRITES } from '@devflow/shared';
 
 export type NginxMode = 'port' | 'path';
 export interface NginxHeader { name: string; value: string }
-export interface NginxRewrite { from: string; to: string }
+export interface NginxRewrite {
+  from: string;
+  to: string;
+  directResponse?: boolean;
+  directStatus?: number;
+  directContentType?: string;
+  directBody?: string;
+  directHeaders?: NginxHeader[];
+}
 export interface NginxReplace { from: string; to: string }
 export interface NginxRule {
   id?: string;
@@ -21,6 +29,13 @@ export interface NginxRule {
   responseHeaders: NginxHeader[];
   rewrites: NginxRewrite[];
   responseReplace: NginxReplace[];
+  locationReplace: NginxReplace[];
+  directResponse: boolean;
+  directStatus: number;
+  directContentType: string;
+  directBody: string;
+  corsPreflight: boolean;
+  logRequests: boolean;
   capture: boolean;
 }
 export interface NginxStatus { status: 'running' | 'stopped' | 'error'; error: string | null }
@@ -30,7 +45,12 @@ export interface CaptureSummary {
   kind: string; state: string; reqBodySize: number; resBodySize: number; frameCount: number; truncated: boolean;
 }
 export interface CaptureDetail {
-  record: CaptureSummary & { reqHeaders: Record<string, string>; resHeaders: Record<string, string> | null };
+  record: CaptureSummary & {
+    reqHeaders: Record<string, string>;
+    forwardUrl?: string;
+    forwardHeaders?: Record<string, string> | null;
+    resHeaders: Record<string, string> | null;
+  };
   reqBody: string; resBody: string;
   frames: Array<{ dir: string; opcode: number; ts: number; data: string }>;
 }
@@ -48,7 +68,7 @@ export function emptyRule(): NginxRule {
   return {
     name: '', mode: 'port', enabled: true, listenHost: '0.0.0.0', listenPort: NGINX_DEFAULT_PORT,
     pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: 5173 },
-    tlsInsecure: true, preserveHost: true, headers: [], responseHeaders: [], rewrites: [], responseReplace: [], capture: false,
+    tlsInsecure: true, preserveHost: true, headers: [], responseHeaders: [], rewrites: [], responseReplace: [], directResponse: false, directStatus: 200, directContentType: 'application/json; charset=utf-8', directBody: '', locationReplace: [], corsPreflight: false, logRequests: false, capture: false,
   };
 }
 
@@ -60,7 +80,7 @@ export function deepseekFlashRule(): NginxRule {
     target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
     tlsInsecure: true, preserveHost: true,
     headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }], responseHeaders: [],
-    rewrites: NGINX_SAMPLE_REWRITES.map((r) => ({ ...r })), responseReplace: [], capture: false,
+    rewrites: NGINX_SAMPLE_REWRITES.map((r) => ({ ...r })), responseReplace: [], directResponse: false, directStatus: 200, directContentType: 'application/json; charset=utf-8', directBody: '', locationReplace: [], corsPreflight: false, logRequests: false, capture: false,
   };
 }
 

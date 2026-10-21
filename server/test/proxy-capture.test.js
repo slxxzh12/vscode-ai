@@ -22,6 +22,18 @@ test('begin/finish：写入记录并可从 list 读到摘要', () => {
   assert.equal(list[0].resHeaders, undefined, '摘要不含 headers');
 });
 
+test('forward：记录拼装后的转发地址与请求头', () => {
+  const cap = createProxyCapture({ rootDir: tmpRoot() });
+  const h = cap.begin(RID, { method: 'GET', url: '/x', headers: { host: 'old' } });
+  h.forward('https://up.example.com:8443/api/x?q=1', { host: 'up.example.com:8443', 'x-custom': 'v' });
+  h.finish({ status: 200, durationMs: 1 });
+  const id = cap.list(RID)[0].id;
+  const rec = cap.read(RID, id).record;
+  assert.equal(rec.forwardUrl, 'https://up.example.com:8443/api/x?q=1');
+  assert.deepEqual(rec.forwardHeaders, { host: 'up.example.com:8443', 'x-custom': 'v' });
+  assert.deepEqual(rec.reqHeaders, { host: 'old' });
+});
+
 test('read：取到完整记录与正文', () => {
   const cap = createProxyCapture({ rootDir: tmpRoot() });
   const h = cap.begin(RID, { method: 'POST', url: '/p', headers: {} });

@@ -104,7 +104,16 @@ function toForm(r: NginxRule): NginxRule {
   if (!Array.isArray(f.headers)) f.headers = [];
   if (!Array.isArray(f.responseHeaders)) f.responseHeaders = [];
   if (!Array.isArray(f.rewrites)) f.rewrites = [];
+  else f.rewrites = f.rewrites.map((rw) => ({
+    directResponse: false,
+    directStatus: 200,
+    directContentType: 'application/json; charset=utf-8',
+    directBody: '',
+    directHeaders: [],
+    ...rw,
+  }));
   if (!Array.isArray(f.responseReplace)) f.responseReplace = [];
+  if (!Array.isArray(f.locationReplace)) f.locationReplace = [];
   return f;
 }
 
@@ -156,7 +165,7 @@ async function doSave() {
     const saved = await props.api.save(payload);
     id.value = saved.id || '';
     form.value = toForm(saved);
-    msg.value = t('nginx.saved');
+    msg.value = t('nginx.saved_ok');
     emit('saved', saved);
   } catch (e) { msg.value = nginxErrText(e); } finally { busy.value = false; }
 }
@@ -194,10 +203,53 @@ function addHeader() { form.value = { ...form.value, headers: [...form.value.hea
 function removeHeader(i: number) { form.value = { ...form.value, headers: form.value.headers.filter((_, j) => j !== i) }; }
 function addResponseHeader() { form.value = { ...form.value, responseHeaders: [...form.value.responseHeaders, { name: '', value: '' }] }; }
 function removeResponseHeader(i: number) { form.value = { ...form.value, responseHeaders: form.value.responseHeaders.filter((_, j) => j !== i) }; }
+const COOKIE_ATTRS = new Set(['expires', 'max-age', 'domain', 'path', 'secure', 'httponly', 'samesite', 'priority', 'partitioned', 'comment']);
+function splitCookieHeader(text: string): string[] {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  if (/\r?\n/.test(raw)) return raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const parts = raw.split(';').map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) return [raw];
+  const allPairs = parts.every((p) => {
+    const i = p.indexOf('=');
+    if (i <= 0) return false;
+    const key = p.slice(0, i).trim().toLowerCase();
+    return key && !COOKIE_ATTRS.has(key);
+  });
+  return allPairs ? parts : [raw];
+}
+function onPasteResponseHeader(ev: Event, i: number) {
+  const row = form.value.responseHeaders[i];
+  if (!row) return;
+  if (row.name && row.name.toLowerCase() !== 'set-cookie') return;
+  const text = (ev as ClipboardEvent).clipboardData?.getData('text') || '';
+  const parts = splitCookieHeader(text);
+  if (parts.length <= 1) return;
+  ev.preventDefault();
+  const next = form.value.responseHeaders.slice();
+  next.splice(i, 1, ...parts.map((value) => ({ name: 'Set-Cookie', value })));
+  form.value = { ...form.value, responseHeaders: next };
+}
 function addRewrite() { form.value = { ...form.value, rewrites: [...form.value.rewrites, { from: '', to: '' }] }; }
 function removeRewrite(i: number) { form.value = { ...form.value, rewrites: form.value.rewrites.filter((_, j) => j !== i) }; }
+function addRewriteHeader(i: number) {
+  const rewrites = form.value.rewrites.slice();
+  const rw = rewrites[i];
+  if (!rw) return;
+  rewrites[i] = { ...rw, directHeaders: [...(rw.directHeaders || []), { name: '', value: '' }] };
+  form.value = { ...form.value, rewrites };
+}
+function removeRewriteHeader(i: number, j: number) {
+  const rewrites = form.value.rewrites.slice();
+  const rw = rewrites[i];
+  if (!rw) return;
+  rewrites[i] = { ...rw, directHeaders: (rw.directHeaders || []).filter((_, k) => k !== j) };
+  form.value = { ...form.value, rewrites };
+}
 function addResponseReplace() { form.value = { ...form.value, responseReplace: [...form.value.responseReplace, { from: '', to: '' }] }; }
 function removeResponseReplace(i: number) { form.value = { ...form.value, responseReplace: form.value.responseReplace.filter((_, j) => j !== i) }; }
+function addLocationReplace() { form.value = { ...form.value, locationReplace: [...form.value.locationReplace, { from: '', to: '' }] }; }
+function removeLocationReplace(i: number) { form.value = { ...form.value, locationReplace: form.value.locationReplace.filter((_, j) => j !== i) }; }
 
 async function copyUrl() { if (accessUrl.value) { await copyText(accessUrl.value); msg.value = t('nginx.copied'); } }
 
@@ -263,17 +315,48 @@ function statusText() {
       <div class="ngrow ngchks">
         <label class="ngchk"><input v-model="form.tlsInsecure" type="checkbox" />{{ $t('nginx.tls_insecure') }}</label>
         <label class="ngchk"><input v-model="form.preserveHost" type="checkbox" />{{ $t('nginx.preserve_host') }}</label>
+        <label class="ngchk"><input v-model="form.corsPreflight" type="checkbox" />{{ $t('nginx.cors_preflight') }}</label>
+        <label class="ngchk" :title="$t('nginx.log_requests_hint')"><input v-model="form.logRequests" type="checkbox" />{{ $t('nginx.log_requests') }}</label>
         <label class="ngchk"><input v-model="form.capture" type="checkbox" />{{ $t('nginx.capture') }}</label>
+      </div>
+
+      <div class="ngheaders">
+        <div class="nghd">{{ $t('nginx.direct_response') }}</div>
+        <div class="nghint">{{ $t('nginx.direct_hint') }}</div>
+        <label class="ngchk"><input v-model="form.directResponse" type="checkbox" data-field="direct-response" />{{ $t('nginx.direct_enable') }}</label>
+        <template v-if="form.directResponse">
+          <div class="ngrow">
+            <label>{{ $t('nginx.direct_status') }}<input v-model.number="form.directStatus" type="number" min="100" max="599" class="ngin" data-field="direct-status" /></label>
+            <label>{{ $t('nginx.direct_content_type') }}<input v-model="form.directContentType" class="ngin" data-field="direct-content-type" /></label>
+          </div>
+          <textarea v-model="form.directBody" class="ngin ngbody" :placeholder="$t('nginx.direct_body_ph')" data-field="direct-body"></textarea>
+        </template>
       </div>
 
       <div class="ngheaders">
         <div class="nghd">{{ $t('nginx.rewrites') }}</div>
         <div class="nghint">{{ $t('nginx.rewrites_hint') }}</div>
-        <div v-for="(rw, i) in form.rewrites" :key="i" class="ngrow">
-          <input v-model="rw.from" class="ngin" :placeholder="$t('nginx.rewrite_from')" />
-          <span class="ngarrow">→</span>
-          <input v-model="rw.to" class="ngin" :placeholder="$t('nginx.rewrite_to')" />
-          <button class="ngbtn" @click="removeRewrite(i)">×</button>
+        <div v-for="(rw, i) in form.rewrites" :key="i" class="ngrwitem">
+          <div class="ngrow">
+            <input v-model="rw.from" class="ngin" :placeholder="$t('nginx.rewrite_from')" />
+            <span class="ngarrow">→</span>
+            <input v-model="rw.to" class="ngin" :placeholder="$t('nginx.rewrite_to')" />
+            <label class="ngchk"><input v-model="rw.directResponse" type="checkbox" />{{ $t('nginx.direct_here') }}</label>
+            <button class="ngbtn" @click="removeRewrite(i)">×</button>
+          </div>
+          <template v-if="rw.directResponse">
+            <div class="ngrow">
+              <label>{{ $t('nginx.direct_status') }}<input v-model.number="rw.directStatus" type="number" min="100" max="599" class="ngin" /></label>
+              <label>{{ $t('nginx.direct_content_type') }}<input v-model="rw.directContentType" class="ngin" /></label>
+            </div>
+            <textarea v-model="rw.directBody" class="ngin ngbody" :placeholder="$t('nginx.direct_body_ph')"></textarea>
+            <div v-for="(h, hi) in rw.directHeaders" :key="hi" class="ngrow">
+              <input v-model="h.name" class="ngin" :placeholder="$t('nginx.header_name')" />
+              <input v-model="h.value" class="ngin" :placeholder="$t('nginx.header_value')" />
+              <button class="ngbtn" @click="removeRewriteHeader(i, hi)">×</button>
+            </div>
+            <button class="ngbtn" @click="addRewriteHeader(i)">{{ $t('nginx.add_response_header') }}</button>
+          </template>
         </div>
         <button class="ngbtn" @click="addRewrite">{{ $t('nginx.add_rewrite') }}</button>
       </div>
@@ -291,7 +374,20 @@ function statusText() {
       </div>
 
       <div class="ngheaders">
+        <div class="nghd">{{ $t('nginx.location_replace') }}</div>
+        <div class="nghint">{{ $t('nginx.location_replace_hint') }}</div>
+        <div v-for="(lr, i) in form.locationReplace" :key="i" class="ngrow">
+          <input v-model="lr.from" class="ngin" :placeholder="$t('nginx.location_from')" />
+          <span class="ngarrow">→</span>
+          <input v-model="lr.to" class="ngin" :placeholder="$t('nginx.location_to')" />
+          <button class="ngbtn" @click="removeLocationReplace(i)">×</button>
+        </div>
+        <button class="ngbtn" @click="addLocationReplace">{{ $t('nginx.add_location_replace') }}</button>
+      </div>
+
+      <div class="ngheaders">
         <div class="nghd">{{ $t('nginx.headers') }}</div>
+        <div class="nghint">{{ $t('nginx.headers_hint') }}</div>
         <div class="nghint">{{ $t('nginx.host_header_hint') }}</div>
         <div v-for="(h, i) in form.headers" :key="i" class="ngrow">
           <input v-model="h.name" class="ngin" :placeholder="$t('nginx.header_name')" />
@@ -306,7 +402,7 @@ function statusText() {
         <div class="nghint">{{ $t('nginx.response_headers_hint') }}</div>
         <div v-for="(h, i) in form.responseHeaders" :key="i" class="ngrow">
           <input v-model="h.name" class="ngin" :placeholder="$t('nginx.header_name')" />
-          <input v-model="h.value" class="ngin" :placeholder="$t('nginx.header_value')" />
+          <input v-model="h.value" class="ngin" :placeholder="$t('nginx.header_value')" @paste="onPasteResponseHeader($event, i)" />
           <button class="ngbtn" @click="removeResponseHeader(i)">×</button>
         </div>
         <button class="ngbtn" @click="addResponseHeader">{{ $t('nginx.add_response_header') }}</button>
@@ -367,6 +463,14 @@ function statusText() {
             </button>
           </div>
           <div v-if="detail" class="ngdet">
+            <template v-if="detail.record.forwardUrl">
+              <div class="nghd">{{ $t('nginx.forward_url') }}</div>
+              <pre>{{ detail.record.forwardUrl }}</pre>
+            </template>
+            <template v-if="detail.record.forwardHeaders">
+              <div class="nghd">{{ $t('nginx.forward_headers') }}</div>
+              <pre>{{ JSON.stringify(detail.record.forwardHeaders, null, 2) }}</pre>
+            </template>
             <div class="nghd">{{ $t('nginx.req_headers') }}</div>
             <pre>{{ JSON.stringify(detail.record.reqHeaders, null, 2) }}</pre>
             <div class="nghd">{{ $t('nginx.res_headers') }}</div>
@@ -413,6 +517,8 @@ function statusText() {
 .nghint { font-size: 12px; color: var(--tx4); }
 .ngarrow { color: var(--tx4); }
 .ngin { background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 6px; padding: 4px 6px; }
+.ngbody { width: 100%; min-height: 90px; resize: vertical; box-sizing: border-box; font-family: ui-monospace, Consolas, monospace; }
+.ngrwitem { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; border-bottom: 1px dashed var(--bd); }
 .ngbtn { background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 .ngbtn.primary { border-color: var(--ac2); color: var(--ac2); }
 .ngactions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

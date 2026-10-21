@@ -20,21 +20,53 @@ export function applyResponseReplacements(body, replacements) {
   return Buffer.from(s, 'utf8');
 }
 
+export function applyLocationReplacements(headers, replacements, ctx = null) {
+  if (!headers || !headers.location) return headers;
+  const rule = ctx?.rule;
+  const req = ctx?.req;
+  const apply = (v) => {
+    let s = String(v);
+    if (rule && req) {
+      const reqHost = String(req.headers?.host || '');
+      const target = rule.target || {};
+      const sameHost = (u) => u.host === `${target.host}:${target.port}`
+        || u.host === target.host
+        || (u.hostname === target.host && (!u.port || Number(u.port) === Number(target.port)));
+      let absolute = null;
+      try { absolute = new URL(s); } catch { /* relative or scheme-relative */ }
+      if (absolute && sameHost(absolute) && reqHost) {
+        const proto = String(req.headers?.['x-forwarded-proto'] || (req.socket?.encrypted ? 'https' : 'http'));
+        absolute.protocol = `${proto}:`;
+        absolute.host = reqHost;
+        if (rule.mode === 'path' && rule.pathPrefix && !matchPrefix(rule.pathPrefix, absolute.pathname)) {
+          absolute.pathname = rule.pathPrefix + absolute.pathname;
+        }
+        s = absolute.toString();
+      } else if (!absolute && rule.mode === 'path' && rule.pathPrefix && s.startsWith('/') && !matchPrefix(rule.pathPrefix, s.split('?')[0])) {
+        s = rule.pathPrefix + s;
+      }
+    }
+    for (const r of replacements || []) {
+      if (!r || !r.from) continue;
+      s = s.split(r.from).join(r.to ?? '');
+    }
+    return s;
+  };
+  headers.location = Array.isArray(headers.location) ? headers.location.map(apply) : apply(headers.location);
+  return headers;
+}
+
 export function applyResponseHeaders(headers, list) {
   const out = { ...headers };
+  const customCookies = [];
   for (const h of list || []) {
     if (!h || !h.name) continue;
     const name = String(h.name).toLowerCase();
     const value = String(h.value ?? '');
-    if (name === 'set-cookie') {
-      const prev = out['set-cookie'];
-      const arr = Array.isArray(prev) ? [...prev] : (prev ? [prev] : []);
-      arr.push(value);
-      out['set-cookie'] = arr;
-    } else {
-      out[name] = value;
-    }
+    if (name === 'set-cookie') { customCookies.push(value); continue; }
+    out[name] = value;
   }
+  if (customCookies.length) out['set-cookie'] = customCookies;
   return out;
 }
 
@@ -81,24 +113,82 @@ export function forwardHeaders(rule, req) {
   return out;
 }
 
-export function proxyHttp({ rule, req, res, capture, emit = () => {} }) {
+export function proxyHttp({ rule, req, res, capture, emit = () => {}, logger = null }) {
   const target = rule.target;
   const isHttps = target.protocol === 'https';
   const mod = isHttps ? https : http;
   const start = Date.now();
-  const cap = rule.capture && capture ? capture.begin(rule.id, { method: req.method, url: req.url, headers: req.headers, kind: 'http' }) : null;
+  const logOn = !!rule.logRequests;
+  const tag = `[nginx:${rule.name || rule.id}]`;
   const replacements = (rule.responseReplace || []).filter((r) => r && r.from);
+  const locationReplacements = [...(rule.locationReplace || []), ...replacements].filter((r) => r && r.from);
+
+  const sendDirect = (status, contentType, payload, extraHeaders = []) => {
+    const code = Number(status) || 200;
+    const body = Buffer.from(String(payload ?? ''), 'utf8');
+    let headers = applyResponseHeaders({
+      'content-type': contentType || 'application/json; charset=utf-8',
+      'content-length': String(body.length),
+    }, rule.responseHeaders);
+    if (Array.isArray(extraHeaders) && extraHeaders.length) headers = applyResponseHeaders(headers, extraHeaders);
+    headers = applyLocationReplacements(headers, locationReplacements);
+    if (logOn) logger?.info?.(`${tag} direct ${code} response headers=${JSON.stringify(headers)} body=${payload}`);
+    res.writeHead(code, headers);
+    res.end(body);
+    emit({ method: req.method, url: req.url, status: code, durationMs: Date.now() - start, kind: 'http' });
+  };
+
+  if (rule.directResponse) {
+    sendDirect(rule.directStatus, rule.directContentType, rule.directBody);
+    return;
+  }
+
+  const pathname = String(req.url || '/').split('?')[0];
+  const rewrite = (rule.rewrites || []).find((rw) => rw && rw.from && matchPrefix(rw.from, pathname));
+  if (rewrite?.directResponse) {
+    sendDirect(rewrite.directStatus, rewrite.directContentType, rewrite.directBody, rewrite.directHeaders);
+    return;
+  }
+
+  if (rule.corsPreflight && req.method === 'OPTIONS' && req.headers['access-control-request-method']) {
+    const origin = String(req.headers.origin || '');
+    const reqMethod = String(req.headers['access-control-request-method'] || '');
+    const reqHeaders = String(req.headers['access-control-request-headers'] || '');
+    const out = {
+      'Access-Control-Allow-Origin': origin || '*',
+      'Access-Control-Allow-Methods': reqMethod
+        ? `${reqMethod}, GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD`
+        : 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD',
+      'Access-Control-Allow-Headers': reqHeaders || 'Content-Type, Authorization, X-Requested-With',
+      'Access-Control-Max-Age': '86400',
+      Vary: 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers',
+      'Content-Length': '0',
+    };
+    if (origin) out['Access-Control-Allow-Credentials'] = 'true';
+    const headers = applyResponseHeaders(out, rule.responseHeaders);
+    if (logOn) logger?.info?.(`${tag} CORS preflight 204 headers=${JSON.stringify(headers)}`);
+    res.writeHead(204, headers);
+    res.end();
+    emit({ method: req.method, url: req.url, status: 204, durationMs: Date.now() - start, kind: 'http' });
+    return;
+  }
+  const cap = rule.capture && capture ? capture.begin(rule.id, { method: req.method, url: req.url, headers: req.headers, kind: 'http' }) : null;
 
   const headers = forwardHeaders(rule, req);
   if (!headers.host) headers.host = rule.preserveHost !== false && req.headers.host ? req.headers.host : `${target.host}:${target.port}`;
   if (replacements.length) headers['accept-encoding'] = 'identity';
-  const opts = { method: req.method, host: target.host, port: target.port, path: buildForwardPath(rule, req.url), headers };
+  const forwardPath = buildForwardPath(rule, req.url);
+  const forwardUrl = `${target.protocol}://${target.host}:${target.port}${forwardPath}`;
+  if (cap) cap.forward(forwardUrl, headers);
+  if (logOn) logger?.info?.(`${tag} -> ${req.method} ${forwardUrl} request headers=${JSON.stringify(headers)}`);
+  const opts = { method: req.method, host: target.host, port: target.port, path: forwardPath, headers };
   if (isHttps) opts.rejectUnauthorized = !rule.tlsInsecure;
 
   const upstreamReq = mod.request(opts, (up) => {
     const status = up.statusCode || 502;
     let kind = 'http';
     if (cap) cap.resHeaders(up.headers);
+    if (logOn) logger?.info?.(`${tag} <- ${status} response headers=${JSON.stringify(up.headers)}`);
     if (String(up.headers['content-type'] || '').includes('text/event-stream')) kind = 'sse';
     const canReplace = replacements.length > 0 && kind !== 'sse'
       && isTextualResponse(up.headers) && !up.headers['content-encoding'];
@@ -121,7 +211,7 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {} }) {
     };
 
     if (!canReplace) {
-      res.writeHead(status, applyResponseHeaders(up.headers, rule.responseHeaders));
+      res.writeHead(status, applyLocationReplacements(applyResponseHeaders(up.headers, rule.responseHeaders), locationReplacements, { rule, req }));
       up.on('data', (chunk) => {
         if (cap) cap.resBody(chunk);
         if (!res.writableEnded) res.write(chunk);
@@ -143,7 +233,7 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {} }) {
       size += chunk.length;
       if (size > REPLACE_MAX_BODY) {
         overflow = true;
-        res.writeHead(status, applyResponseHeaders(up.headers, rule.responseHeaders));
+        res.writeHead(status, applyLocationReplacements(applyResponseHeaders(up.headers, rule.responseHeaders), locationReplacements, { rule, req }));
         for (const c of chunks) res.write(c);
         chunks.length = 0;
         if (!res.writableEnded) res.write(chunk);
@@ -159,7 +249,7 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {} }) {
         return;
       }
       const body = applyResponseReplacements(Buffer.concat(chunks), replacements);
-      const out = applyResponseHeaders(up.headers, rule.responseHeaders);
+      const out = applyLocationReplacements(applyResponseHeaders(up.headers, rule.responseHeaders), locationReplacements, { rule, req });
       delete out['content-encoding'];
       delete out['transfer-encoding'];
       delete out.etag;
@@ -192,10 +282,12 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {} }) {
   req.on('error', () => upstreamReq.destroy());
   res.on('close', () => { if (!upstreamReq.destroyed) upstreamReq.destroy(); });
 }
-export function proxyWs({ rule, req, socket, head, capture }) {
+export function proxyWs({ rule, req, socket, head, capture, logger = null }) {
   const target = rule.target;
   const isHttps = target.protocol === 'https';
   const mod = isHttps ? https : http;
+  const logOn = !!rule.logRequests;
+  const tag = `[nginx:${rule.name || rule.id}]`;
   const cap = rule.capture && capture ? capture.begin(rule.id, { method: 'GET', url: req.url, headers: req.headers, kind: 'ws' }) : null;
 
   const headers = forwardHeaders(rule, req);
@@ -205,13 +297,18 @@ export function proxyWs({ rule, req, socket, head, capture }) {
   for (const k of ['sec-websocket-key', 'sec-websocket-version', 'sec-websocket-protocol', 'sec-websocket-extensions']) {
     if (req.headers[k]) headers[k] = req.headers[k];
   }
-  const opts = { method: 'GET', host: target.host, port: target.port, path: buildForwardPath(rule, req.url), headers };
+  const forwardPath = buildForwardPath(rule, req.url);
+  const forwardUrl = `${target.protocol}://${target.host}:${target.port}${forwardPath}`;
+  if (cap) cap.forward(forwardUrl, headers);
+  if (logOn) logger?.info?.(`${tag} -> GET ${forwardUrl} request headers=${JSON.stringify(headers)}`);
+  const opts = { method: 'GET', host: target.host, port: target.port, path: forwardPath, headers };
   if (isHttps) opts.rejectUnauthorized = !rule.tlsInsecure;
 
   const upstreamReq = mod.request(opts);
   const start = Date.now();
 
   upstreamReq.on('upgrade', (upRes, upSocket, upHead) => {
+    if (logOn) logger?.info?.(`${tag} <- ${upRes.statusCode} response headers=${JSON.stringify(upRes.headers)}`);
     const lines = [`HTTP/1.1 ${upRes.statusCode} ${upRes.statusMessage}`];
     for (const [k, v] of Object.entries(upRes.headers)) {
       if (Array.isArray(v)) for (const vv of v) lines.push(`${k}: ${vv}`);
@@ -247,7 +344,7 @@ export function proxyWs({ rule, req, socket, head, capture }) {
   upstreamReq.end();
 }
 
-export function createProxyEngine({ store, capture = null, logger = console, httpServer = null, onEvent = () => {} }) {
+export function createProxyEngine({ store, capture = null, logger = console, httpServer = null, onEvent = () => {}, rulesPollMs = 60_000 }) {
   const instances = new Map(); // id -> { rule, server, status, error }
   const logs = new Map();      // id -> entry[]
 
@@ -281,7 +378,7 @@ export function createProxyEngine({ store, capture = null, logger = console, htt
   function handleHttp(req, res, url) {
     const rule = findPathRule(url.pathname);
     if (!rule) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-found' })); return; }
-    proxyHttp({ rule, req, res, capture, emit: (e) => pushLog(rule.id, e) });
+    proxyHttp({ rule, req, res, capture, logger, emit: (e) => pushLog(rule.id, e) });
   }
 
   function onUpgrade(req, socket, head) {
@@ -290,12 +387,12 @@ export function createProxyEngine({ store, capture = null, logger = console, htt
     const rule = findPathRule(pathname);
     if (!rule) return;
     socket.__proxied = true;
-    proxyWs({ rule, req, socket, head, capture });
+    proxyWs({ rule, req, socket, head, capture, logger });
   }
 
   function listen(rule) {
-    const srv = http.createServer((req, res) => proxyHttp({ rule, req, res, capture, emit: (e) => pushLog(rule.id, e) }));
-    srv.on('upgrade', (req, socket, head) => proxyWs({ rule, req, socket, head, capture }));
+    const srv = http.createServer((req, res) => proxyHttp({ rule, req, res, capture, logger, emit: (e) => pushLog(rule.id, e) }));
+    srv.on('upgrade', (req, socket, head) => proxyWs({ rule, req, socket, head, capture, logger }));
     return new Promise((resolve, reject) => {
       srv.once('error', reject);
       srv.listen(rule.listenPort, rule.listenHost, () => { srv.off('error', reject); resolve(srv); });
@@ -340,10 +437,31 @@ export function createProxyEngine({ store, capture = null, logger = console, htt
     }
   }
 
+  async function reloadAll() {
+    const list = store.list();
+    const ids = new Set(list.map((r) => r.id));
+    for (const id of [...instances.keys()]) if (!ids.has(id)) stop(id);
+    for (const rule of list) await apply(rule);
+  }
+
+// Reload rules.json by mtime (checked every 60s by default).
+  if (typeof store.refreshFromDisk === 'function') {
+    const timer = setInterval(() => {
+      try {
+        if (!store.refreshFromDisk()) return;
+        logger.info?.('proxy rules changed on disk; reloading');
+        void reloadAll().catch((e) => logger.warn?.('proxy rules reload failed', (e && e.message) || e));
+      } catch (e) {
+        logger.warn?.('proxy rules refresh failed', (e && e.message) || e);
+      }
+    }, rulesPollMs);
+    timer.unref?.();
+  }
+
   if (httpServer) httpServer.on('upgrade', onUpgrade);
 
   return {
-    start, stop, apply, remove, status, matchPath, handleHttp, onUpgrade, startEnabled,
+    start, stop, apply, remove, status, matchPath, handleHttp, onUpgrade, startEnabled, reloadAll,
     logs: (id) => logs.get(id) || [],
     _instanceServer: (id) => (instances.get(id) || {}).server,
   };
