@@ -22,7 +22,17 @@ test('normalizeRule：默认值（tlsInsecure=true / capture=false / stripPrefix
   assert.equal(r.stripPrefix, true);
   assert.equal(r.preserveHost, true);
   assert.deepEqual(r.headers, []);
+  assert.deepEqual(r.responseReplace, []);
+  assert.deepEqual(r.responseHeaders, []);
   assert.equal(normalizeRule({ ...PATH_RULE, preserveHost: false }).preserveHost, false);
+  assert.deepEqual(
+    normalizeRule({ ...PATH_RULE, responseHeaders: [{ name: 'X-Test', value: '1' }, { name: '' }] }).responseHeaders,
+    [{ name: 'X-Test', value: '1' }],
+  );
+  assert.deepEqual(
+    normalizeRule({ ...PATH_RULE, responseReplace: [{ from: 'old', to: 'new' }, { from: '  ' }, {}] }).responseReplace,
+    [{ from: 'old', to: 'new' }],
+  );
 });
 
 test('normalizeRule：非法 mode / 端口 / 保留前缀报错', () => {

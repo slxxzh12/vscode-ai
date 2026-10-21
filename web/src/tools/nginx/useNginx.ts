@@ -4,6 +4,7 @@ import { NGINX_DEFAULT_PORT, NGINX_SAMPLE_REWRITES } from '@devflow/shared';
 export type NginxMode = 'port' | 'path';
 export interface NginxHeader { name: string; value: string }
 export interface NginxRewrite { from: string; to: string }
+export interface NginxReplace { from: string; to: string }
 export interface NginxRule {
   id?: string;
   name: string;
@@ -17,7 +18,9 @@ export interface NginxRule {
   tlsInsecure: boolean;
   preserveHost: boolean;
   headers: NginxHeader[];
+  responseHeaders: NginxHeader[];
   rewrites: NginxRewrite[];
+  responseReplace: NginxReplace[];
   capture: boolean;
 }
 export interface NginxStatus { status: 'running' | 'stopped' | 'error'; error: string | null }
@@ -45,7 +48,7 @@ export function emptyRule(): NginxRule {
   return {
     name: '', mode: 'port', enabled: true, listenHost: '0.0.0.0', listenPort: NGINX_DEFAULT_PORT,
     pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: 5173 },
-    tlsInsecure: true, preserveHost: true, headers: [], rewrites: [], capture: false,
+    tlsInsecure: true, preserveHost: true, headers: [], responseHeaders: [], rewrites: [], responseReplace: [], capture: false,
   };
 }
 
@@ -56,8 +59,8 @@ export function deepseekFlashRule(): NginxRule {
     pathPrefix: '', stripPrefix: true,
     target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
     tlsInsecure: true, preserveHost: true,
-    headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }],
-    rewrites: NGINX_SAMPLE_REWRITES.map((r) => ({ ...r })), capture: false,
+    headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }], responseHeaders: [],
+    rewrites: NGINX_SAMPLE_REWRITES.map((r) => ({ ...r })), responseReplace: [], capture: false,
   };
 }
 

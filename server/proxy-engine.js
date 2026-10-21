@@ -3,6 +3,40 @@ import https from 'node:https';
 import { WsFrameParser } from './proxy-ws-frames.js';
 
 const LOG_LIMIT = 500;
+const REPLACE_MAX_BODY = 20 * 1024 * 1024;
+
+export function isTextualResponse(headers) {
+  const ct = String(headers?.['content-type'] || '').toLowerCase();
+  if (ct.startsWith('text/')) return true;
+  return ct.includes('javascript') || ct.includes('json') || ct.includes('xml') || ct.includes('svg');
+}
+
+export function applyResponseReplacements(body, replacements) {
+  let s = body.toString('utf8');
+  for (const r of replacements || []) {
+    if (!r || !r.from) continue;
+    s = s.split(r.from).join(r.to ?? '');
+  }
+  return Buffer.from(s, 'utf8');
+}
+
+export function applyResponseHeaders(headers, list) {
+  const out = { ...headers };
+  for (const h of list || []) {
+    if (!h || !h.name) continue;
+    const name = String(h.name).toLowerCase();
+    const value = String(h.value ?? '');
+    if (name === 'set-cookie') {
+      const prev = out['set-cookie'];
+      const arr = Array.isArray(prev) ? [...prev] : (prev ? [prev] : []);
+      arr.push(value);
+      out['set-cookie'] = arr;
+    } else {
+      out[name] = value;
+    }
+  }
+  return out;
+}
 
 export function matchPrefix(prefix, pathname) {
   if (!prefix) return false;
@@ -53,33 +87,90 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {} }) {
   const mod = isHttps ? https : http;
   const start = Date.now();
   const cap = rule.capture && capture ? capture.begin(rule.id, { method: req.method, url: req.url, headers: req.headers, kind: 'http' }) : null;
+  const replacements = (rule.responseReplace || []).filter((r) => r && r.from);
 
   const headers = forwardHeaders(rule, req);
   if (!headers.host) headers.host = rule.preserveHost !== false && req.headers.host ? req.headers.host : `${target.host}:${target.port}`;
+  if (replacements.length) headers['accept-encoding'] = 'identity';
   const opts = { method: req.method, host: target.host, port: target.port, path: buildForwardPath(rule, req.url), headers };
   if (isHttps) opts.rejectUnauthorized = !rule.tlsInsecure;
 
   const upstreamReq = mod.request(opts, (up) => {
+    const status = up.statusCode || 502;
     let kind = 'http';
     if (cap) cap.resHeaders(up.headers);
     if (String(up.headers['content-type'] || '').includes('text/event-stream')) kind = 'sse';
-    res.writeHead(up.statusCode || 502, up.headers);
+    const canReplace = replacements.length > 0 && kind !== 'sse'
+      && isTextualResponse(up.headers) && !up.headers['content-encoding'];
+
+    const finishLog = (durationMs) => {
+      if (cap) cap.finish({ status, durationMs });
+      emit({ method: req.method, url: req.url, status, durationMs, kind });
+    };
+    const fail = (e) => {
+      const durationMs = Date.now() - start;
+      finishLog(durationMs);
+      if (!res.headersSent) {
+        res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          error: 'bad-gateway',
+          message: e && e.message ? e.message : 'upstream error',
+          target: `${target.protocol}//${target.host}:${target.port}`,
+        }));
+      } else if (!res.writableEnded) res.end();
+    };
+
+    if (!canReplace) {
+      res.writeHead(status, applyResponseHeaders(up.headers, rule.responseHeaders));
+      up.on('data', (chunk) => {
+        if (cap) cap.resBody(chunk);
+        if (!res.writableEnded) res.write(chunk);
+      });
+      up.on('end', () => {
+        finishLog(Date.now() - start);
+        if (!res.writableEnded) res.end();
+      });
+      up.on('error', fail);
+      return;
+    }
+
+    const chunks = [];
+    let size = 0;
+    let overflow = false;
     up.on('data', (chunk) => {
       if (cap) cap.resBody(chunk);
-      if (!res.writableEnded) res.write(chunk);
+      if (overflow) { if (!res.writableEnded) res.write(chunk); return; }
+      size += chunk.length;
+      if (size > REPLACE_MAX_BODY) {
+        overflow = true;
+        res.writeHead(status, applyResponseHeaders(up.headers, rule.responseHeaders));
+        for (const c of chunks) res.write(c);
+        chunks.length = 0;
+        if (!res.writableEnded) res.write(chunk);
+        return;
+      }
+      chunks.push(chunk);
     });
     up.on('end', () => {
       const durationMs = Date.now() - start;
-      if (cap) cap.finish({ status: up.statusCode || 502, durationMs });
-      emit({ method: req.method, url: req.url, status: up.statusCode || 502, durationMs, kind });
-      if (!res.writableEnded) res.end();
+      if (overflow) {
+        finishLog(durationMs);
+        if (!res.writableEnded) res.end();
+        return;
+      }
+      const body = applyResponseReplacements(Buffer.concat(chunks), replacements);
+      const out = applyResponseHeaders(up.headers, rule.responseHeaders);
+      delete out['content-encoding'];
+      delete out['transfer-encoding'];
+      delete out.etag;
+      delete out['last-modified'];
+      delete out['content-md5'];
+      out['content-length'] = String(body.length);
+      res.writeHead(status, out);
+      res.end(body);
+      finishLog(durationMs);
     });
-    up.on('error', () => {
-      const durationMs = Date.now() - start;
-      if (cap) cap.finish({ status: up.statusCode || 502, durationMs });
-      emit({ method: req.method, url: req.url, status: up.statusCode || 502, durationMs, kind });
-      if (!res.writableEnded) res.end();
-    });
+    up.on('error', fail);
   });
 
   upstreamReq.on('error', (e) => {
@@ -101,7 +192,6 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {} }) {
   req.on('error', () => upstreamReq.destroy());
   res.on('close', () => { if (!upstreamReq.destroyed) upstreamReq.destroy(); });
 }
-
 export function proxyWs({ rule, req, socket, head, capture }) {
   const target = rule.target;
   const isHttps = target.protocol === 'https';

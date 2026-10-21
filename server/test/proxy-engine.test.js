@@ -150,6 +150,63 @@ test('自定义 Host 头优先于 preserveHost', async () => {
   up.srv.close();
 });
 
+test('响应替换：文本响应全局替换并重算长度', async () => {
+  const up = await startUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end('<html><script src="/old.js"></script></html>');
+  });
+  const rule = {
+    id: 'e2e-replace', name: 'replace', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: up.port },
+    tlsInsecure: true, headers: [], capture: false, enabled: true,
+    responseReplace: [{ from: '/old.js', to: '/new.js' }],
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const addr = engine._instanceServer(rule.id).address();
+  const result = await new Promise((resolve) => {
+    http.get({ host: '127.0.0.1', port: addr.port, path: '/index.html' }, (res) => {
+      let s = ''; res.on('data', (c) => { s += c; }); res.on('end', () => resolve({ body: s, headers: res.headers }));
+    });
+  });
+  assert.match(result.body, /\/new\.js/);
+  assert.doesNotMatch(result.body, /\/old\.js/);
+  assert.equal(Number(result.headers['content-length']), Buffer.byteLength(result.body));
+  engine.stop(rule.id);
+  up.srv.close();
+});
+
+test('响应头：自定义头与 Set-Cookie 追加', async () => {
+  const up = await startUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain', 'set-cookie': 'up=1', 'x-up': '1' });
+    res.end('ok');
+  });
+  const rule = {
+    id: 'e2e-res-header', name: 'res-header', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: up.port },
+    tlsInsecure: true, headers: [], capture: false, enabled: true,
+    responseHeaders: [
+      { name: 'X-Custom', value: 'yes' },
+      { name: 'Set-Cookie', value: 'a=1' },
+      { name: 'Set-Cookie', value: 'b=2' },
+    ],
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const addr = engine._instanceServer(rule.id).address();
+  const result = await new Promise((resolve) => {
+    http.get({ host: '127.0.0.1', port: addr.port, path: '/' }, (res) => {
+      let s = ''; res.on('data', (c) => { s += c; }); res.on('end', () => resolve({ body: s, headers: res.headers }));
+    });
+  });
+  assert.equal(result.headers['x-custom'], 'yes');
+  assert.deepEqual(result.headers['set-cookie'], ['up=1', 'a=1', 'b=2']);
+  engine.stop(rule.id);
+  up.srv.close();
+});
+
 test('端口被占 → 状态 error（不崩）', async () => {
   const up = await startUpstream(() => {});
   const rule = {

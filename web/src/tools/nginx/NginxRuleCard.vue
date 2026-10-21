@@ -102,7 +102,9 @@ const listenText = computed({
 function toForm(r: NginxRule): NginxRule {
   const f: NginxRule = { ...emptyRule(), ...JSON.parse(JSON.stringify(r)) };
   if (!Array.isArray(f.headers)) f.headers = [];
+  if (!Array.isArray(f.responseHeaders)) f.responseHeaders = [];
   if (!Array.isArray(f.rewrites)) f.rewrites = [];
+  if (!Array.isArray(f.responseReplace)) f.responseReplace = [];
   return f;
 }
 
@@ -190,8 +192,12 @@ async function clearCaptures() {
 
 function addHeader() { form.value = { ...form.value, headers: [...form.value.headers, { name: '', value: '' }] }; }
 function removeHeader(i: number) { form.value = { ...form.value, headers: form.value.headers.filter((_, j) => j !== i) }; }
+function addResponseHeader() { form.value = { ...form.value, responseHeaders: [...form.value.responseHeaders, { name: '', value: '' }] }; }
+function removeResponseHeader(i: number) { form.value = { ...form.value, responseHeaders: form.value.responseHeaders.filter((_, j) => j !== i) }; }
 function addRewrite() { form.value = { ...form.value, rewrites: [...form.value.rewrites, { from: '', to: '' }] }; }
 function removeRewrite(i: number) { form.value = { ...form.value, rewrites: form.value.rewrites.filter((_, j) => j !== i) }; }
+function addResponseReplace() { form.value = { ...form.value, responseReplace: [...form.value.responseReplace, { from: '', to: '' }] }; }
+function removeResponseReplace(i: number) { form.value = { ...form.value, responseReplace: form.value.responseReplace.filter((_, j) => j !== i) }; }
 
 async function copyUrl() { if (accessUrl.value) { await copyText(accessUrl.value); msg.value = t('nginx.copied'); } }
 
@@ -273,6 +279,18 @@ function statusText() {
       </div>
 
       <div class="ngheaders">
+        <div class="nghd">{{ $t('nginx.response_replace') }}</div>
+        <div class="nghint">{{ $t('nginx.response_replace_hint') }}</div>
+        <div v-for="(rp, i) in form.responseReplace" :key="i" class="ngrow">
+          <input v-model="rp.from" class="ngin" :placeholder="$t('nginx.replace_from')" />
+          <span class="ngarrow">→</span>
+          <input v-model="rp.to" class="ngin" :placeholder="$t('nginx.replace_to')" />
+          <button class="ngbtn" @click="removeResponseReplace(i)">×</button>
+        </div>
+        <button class="ngbtn" @click="addResponseReplace">{{ $t('nginx.add_response_replace') }}</button>
+      </div>
+
+      <div class="ngheaders">
         <div class="nghd">{{ $t('nginx.headers') }}</div>
         <div class="nghint">{{ $t('nginx.host_header_hint') }}</div>
         <div v-for="(h, i) in form.headers" :key="i" class="ngrow">
@@ -281,6 +299,17 @@ function statusText() {
           <button class="ngbtn" @click="removeHeader(i)">×</button>
         </div>
         <button class="ngbtn" @click="addHeader">{{ $t('nginx.add_header') }}</button>
+      </div>
+
+      <div class="ngheaders">
+        <div class="nghd">{{ $t('nginx.response_headers') }}</div>
+        <div class="nghint">{{ $t('nginx.response_headers_hint') }}</div>
+        <div v-for="(h, i) in form.responseHeaders" :key="i" class="ngrow">
+          <input v-model="h.name" class="ngin" :placeholder="$t('nginx.header_name')" />
+          <input v-model="h.value" class="ngin" :placeholder="$t('nginx.header_value')" />
+          <button class="ngbtn" @click="removeResponseHeader(i)">×</button>
+        </div>
+        <button class="ngbtn" @click="addResponseHeader">{{ $t('nginx.add_response_header') }}</button>
       </div>
 
       <div class="ngactions">

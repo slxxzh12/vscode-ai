@@ -42,6 +42,14 @@ export function normalizeRule(input) {
     }).filter(Boolean)
     : [];
 
+  const responseReplace = Array.isArray(input?.responseReplace)
+    ? input.responseReplace.map((r) => ({ from: String(r?.from ?? ''), to: String(r?.to ?? '') })).filter((r) => r.from.trim())
+    : [];
+
+  const responseHeaders = Array.isArray(input?.responseHeaders)
+    ? input.responseHeaders.map((h) => ({ name: String(h?.name || '').trim(), value: String(h?.value ?? '') })).filter((h) => h.name)
+    : [];
+
   const base = {
     name, mode, listenHost,
     target: { protocol, host, port },
@@ -49,6 +57,8 @@ export function normalizeRule(input) {
     preserveHost: input?.preserveHost !== false,
     headers,
     rewrites,
+    responseReplace,
+    responseHeaders,
     capture: !!input?.capture,
     enabled: !!input?.enabled,
   };
