@@ -104,6 +104,10 @@ function onDirName(node: Internal) {
 function onItemName(node: Internal) {
   props.source.open(node);
 }
+function onRowClick(node: Internal) {
+  if (node.kind === 'dir') onDirName(node);
+  else onItemName(node);
+}
 
 // —— 头部新建 ——
 function promptCreate(kind: 'file' | 'folder', dir = props.activeFolder) {
@@ -256,6 +260,7 @@ defineExpose({ refresh });
           :class="[row.node.kind, { on: isActive(row) }]"
           :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
           :draggable="row.node.kind === 'item' && !!source.move ? 'true' : 'false'"
+          @click="onRowClick(row.node)"
           @dragstart="onDragStart(row)"
           @contextmenu.prevent="openMenu($event, row.node)"
           @drop.stop.prevent="onDropRow(row)">
@@ -269,8 +274,7 @@ defineExpose({ refresh });
           <button class="ftact" :title="$t('tree.cancel')" @click.stop="cancelEdit">×</button>
         </template>
         <template v-else>
-          <span class="ftname" @click="row.node.kind === 'dir' ? onDirName(row.node) : onItemName(row.node)"
-                @dblclick="row.node.kind === 'dir' && toggle(row.node)">{{ row.node.name }}</span>
+          <span class="ftname">{{ row.node.name }}</span>
           <span v-if="row.node.time" class="fttime">{{ row.node.time }}</span>
         </template>
         <span v-if="editing && editing.key === row.node.key && editing.error" class="fterr">{{ editing.error }}</span>

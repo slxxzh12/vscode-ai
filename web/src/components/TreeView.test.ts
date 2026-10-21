@@ -40,8 +40,16 @@ describe('TreeView', () => {
     await w.findAll('.ftrow')[0].find('.ftname').trigger('click');
     await flushPromises();
     expect(w.findAll('.ftrow').length).toBe(3);
-    await w.findAll('.ftrow')[2].find('.ftname').trigger('click');
+    await w.findAll('.ftrow')[2].trigger('click');
     expect(src.open).toHaveBeenCalled();
+  });
+
+  it('点文件行/图标区域也能打开（不限于文件名）', async () => {
+    const src = fakeSource();
+    const w = mountC(TreeView, { props: { source: src } });
+    await flushPromises();
+    await w.findAll('.ftrow')[1].find('.fticon').trigger('click');
+    expect(src.open).toHaveBeenCalledWith(expect.objectContaining({ key: 'a.txt' }));
   });
 
   it('右键菜单按能力显隐；重命名调用 source.rename', async () => {
