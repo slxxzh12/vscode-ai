@@ -2,6 +2,7 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue';
 import { t } from '../../i18n';
 import { usePostmanHistory, type CurlResult, type PostmanRecord } from './usePostmanHistory';
 import { postmanTreeSource } from './postmanTreeSource';
+import { normalizeCurlCommand } from './curlCommand';
 import type { TreeSource } from '../../tree/treeSource';
 
 // Postman 工作台：模块级单例，左侧工具条/树与右侧内容共用同一份状态。
@@ -23,6 +24,7 @@ export interface PostmanWorkbench {
   treeSource: TreeSource;
   load(): Promise<void>;
   openRecord(r: PostmanRecord): void;
+  normalizeCurlCmd(): void;
   runCurlCmd(): Promise<void>;
   runOne(rec: PostmanRecord): Promise<CurlResult>;
   runFolder(path: string): Promise<void>;
@@ -58,7 +60,7 @@ export function usePostmanWorkbench(): PostmanWorkbench {
   function isPass(j: CurlResult) { return !!j.ok && !j.error && !j.timedOut && (Number(j.status) || 0) < 400; }
 
   async function execCurl(command: string, folder: string): Promise<CurlResult> {
-    const j = await hist.runCurl(command, folder);
+    const j = await hist.runCurl(normalizeCurlCommand(command), folder);
     status.value = Number(j.status) || 0;
     respHeaders.value = j.headers ?? '';
     respBody.value = j.body ?? j.stdout ?? '';
@@ -68,9 +70,12 @@ export function usePostmanWorkbench(): PostmanWorkbench {
     return j;
   }
 
+  function normalizeCurlCmd() { curlCmd.value = normalizeCurlCommand(curlCmd.value); }
+
   async function runCurlCmd(): Promise<void> {
     if (busy.value) return;
-    if (!curlCmd.value.trim()) { msg.value = t('et.empty'); return; }
+    normalizeCurlCmd();
+    if (!curlCmd.value) { msg.value = t('et.empty'); return; }
     busy.value = true; msg.value = ''; clearResult();
     try { await execCurl(curlCmd.value, activeFolder.value); }
     catch (e) { failed.value = true; msg.value = t('tools.failed', { msg: (e as Error)?.message || String(e) }); }
@@ -136,7 +141,7 @@ export function usePostmanWorkbench(): PostmanWorkbench {
   cache = {
     history: hist.history, folders: hist.folders, activeId, activeFolder, activeRecord, runStatus,
     curlCmd, respHeaders, respBody, respStderr, status, failed, busy, msg, treeSource,
-    load: hist.load, openRecord, runCurlCmd, runOne, runFolder, batchRun, clearResult, clear,
+    load: hist.load, openRecord, normalizeCurlCmd, runCurlCmd, runOne, runFolder, batchRun, clearResult, clear,
   };
   return cache;
 }

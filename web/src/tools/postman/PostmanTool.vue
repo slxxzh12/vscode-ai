@@ -6,7 +6,7 @@ import CodeEditor from '../../components/CodeEditor.vue';
 
 const {
   activeFolder, respHeaders, respBody, respStderr, status, failed, busy, msg,
-  curlCmd, load, runCurlCmd, batchRun, clear,
+  curlCmd, load, normalizeCurlCmd, runCurlCmd, batchRun, clear,
 } = usePostmanWorkbench();
 
 const hasOutput = computed(() => !!(respHeaders.value || respBody.value || respStderr.value));
@@ -60,7 +60,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
       <div class="pmcurlbox">
         <div class="pmcurlbar"><span class="pmcurlprompt">curl</span><span class="pmcurltip">{{ $t('tools.pm_tip') }}</span></div>
-        <CodeEditor v-model="curlCmd" class="pmcurl" language="cmd.sh" :placeholder="$t('tools.pm_ph')" />
+        <CodeEditor v-model="curlCmd" class="pmcurl" language="cmd.sh" :placeholder="$t('tools.pm_ph')" @blur="normalizeCurlCmd" />
       </div>
 
       <label class="pmlabel">{{ $t('tools.pm_resp') }}</label>
