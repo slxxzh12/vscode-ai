@@ -15,6 +15,7 @@ export interface NginxRule {
   stripPrefix: boolean;
   target: { protocol: 'http' | 'https'; host: string; port: number };
   tlsInsecure: boolean;
+  preserveHost: boolean;
   headers: NginxHeader[];
   rewrites: NginxRewrite[];
   capture: boolean;
@@ -44,7 +45,7 @@ export function emptyRule(): NginxRule {
   return {
     name: '', mode: 'port', enabled: true, listenHost: '0.0.0.0', listenPort: NGINX_DEFAULT_PORT,
     pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: 5173 },
-    tlsInsecure: true, headers: [], rewrites: [], capture: false,
+    tlsInsecure: true, preserveHost: true, headers: [], rewrites: [], capture: false,
   };
 }
 
@@ -54,7 +55,7 @@ export function deepseekFlashRule(): NginxRule {
     name: 'deepseek-flash', mode: 'port', enabled: true, listenHost: '0.0.0.0', listenPort: NGINX_DEFAULT_PORT,
     pathPrefix: '', stripPrefix: true,
     target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
-    tlsInsecure: true,
+    tlsInsecure: true, preserveHost: true,
     headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }],
     rewrites: NGINX_SAMPLE_REWRITES.map((r) => ({ ...r })), capture: false,
   };

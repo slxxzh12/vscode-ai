@@ -20,7 +20,9 @@ test('normalizeRule：默认值（tlsInsecure=true / capture=false / stripPrefix
   assert.equal(r.tlsInsecure, true);
   assert.equal(r.capture, false);
   assert.equal(r.stripPrefix, true);
+  assert.equal(r.preserveHost, true);
   assert.deepEqual(r.headers, []);
+  assert.equal(normalizeRule({ ...PATH_RULE, preserveHost: false }).preserveHost, false);
 });
 
 test('normalizeRule：非法 mode / 端口 / 保留前缀报错', () => {

@@ -46,6 +46,7 @@ export function normalizeRule(input) {
     name, mode, listenHost,
     target: { protocol, host, port },
     tlsInsecure: input?.tlsInsecure !== false,
+    preserveHost: input?.preserveHost !== false,
     headers,
     rewrites,
     capture: !!input?.capture,

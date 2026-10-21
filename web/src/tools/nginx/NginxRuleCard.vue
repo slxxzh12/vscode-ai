@@ -256,6 +256,7 @@ function statusText() {
       </div>
       <div class="ngrow ngchks">
         <label class="ngchk"><input v-model="form.tlsInsecure" type="checkbox" />{{ $t('nginx.tls_insecure') }}</label>
+        <label class="ngchk"><input v-model="form.preserveHost" type="checkbox" />{{ $t('nginx.preserve_host') }}</label>
         <label class="ngchk"><input v-model="form.capture" type="checkbox" />{{ $t('nginx.capture') }}</label>
       </div>
 
@@ -273,6 +274,7 @@ function statusText() {
 
       <div class="ngheaders">
         <div class="nghd">{{ $t('nginx.headers') }}</div>
+        <div class="nghint">{{ $t('nginx.host_header_hint') }}</div>
         <div v-for="(h, i) in form.headers" :key="i" class="ngrow">
           <input v-model="h.name" class="ngin" :placeholder="$t('nginx.header_name')" />
           <input v-model="h.value" class="ngin" :placeholder="$t('nginx.header_value')" />

@@ -55,7 +55,7 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {} }) {
   const cap = rule.capture && capture ? capture.begin(rule.id, { method: req.method, url: req.url, headers: req.headers, kind: 'http' }) : null;
 
   const headers = forwardHeaders(rule, req);
-  headers.host = `${target.host}:${target.port}`;
+  if (!headers.host) headers.host = rule.preserveHost !== false && req.headers.host ? req.headers.host : `${target.host}:${target.port}`;
   const opts = { method: req.method, host: target.host, port: target.port, path: buildForwardPath(rule, req.url), headers };
   if (isHttps) opts.rejectUnauthorized = !rule.tlsInsecure;
 
@@ -109,7 +109,7 @@ export function proxyWs({ rule, req, socket, head, capture }) {
   const cap = rule.capture && capture ? capture.begin(rule.id, { method: 'GET', url: req.url, headers: req.headers, kind: 'ws' }) : null;
 
   const headers = forwardHeaders(rule, req);
-  headers.host = `${target.host}:${target.port}`;
+  if (!headers.host) headers.host = rule.preserveHost !== false && req.headers.host ? req.headers.host : `${target.host}:${target.port}`;
   headers.connection = 'Upgrade';
   headers.upgrade = req.headers.upgrade || 'websocket';
   for (const k of ['sec-websocket-key', 'sec-websocket-version', 'sec-websocket-protocol', 'sec-websocket-extensions']) {

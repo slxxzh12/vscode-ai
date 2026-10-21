@@ -78,6 +78,78 @@ test('端到端：端口规则 HTTP 转发 + 头改写', async () => {
   up.srv.close();
 });
 
+test('Host 默认保留访问地址', async () => {
+  const up = await startUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end(JSON.stringify({ host: req.headers.host }));
+  });
+  const rule = {
+    id: 'e2e-host', name: 'host', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: up.port },
+    tlsInsecure: true, headers: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const addr = engine._instanceServer(rule.id).address();
+  const body = await new Promise((resolve) => {
+    http.get({ host: '127.0.0.1', port: addr.port, path: '/', headers: { Host: 'nginx.local:22224' } }, (res) => {
+      let s = ''; res.on('data', (c) => { s += c; }); res.on('end', () => resolve(s));
+    });
+  });
+  assert.equal(JSON.parse(body).host, 'nginx.local:22224');
+  engine.stop(rule.id);
+  up.srv.close();
+});
+
+test('preserveHost=false 时 Host 使用上游地址', async () => {
+  const up = await startUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end(JSON.stringify({ host: req.headers.host }));
+  });
+  const rule = {
+    id: 'e2e-host-off', name: 'host-off', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: up.port },
+    tlsInsecure: true, headers: [], capture: false, enabled: true, preserveHost: false,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const addr = engine._instanceServer(rule.id).address();
+  const body = await new Promise((resolve) => {
+    http.get({ host: '127.0.0.1', port: addr.port, path: '/', headers: { Host: 'nginx.local:22224' } }, (res) => {
+      let s = ''; res.on('data', (c) => { s += c; }); res.on('end', () => resolve(s));
+    });
+  });
+  assert.equal(JSON.parse(body).host, `127.0.0.1:${up.port}`);
+  engine.stop(rule.id);
+  up.srv.close();
+});
+
+test('自定义 Host 头优先于 preserveHost', async () => {
+  const up = await startUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end(JSON.stringify({ host: req.headers.host }));
+  });
+  const rule = {
+    id: 'e2e-host-custom', name: 'host-custom', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, target: { protocol: 'http', host: '127.0.0.1', port: up.port },
+    tlsInsecure: true, headers: [{ name: 'Host', value: 'fixed.example:1234' }], capture: false, enabled: true, preserveHost: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const addr = engine._instanceServer(rule.id).address();
+  const body = await new Promise((resolve) => {
+    http.get({ host: '127.0.0.1', port: addr.port, path: '/', headers: { Host: 'nginx.local:22224' } }, (res) => {
+      let s = ''; res.on('data', (c) => { s += c; }); res.on('end', () => resolve(s));
+    });
+  });
+  assert.equal(JSON.parse(body).host, 'fixed.example:1234');
+  engine.stop(rule.id);
+  up.srv.close();
+});
+
 test('端口被占 → 状态 error（不崩）', async () => {
   const up = await startUpstream(() => {});
   const rule = {

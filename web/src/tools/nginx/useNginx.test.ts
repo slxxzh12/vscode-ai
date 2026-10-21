@@ -9,6 +9,7 @@ describe('useNginx', () => {
   it('默认监听 22224，且新建规则与样例默认启用', () => {
     expect(emptyRule().listenPort).toBe(22224);
     expect(emptyRule().enabled).toBe(true);
+    expect(emptyRule().preserveHost).toBe(true);
     expect(deepseekFlashRule().listenPort).toBe(22224);
     expect(deepseekFlashRule().enabled).toBe(true);
     expect(deepseekFlashRule().tlsInsecure).toBe(true);
