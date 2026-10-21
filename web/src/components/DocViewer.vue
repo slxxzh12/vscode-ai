@@ -18,7 +18,7 @@ import YamlView from './YamlView.vue';
 import Base64Panel from './Base64Panel.vue';
 import { diffText, type DiffRow } from '../diff';
 import { sortText, dedupText, type SortMode } from '../textTools';
-import { canFormatExt, formatText } from '../formatText';
+import { formatExtFor, formatText } from '../formatText';
 import { copyText } from '../clipboard';
 import type { TreeItem } from '@devflow/shared';
 
@@ -679,12 +679,14 @@ async function runFile() {
 }
 
 // —— 一键格式化（Prettier 按需加载，实现见 formatText.ts）——
-const canFormat = computed(() => kind.value === 'text' && canFormatExt(ext.value));
+// 内容为 JSON 时（如 .txt 里粘了 JSON）也允许格式化。
+const formatExt = computed(() => (kind.value === 'text' ? formatExtFor(raw.value, ext.value) : ''));
+const canFormat = computed(() => kind.value === 'text' && !!formatExt.value);
 async function formatDoc() {
   if (!view || !canFormat.value) return;
   const doc = view.state.doc.toString();
   try {
-    const out = await formatText(doc, ext.value);
+    const out = await formatText(doc, formatExt.value);
     if (out !== doc) {
       view.dispatch({ changes: { from: 0, to: doc.length, insert: out } });
       flashFmt(t('fp.formatted'));

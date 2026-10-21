@@ -10,6 +10,27 @@ export function canFormatExt(ext: string): boolean {
   return !!PARSER_BY_EXT[ext];
 }
 
+// 内容本身是合法 JSON（对象/数组）时，即使后缀不是 .json 也允许按 JSON 格式化。
+export function looksLikeJson(text: string): boolean {
+  const s = text.trim();
+  if (!s) return false;
+  const first = s[0];
+  const last = s[s.length - 1];
+  if (!((first === '{' && last === '}') || (first === '[' && last === ']'))) return false;
+  try {
+    JSON.parse(s);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// 实际使用的格式化后缀：优先文件后缀，否则在内容为 JSON 时退回 json。
+export function formatExtFor(text: string, ext: string): string {
+  if (PARSER_BY_EXT[ext]) return ext;
+  return looksLikeJson(text) ? 'json' : '';
+}
+
 export async function formatText(text: string, ext: string): Promise<string> {
   const parser = PARSER_BY_EXT[ext];
   if (!parser) throw new Error(`unsupported: ${ext}`);

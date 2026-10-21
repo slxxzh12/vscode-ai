@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canFormatExt, formatText } from './formatText';
+import { canFormatExt, formatExtFor, formatText, looksLikeJson } from './formatText';
 
 describe('canFormatExt', () => {
   it('命中的后缀返回 true', () => {
@@ -7,6 +7,28 @@ describe('canFormatExt', () => {
   });
   it('未命中的后缀返回 false', () => {
     for (const e of ['txt', 'log', '']) expect(canFormatExt(e)).toBe(false);
+  });
+});
+
+describe('looksLikeJson', () => {
+  it('合法 JSON 对象/数组返回 true', () => {
+    expect(looksLikeJson('{"a":1}')).toBe(true);
+    expect(looksLikeJson('  [1, 2]  ')).toBe(true);
+  });
+  it('普通文本/非法 JSON 返回 false', () => {
+    expect(looksLikeJson('hello')).toBe(false);
+    expect(looksLikeJson('{a:1}')).toBe(false);
+    expect(looksLikeJson('')).toBe(false);
+  });
+});
+
+describe('formatExtFor', () => {
+  it('优先文件后缀', () => {
+    expect(formatExtFor('{"a":1}', 'js')).toBe('js');
+    expect(formatExtFor('x', 'txt')).toBe('');
+  });
+  it('后缀不支持但内容是 JSON 时退回 json', () => {
+    expect(formatExtFor('{"a":1}', 'txt')).toBe('json');
   });
 });
 
