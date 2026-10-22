@@ -6,7 +6,7 @@ import { manifestDirOf, writeManifest, removeManifest, scanManifests, fromManife
 const TYPES = new Set(['shell', 'ai', 'script', 'workflow']);
 const UNITS = new Set(['second', 'minute', 'hour', 'day']);
 const WEEKDAYS = new Set([1, 2, 3, 4, 5, 6, 7]);
-const DEFAULT_RUN_LIMIT = 500;
+const DEFAULT_RUN_LIMIT = Number(process.env.DEVFLOW_SCHED_RUN_LIMIT) || 0;
 
 function atomicWriteJson(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -70,6 +70,7 @@ export class SchedulerStore {
     this.tasksFile = path.join(dir, 'tasks.json');
     this.runsFile = path.join(dir, 'runs.json');
     this.logsDir = path.join(dir, 'logs');
+    this.reportsDir = path.join(dir, 'reports');
     const tasks = readJson(this.tasksFile, []);
     const runs = readJson(this.runsFile, []);
     this.tasks = Array.isArray(tasks) ? tasks : [];
@@ -192,22 +193,48 @@ export class SchedulerStore {
     const removed = this.runs.filter((r) => r.taskId === id);
     this.runs = this.runs.filter((r) => r.taskId !== id);
     this.saveRuns();
-    for (const r of removed) { try { fs.rmSync(this.logPath(r.logFile), { force: true }); } catch { /* ignore */ } }
+    for (const r of removed) {
+      try { fs.rmSync(this.logPath(r.logFile), { force: true }); } catch { /* ignore */ }
+      if (r.reportFile) {
+        try { fs.rmSync(path.dirname(this.reportPath(r.reportFile)), { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+    }
     try { fs.rmSync(path.join(this.logsDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
+    try { fs.rmSync(path.join(this.reportsDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
     return { ok: true };
   }
   logFileFor(taskId, runId) { return path.join(taskId, runId + '.log'); }
   logPath(rel) { return path.join(this.logsDir, rel); }
+  reportFileFor(taskId, runId) { return path.join(taskId, runId, 'report.md'); }
+  contextFileFor(taskId, runId) { return path.join(taskId, runId, 'run.json'); }
+  reportPath(rel) { return path.join(this.reportsDir, rel); }
   addRun(run) {
     this.runs.unshift(run);
-    const overflow = this.runs.splice(this.runLimit);
-    for (const r of overflow) { try { fs.rmSync(this.logPath(r.logFile), { force: true }); } catch { /* ignore */ } }
+    if (this.runLimit > 0) {
+      const overflow = this.runs.splice(this.runLimit);
+      for (const r of overflow) {
+        try { fs.rmSync(this.logPath(r.logFile), { force: true }); } catch { /* ignore */ }
+        if (r.reportFile) {
+          try { fs.rmSync(path.dirname(this.reportPath(r.reportFile)), { recursive: true, force: true }); } catch { /* ignore */ }
+        }
+      }
+    }
     this.saveRuns();
     return run;
   }
-  listRuns({ taskId = null, limit = 50 } = {}) {
+  listRuns({ taskId = null, limit = null } = {}) {
     const arr = taskId ? this.runs.filter((r) => r.taskId === taskId) : this.runs.slice();
-    return arr.slice(0, Math.max(1, Math.min(500, limit | 0 || 50)));
+    if (limit == null) return arr;
+    return arr.slice(0, Math.max(1, Math.min(5000, limit | 0 || 50)));
+  }
+  summary() {
+    const out = { total: this.runs.length, success: 0, failed: 0, running: 0 };
+    for (const r of this.runs) {
+      if (r.status === 'success') out.success += 1;
+      else if (r.status === 'running' || r.status === 'paused') out.running += 1;
+      else out.failed += 1;
+    }
+    return out;
   }
   getRun(id) { return this.runs.find((r) => r.id === id) || null; }
   updateRun(id, patch) {
