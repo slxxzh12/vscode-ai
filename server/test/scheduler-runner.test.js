@@ -116,3 +116,16 @@ test('stop 终止运行中的子进程', () => {
   assert.equal(runner.stop('r3'), true);
   assert.equal(killed, 1);
 });
+
+test('buildSpawnSpec：传入 runContextPath 时注入 DEVFLOW_RUN_CONTEXT', () => {
+  const ctx = 'C:/data/scheduler/reports/t/r/run.json';
+  const shell = buildSpawnSpec({ type: 'shell', command: 'echo' }, { cwd: 'C:/p', runContextPath: ctx });
+  assert.equal(shell.env.DEVFLOW_RUN_CONTEXT, ctx);
+
+  const script = buildSpawnSpec({ type: 'script', script: { path: 'x.ps1' } }, { cwd: 'C:/p', runContextPath: ctx });
+  assert.equal(script.env.DEVFLOW_RUN_CONTEXT, ctx);
+
+  const ai = buildSpawnSpec({ type: 'ai', ai: { source: 'prompt', prompt: 'x' } }, { cwd: 'C:/p', runContextPath: ctx });
+  assert.equal(ai.env.DEVFLOW_RUN_CONTEXT, ctx);
+  assert.equal(ai.env.OPENCODE_SKIP_SAFE_CHECK, '1');
+});

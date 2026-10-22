@@ -13,16 +13,20 @@ export function stripFrontmatter(s) {
   return String(s ?? '').replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
-export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null } = {}) {
+export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null, runContextPath = null } = {}) {
   const ocEnv = { ...AGENT_ENV, ...(opencodeDataDir ? { XDG_DATA_HOME: opencodeDataDir } : {}) };
+  const withContext = (spec) => {
+    if (!runContextPath) return spec;
+    return { ...spec, env: { ...(spec.env || {}), DEVFLOW_RUN_CONTEXT: runContextPath } };
+  };
   if (task.type === 'shell') {
-    if (process.platform === 'win32') return { bin: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-Command', task.command], cwd };
-    return { bin: '/bin/sh', args: ['-c', task.command], cwd };
+    if (process.platform === 'win32') return withContext({ bin: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-Command', task.command], cwd });
+    return withContext({ bin: '/bin/sh', args: ['-c', task.command], cwd });
   }
   if (task.type === 'ai') {
     if (task.ai && task.ai.source === 'command' && task.ai.commandName) {
       const name = String(task.ai.commandName).replace(/\.md$/i, '');
-      return { bin: aiBin, args: ['run', '--command', name], cwd, env: ocEnv };
+      return withContext({ bin: aiBin, args: ['run', '--command', name], cwd, env: ocEnv });
     }
     if (task.ai && task.ai.source === 'file' && task.filePath) {
       // 注意：--file 是数组型，会把其后的位置参数也当成文件；消息必须放在 --file 之前
@@ -30,17 +34,17 @@ export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null,
       const args = ['run'];
       if (msg) args.push(msg);
       args.push('--file', task.filePath);
-      return { bin: aiBin, args, cwd, env: ocEnv };
+      return withContext({ bin: aiBin, args, cwd, env: ocEnv });
     }
-    return { bin: aiBin, args: ['run', stripFrontmatter(aiPrompt ?? '')], cwd, env: ocEnv };
+    return withContext({ bin: aiBin, args: ['run', stripFrontmatter(aiPrompt ?? '')], cwd, env: ocEnv });
   }
   if (task.type === 'script') {
     const abs = path.isAbsolute(task.script.path) ? task.script.path : path.join(cwd, task.script.path);
     const ext = path.extname(abs).toLowerCase();
-    if (ext === '.ps1') return { bin: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', abs], cwd };
-    if (ext === '.bat' || ext === '.cmd') return { bin: 'cmd.exe', args: ['/c', abs], cwd };
-    if (ext === '.sh') return { bin: 'bash', args: [abs], cwd };
-    if (ext === '.py') return { bin: 'python', args: [abs], cwd };
+    if (ext === '.ps1') return withContext({ bin: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', abs], cwd });
+    if (ext === '.bat' || ext === '.cmd') return withContext({ bin: 'cmd.exe', args: ['/c', abs], cwd });
+    if (ext === '.sh') return withContext({ bin: 'bash', args: [abs], cwd });
+    if (ext === '.py') return withContext({ bin: 'python', args: [abs], cwd });
     throw Object.assign(new Error('unsupported script type'), { code: 'unsupported-script' });
   }
   throw Object.assign(new Error('unknown task type'), { code: 'bad-task' });
