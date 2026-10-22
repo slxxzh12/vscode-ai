@@ -118,7 +118,7 @@ test('stop 终止运行中的子进程', () => {
 });
 
 test('buildSpawnSpec：传入 runContextPath 时注入 DEVFLOW_RUN_CONTEXT', () => {
-  const ctx = 'C:/data/scheduler/reports/t/r/run.json';
+  const ctx = 'C:/data/scheduler/tasks/t/r/run.json';
   const shell = buildSpawnSpec({ type: 'shell', command: 'echo' }, { cwd: 'C:/p', runContextPath: ctx });
   assert.equal(shell.env.DEVFLOW_RUN_CONTEXT, ctx);
 
@@ -128,4 +128,26 @@ test('buildSpawnSpec：传入 runContextPath 时注入 DEVFLOW_RUN_CONTEXT', () 
   const ai = buildSpawnSpec({ type: 'ai', ai: { source: 'prompt', prompt: 'x' } }, { cwd: 'C:/p', runContextPath: ctx });
   assert.equal(ai.env.DEVFLOW_RUN_CONTEXT, ctx);
   assert.equal(ai.env.OPENCODE_SKIP_SAFE_CHECK, '1');
+});
+
+test('buildSpawnSpec：脚本任务按命令行追加 run.json 与 report.md 路径', () => {
+  const ctx = 'C:/data/scheduler/tasks/t/r/run.json';
+  const report = 'C:/data/scheduler/tasks/t/r/report.md';
+  const ps = buildSpawnSpec({ type: 'script', script: { path: 'x.ps1' } }, { cwd: 'C:/p', runContextPath: ctx, reportPath: report });
+  assert.deepEqual(ps.args.slice(-2), [ctx, report]);
+
+  const py = buildSpawnSpec({ type: 'script', script: { path: 'x.py' } }, { cwd: 'C:/p', runContextPath: ctx, reportPath: report });
+  assert.deepEqual(py.args.slice(1), [ctx, report]);
+
+  const cmd = buildSpawnSpec({ type: 'script', script: { path: 'x.bat' } }, { cwd: 'C:/p', runContextPath: ctx, reportPath: report });
+  assert.deepEqual(cmd.args.slice(2), [ctx, report]);
+});
+
+test('buildSpawnSpec：非脚本任务不追加位置参数', () => {
+  const ctx = 'C:/data/scheduler/tasks/t/r/run.json';
+  const report = 'C:/data/scheduler/tasks/t/r/report.md';
+  const shell = buildSpawnSpec({ type: 'shell', command: 'echo' }, { cwd: 'C:/p', runContextPath: ctx, reportPath: report });
+  assert.ok(!shell.args.includes(report));
+  const ai = buildSpawnSpec({ type: 'ai', ai: { source: 'prompt', prompt: 'x' } }, { cwd: 'C:/p', runContextPath: ctx, reportPath: report });
+  assert.ok(!ai.args.includes(report));
 });

@@ -87,7 +87,7 @@
 
 - **一个独立功能放一个独立文件夹，不要把不相关的代码平铺到同一个目录下**：新功能优先新建自己的模块文件/子目录（必要时含各自的测试文件），按职责聚合，而不是往现有大文件或根目录里堆。
 - 参照现有做法：`server/` 顶层只放与应用装配/HTTP 面相关的少量文件，功能模块各自成文件（如 `usage-store.js`、`usage-peers.js`、`usage-report.js`、`usage-mount.js`、`task-store.js`、`seed-store.js`、`collab-db.js`）；协作子系统的多个文件集中在 `server/collaboration/`；前端同理由 `web/src/collaboration/`、`web/src/components/` 分域存放。
-- 定时任务报告：`server/scheduler/report.js`（运行上下文 `run.json`、兜底报告）+ `web/src/scheduler/SchedulerReportView.vue`（任务详情 + 历史 Markdown 报告）；每次运行通过 `DEVFLOW_RUN_CONTEXT` 注入运行上下文路径。
+- 定时任务报告：`server/scheduler/report.js`（运行上下文 `run.json`、兜底报告）+ `web/src/scheduler/SchedulerReportView.vue`（任务详情 + 历史 Markdown 报告）；每次运行落在 `scheduler/tasks/<taskId>/<runId>/`，通过 `DEVFLOW_RUN_CONTEXT` 注入上下文，脚本任务另在命令行末尾追加 `run.json`、`report.md` 两个路径参数。
 - 同一功能的后端/前端/词条/测试改动尽量落在一起，便于一个 commit 说清一件事；新增目录时同步在「目录速览」补一行说明。
 - 拆分判据：一个文件只承担一件清晰的事、能被单独理解与测试；文件明显变大且混了多种职责时，先拆再改（但不要为拆分而重构无关代码）。
 

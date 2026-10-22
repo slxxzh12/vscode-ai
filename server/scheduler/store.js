@@ -70,7 +70,7 @@ export class SchedulerStore {
     this.tasksFile = path.join(dir, 'tasks.json');
     this.runsFile = path.join(dir, 'runs.json');
     this.logsDir = path.join(dir, 'logs');
-    this.reportsDir = path.join(dir, 'reports');
+    this.tasksDir = path.join(dir, 'tasks');
     const tasks = readJson(this.tasksFile, []);
     const runs = readJson(this.runsFile, []);
     this.tasks = Array.isArray(tasks) ? tasks : [];
@@ -200,14 +200,14 @@ export class SchedulerStore {
       }
     }
     try { fs.rmSync(path.join(this.logsDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
-    try { fs.rmSync(path.join(this.reportsDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
+    try { fs.rmSync(path.join(this.tasksDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
     return { ok: true };
   }
   logFileFor(taskId, runId) { return path.join(taskId, runId + '.log'); }
   logPath(rel) { return path.join(this.logsDir, rel); }
   reportFileFor(taskId, runId) { return path.join(taskId, runId, 'report.md'); }
   contextFileFor(taskId, runId) { return path.join(taskId, runId, 'run.json'); }
-  reportPath(rel) { return path.join(this.reportsDir, rel); }
+  reportPath(rel) { return path.join(this.tasksDir, rel); }
   addRun(run) {
     this.runs.unshift(run);
     if (this.runLimit > 0) {

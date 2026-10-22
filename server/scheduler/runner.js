@@ -13,7 +13,7 @@ export function stripFrontmatter(s) {
   return String(s ?? '').replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
-export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null, runContextPath = null } = {}) {
+export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null, runContextPath = null, reportPath = null } = {}) {
   const ocEnv = { ...AGENT_ENV, ...(opencodeDataDir ? { XDG_DATA_HOME: opencodeDataDir } : {}) };
   const withContext = (spec) => {
     if (!runContextPath) return spec;
@@ -41,10 +41,11 @@ export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null,
   if (task.type === 'script') {
     const abs = path.isAbsolute(task.script.path) ? task.script.path : path.join(cwd, task.script.path);
     const ext = path.extname(abs).toLowerCase();
-    if (ext === '.ps1') return withContext({ bin: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', abs], cwd });
-    if (ext === '.bat' || ext === '.cmd') return withContext({ bin: 'cmd.exe', args: ['/c', abs], cwd });
-    if (ext === '.sh') return withContext({ bin: 'bash', args: [abs], cwd });
-    if (ext === '.py') return withContext({ bin: 'python', args: [abs], cwd });
+    const reportArgs = runContextPath && reportPath ? [runContextPath, reportPath] : [];
+    if (ext === '.ps1') return withContext({ bin: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', abs, ...reportArgs], cwd });
+    if (ext === '.bat' || ext === '.cmd') return withContext({ bin: 'cmd.exe', args: ['/c', abs, ...reportArgs], cwd });
+    if (ext === '.sh') return withContext({ bin: 'bash', args: [abs, ...reportArgs], cwd });
+    if (ext === '.py') return withContext({ bin: 'python', args: [abs, ...reportArgs], cwd });
     throw Object.assign(new Error('unsupported script type'), { code: 'unsupported-script' });
   }
   throw Object.assign(new Error('unknown task type'), { code: 'bad-task' });

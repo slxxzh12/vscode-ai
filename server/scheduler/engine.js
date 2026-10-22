@@ -91,7 +91,7 @@ export function createEngine({
     }
     let spec;
     try {
-      spec = buildSpawnSpec(task, { cwd, aiPrompt, aiBin, opencodeDataDir, runContextPath: ctx.contextPath });
+      spec = buildSpawnSpec(task, { cwd, aiPrompt, aiBin, opencodeDataDir, runContextPath: ctx.contextPath, reportPath: ctx.reportPath });
     } catch (e) {
       let reportFile = null;
       try {

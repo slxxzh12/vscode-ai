@@ -174,7 +174,7 @@ test('报告路径按 taskId/runId 归档', () => {
   const store = new SchedulerStore({ dir: tmpDir() });
   assert.equal(store.reportFileFor('t1', 'r1'), path.join('t1', 'r1', 'report.md'));
   assert.equal(store.contextFileFor('t1', 'r1'), path.join('t1', 'r1', 'run.json'));
-  assert.equal(store.reportPath(store.reportFileFor('t1', 'r1')), path.join(store.dir, 'reports', 't1', 'r1', 'report.md'));
+  assert.equal(store.reportPath(store.reportFileFor('t1', 'r1')), path.join(store.dir, 'tasks', 't1', 'r1', 'report.md'));
 });
 
 test('summary 统计成功、失败、运行中', () => {
@@ -216,5 +216,5 @@ test('deleteTask 连带删除报告目录', () => {
   fs.writeFileSync(store.reportPath(reportFile), '# r1');
   store.addRun({ id: 'r1', taskId: task.id, status: 'success', reportFile });
   store.deleteTask(task.id);
-  assert.equal(fs.existsSync(path.join(dir, 'reports', task.id)), false);
+  assert.equal(fs.existsSync(path.join(dir, 'tasks', task.id)), false);
 });

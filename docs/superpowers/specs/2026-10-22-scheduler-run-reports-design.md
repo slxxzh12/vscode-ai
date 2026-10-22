@@ -35,11 +35,13 @@
 <数据目录>/scheduler/
   runs.json
   logs/<taskId>/<runId>.log
-  reports/<taskId>/<runId>/
+  tasks/<taskId>/<runId>/
     run.json          # 运行上下文（系统生成）
     report.md         # 运行报告（任务写入；缺失时系统兜底）
     ...               # 任务自己写入的附件
 ```
+
+每个任务一个目录 `tasks/<taskId>/`，每次运行一个子目录 `tasks/<taskId>/<runId>/`，运行之间不覆盖。
 
 `<数据目录>` 指 `server/data-home.js` 解析出的端口数据目录，不在代码或文档中写死绝对路径。
 
@@ -54,9 +56,9 @@
   "taskName": "自动扫描",
   "trigger": "schedule",
   "startedAt": 1792400000000,
-  "reportPath": "<绝对路径>/reports/<taskId>/<runId>/report.md",
+  "reportPath": "<绝对路径>/tasks/<taskId>/<runId>/report.md",
   "logPath": "<绝对路径>/logs/<taskId>/<runId>.log",
-  "outputDir": "<绝对路径>/reports/<taskId>/<runId>"
+  "outputDir": "<绝对路径>/tasks/<taskId>/<runId>"
 }
 ```
 
@@ -80,7 +82,7 @@
 ## 运行流程
 
 1. `engine.startRun` / `startWorkflowRun` 生成 `runId`，创建运行记录。
-2. 系统创建 `reports/<taskId>/<runId>/`，写入 `run.json`，并把绝对路径作为 `DEVFLOW_RUN_CONTEXT` 注入任务环境。若 `run.json` 写入失败，该次运行直接标记为失败并生成兜底报告（不启动任务）。
+2. 系统创建 `tasks/<taskId>/<runId>/`，写入 `run.json`，并把绝对路径作为 `DEVFLOW_RUN_CONTEXT` 注入任务环境。若 `run.json` 写入失败，该次运行直接标记为失败并生成兜底报告（不启动任务）。
 3. 任务执行并写 `report.md`。
 4. 运行结束（成功、失败、超时、被停止）时，系统检查 `reportPath`：
    - 存在且非空：保留。
@@ -92,6 +94,19 @@
 
 - `shell`、`script`、`ai`：在 `server/scheduler/runner.js` 的 spawn 环境里注入。
 - `workflow`：执行器创建 agent 会话时，把环境变量传给 PTY；需要 `SessionManager.create` 支持可选的 `env`，并透传到 `createPty`。
+
+### 脚本任务命令行参数
+
+脚本任务（`.ps1/.bat/.cmd/.sh/.py`）除环境变量外，还在命令行末尾追加两个位置参数：
+
+```text
+<script> "<run.json 绝对路径>" "<report.md 绝对路径>"
+```
+
+- 第 1 个参数：`run.json` 路径。
+- 第 2 个参数：`report.md` 路径。
+- shell / ai / workflow 任务不追加位置参数，只使用 `DEVFLOW_RUN_CONTEXT` 环境变量。
+- 脚本可直接按 `argv[1]`、`argv[2]`（或 `%1`、`%2`）读取并在运行时按约定回写。
 
 ### AI / 工作流任务
 
@@ -180,8 +195,7 @@ AI 与工作流任务不会自动知道要写报告。任务提示词需要引�
 
 ## 安全
 
-- 报告、运行上下文、日志都位于端口数据目录，不入库、不打包。
-- 报告接口只按运行 ID 查记录再读系统生成的路径，不接受客户端传路径，避免路径穿越。
+- 报告、运行上下文、日志都位于端口数据目录，不入库、不打包。- 报告接口只按运行 ID 查记录再读系统生成的路径，不接受客户端传路径，避免路径穿越。
 - 兜底报告中的日志需去掉 ANSI 控制字符。
 
 ## 测试
