@@ -115,16 +115,19 @@ fs.mkdirSync(path.join(APP, "web"), { recursive: true });
 fs.copyFileSync(ENV_NODE, path.join(APP, "runtime", "node.exe"));
 fs.writeFileSync(path.join(APP, "version.txt"), VERSION + "\n", "utf8");
 
-// server 整树 .js/.json（跳过 test/）
-function copyServerTree(from, to) {
+// server 整树 .js/.json（跳过 test/、node_modules/ 与协作运行时 JSON）
+function copyServerTree(from, to, rel = "") {
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-    if (entry.isDirectory() && entry.name === "test") continue;
+    if (entry.isDirectory() && (entry.name === "test" || entry.name === "node_modules")) continue;
+    if (entry.isDirectory() && entry.name === "inbox" && rel === "collaboration") continue;
     const s = path.join(from, entry.name);
     if (entry.isDirectory()) {
-      copyServerTree(s, path.join(to, entry.name));
+      copyServerTree(s, path.join(to, entry.name), path.join(rel, entry.name));
       continue;
     }
+    // server/collaboration/*.json 是本机运行时身份/群数据（含 Ed25519 私钥），禁止入包。
+    if (rel === "collaboration" && /\.json$/i.test(entry.name)) continue;
     if (/\.(js|json)$/.test(entry.name))
       fs.copyFileSync(s, path.join(to, entry.name));
   }
@@ -231,6 +234,15 @@ const usage = [
 fs.writeFileSync(path.join(APP, "使用说明.txt"), usage);
 
 console.log("[build] 4/5 verify output");
+// 运行时敏感文件不得进入安装包：协作身份/群数据（含 Ed25519 私钥）与环境/数据目录。
+const collabDir = path.join(APP, "server", "collaboration");
+const leaked = fs.existsSync(collabDir)
+  ? fs.readdirSync(collabDir).filter((n) => /\.json$/i.test(n) || n === "inbox")
+  : [];
+check(leaked.length === 0, "runtime secrets leaked into package: server/collaboration/" + leaked.join(", "));
+for (const dir of ["env", "data", "logs"]) {
+  check(!fs.existsSync(path.join(APP, dir)), "runtime directory leaked into package: " + dir + "/");
+}
 const entries = [
   ["node", "runtime/node.exe"],
   ["server", "server/index.js"],
