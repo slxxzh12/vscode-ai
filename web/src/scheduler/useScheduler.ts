@@ -1,6 +1,6 @@
 import { reactive } from 'vue';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
-import type { SchedulerTask, SchedulerRun } from '@devflow/shared/scheduler';
+import type { SchedulerTask, SchedulerRun, SchedulerSummary } from '@devflow/shared/scheduler';
 
 export interface TaskView extends SchedulerTask {
   nextRunAt: number | null;
@@ -27,6 +27,7 @@ type TerminalLike = { on: (type: string, handler: (msg: any) => void) => () => v
 export function useScheduler(terminal?: TerminalLike) {
   const state = reactive({
     tasks: [] as TaskView[],
+    summary: { total: 0, success: 0, failed: 0, running: 0 } as SchedulerSummary,
     aiCommands: [] as AiCommandInfo[],
     loading: false,
     error: '',
@@ -37,6 +38,7 @@ export function useScheduler(terminal?: TerminalLike) {
     try {
       const d = await api('GET', '/api/scheduler/tasks');
       state.tasks = d.tasks || [];
+      void loadSummary();
       state.error = '';
     } catch (e: any) {
       state.error = String(e?.message || e);
@@ -68,6 +70,16 @@ export function useScheduler(terminal?: TerminalLike) {
     const res = await fetch(`/api/scheduler/runs/${encodeURIComponent(runId)}/log`);
     return res.ok ? res.text() : '';
   }
+  async function loadSummary() {
+    try {
+      const d = await api('GET', '/api/scheduler/summary');
+      state.summary = { total: d.total || 0, success: d.success || 0, failed: d.failed || 0, running: d.running || 0 };
+    } catch { /* 汇总失败不影响任务列表 */ }
+  }
+  async function loadReport(runId: string): Promise<string> {
+    const res = await fetch(`/api/scheduler/runs/${encodeURIComponent(runId)}/report`);
+    return res.ok ? res.text() : '';
+  }
   async function loadAiCommands() {
     try {
       const d = await api('GET', '/api/scheduler/ai-commands');
@@ -94,5 +106,5 @@ export function useScheduler(terminal?: TerminalLike) {
     unsubs.push(terminal.on(SchedulerS2C.SCHED_RUN_END, onAny));
   }
 
-  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadRuns, loadLog, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
+  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadRuns, loadLog, loadSummary, loadReport, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
 }

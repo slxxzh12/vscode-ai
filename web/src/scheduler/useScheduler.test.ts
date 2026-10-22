@@ -9,6 +9,9 @@ beforeEach(() => {
     if (url === '/api/scheduler/tasks' && (init.method || 'GET') === 'GET') {
       return { ok: true, text: async () => JSON.stringify({ tasks: [{ id: 't1', name: 'a' }] }) } as any;
     }
+    if (url === '/api/scheduler/summary') {
+      return { ok: true, text: async () => JSON.stringify({ total: 3, success: 2, failed: 1, running: 0 }) } as any;
+    }
     return { ok: true, text: async () => JSON.stringify({}) } as any;
   }));
 });
@@ -99,5 +102,17 @@ describe('useScheduler', () => {
     s.dispose();
     expect(unsubs).toHaveLength(3);
     expect(unsubs.every((v) => v === 1)).toBe(true);
+  });
+
+  it('loadSummary 写入 state.summary', async () => {
+    const s = useScheduler();
+    await s.loadSummary();
+    expect(s.state.summary).toEqual({ total: 3, success: 2, failed: 1, running: 0 });
+  });
+
+  it('loadReport 返回 Markdown 文本', async () => {
+    const s = useScheduler();
+    expect(await s.loadReport('r1')).toBe('{}');
+    expect(calls.some((c) => c.url === '/api/scheduler/runs/r1/report')).toBe(true);
   });
 });
