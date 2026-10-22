@@ -151,3 +151,14 @@ test('buildSpawnSpec：非脚本任务不追加位置参数', () => {
   const ai = buildSpawnSpec({ type: 'ai', ai: { source: 'prompt', prompt: 'x' } }, { cwd: 'C:/p', runContextPath: ctx, reportPath: report });
   assert.ok(!ai.args.includes(report));
 });
+
+test('buildSpawnSpec：EXE 任务直接运行程序并追加进度文件与报告目录', () => {
+  const progress = 'C:/data/scheduler/tasks/t/r/result.json';
+  const dir = 'C:/data/scheduler/tasks/t/r/report';
+  const spec = buildSpawnSpec(
+    { type: 'script', script: { path: 'C:/tools/scan.exe', exe: true } },
+    { cwd: 'C:/p', runContextPath: 'C:/ctx.json', reportPath: 'C:/report.md', reportDir: dir, progressPath: progress },
+  );
+  assert.equal(spec.bin, 'C:/tools/scan.exe');
+  assert.deepEqual(spec.args, [progress, dir]);
+});

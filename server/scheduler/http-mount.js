@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import { listAiCommands } from './ai-commands.js';
 import { pickFile, pickFolder as defaultPickFolder } from '../native-dialog.js';
-import { legacyReport } from './report.js';
+import { legacyReport, reportDirOf } from './report.js';
+import { revealInOs } from '../reveal.js';
 import { t } from '../i18n.js';
 
 const LOG_TAIL_MAX = 256 * 1024;
 const REPORT_MAX = 2 * 1024 * 1024;
 
-export function createSchedulerMount({ engine, store, logger = console, pickFolder = defaultPickFolder }) {
+export function createSchedulerMount({ engine, store, logger = console, pickFolder = defaultPickFolder, reveal = revealInOs }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -96,6 +97,15 @@ export function createSchedulerMount({ engine, store, logger = console, pickFold
         if (text.length > REPORT_MAX) text = text.slice(0, REPORT_MAX) + `\n\n---\n\n${t('sched.report.truncated')}`;
         res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(text);
+      }
+      const rev = p.match(/^\/api\/scheduler\/runs\/([^/]+)\/reveal-report$/);
+      if (rev && req.method === 'POST') {
+        const run = store.getRun(decodeURIComponent(rev[1]));
+        if (!run) return sendJson(res, 404, { error: 'not-found' });
+        const dir = reportDirOf(store, run, store.getTask(run.taskId));
+        if (!dir || !fs.existsSync(dir)) return sendJson(res, 404, { error: 'not-found' });
+        if (!reveal(dir, true)) return sendJson(res, 501, { error: 'platform not supported' });
+        return sendJson(res, 200, { ok: true, dir });
       }
       const rm = p.match(/^\/api\/scheduler\/runs\/([^/]+)\/log$/);
       if (rm && req.method === 'GET') {

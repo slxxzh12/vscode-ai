@@ -12,6 +12,7 @@ const props = defineProps<{
   loadLog: (runId: string) => Promise<string>;
   onBack: () => void;
   onOpenSession?: (sessionId: string) => void;
+  openReportDir?: (runId: string) => Promise<void>;
 }>();
 
 const runs = ref<SchedulerRun[]>([]);
@@ -24,6 +25,7 @@ let timer: ReturnType<typeof setInterval> | null = null;
 const activeRun = computed(() => runs.value.find((r) => r.id === activeId.value) || null);
 const reportHtml = computed(() => (report.value ? renderRemoteMarkdown(report.value) : ''));
 const hasRunning = computed(() => runs.value.some((r) => r.status === 'running' || r.status === 'paused'));
+const multiFiles = computed(() => (activeRun.value?.reportCount || 0) > 1);
 
 function statusClass(s: string) {
   if (s === 'success') return 'ok';
@@ -49,6 +51,10 @@ async function setMode(m: 'report' | 'raw') {
   if (m === 'raw' && activeId.value && !logText.value) logText.value = await props.loadLog(activeId.value);
 }
 
+function openDir() {
+  if (activeId.value) void props.openReportDir?.(activeId.value);
+}
+
 onMounted(async () => {
   await refreshRuns();
   timer = setInterval(() => { if (hasRunning.value) void refreshRuns(); }, 2000);
@@ -62,6 +68,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); });
       <button class="rv-back" @click="onBack">← {{ $t('sched.detail.back') }}</button>
       <span class="rv-title">{{ task.name }}</span>
       <span v-if="activeRun" class="rv-meta">{{ runStatusLabel(activeRun.status) }} · {{ formatTime(activeRun.startedAt) }}</span>
+      <button v-if="activeRun" class="rv-session" @click="openDir">{{ $t('sched.detail.open_dir') }}</button>
       <button v-if="activeRun?.sessionId" class="rv-session" @click="onOpenSession?.(activeRun.sessionId || '')">{{ $t('sched.open_session') }}</button>
     </header>
     <div class="rv-body">
@@ -86,7 +93,8 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); });
           <button :class="{ on: mode === 'report' }" @click="setMode('report')">{{ $t('sched.detail.report') }}</button>
           <button class="raw-tab" :class="{ on: mode === 'raw' }" @click="setMode('raw')">{{ $t('sched.detail.raw_log') }}</button>
         </div>
-        <div v-if="mode === 'report'" class="md-body" v-html="reportHtml" />
+        <div v-if="mode === 'report' && multiFiles" class="multi-hint">{{ $t('sched.detail.multi_files', { n: activeRun?.reportCount }) }}</div>
+        <div v-if="mode === 'report'" class="md-body" :class="{ clickable: multiFiles }" v-html="reportHtml" @click="multiFiles && openDir()" />
         <pre v-else class="raw-log">{{ logText }}</pre>
         <div v-if="mode === 'report' && !report" class="rv-empty">{{ $t('sched.report.empty') }}</div>
       </div>
@@ -117,6 +125,8 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); });
 .rv-tabs button { background: var(--bg5, var(--bg4)); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
 .rv-tabs button.on { background: var(--ac2); color: #fff; }
 .md-body { flex: 1; overflow: auto; padding: 12px 16px; color: var(--tx); }
+.md-body.clickable { cursor: pointer; }
+.multi-hint { padding: 6px 12px; border-bottom: 1px solid var(--bd); color: var(--tx5); font-size: 12px; }
 .raw-log { flex: 1; margin: 0; overflow: auto; padding: 12px; background: var(--bg6, var(--bg1)); color: var(--tx2); font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
 .rv-empty { color: var(--tx5); padding: 24px; text-align: center; }
 </style>

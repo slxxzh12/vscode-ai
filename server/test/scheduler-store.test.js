@@ -173,6 +173,7 @@ test('createTask 保存 workflow 字段并可重新加载', () => {
 test('报告路径按 taskId/runId 归档', () => {
   const store = new SchedulerStore({ dir: tmpDir() });
   assert.equal(store.reportFileFor('t1', 'r1'), path.join('t1', 'r1', 'report.md'));
+  assert.equal(store.reportFileFor('t1', 'r1', true), path.join('t1', 'r1', 'report', 'report.md'));
   assert.equal(store.contextFileFor('t1', 'r1'), path.join('t1', 'r1', 'run.json'));
   assert.equal(store.reportPath(store.reportFileFor('t1', 'r1')), path.join(store.dir, 'tasks', 't1', 'r1', 'report.md'));
 });

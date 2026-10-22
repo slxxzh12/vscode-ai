@@ -42,19 +42,23 @@ export function createEngine({
   function reschedule(task) { scheduleTask(task); }
   function notifyTasksChanged() { emit('tasks-changed', {}); }
 
+  function reportPatch(info) {
+    return info ? { reportFile: info.reportFile, reportDir: info.reportDir, reportCount: info.files.length } : {};
+  }
+
   function finishImmediate(task, trigger, message) {
     const id = runIdGen();
     const logFile = store.logFileFor(task.id, id);
     const run = { id, taskId: task.id, status: 'failed', trigger, startedAt: now(), finishedAt: now(), exitCode: null, durationMs: 0, logFile, error: message };
     store.addRun(run);
-    let reportFile = null;
+    let info = null;
     try {
       writeRunContext({ store, task, run });
-      reportFile = ensureReport({ store, task, run, result: { status: 'failed', error: message, exitCode: null, durationMs: 0 } });
+      info = ensureReport({ store, task, run, result: { status: 'failed', error: message, exitCode: null, durationMs: 0 } });
     } catch (e) {
       logger.error('scheduler report failed', e);
     }
-    const updated = store.updateRun(id, reportFile ? { reportFile } : {});
+    const updated = store.updateRun(id, reportPatch(info));
     emit('run-end', { run: { ...(updated || run) } });
     return updated || run;
   }
@@ -81,23 +85,23 @@ export function createEngine({
     try {
       ctx = writeRunContext({ store, task, run });
     } catch (e) {
-      let reportFile = null;
+      let info = null;
       try {
-        reportFile = ensureReport({ store, task, run, result: { status: 'failed', error: String(e && e.message || e), durationMs: 0 } });
+        info = ensureReport({ store, task, run, result: { status: 'failed', error: String(e && e.message || e), durationMs: 0 } });
       } catch { /* ignore */ }
-      const updated = store.updateRun(id, { status: 'failed', finishedAt: now(), durationMs: 0, error: String(e && e.message || e), reportFile });
+      const updated = store.updateRun(id, { status: 'failed', finishedAt: now(), durationMs: 0, error: String(e && e.message || e), ...reportPatch(info) });
       emit('run-end', { run: { ...(updated || run) } });
       return { run: { ...(updated || run) } };
     }
     let spec;
     try {
-      spec = buildSpawnSpec(task, { cwd, aiPrompt, aiBin, opencodeDataDir, runContextPath: ctx.contextPath, reportPath: ctx.reportPath });
+      spec = buildSpawnSpec(task, { cwd, aiPrompt, aiBin, opencodeDataDir, runContextPath: ctx.contextPath, reportPath: ctx.reportPath, reportDir: ctx.reportDir, progressPath: ctx.progressPath });
     } catch (e) {
-      let reportFile = null;
+      let info = null;
       try {
-        reportFile = ensureReport({ store, task, run, result: { status: 'failed', error: String(e && e.message || e), durationMs: 0 } });
+        info = ensureReport({ store, task, run, result: { status: 'failed', error: String(e && e.message || e), durationMs: 0 } });
       } catch { /* ignore */ }
-      const updated = store.updateRun(id, { status: 'failed', finishedAt: now(), durationMs: 0, error: String(e && e.message || e), reportFile });
+      const updated = store.updateRun(id, { status: 'failed', finishedAt: now(), durationMs: 0, error: String(e && e.message || e), ...reportPatch(info) });
       emit('run-end', { run: { ...(updated || run) } });
       return { run: { ...(updated || run) } };
     }
@@ -127,9 +131,9 @@ export function createEngine({
     try {
       ctx = writeRunContext({ store, task, run });
     } catch (e) {
-      let reportFile = null;
-      try { reportFile = ensureReport({ store, task, run, result: { status: 'failed', error: String(e && e.message || e), durationMs: 0 } }); } catch { /* ignore */ }
-      const updated = store.updateRun(id, { status: 'failed', finishedAt: now(), durationMs: 0, error: String(e && e.message || e), reportFile });
+      let info = null;
+      try { info = ensureReport({ store, task, run, result: { status: 'failed', error: String(e && e.message || e), durationMs: 0 } }); } catch { /* ignore */ }
+      const updated = store.updateRun(id, { status: 'failed', finishedAt: now(), durationMs: 0, error: String(e && e.message || e), ...reportPatch(info) });
       emit('run-end', { run: { ...(updated || run) } });
       return { run: { ...(updated || run) } };
     }
@@ -139,12 +143,11 @@ export function createEngine({
       if (!cur || cur.runId !== id) return;
       activeWorkflow.delete(task.id);
       taskRuns.delete(task.id);
-      let reportFile = null;
+      let info = null;
       try {
-        reportFile = ensureReport({ store, task, run: store.getRun(id) || run, result: { status, ...extra } });
+        info = ensureReport({ store, task, run: store.getRun(id) || run, result: { status, ...extra } });
       } catch (e) { logger.error('scheduler report failed', e); }
-      const patch = { status, finishedAt: now(), durationMs: now() - run.startedAt, ...extra };
-      if (reportFile) patch.reportFile = reportFile;
+      const patch = { status, finishedAt: now(), durationMs: now() - run.startedAt, ...extra, ...reportPatch(info) };
       const updated = store.updateRun(id, patch);
       const fresh = store.getTask(task.id);
       if (fresh) scheduleTask(fresh, now());
@@ -179,14 +182,13 @@ export function createEngine({
   function complete(task, id, status, res) {
     taskRuns.delete(task.id);
     const cur = store.getRun(id) || { id, taskId: task.id, logFile: store.logFileFor(task.id, id), startedAt: now(), trigger: 'schedule' };
-    let reportFile = null;
+    let info = null;
     try {
-      reportFile = ensureReport({ store, task, run: cur, result: { ...res, status } });
+      info = ensureReport({ store, task, run: cur, result: { ...res, status } });
     } catch (e) {
       logger.error('scheduler report failed', e);
     }
-    const patch = { status, finishedAt: now(), exitCode: res.exitCode ?? null, durationMs: res.durationMs ?? null, error: res.error || null };
-    if (reportFile) patch.reportFile = reportFile;
+    const patch = { status, finishedAt: now(), exitCode: res.exitCode ?? null, durationMs: res.durationMs ?? null, error: res.error || null, ...reportPatch(info) };
     const run = store.updateRun(id, patch);
     const fresh = store.getTask(task.id);
     if (fresh) scheduleTask(fresh, now());

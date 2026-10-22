@@ -30,8 +30,8 @@ test('ensureReport 保留任务写入的报告', () => {
   const run = { id: 'r2', taskId: task.id, trigger: 'manual', startedAt: 100, logFile: store.logFileFor(task.id, 'r2') };
   const ctx = writeRunContext({ store, task, run });
   fs.writeFileSync(ctx.reportPath, '# custom');
-  const rel = ensureReport({ store, task, run, result: { status: 'success' } });
-  assert.equal(fs.readFileSync(store.reportPath(rel), 'utf8'), '# custom');
+  const info = ensureReport({ store, task, run, result: { status: 'success' } });
+  assert.equal(fs.readFileSync(store.reportPath(info.reportFile), 'utf8'), '# custom');
 });
 
 test('ensureReport 缺失时生成兜底报告并去掉 ANSI', () => {
@@ -40,8 +40,8 @@ test('ensureReport 缺失时生成兜底报告并去掉 ANSI', () => {
   fs.mkdirSync(path.dirname(store.logPath(run.logFile)), { recursive: true });
   fs.writeFileSync(store.logPath(run.logFile), '\u001b[31mboom\u001b[0m');
   writeRunContext({ store, task, run });
-  const rel = ensureReport({ store, task, run, result: { status: 'failed', error: 'boom', exitCode: 1, durationMs: 12 } });
-  const text = fs.readFileSync(store.reportPath(rel), 'utf8');
+  const info = ensureReport({ store, task, run, result: { status: 'failed', error: 'boom', exitCode: 1, durationMs: 12 } });
+  const text = fs.readFileSync(store.reportPath(info.reportFile), 'utf8');
   assert.match(text, /# scan/);
   assert.match(text, /失败/);
   assert.match(text, /boom/);
@@ -65,4 +65,35 @@ test('legacyReport 兼容没有 logFile 的旧记录', () => {
 
 test('stripAnsi 去除颜色码', () => {
   assert.equal(stripAnsi('\u001b[31mred\u001b[0m'), 'red');
+});
+
+test('EXE 任务：上下文含 result.json 与 report 目录，报告取 report/ 第一个文件', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const { task } = store.createTask({
+    name: 'exe-scan', type: 'script', script: { path: 'scan.exe', exe: true },
+    schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } },
+  });
+  const run = { id: 'r9', taskId: task.id, trigger: 'manual', startedAt: 100, logFile: store.logFileFor(task.id, 'r9') };
+  const ctx = writeRunContext({ store, task, run });
+  assert.equal(ctx.progressPath, path.join(ctx.outputDir, 'result.json'));
+  assert.equal(ctx.reportDir, path.join(ctx.outputDir, 'report'));
+  fs.writeFileSync(path.join(ctx.reportDir, 'b.md'), '# b');
+  fs.writeFileSync(path.join(ctx.reportDir, 'a.md'), '# a');
+  const info = ensureReport({ store, task, run, result: { status: 'success' } });
+  assert.equal(path.basename(info.reportFile), 'a.md');
+  assert.equal(info.files.length, 2);
+  assert.equal(info.reportDir, ctx.reportDir);
+});
+
+test('EXE 任务：report 目录为空时写兜底报告', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const { task } = store.createTask({
+    name: 'exe-empty', type: 'script', script: { path: 'scan.exe', exe: true },
+    schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } },
+  });
+  const run = { id: 'r10', taskId: task.id, trigger: 'manual', startedAt: 100, logFile: store.logFileFor(task.id, 'r10'), status: 'failed', error: 'x' };
+  writeRunContext({ store, task, run });
+  const info = ensureReport({ store, task, run, result: { status: 'failed', error: 'x' } });
+  assert.equal(path.basename(info.reportFile), 'report.md');
+  assert.match(fs.readFileSync(store.reportPath(info.reportFile), 'utf8'), /失败/);
 });

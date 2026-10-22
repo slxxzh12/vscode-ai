@@ -13,7 +13,7 @@ export function stripFrontmatter(s) {
   return String(s ?? '').replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
-export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null, runContextPath = null, reportPath = null } = {}) {
+export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null, runContextPath = null, reportPath = null, reportDir = null, progressPath = null } = {}) {
   const ocEnv = { ...AGENT_ENV, ...(opencodeDataDir ? { XDG_DATA_HOME: opencodeDataDir } : {}) };
   const withContext = (spec) => {
     if (!runContextPath) return spec;
@@ -40,6 +40,10 @@ export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null,
   }
   if (task.type === 'script') {
     const abs = path.isAbsolute(task.script.path) ? task.script.path : path.join(cwd, task.script.path);
+    if (task.script.exe) {
+      const args = progressPath && reportDir ? [progressPath, reportDir] : [];
+      return withContext({ bin: abs, args, cwd });
+    }
     const ext = path.extname(abs).toLowerCase();
     const reportArgs = runContextPath && reportPath ? [runContextPath, reportPath] : [];
     if (ext === '.ps1') return withContext({ bin: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', abs, ...reportArgs], cwd });

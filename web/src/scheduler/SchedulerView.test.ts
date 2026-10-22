@@ -42,4 +42,20 @@ describe('SchedulerView', () => {
     await flushPromises();
     expect(w.find('.modal').exists()).toBe(true);
   });
+
+  it('脚本任务勾选 EXE 后显示进度文件、报告目录和命令行', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/scheduler/tasks') return ok({ tasks: [] });
+      if (url === '/api/scheduler/summary') return ok({ total: 0, success: 0, failed: 0, running: 0 });
+      return ok({});
+    }));
+    const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
+    await flushPromises();
+    await w.find('.blank button').trigger('click');
+    await flushPromises();
+    await w.findAll('select')[0].setValue('script');
+    await w.find('.exe-check').setValue(true);
+    expect(w.find('.cmdpreview').text()).toContain('result.json');
+    expect(w.find('.cmdpreview').text()).toContain('/report');
+  });
 });

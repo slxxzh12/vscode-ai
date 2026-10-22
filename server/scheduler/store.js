@@ -195,9 +195,7 @@ export class SchedulerStore {
     this.saveRuns();
     for (const r of removed) {
       try { fs.rmSync(this.logPath(r.logFile), { force: true }); } catch { /* ignore */ }
-      if (r.reportFile) {
-        try { fs.rmSync(path.dirname(this.reportPath(r.reportFile)), { recursive: true, force: true }); } catch { /* ignore */ }
-      }
+      try { fs.rmSync(this.runDirFor(r.taskId, r.id), { recursive: true, force: true }); } catch { /* ignore */ }
     }
     try { fs.rmSync(path.join(this.logsDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
     try { fs.rmSync(path.join(this.tasksDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
@@ -205,8 +203,11 @@ export class SchedulerStore {
   }
   logFileFor(taskId, runId) { return path.join(taskId, runId + '.log'); }
   logPath(rel) { return path.join(this.logsDir, rel); }
-  reportFileFor(taskId, runId) { return path.join(taskId, runId, 'report.md'); }
+  reportFileFor(taskId, runId, exe = false) {
+    return exe ? path.join(taskId, runId, 'report', 'report.md') : path.join(taskId, runId, 'report.md');
+  }
   contextFileFor(taskId, runId) { return path.join(taskId, runId, 'run.json'); }
+  runDirFor(taskId, runId) { return path.join(this.tasksDir, taskId, runId); }
   reportPath(rel) { return path.join(this.tasksDir, rel); }
   addRun(run) {
     this.runs.unshift(run);
@@ -214,8 +215,8 @@ export class SchedulerStore {
       const overflow = this.runs.splice(this.runLimit);
       for (const r of overflow) {
         try { fs.rmSync(this.logPath(r.logFile), { force: true }); } catch { /* ignore */ }
-        if (r.reportFile) {
-          try { fs.rmSync(path.dirname(this.reportPath(r.reportFile)), { recursive: true, force: true }); } catch { /* ignore */ }
+        if (r.taskId && r.id) {
+          try { fs.rmSync(this.runDirFor(r.taskId, r.id), { recursive: true, force: true }); } catch { /* ignore */ }
         }
       }
     }

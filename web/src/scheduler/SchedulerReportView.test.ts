@@ -6,8 +6,8 @@ import SchedulerReportView from './SchedulerReportView.vue';
 
 const task = { id: 't1', name: 'scan', enabled: true, type: 'shell', schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } } } as any;
 const runs = [
-  { id: 'r1', taskId: 't1', status: 'success', trigger: 'manual', startedAt: 1, durationMs: 5, logFile: 'a', reportFile: 'x' },
-  { id: 'r2', taskId: 't1', status: 'failed', trigger: 'schedule', startedAt: 2, durationMs: 7, logFile: 'b', reportFile: 'y' },
+  { id: 'r1', taskId: 't1', status: 'success', trigger: 'manual', startedAt: 1, durationMs: 5, logFile: 'a', reportFile: 'x', reportCount: 2 },
+  { id: 'r2', taskId: 't1', status: 'failed', trigger: 'schedule', startedAt: 2, durationMs: 7, logFile: 'b', reportFile: 'y', reportCount: 1 },
 ];
 
 function mountView(over = {}) {
@@ -18,6 +18,7 @@ function mountView(over = {}) {
       loadReport: vi.fn(async (id: string) => (id === 'r1' ? '# 报告一' : '# 报告二')),
       loadLog: vi.fn(async () => 'raw log'),
       onBack: vi.fn(),
+      openReportDir: vi.fn(),
       ...over,
     },
   });
@@ -46,5 +47,14 @@ describe('SchedulerReportView', () => {
     const w = mountView({ loadRuns: vi.fn(async () => []) });
     await flushPromises();
     expect(w.find('.rv-empty').exists()).toBe(true);
+  });
+
+  it('多个报告文件时显示提示，点击报告打开目录', async () => {
+    const openReportDir = vi.fn(async () => {});
+    const w = mountView({ openReportDir });
+    await flushPromises();
+    expect(w.find('.multi-hint').exists()).toBe(true);
+    await w.find('.md-body').trigger('click');
+    expect(openReportDir).toHaveBeenCalledWith('r1');
   });
 });

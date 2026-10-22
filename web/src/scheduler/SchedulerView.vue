@@ -19,11 +19,16 @@ const detailTask = ref<TaskView | null>(null);
 function emptyForm() {
   return {
     name: '', enabled: true, cwd: '', filePath: '', type: 'shell', command: '',
-    ai: { source: 'command', commandName: '', prompt: '' }, script: { path: '' },
+    ai: { source: 'command', commandName: '', prompt: '' },
     workflow: { workflowId: '', agentId: '' },
     schedule: { mode: 'interval', interval: { every: 30, unit: 'minute' }, daily: { at: '09:30', weekdays: [] } },
+    script: { path: '', exe: false },
   };
 }
+const previewRunDir = computed(() => `<${t('sched.field.run_dir_placeholder')}>`);
+const previewProgress = computed(() => `${previewRunDir.value}/result.json`);
+const previewReportDir = computed(() => `${previewRunDir.value}/report`);
+const exeCommand = computed(() => `"${form.value.script?.path || `<${t('sched.field.exe_path_placeholder')}>`}" "${previewProgress.value}" "${previewReportDir.value}"`);
 const workflows = ref<{ id: string; label: string }[]>([]);
 const agents = ref<{ id: string; name: string }[]>([]);
 async function loadWorkflowOptions() {
@@ -57,7 +62,7 @@ function openEdit(task: TaskView) {
   form.value = JSON.parse(JSON.stringify({
     name: task.name, enabled: task.enabled, cwd: task.cwd || '', filePath: task.filePath || '', type: task.type,
     command: task.command || '', ai: task.ai || { source: 'command', commandName: '', prompt: '' },
-    script: task.script || { path: '' }, workflow: task.workflow || { workflowId: '', agentId: '' }, schedule: task.schedule,
+    script: task.script || { path: '', exe: false }, workflow: task.workflow || { workflowId: '', agentId: '' }, schedule: task.schedule,
   }));
   showEditor.value = true;
 }
@@ -245,6 +250,7 @@ onBeforeUnmount(() => { sched.dispose(); });
       :load-log="sched.loadLog"
       :on-back="() => (detailTask = null)"
       :on-open-session="props.onOpenSession"
+      :open-report-dir="sched.openReportDir"
     />
 
     <div v-if="showEditor" class="overlay">
@@ -301,6 +307,20 @@ onBeforeUnmount(() => { sched.dispose(); });
         </template>
         <template v-else>
           <label>{{ $t('sched.field.script_path') }} <input v-model="form.script.path" /></label>
+          <label class="inline">
+            <input type="checkbox" class="exe-check" v-model="form.script.exe" /> {{ $t('sched.field.exe') }}
+          </label>
+          <template v-if="form.script.exe">
+            <label>{{ $t('sched.field.progress_path') }}
+              <input class="fileinp" :value="previewProgress" readonly />
+            </label>
+            <label>{{ $t('sched.field.report_dir') }}
+              <input class="fileinp" :value="previewReportDir" readonly />
+            </label>
+            <label>{{ $t('sched.field.command_preview') }}
+              <div class="cmdpreview">{{ exeCommand }}</div>
+            </label>
+          </template>
         </template>
 
         <label>{{ $t('sched.field.mode') }}
@@ -461,6 +481,7 @@ onBeforeUnmount(() => { sched.dispose(); });
 .modal input.fileinp { flex: 1; min-width: 0; }
 .modal input, .modal select, .modal textarea { background: var(--bg4, var(--bg5)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 6px; font-family: inherit; }
 .sched-edit { --cm-min: 72px; }
+.cmdpreview { background: var(--bg6, var(--bg1)); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
 .wd { color: var(--tx3); font-size: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .wditem { display: inline-flex; flex-direction: row; align-items: center; gap: 2px; }
 .pickfile { align-self: flex-start; background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; }

@@ -14,7 +14,7 @@ export interface SchedulerTask {
   filePath?: string | null;
   command?: string;
   ai?: { source: 'command' | 'prompt' | 'file'; commandName?: string; prompt?: string };
-  script?: { path: string };
+  script?: { path: string; exe?: boolean };
   workflow?: { workflowId: string; agentId: string };
   schedule: Schedule;
   createdAt: number;
@@ -34,6 +34,8 @@ export interface SchedulerRun {
   durationMs: number | null;
   logFile: string;
   reportFile?: string | null;
+  reportDir?: string | null;
+  reportCount?: number | null;
   error: string | null;
   sessionId?: string | null;
 }
@@ -52,6 +54,8 @@ export interface SchedulerRunContext {
   trigger: 'schedule' | 'manual';
   startedAt: number;
   reportPath: string;
+  reportDir: string;
+  progressPath: string;
   logPath: string;
   outputDir: string;
 }

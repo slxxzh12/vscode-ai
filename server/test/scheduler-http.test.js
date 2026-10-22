@@ -36,10 +36,10 @@ function call(mount, method, urlStr, body) {
   return Promise.resolve(callP).then(() => p);
 }
 
-function setup(runner = fakeRunner(), pickFolder = undefined) {
+function setup(runner = fakeRunner(), pickFolder = undefined, reveal = undefined) {
   const store = new SchedulerStore({ dir: tmpDir() });
   const engine = createEngine({ store, runner, now: () => 1000 });
-  const mount = createSchedulerMount({ engine, store, pickFolder });
+  const mount = createSchedulerMount({ engine, store, pickFolder, ...(reveal ? { reveal } : {}) });
   return { store, engine, runner, mount };
 }
 
@@ -172,4 +172,22 @@ test('GET /runs 不传 limit 返回全部', async () => {
   for (let i = 0; i < 60; i += 1) store.addRun({ id: `r${i}`, taskId: 't1', status: 'success' });
   const res = await call(mount, 'GET', '/api/scheduler/runs?taskId=t1');
   assert.equal(JSON.parse(res.body).runs.length, 60);
+});
+
+test('POST /runs/:id/reveal-report 打开报告目录', async () => {
+  const calls = [];
+  const { mount, store } = setup(fakeRunner(), undefined, (dir, isDir) => { calls.push({ dir, isDir }); return true; });
+  const reportDir = path.join(store.dir, 'tasks', 't1', 'r1', 'report');
+  fs.mkdirSync(reportDir, { recursive: true });
+  store.addRun({ id: 'r1', taskId: 't1', status: 'success', reportDir });
+  const res = await call(mount, 'POST', '/api/scheduler/runs/r1/reveal-report');
+  assert.equal(res.status, 200);
+  assert.deepEqual(calls, [{ dir: reportDir, isDir: true }]);
+});
+
+test('POST /runs/:id/reveal-report 目录不存在返回 404', async () => {
+  const { mount, store } = setup();
+  store.addRun({ id: 'r2', taskId: 't1', status: 'success' });
+  const res = await call(mount, 'POST', '/api/scheduler/runs/r2/reveal-report');
+  assert.equal(res.status, 404);
 });

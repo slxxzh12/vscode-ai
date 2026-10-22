@@ -57,10 +57,13 @@
   "trigger": "schedule",
   "startedAt": 1792400000000,
   "reportPath": "<绝对路径>/tasks/<taskId>/<runId>/report.md",
+  "reportDir": "<绝对路径>/tasks/<taskId>/<runId>",
+  "progressPath": "",
   "logPath": "<绝对路径>/logs/<taskId>/<runId>.log",
   "outputDir": "<绝对路径>/tasks/<taskId>/<runId>"
 }
 ```
+EXE 任务（`script.exe=true`）的 `reportPath` 为 `<运行目录>/report/report.md`，`reportDir` 为 `<运行目录>/report`，`progressPath` 为 `<运行目录>/result.json`。
 
 约定：
 
@@ -74,6 +77,8 @@
 `runs.json` 的每条记录在现有字段基础上增加：
 
 - `reportFile`：报告相对路径，形如 `<taskId>/<runId>/report.md`。
+- `reportDir`：报告所在目录（EXE 任务为 `.../report`）。
+- `reportCount`：报告目录中的文件数；大于 1 时前端点击报告直接打开目录。
 
 其余字段（`id/taskId/status/trigger/startedAt/finishedAt/durationMs/exitCode/error/sessionId/logFile`）保持不变。
 
@@ -107,6 +112,20 @@
 - 第 2 个参数：`report.md` 路径。
 - shell / ai / workflow 任务不追加位置参数，只使用 `DEVFLOW_RUN_CONTEXT` 环境变量。
 - 脚本可直接按 `argv[1]`、`argv[2]`（或 `%1`、`%2`）读取并在运行时按约定回写。
+
+### EXE 脚本任务
+
+脚本任务可勾选「按 EXE 程序运行」（`script.exe=true`），不再走 `.bat/.ps1` 解释器，直接执行程序路径，并追加：
+
+```text
+"<程序路径>" "<运行目录>/result.json" "<运行目录>/report"
+```
+
+- 第 1 个参数：进度文件路径 `result.json`。
+- 第 2 个参数：报告目录路径 `report/`。
+- 运行目录仍为 `scheduler/tasks/<taskId>/<runId>/`。
+- 系统运行结束后读取 `report/` 下按文件名排序的第一个非空文件作为报告；一个文件时直接渲染，多个文件时前端显示文件数，点击报告打开所在目录。
+- 任务编辑器实时展示这两个只读路径和命令行预览。
 
 ### AI / 工作流任务
 

@@ -115,4 +115,10 @@ describe('useScheduler', () => {
     expect(await s.loadReport('r1')).toBe('{}');
     expect(calls.some((c) => c.url === '/api/scheduler/runs/r1/report')).toBe(true);
   });
+
+  it('openReportDir 调用 reveal-report', async () => {
+    const s = useScheduler();
+    await s.openReportDir('r1');
+    expect(calls.some((c) => c.method === 'POST' && c.url === '/api/scheduler/runs/r1/reveal-report')).toBe(true);
+  });
 });

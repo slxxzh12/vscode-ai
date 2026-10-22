@@ -80,6 +80,10 @@ export function useScheduler(terminal?: TerminalLike) {
     const res = await fetch(`/api/scheduler/runs/${encodeURIComponent(runId)}/report`);
     return res.ok ? res.text() : '';
   }
+  async function openReportDir(runId: string) {
+    const res = await fetch(`/api/scheduler/runs/${encodeURIComponent(runId)}/reveal-report`, { method: 'POST' });
+    if (!res.ok) throw new Error('open-report-dir-failed');
+  }
   async function loadAiCommands() {
     try {
       const d = await api('GET', '/api/scheduler/ai-commands');
@@ -106,5 +110,5 @@ export function useScheduler(terminal?: TerminalLike) {
     unsubs.push(terminal.on(SchedulerS2C.SCHED_RUN_END, onAny));
   }
 
-  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadRuns, loadLog, loadSummary, loadReport, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
+  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadRuns, loadLog, loadSummary, loadReport, openReportDir, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
 }
