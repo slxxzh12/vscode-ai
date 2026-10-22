@@ -16,7 +16,7 @@ function appendLog(logPath, line) {
 
 // 定时任务里 workflow 类型任务的执行器：新建 agent 会话 → 在会话里跑整条工作流
 export function createWorkflowExecutor({ sessionManager, workflowRunner, resolveAgent, logger = console }) {
-  function start({ task, runId, logFile, onStatus = () => {} }) {
+  function start({ task, runId, logFile, runContextPath = null, onStatus = () => {} }) {
     const notify = (s) => queueMicrotask(() => { try { onStatus(s); } catch (e) { logger?.warn?.('wf onStatus failed', e); } });
     const agent = resolveAgent ? resolveAgent(task.workflow?.agentId) : null;
     if (!agent) { notify({ status: 'failed', error: 'agent-not-found' }); return { error: 'agent-not-found' }; }
@@ -36,6 +36,7 @@ export function createWorkflowExecutor({ sessionManager, workflowRunner, resolve
       agentId: agent.id,
       agentCmd: agent.cmd,
       name: t('sched.wf.session_name', { name: task.name, time: timeLabel() }),
+      env: runContextPath ? { DEVFLOW_RUN_CONTEXT: runContextPath } : null,
     }).then((session) => {
       sessionId = session.id;
       appendLog(logFile, `# workflow ${task.workflow.workflowId} · agent ${agent.name} (${agent.cmd})`);

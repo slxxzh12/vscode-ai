@@ -21,12 +21,13 @@ export function makePseudoPty(raw, shell) {
   };
 }
 
-export async function createPty({ cwd = process.cwd(), cols = 80, rows = 24 } = {}) {
+export async function createPty({ cwd = process.cwd(), cols = 80, rows = 24, env = null } = {}) {
   // 动态 import：避免在单测进程里强行加载原生模块（单测只走 fake pty）
   const { spawn } = await import('node-pty');
   const shell = pickShell();
   const raw = spawn(shell.file, shell.args, {
-    name: 'xterm-256color', cols, rows, cwd, env: withAgentEnv(),
+    name: 'xterm-256color', cols, rows, cwd,
+    env: withAgentEnv(env ? { ...process.env, ...env } : process.env),
   });
   return makePseudoPty(raw, process.platform === 'win32' ? 'win' : 'unix');
 }

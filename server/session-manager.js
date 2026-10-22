@@ -21,7 +21,7 @@ export class SessionManager extends EventEmitter {
   }
   async create({ projectId = null, cwd = null, name = null, cols = 80, rows = 24,
                  id = null, kind = 'shell', agentId = null, agentCmd = null,
-                 createdAt = null, replay = null } = {}) {
+                 createdAt = null, replay = null, env = null } = {}) {
     const projRoot = projectId && this.projectResolver ? (this.projectResolver(projectId) || null) : null;
     const workdir = cwd || projRoot || process.cwd();
     // 项目目录可能已被删除/移动：此时不能把不存在的目录交给 node-pty（会抛 ERROR_DIRECTORY 267），
@@ -31,7 +31,7 @@ export class SessionManager extends EventEmitter {
       e.code = 'cwd-missing';
       throw e;
     }
-    const pty = await this.ptyFactory({ cwd: workdir, cols, rows });
+    const pty = await this.ptyFactory({ cwd: workdir, cols, rows, env });
     const session = {
       id: id || shortId(), name: name || (projectId ? `${projectId} · ${timeLabel()}` : `${t('session.default')} · ${timeLabel()}`),
       projectId, cwd: workdir, pty, alive: true,

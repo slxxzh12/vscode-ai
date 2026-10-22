@@ -34,13 +34,14 @@ test('start：新建 agent 会话并启动整条工作流，成功回写 success
   const logFile = path.join(dir, 't', 'r.log');
   const statuses = [];
   const task = { id: 't1', name: '夜间', projectId: null, cwd: process.cwd(), workflow: { workflowId: 'dev', agentId: 'opencode' } };
-  const handle = executor.start({ task, runId: 'r1', logFile, onStatus: (s) => statuses.push(s) });
+  const handle = executor.start({ task, runId: 'r1', logFile, runContextPath: 'C:/ctx.json', onStatus: (s) => statuses.push(s) });
   await tick();
   assert.equal(handle.error, undefined);
   assert.equal(created.length, 1);
   assert.equal(created[0].kind, 'agent');
   assert.equal(created[0].agentId, 'opencode');
   assert.equal(created[0].agentCmd, 'opencode');
+  assert.equal(created[0].env.DEVFLOW_RUN_CONTEXT, 'C:/ctx.json');
   assert.ok(handle.sessionId);
   assert.equal(instances[0].pty.writes.length, 1);
   instances[0].pty.__emitData(`DONE>DF_DONE:${handle.runId}:0`);

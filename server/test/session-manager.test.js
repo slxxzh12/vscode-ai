@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SessionManager } from '../session-manager.js';
-import { makeFakePtyFactory } from './helpers/fake-pty.js';
+import { makeFakePty, makeFakePtyFactory } from './helpers/fake-pty.js';
 
 const fakeConn = () => ({ sessionId: null });
 
@@ -210,4 +210,11 @@ test('live 返回全部会话对象', async () => {
   const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
   await sm.create({});
   assert.equal(sm.live().length, 1);
+});
+
+test('create 把 env 透传给 ptyFactory', async () => {
+  const seen = [];
+  const sm = new SessionManager({ ptyFactory: async (opts) => { seen.push(opts); return makeFakePty(); } });
+  await sm.create({ env: { DEVFLOW_RUN_CONTEXT: 'C:/ctx.json' } });
+  assert.deepEqual(seen[0].env, { DEVFLOW_RUN_CONTEXT: 'C:/ctx.json' });
 });
