@@ -1,8 +1,11 @@
 import fs from 'node:fs';
 import { listAiCommands } from './ai-commands.js';
 import { pickFile, pickFolder as defaultPickFolder } from '../native-dialog.js';
+import { legacyReport } from './report.js';
+import { t } from '../i18n.js';
 
 const LOG_TAIL_MAX = 256 * 1024;
+const REPORT_MAX = 2 * 1024 * 1024;
 
 export function createSchedulerMount({ engine, store, logger = console, pickFolder = defaultPickFolder }) {
   const sendJson = (res, status, obj) => {
@@ -72,10 +75,27 @@ export function createSchedulerMount({ engine, store, logger = console, pickFold
           return sendJson(res, 200, { ok: true });
         }
       }
+      if (p === '/api/scheduler/summary' && req.method === 'GET') {
+        return sendJson(res, 200, store.summary());
+      }
       if (p === '/api/scheduler/runs' && req.method === 'GET') {
         const taskId = url.searchParams.get('taskId');
-        const limit = Number(url.searchParams.get('limit')) || 50;
+        const rawLimit = url.searchParams.get('limit');
+        const limit = rawLimit == null ? null : Number(rawLimit);
         return sendJson(res, 200, { runs: store.listRuns({ taskId, limit }) });
+      }
+      const rep = p.match(/^\/api\/scheduler\/runs\/([^/]+)\/report$/);
+      if (rep && req.method === 'GET') {
+        const run = store.getRun(decodeURIComponent(rep[1]));
+        if (!run) return sendJson(res, 404, { error: 'not-found' });
+        let text = '';
+        if (run.reportFile) {
+          try { text = fs.readFileSync(store.reportPath(run.reportFile), 'utf8'); } catch { /* missing */ }
+        }
+        if (!text) text = legacyReport({ store, run, task: store.getTask(run.taskId) });
+        if (text.length > REPORT_MAX) text = text.slice(0, REPORT_MAX) + `\n\n---\n\n${t('sched.report.truncated')}`;
+        res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(text);
       }
       const rm = p.match(/^\/api\/scheduler\/runs\/([^/]+)\/log$/);
       if (rm && req.method === 'GET') {

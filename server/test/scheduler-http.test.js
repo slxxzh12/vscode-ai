@@ -134,3 +134,42 @@ test('POST /import 非法目录返回 400', async () => {
   assert.equal((await call(mount, 'POST', '/api/scheduler/import', { dir: '' })).status, 400);
   assert.equal((await call(mount, 'POST', '/api/scheduler/import', { dir: path.join(tmpDir(), 'nope') })).status, 400);
 });
+
+test('GET /summary 返回成功/失败/运行中总数', async () => {
+  const { mount, store } = setup();
+  store.addRun({ id: 'r1', taskId: 't1', status: 'success' });
+  store.addRun({ id: 'r2', taskId: 't1', status: 'failed' });
+  store.addRun({ id: 'r3', taskId: 't1', status: 'timeout' });
+  store.addRun({ id: 'r4', taskId: 't1', status: 'running' });
+  const res = await call(mount, 'GET', '/api/scheduler/summary');
+  assert.equal(res.status, 200);
+  assert.deepEqual(JSON.parse(res.body), { total: 4, success: 1, failed: 2, running: 1 });
+});
+
+test('GET /runs/:id/report 返回 Markdown', async () => {
+  const { mount, store } = setup();
+  const reportFile = store.reportFileFor('t1', 'r1');
+  fs.mkdirSync(path.dirname(store.reportPath(reportFile)), { recursive: true });
+  fs.writeFileSync(store.reportPath(reportFile), '# 报告\n\nok');
+  store.addRun({ id: 'r1', taskId: 't1', status: 'success', reportFile });
+  const res = await call(mount, 'GET', '/api/scheduler/runs/r1/report');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['Content-Type'], 'text/markdown; charset=utf-8');
+  assert.equal(res.body, '# 报告\n\nok');
+});
+
+test('GET /runs/:id/report 对旧记录即时兜底', async () => {
+  const { mount, store } = setup();
+  store.addRun({ id: 'r2', taskId: 't1', status: 'failed', error: 'x' });
+  const res = await call(mount, 'GET', '/api/scheduler/runs/r2/report');
+  assert.equal(res.status, 200);
+  assert.match(res.body, /# t1/);
+  assert.match(res.body, /失败/);
+});
+
+test('GET /runs 不传 limit 返回全部', async () => {
+  const { mount, store } = setup();
+  for (let i = 0; i < 60; i += 1) store.addRun({ id: `r${i}`, taskId: 't1', status: 'success' });
+  const res = await call(mount, 'GET', '/api/scheduler/runs?taskId=t1');
+  assert.equal(JSON.parse(res.body).runs.length, 60);
+});
