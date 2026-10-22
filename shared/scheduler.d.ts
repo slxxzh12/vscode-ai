@@ -33,8 +33,27 @@ export interface SchedulerRun {
   exitCode: number | null;
   durationMs: number | null;
   logFile: string;
+  reportFile?: string | null;
   error: string | null;
   sessionId?: string | null;
+}
+
+export interface SchedulerSummary {
+  total: number;
+  success: number;
+  failed: number;
+  running: number;
+}
+
+export interface SchedulerRunContext {
+  runId: string;
+  taskId: string;
+  taskName: string;
+  trigger: 'schedule' | 'manual';
+  startedAt: number;
+  reportPath: string;
+  logPath: string;
+  outputDir: string;
 }
 
 export const SchedulerS2C: Readonly<{
