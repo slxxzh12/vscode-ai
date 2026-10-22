@@ -11,17 +11,27 @@ function task(over = {}) {
   return { name: 'a', enabled: true, type: 'shell', command: 'echo hi',
     schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } }, ...over };
 }
-function fakeRunner() {
+function fakeRunner(onSpawn) {
   const calls = [];
   const pending = [];
   let running = 0;
   return {
     calls,
-    run(args) { calls.push(args); running++; return new Promise((resolve) => pending.push(() => { running--; const res = { exitCode: 0, timedOut: false, durationMs: 1 }; args.onExit?.(res); resolve(res); })); },
+    run(args) {
+      calls.push(args);
+      running += 1;
+      onSpawn?.(args);
+      return new Promise((resolve) => pending.push((code = 0) => {
+        running -= 1;
+        const res = { exitCode: code, timedOut: false, durationMs: 1 };
+        args.onExit?.(res);
+        resolve(res);
+      }));
+    },
     stop() { return true; },
     isRunning() { return true; },
     count() { return running; },
-    finishAll() { while (pending.length) pending.shift()(); },
+    finishAll(code = 0) { while (pending.length) pending.shift()(code); },
   };
 }
 const HOUR = 3600000;
@@ -191,4 +201,70 @@ test('workflow 任务：未注入 executor → 立即 failed', () => {
   const r = engine.manualRun(task.id);
   assert.equal(r.run.status, 'failed');
   assert.equal(r.run.error, 'executor-unavailable');
+});
+
+test('运行前写 run.json 并注入 DEVFLOW_RUN_CONTEXT；成功后归档任务报告', async () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const runner = fakeRunner((args) => {
+    const ctx = JSON.parse(fs.readFileSync(args.spec.env.DEVFLOW_RUN_CONTEXT, 'utf8'));
+    assert.equal(ctx.runId, args.runId);
+    assert.equal(ctx.taskId, store.listTasks()[0].id);
+    fs.writeFileSync(ctx.reportPath, '# 扫描报告\n\n全部通过');
+  });
+  const { task: t } = store.createTask(task());
+  const engine = createEngine({ store, runner, now: () => 1000 });
+  const r = engine.manualRun(t.id);
+  runner.finishAll(0);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const run = store.getRun(r.run.id);
+  assert.equal(run.status, 'success');
+  assert.equal(run.reportFile, store.reportFileFor(t.id, r.run.id));
+  assert.match(fs.readFileSync(store.reportPath(run.reportFile), 'utf8'), /扫描报告/);
+});
+
+test('失败时生成兜底报告并去掉 ANSI', async () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const runner = fakeRunner((args) => {
+    fs.mkdirSync(path.dirname(args.logPath), { recursive: true });
+    fs.writeFileSync(args.logPath, '\u001b[31mboom\u001b[0m');
+  });
+  const { task: t } = store.createTask(task());
+  const engine = createEngine({ store, runner, now: () => 1000 });
+  const r = engine.manualRun(t.id);
+  runner.finishAll(1);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const run = store.getRun(r.run.id);
+  assert.equal(run.status, 'failed');
+  assert.ok(run.reportFile);
+  const text = fs.readFileSync(store.reportPath(run.reportFile), 'utf8');
+  assert.match(text, /失败/);
+  assert.match(text, /boom/);
+  assert.equal(text.includes('\u001b'), false);
+});
+
+test('workflow 任务拿到 runContextPath，结束后生成兜底报告', async () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const executor = fakeExecutor();
+  const engine = createEngine({ store, runner: fakeRunner(), workflowExecutor: executor, now: () => 1000 });
+  const { task } = store.createTask(wfTask());
+  const r = engine.manualRun(task.id);
+  assert.ok(executor.calls[0].runContextPath);
+  const ctx = JSON.parse(fs.readFileSync(executor.calls[0].runContextPath, 'utf8'));
+  assert.equal(ctx.runId, r.run.id);
+  executor.handles.get(r.run.id).emit({ status: 'success', sessionId: 's1' });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const run = store.getRun(r.run.id);
+  assert.ok(run.reportFile);
+  assert.match(fs.readFileSync(store.reportPath(run.reportFile), 'utf8'), /成功/);
+});
+
+test('executor 不可用时立即失败也有报告', () => {
+  const store = new SchedulerStore({ dir: tmpDir() });
+  const engine = createEngine({ store, runner: fakeRunner(), now: () => 1000 });
+  const { task } = store.createTask(wfTask());
+  const r = engine.manualRun(task.id);
+  const run = store.getRun(r.run.id);
+  assert.equal(run.status, 'failed');
+  assert.ok(run.reportFile);
+  assert.ok(fs.existsSync(store.reportPath(run.reportFile)));
 });
