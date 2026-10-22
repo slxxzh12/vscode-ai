@@ -195,7 +195,12 @@ onBeforeUnmount(() => { sched.dispose(); });
           <span class="lh-hist">{{ $t('sched.recent_n', { n: RECENT_N }) }}</span>
           <span class="lh-acts">{{ $t('sched.col.actions') }}</span>
         </div>
-        <div v-if="!state.tasks.length" class="empty">{{ $t('sched.empty') }}</div>
+        <div v-if="!state.tasks.length" class="blank">
+          <div class="blank-icon">📅</div>
+          <div class="blank-title">{{ $t('sched.empty.title') }}</div>
+          <div class="blank-hint">{{ $t('sched.empty.hint') }}</div>
+          <button @click.stop="openCreate">{{ $t('sched.empty.create') }}</button>
+        </div>
         <div v-for="t in state.tasks" :key="t.id" class="row" @click="openDetail(t)">
           <div class="rowmain">
             <div class="name">
@@ -367,6 +372,41 @@ onBeforeUnmount(() => { sched.dispose(); });
 .sum-failed .num { color: #e5534b; }
 .sum-running .num { color: var(--ac2); }
 .empty { color: var(--tx5); padding: 24px; text-align: center; }
+.blank {
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 16px;
+  border: 1px dashed var(--bd);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(88, 166, 255, .10), transparent 60%),
+    var(--bg1);
+}
+.blank-icon {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--bg5, var(--bg4));
+  font-size: 22px;
+}
+.blank-title { color: var(--tx1); font-weight: 600; }
+.blank-hint { color: var(--tx5); font-size: 12px; max-width: 420px; text-align: center; line-height: 1.6; }
+.blank button {
+  margin-top: 4px;
+  background: var(--ac2);
+  border: 1px solid var(--ac2);
+  color: #fff;
+  border-radius: 4px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
 .row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--bd); border-radius: 6px; margin-bottom: 6px; background: var(--bg1); cursor: pointer; }
 .rowmain { flex: 1; min-width: 0; }
 .name { color: var(--tx1); display: flex; align-items: center; gap: 8px; }

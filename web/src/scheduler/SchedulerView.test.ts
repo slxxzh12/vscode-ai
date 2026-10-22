@@ -26,4 +26,20 @@ describe('SchedulerView', () => {
     await flushPromises();
     expect(w.find('.report-view').exists()).toBe(true);
   });
+
+  it('没有任务时显示空白提示，可直接新建', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/scheduler/tasks') return ok({ tasks: [] });
+      if (url === '/api/scheduler/summary') return ok({ total: 0, success: 0, failed: 0, running: 0 });
+      return ok({});
+    }));
+    const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
+    await flushPromises();
+    expect(w.find('.blank').exists()).toBe(true);
+    expect(w.find('.blank-title').exists()).toBe(true);
+    expect(w.find('.blank-hint').exists()).toBe(true);
+    await w.find('.blank button').trigger('click');
+    await flushPromises();
+    expect(w.find('.modal').exists()).toBe(true);
+  });
 });
