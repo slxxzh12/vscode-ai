@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useScheduler, type TaskView } from './useScheduler';
+import SchedulerReportView from './SchedulerReportView.vue';
 import { scheduleSummary, formatTime, runStatusLabel, recentRunsOf, typeLabel } from './format';
-import type { SchedulerRun } from '@devflow/shared/scheduler';
 import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
 
@@ -14,11 +14,7 @@ const showEditor = ref(false);
 const editingId = ref<string | null>(null);
 const pickedPath = ref('');
 const form = ref<any>(emptyForm());
-const runs = ref<SchedulerRun[]>([]);
-const runsTaskId = ref<string | null>(null);
-const logText = ref('');
-const logRunId = ref<string | null>(null);
-let logTimer: ReturnType<typeof setInterval> | null = null;
+const detailTask = ref<TaskView | null>(null);
 
 function emptyForm() {
   return {
@@ -49,7 +45,6 @@ function taskIcon(t: TaskView): string {
   if (t.type === 'ai') return t.ai?.source === 'file' ? '📄' : '🤖';
   return '•';
 }
-const currentRun = computed(() => runs.value.find((r) => r.id === logRunId.value) || null);
 function openCreate() {
   editingId.value = null;
   pickedPath.value = '';
@@ -134,6 +129,7 @@ async function save() {
 async function remove(task: TaskView) {
   if (!confirm(t('sched.remove_confirm', { name: task.name }))) return;
   await sched.removeTask(task.id);
+  if (detailTask.value?.id === task.id) detailTask.value = null;
 }
 async function runNow(task: TaskView) {
   runPending.value[task.id] = true;
@@ -152,24 +148,7 @@ async function openWfRun(task: TaskView) {
   if (!run || !run.sessionId) { state.error = t('sched.wf.no_run'); return; }
   props.onOpenSession?.(run.sessionId);
 }
-async function openRuns(task: TaskView) {
-  runsTaskId.value = task.id;
-  runs.value = await sched.loadRuns(task.id);
-  logText.value = '';
-  logRunId.value = null;
-  startLogTimer();
-}
-async function openLog(r: SchedulerRun) { logRunId.value = r.id; logText.value = await sched.loadLog(r.id); }
-function startLogTimer() {
-  stopLogTimer();
-  logTimer = setInterval(async () => {
-    if (!runsTaskId.value) return;
-    runs.value = await sched.loadRuns(runsTaskId.value);
-    if (logRunId.value) logText.value = await sched.loadLog(logRunId.value);
-  }, 2000);
-}
-function stopLogTimer() { if (logTimer) { clearInterval(logTimer); logTimer = null; } }
-function closeRuns() { runsTaskId.value = null; logRunId.value = null; logText.value = ''; stopLogTimer(); }
+function openDetail(task: TaskView) { detailTask.value = task; }
 const WEEKDAYS = computed(() => [1, 2, 3, 4, 5, 6, 7].map((v) => ({ v, t: t('sched.wdshort.' + v) })));
 function toggleWeekday(v: number) {
   const arr: number[] = form.value.schedule.daily.weekdays;
@@ -187,11 +166,12 @@ function barClass(status: string): string {
 }
 
 onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); void loadWorkflowOptions(); });
-onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
+onBeforeUnmount(() => { sched.dispose(); });
 </script>
 
 <template>
   <div class="sched">
+    <template v-if="!detailTask">
     <header class="bar">
       <span class="title">{{ $t('sched.title') }}</span>
       <span v-if="state.error" class="err">{{ state.error }}</span>
@@ -202,6 +182,12 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
     </header>
 
     <div class="body">
+      <div class="summary">
+        <div class="sum-card sum-success"><span class="num">{{ sched.state.summary.success }}</span><span>{{ $t('sched.summary.success') }}</span></div>
+        <div class="sum-card sum-failed"><span class="num">{{ sched.state.summary.failed }}</span><span>{{ $t('sched.summary.failed') }}</span></div>
+        <div class="sum-card sum-running"><span class="num">{{ sched.state.summary.running }}</span><span>{{ $t('sched.summary.running') }}</span></div>
+        <div class="sum-card sum-total"><span class="num">{{ sched.state.summary.total }}</span><span>{{ $t('sched.summary.total') }}</span></div>
+      </div>
       <div class="list">
         <div v-if="state.tasks.length" class="listhead">
           <span class="lh-main">{{ $t('sched.col.name') }}</span>
@@ -210,7 +196,7 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
           <span class="lh-acts">{{ $t('sched.col.actions') }}</span>
         </div>
         <div v-if="!state.tasks.length" class="empty">{{ $t('sched.empty') }}</div>
-        <div v-for="t in state.tasks" :key="t.id" class="row">
+        <div v-for="t in state.tasks" :key="t.id" class="row" @click="openDetail(t)">
           <div class="rowmain">
             <div class="name">
               <span class="badge" :class="t.type"><span class="bi">{{ taskIcon(t) }}</span>{{ typeLabel(t.type) }}</span>
@@ -232,18 +218,29 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
             <span v-for="r in lastRuns(t)" :key="r.id" class="vbar" :class="barClass(r.status)" :title="`${runStatusLabel(r.status)} · ${formatTime(r.startedAt)}`" />
           </div>
           <div class="acts">
-            <button v-if="t.enabled" @click="toggle(t)">{{ $t('sched.pause') }}</button>
-            <button v-else @click="toggle(t)">{{ $t('sched.start') }}</button>
-            <button v-if="!isRunning(t)" @click="runNow(t)">{{ $t('sched.run') }}</button>
-            <button v-else-if="t.runningRunId" @click="stop(t)">{{ $t('sched.stop') }}</button>
-            <button v-if="t.type === 'workflow'" @click="openWfRun(t)">{{ $t('sched.wf.open') }}</button>
-            <button @click="openRuns(t)">{{ $t('sched.history') }}</button>
-            <button @click="openEdit(t)">{{ $t('sched.edit') }}</button>
-            <button @click="remove(t)">{{ $t('sched.delete') }}</button>
+            <button v-if="t.enabled" @click.stop="toggle(t)">{{ $t('sched.pause') }}</button>
+            <button v-else @click.stop="toggle(t)">{{ $t('sched.start') }}</button>
+            <button v-if="!isRunning(t)" @click.stop="runNow(t)">{{ $t('sched.run') }}</button>
+            <button v-else-if="t.runningRunId" @click.stop="stop(t)">{{ $t('sched.stop') }}</button>
+            <button v-if="t.type === 'workflow'" @click.stop="openWfRun(t)">{{ $t('sched.wf.open') }}</button>
+            <button @click.stop="openDetail(t)">{{ $t('sched.history') }}</button>
+            <button @click.stop="openEdit(t)">{{ $t('sched.edit') }}</button>
+            <button @click.stop="remove(t)">{{ $t('sched.delete') }}</button>
           </div>
         </div>
       </div>
     </div>
+    </template>
+
+    <SchedulerReportView
+      v-else-if="detailTask"
+      :task="detailTask"
+      :load-runs="sched.loadRuns"
+      :load-report="sched.loadReport"
+      :load-log="sched.loadLog"
+      :on-back="() => (detailTask = null)"
+      :on-open-session="props.onOpenSession"
+    />
 
     <div v-if="showEditor" class="overlay">
       <div class="modal">
@@ -337,27 +334,6 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
       </div>
     </div>
 
-    <div v-if="runsTaskId" class="overlay" @click.self="closeRuns">
-      <div class="modal wide">
-        <h3>{{ $t('sched.runs.title') }}</h3>
-        <div v-if="currentRun && currentRun.sessionId" class="runsess">
-          <span class="dim">{{ currentRun.sessionId }}</span>
-          <button @click="props.onOpenSession?.(currentRun?.sessionId || '')">{{ $t('sched.open_session') }}</button>
-        </div>
-        <div class="histwrap">
-          <div class="histlist">
-            <div v-for="r in runs" :key="r.id" class="histitem" :class="{ on: r.id === logRunId }" @click="openLog(r)">
-              <span class="dot" :class="r.status" />{{ formatTime(r.startedAt) }}
-              <span class="dim">{{ runStatusLabel(r.status) }} · {{ r.durationMs ?? '—' }}ms</span>
-            </div>
-            <div v-if="!runs.length" class="empty">{{ $t('sched.runs.empty') }}</div>
-          </div>
-          <pre class="logview">{{ logText || $t('sched.runs.select') }}</pre>
-        </div>
-        <div class="modalacts"><button @click="closeRuns">{{ $t('sched.close') }}</button></div>
-      </div>
-    </div>
-
     <div v-if="showImport" class="overlay" @click.self="showImport = false">
       <div class="modal">
         <h3>{{ $t('sched.import.title') }}</h3>
@@ -384,8 +360,14 @@ onBeforeUnmount(() => { stopLogTimer(); sched.dispose(); });
 .bar button, .modalacts button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; }
 .bar button.primary, .modalacts button.primary { background: var(--ac3, var(--ac2)); border-color: var(--ac3, var(--ac2)); color: #fff; }
 .body { flex: 1; overflow: auto; padding: 8px 12px; }
+.summary { display: flex; gap: 8px; margin-bottom: 10px; }
+.sum-card { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--bd); border-radius: 6px; background: var(--bg1); color: var(--tx5); font-size: 12px; }
+.sum-card .num { font-size: 22px; font-weight: 700; color: var(--tx1); }
+.sum-success .num { color: #3fb950; }
+.sum-failed .num { color: #e5534b; }
+.sum-running .num { color: var(--ac2); }
 .empty { color: var(--tx5); padding: 24px; text-align: center; }
-.row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--bd); border-radius: 6px; margin-bottom: 6px; background: var(--bg1); }
+.row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--bd); border-radius: 6px; margin-bottom: 6px; background: var(--bg1); cursor: pointer; }
 .rowmain { flex: 1; min-width: 0; }
 .name { color: var(--tx1); display: flex; align-items: center; gap: 8px; }
 .badge { font-size: 11px; padding: 1px 6px; border-radius: 3px; background: var(--bg5, var(--bg4)); color: var(--tx2); }
