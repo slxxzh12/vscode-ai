@@ -2,7 +2,7 @@ import { createJsonStore } from './json-store.js';
 
 // 窗口状态：上次打开的文件页签、激活页签、左侧栏位、「历史」子页、消息筛选开关。
 // rail 白名单**不含 mobile**——手机视图由前端 mobileLanding 的自动逻辑管理，不参与窗口恢复。
-export const RAILS = ['explorer', 'history', 'contacts', 'stat', 'scheduler', 'jobs', 'proxy'];
+export const RAILS = ['explorer', 'history', 'contacts', 'stat', 'scheduler', 'proxy'];
 export const HISTORY_TABS = ['files', 'messages'];
 export const MAX_TABS = 50;
 
@@ -16,7 +16,8 @@ function fileNameOf(p) {
 export function normalizeWindowState(input) {
   const src = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const out = {};
-  if (typeof src.rail === 'string' && RAILS.includes(src.rail)) out.rail = src.rail;
+  const rail = src.rail === 'jobs' ? 'scheduler' : src.rail;
+  if (typeof rail === 'string' && RAILS.includes(rail)) out.rail = rail;
   if (typeof src.historyTab === 'string' && HISTORY_TABS.includes(src.historyTab)) out.historyTab = src.historyTab;
   if (typeof src.msgFilter === 'boolean') out.msgFilter = src.msgFilter;
   if (Array.isArray(src.tabs)) {

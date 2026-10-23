@@ -13,6 +13,7 @@ test('normalizeWindowState 白名单校验 rail/historyTab/msgFilter', () => {
   assert.deepEqual(normalizeWindowState({ rail: 'history' }), { rail: 'history' });
   assert.deepEqual(normalizeWindowState({ rail: 'nope' }), {});
   assert.deepEqual(normalizeWindowState({ rail: 'mobile' }), {});          // 手机视图不持久化
+  assert.deepEqual(normalizeWindowState({ rail: 'jobs' }), { rail: 'scheduler' }); // 旧 jobs 页签并入定时任务
   assert.deepEqual(normalizeWindowState({ historyTab: 'messages' }), { historyTab: 'messages' });
   assert.deepEqual(normalizeWindowState({ historyTab: 'other' }), {});
   assert.deepEqual(normalizeWindowState({ msgFilter: false }), { msgFilter: false });
