@@ -125,3 +125,12 @@ test('buildSpawnSpec：AI 命令注入作业回调环境变量', () => {
   assert.equal(ai.env.DEVFLOW_JOB_TOKEN, 'tk');
   assert.equal(ai.env.DEVFLOW_JOB_CALLBACK, cb.url);
 });
+
+test('buildSpawnSpec：AI prompt 任务使用临时 prompt.md 启动', () => {
+  const spec = buildSpawnSpec(
+    { type: 'ai', ai: { source: 'prompt' } },
+    { cwd: 'C:/p', aiBin: 'nga.exe', aiPrompt: 'hello', promptFilePath: 'C:/data/tasks/t/r/prompt.md' },
+  );
+  assert.equal(spec.bin, 'nga.exe');
+  assert.deepEqual(spec.args, ['run', '--file', 'C:/data/tasks/t/r/prompt.md']);
+});

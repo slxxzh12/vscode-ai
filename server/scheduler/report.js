@@ -46,6 +46,7 @@ export function writeRunContext({ store, task, run, callback = null }) {
     startedAt: run.startedAt,
     reportPath: p.defaultReportPath,
     reportDir: p.reportDir,
+    promptPath: path.join(p.runDir, 'prompt.md'),
     logPath: logFileOf(store, run),
     outputDir: p.runDir,
     ...(callback ? { callback } : {}),
@@ -56,6 +57,7 @@ export function writeRunContext({ store, task, run, callback = null }) {
     reportPath: p.defaultReportPath,
     reportFile: store.reportFileFor(task.id, run.id),
     reportDir: p.reportDir,
+    promptPath: context.promptPath,
     outputDir: p.runDir,
   };
 }

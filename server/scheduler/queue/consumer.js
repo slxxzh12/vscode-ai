@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import crypto from 'node:crypto';
 import { buildSpawnSpec } from '../runner.js';
 import { writeRunContext, ensureReport, stripAnsi } from '../report.js';
@@ -7,6 +8,12 @@ import { SchedulerJobStatus as S, SCHED_REPORT_MAX_BYTES } from '@devflow/shared
 function readReport(store, reportFile) {
   if (!reportFile) return '';
   try { return fs.readFileSync(store.reportPath(reportFile), 'utf8'); } catch { return ''; }
+}
+
+function writePromptFile(promptPath, text) {
+  fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+  fs.writeFileSync(promptPath, String(text ?? ''), 'utf8');
+  return promptPath;
 }
 
 function parseResult(job) {
@@ -120,11 +127,12 @@ export function createConsumer({
             status = S.FAILED;
             result = { exitCode: 0, shellExitCode: 0, error: 'empty-output', durationMs: now() - startedAt, reason: 'empty-output' };
           } else {
+            const promptFile = writePromptFile(ctx.promptPath, prompt);
             const aiRes = await runner.run({
               runId: job.jobId,
               spec: buildSpawnSpec({ type: 'ai', ai: { source: 'prompt' } }, {
                 cwd, aiPrompt: prompt, aiBin, opencodeDataDir,
-                runContextPath: ctx.contextPath, jobCallback: callback,
+                runContextPath: ctx.contextPath, jobCallback: callback, promptFilePath: promptFile,
               }),
               logPath,
               timeoutMs: Number.isFinite(deadline) ? remaining() : 0,
@@ -144,11 +152,12 @@ export function createConsumer({
         let prompt = null;
         if (task.ai?.source === 'command') prompt = aiPromptLoader(task.ai.commandName) || '';
         else prompt = task.ai?.prompt || '';
+        const promptFile = task.ai?.source === 'prompt' ? writePromptFile(ctx.promptPath, prompt) : null;
         const aiRes = await runner.run({
           runId: job.jobId,
           spec: buildSpawnSpec(task, {
             cwd, aiPrompt: prompt, aiBin, opencodeDataDir,
-            runContextPath: ctx.contextPath, jobCallback: callback,
+            runContextPath: ctx.contextPath, jobCallback: callback, promptFilePath: promptFile,
           }),
           logPath,
           timeoutMs: Number.isFinite(deadline) ? remaining() : 0,

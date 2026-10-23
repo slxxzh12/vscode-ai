@@ -13,7 +13,7 @@ export function stripFrontmatter(s) {
   return String(s ?? '').replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
-export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null, runContextPath = null, jobCallback = null } = {}) {
+export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null, runContextPath = null, jobCallback = null, promptFilePath = null } = {}) {
   const ocEnv = {
     ...AGENT_ENV,
     ...(opencodeDataDir ? { XDG_DATA_HOME: opencodeDataDir } : {}),
@@ -43,6 +43,9 @@ export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null,
       if (msg) args.push(msg);
       args.push('--file', task.filePath);
       return withContext({ bin: aiBin, args, cwd, env: ocEnv });
+    }
+    if (task.ai && task.ai.source === 'prompt' && promptFilePath) {
+      return withContext({ bin: aiBin, args: ['run', '--file', promptFilePath], cwd, env: ocEnv });
     }
     return withContext({ bin: aiBin, args: ['run', stripFrontmatter(aiPrompt ?? '')], cwd, env: ocEnv });
   }
