@@ -52,9 +52,10 @@ describe('SchedulerView', () => {
     await flushPromises();
     await w.find('.blank button').trigger('click');
     await flushPromises();
-    const values = w.findAll('select')[0].findAll('option').map((o) => o.attributes('value'));
+    const typeSelect = w.find('.modal').findAll('select')[0];
+    const values = typeSelect.findAll('option').map((o) => o.attributes('value'));
     expect(values).toEqual(['shell', 'ai']);
-    await w.findAll('select')[0].setValue('shell');
+    await typeSelect.setValue('shell');
     expect(w.find('.shell-hint').exists()).toBe(true);
   });
 

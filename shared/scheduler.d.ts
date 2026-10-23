@@ -8,6 +8,8 @@ export interface SchedulerTask {
   id: string;
   name: string;
   enabled: boolean;
+  once?: boolean;
+  deleteAfter?: number | null;
   projectId: string | null;
   cwd: string | null;
   type: 'shell' | 'ai';

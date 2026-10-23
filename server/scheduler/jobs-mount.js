@@ -1,5 +1,5 @@
+import fs from 'node:fs';
 import { readLogTail } from './report.js';
-
 const sendJson = (res, status, obj) => {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(obj));
@@ -33,7 +33,7 @@ export function createJobsMount({ queue, registry = () => null, role = 'master',
           topic: queue.topic, partitionCount: await queue.partitionCount(),
         });
       }
-      const m = p.match(/^\/api\/scheduler\/jobs\/([^/]+)(?:\/(approve|reject|cancel|retry|callback|log))?$/);
+      const m = p.match(/^\/api\/scheduler\/jobs\/([^/]+)(?:\/(approve|reject|cancel|retry|callback|log|report))?$/);
       if (m) {
         const id = decodeURIComponent(m[1]);
         const action = m[2];
@@ -41,6 +41,19 @@ export function createJobsMount({ queue, registry = () => null, role = 'master',
           const job = await queue.getJob(id);
           if (!job) return sendJson(res, 404, { error: 'not-found' });
           return sendJson(res, 200, { job, local: job.workIP === hostport });
+        }
+        if (action === 'report' && req.method === 'GET') {
+          const job = await queue.getJob(id);
+          if (!job) return sendJson(res, 404, { error: 'not-found' });
+          let result = {};
+          try { result = job.result ? JSON.parse(job.result) : {}; } catch { result = {}; }
+          let text = String(result.reportMarkdown || '');
+          if (!text && result.reportFile && store) {
+            try { text = fs.readFileSync(store.reportPath(result.reportFile), 'utf8'); } catch { text = ''; }
+          }
+          if (!text) return sendJson(res, 404, { error: 'no-report' });
+          res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-store' });
+          return res.end(text);
         }
         if (action === 'log' && req.method === 'GET') {
           const job = await queue.getJob(id);

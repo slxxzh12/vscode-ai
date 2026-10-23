@@ -20,10 +20,16 @@ const pickedPath = ref('');
 const form = ref<any>(emptyForm());
 const detailTask = ref<TaskView | null>(null);
 const mainTab = ref<'tasks' | 'jobs'>('tasks');
+const taskFilter = ref<'all' | 'once' | 'recurring'>('all');
+const filteredTasks = computed(() => state.tasks.filter((t) => {
+  if (taskFilter.value === 'once') return !!t.once;
+  if (taskFilter.value === 'recurring') return !t.once;
+  return true;
+}));
 
 function emptyForm() {
   return {
-    name: '', enabled: true, cwd: '', filePath: '', type: 'ai', command: '',
+    name: '', enabled: true, once: false, cwd: '', filePath: '', type: 'ai', command: '',
     ai: { source: 'prompt', commandName: '', prompt: '' },
     schedule: { mode: 'interval', interval: { every: 30, unit: 'minute' }, daily: { at: '09:30', weekdays: [] } },
     approvalRequired: false, onlyLocal: false, uniqueKey: '', weight: 0, maxRunMilliSecond: 0, groupName: 'default',
@@ -44,7 +50,7 @@ function openEdit(task: TaskView) {
   editingId.value = task.id;
   pickedPath.value = task.filePath || '';
   form.value = JSON.parse(JSON.stringify({
-    name: task.name, enabled: task.enabled, cwd: task.cwd || '', filePath: task.filePath || '', type: task.type,
+    name: task.name, enabled: task.enabled, once: !!task.once, cwd: task.cwd || '', filePath: task.filePath || '', type: task.type,
     command: task.command || '', ai: task.ai || { source: 'command', commandName: '', prompt: '' }, schedule: task.schedule,
     approvalRequired: !!task.approvalRequired, onlyLocal: !!task.onlyLocal, uniqueKey: task.uniqueKey || '',
     weight: task.weight || 0, maxRunMilliSecond: task.maxRunMilliSecond || 0, groupName: task.groupName || 'default',
@@ -106,6 +112,8 @@ async function save() {
   if (body.type !== 'ai') delete body.ai;
   if (body.uniqueKey === '') body.uniqueKey = null;
   if (!body.maxRunMilliSecond) body.maxRunMilliSecond = null;
+  if (body.once) body.enabled = false;
+  else body.once = false;
   try {
     if (editingId.value) await sched.updateTask(editingId.value, body);
     else await sched.createTask(body);
@@ -124,6 +132,7 @@ function exportTask(task: TaskView) {
     name: task.name,
     type: task.type,
     enabled: task.enabled,
+    once: !!task.once,
     schedule: task.schedule,
   };
   if (task.type === 'shell') data.command = task.command;
@@ -194,7 +203,10 @@ async function runNow(task: TaskView) {
 const runPending = ref<Record<string, boolean>>({});
 function isRunning(task: TaskView) { return !!runPending.value[task.id] || !!task.recentJobs?.some((j) => j.status === 3); }
 async function stop(task: TaskView) { await sched.stopTask(task.id); await sched.refresh(); }
-async function toggle(task: TaskView) { await sched.updateTask(task.id, { enabled: !task.enabled }); }
+async function toggle(task: TaskView) {
+  const enabled = !task.enabled;
+  await sched.updateTask(task.id, { enabled, ...(enabled && task.once ? { once: false, deleteAfter: null } : {}) });
+}
 function openDetail(task: TaskView) { detailTask.value = task; }
 const WEEKDAYS = computed(() => [1, 2, 3, 4, 5, 6, 7].map((v) => ({ v, t: t('sched.wdshort.' + v) })));
 function toggleWeekday(v: number) {
@@ -224,6 +236,7 @@ const chatJobId = ref('');
 const chatStatus = ref<number | null>(null);
 const chatLog = ref('');
 const chatReport = ref('');
+const chatResultData = ref<any>({});
 const chatTab = ref<'process' | 'result'>('process');
 const chatBodyRef = ref<HTMLDivElement | null>(null);
 const chatScheduleMode = ref<'once' | 'interval' | 'daily'>('once');
@@ -273,6 +286,7 @@ function chatScheduleBody() {
   if (chatScheduleMode.value === 'daily') {
     return {
       enabled: true,
+      once: false,
       schedule: {
         mode: 'daily' as const,
         interval: { every: 1, unit: 'day' as const },
@@ -283,6 +297,7 @@ function chatScheduleBody() {
   if (chatScheduleMode.value === 'interval') {
     return {
       enabled: true,
+      once: false,
       schedule: {
         mode: 'interval' as const,
         interval: { every: Math.max(1, Number(chatEvery.value) || 1), unit: chatUnit.value },
@@ -290,7 +305,7 @@ function chatScheduleBody() {
       },
     };
   }
-  return { enabled: false, schedule: DEFAULT_SCHEDULE };
+  return { enabled: false, once: true, schedule: DEFAULT_SCHEDULE };
 }
 
 function resetChat() {
@@ -304,6 +319,7 @@ function resetChat() {
   chatStatus.value = null;
   chatLog.value = '';
   chatReport.value = '';
+  chatResultData.value = {};
   chatTab.value = 'process';
   chatScheduleMode.value = 'once';
   chatEvery.value = 1;
@@ -356,6 +372,7 @@ async function sendChat() {
   chatStatus.value = null;
   chatLog.value = '';
   chatReport.value = '';
+  chatResultData.value = {};
   chatTab.value = 'process';
   try {
     let taskId = chatTaskId.value;
@@ -416,6 +433,7 @@ async function pollChat() {
     let result: any = {};
     try { result = job.result ? JSON.parse(job.result) : {}; } catch { result = {}; }
     chatReport.value = String(result.reportMarkdown || '');
+    chatResultData.value = result;
     chatBusy.value = false;
     stopChatTimer();
     if (job.status === 1) {
@@ -446,6 +464,11 @@ onBeforeUnmount(() => {
       <span class="title">{{ $t('sched.title') }}</span>
       <span v-if="state.error" class="err">{{ state.error }}</span>
       <div class="spacer" />
+      <select v-model="taskFilter" class="task-filter" :title="$t('sched.filter.label')">
+        <option value="all">{{ $t('sched.filter.all') }}</option>
+        <option value="once">{{ $t('sched.filter.once') }}</option>
+        <option value="recurring">{{ $t('sched.filter.recurring') }}</option>
+      </select>
       <button @click="sched.refresh()">{{ $t('sched.refresh') }}</button>
       <button class="primary" @click="openCreate">{{ $t('sched.create') }}</button>
       <button @click="showImport = true">{{ $t('sched.import') }}</button>
@@ -474,7 +497,7 @@ onBeforeUnmount(() => {
           <span class="nt-main">{{ $t('sched.chat.new') }}</span>
           <span class="nt-hint">{{ $t('sched.chat.hint') }}</span>
         </button>
-        <div v-if="state.tasks.length" class="listhead">
+        <div v-if="filteredTasks.length" class="listhead">
           <span class="lh-main">{{ $t('sched.col.name') }}</span>
           <span class="lh-status">{{ $t('sched.col.status') }}</span>
           <span class="lh-hist">{{ $t('sched.recent_n', { n: RECENT_N }) }}</span>
@@ -486,10 +509,12 @@ onBeforeUnmount(() => {
           <div class="blank-hint">{{ $t('sched.empty.hint') }}</div>
           <button @click.stop="openCreate">{{ $t('sched.empty.create') }}</button>
         </div>
-        <div v-for="t in state.tasks" :key="t.id" class="row" @click="openDetail(t)">
+        <div v-else-if="!filteredTasks.length" class="empty">{{ $t('sched.filter.empty') }}</div>
+        <div v-for="t in filteredTasks" :key="t.id" class="row" @click="openDetail(t)">
           <div class="rowmain">
             <div class="name">
               <span class="badge" :class="t.type"><span class="bi">{{ taskIcon(t) }}</span>{{ typeLabel(t.type) }}</span>
+              <span v-if="t.once" class="badge once">{{ $t('sched.once_badge') }}</span>
               {{ t.name }}
               <span class="dim">{{ scheduleSummary(t.schedule) }}</span>
             </div>
@@ -545,6 +570,7 @@ onBeforeUnmount(() => {
             <option value="ai">{{ $t('sched.type.ai') }}</option>
           </select>
         </label>
+        <label class="inline"><input type="checkbox" v-model="form.once" /> {{ $t('sched.field.once') }}</label>
         <template v-if="form.type === 'shell'">
           <label>{{ $t('sched.field.command') }} <CodeEditor v-model="form.command" class="sched-edit" language="cmd.sh" /></label>
           <div class="dim shell-hint">{{ $t('sched.shell.ai_hint') }}</div>
@@ -688,6 +714,9 @@ onBeforeUnmount(() => {
               <div v-if="chatStatus != null" class="chat-result-state" :class="chatStatus === 1 ? 'ok' : chatStatus === 2 ? 'bad' : 'run'">
                 {{ chatStatus === 1 ? $t('sched.chat.success') : chatStatus === 2 ? $t('sched.chat.failure') : chatStatusLabel }}
               </div>
+              <div v-if="chatResultData.reportUrl" class="chat-report-link">
+                <a :href="chatResultData.reportUrl" target="_blank" rel="noopener">{{ chatResultData.reportUrl }}</a>
+              </div>
               <div v-if="chatReport" class="chat-report md-body" v-html="chatReportHtml" />
               <div v-else class="chat-empty">{{ $t('sched.chat.empty_result') }}</div>
             </template>
@@ -704,6 +733,7 @@ onBeforeUnmount(() => {
 .bar .title { font-weight: 700; color: var(--tx1); }
 .bar .spacer { flex: 1; }
 .bar .err { color: var(--warn, #e5534b); font-size: 12px; }
+.bar .task-filter { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 6px; font-size: 12px; }
 .hidden-file { display: none; }
 .bar button, .modalacts button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; }
 .bar button.primary, .modalacts button.primary { background: var(--ac3, var(--ac2)); border-color: var(--ac3, var(--ac2)); color: #fff; }
@@ -759,6 +789,7 @@ onBeforeUnmount(() => {
 .badge { font-size: 11px; padding: 1px 6px; border-radius: 3px; background: var(--bg5, var(--bg4)); color: var(--tx2); }
 .badge.ai { background: var(--ac2); color: #fff; }
 .badge.script { background: var(--warn, #b58900); color: #000; }
+.badge.once { background: var(--ac2); color: #fff; }
 .badge .bi { margin-right: 4px; }
 .runsess { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
 .runsess button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
@@ -769,7 +800,7 @@ onBeforeUnmount(() => {
 .listhead { display: flex; align-items: center; gap: 8px; padding: 2px 10px 6px; color: var(--tx5); font-size: 11px; }
 .listhead .lh-main { flex: 1; }
 .listhead .lh-status { width: 72px; text-align: center; }
-.listhead .lh-hist { width: 148px; text-align: center; }
+.listhead .lh-hist { width: 148px; text-align: left; }
 .listhead .lh-acts { width: 370px; text-align: right; }
 .statuscol { display: flex; align-items: center; justify-content: center; gap: 4px; width: 72px; flex: none; }
 .statuscol .st { font-size: 11px; color: var(--tx5); }
@@ -778,7 +809,7 @@ onBeforeUnmount(() => {
 .st-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .st-dot.on { background: #3fb950; }
 .st-dot.paused { background: #d29922; }
-.histcol { display: flex; gap: 4px; align-items: center; justify-content: center; width: 148px; flex: none; }
+.histcol { display: flex; gap: 4px; align-items: center; justify-content: flex-start; width: 148px; flex: none; }
 .vbar { width: 9px; height: 24px; border-radius: 3px; background: var(--tx5); }
 .vbar.success { background: #3fb950; }
 .vbar.failed { background: #e5534b; }
@@ -869,4 +900,6 @@ onBeforeUnmount(() => {
 .chat-result-state.ok { color: #3fb950; }
 .chat-result-state.bad { color: #e5534b; }
 .chat-result-state.run { color: var(--ac2); }
+.chat-report-link { padding: 6px 14px; border-bottom: 1px solid var(--bd); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-report-link a { color: var(--ac2); }
 </style>

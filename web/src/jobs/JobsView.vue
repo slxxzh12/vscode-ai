@@ -60,6 +60,10 @@ function ngaSessionOf(job: Job | null): string {
 const detailReport = computed(() => (detail.value ? reportOf(detail.value) : ''));
 const detailReportHtml = computed(() => (detailReport.value ? renderRemoteMarkdown(detailReport.value) : ''));
 const detailNgaSession = computed(() => ngaSessionOf(detail.value));
+const detailReportUrl = computed(() => {
+  if (!detail.value) return '';
+  try { return String(JSON.parse(detail.value.result || '{}').reportUrl || ''); } catch { return ''; }
+});
 </script>
 
 <template>
@@ -114,6 +118,7 @@ const detailNgaSession = computed(() => ngaSessionOf(detail.value));
       <div>workIP: {{ detail.workIP || '—' }}</div>
       <div>runtime: {{ detail.runtime ?? '—' }} ms</div>
       <div v-if="detailNgaSession" class="dim">nga session: {{ detailNgaSession }}</div>
+      <div v-if="detailReportUrl" class="dim report-url"><a :href="detailReportUrl" target="_blank" rel="noopener">{{ detailReportUrl }}</a></div>
       <div v-if="detailReport" class="report md-body" v-html="detailReportHtml" />
       <pre v-else class="report">{{ $t('sched.report.empty') }}</pre>
       <div class="acts">

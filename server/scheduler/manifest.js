@@ -58,6 +58,8 @@ export function toManifest(task, dir, runtime = null) {
     name: task.name,
     type: task.type,
     enabled: task.enabled !== false,
+    once: !!task.once,
+    deleteAfter: Number(task.deleteAfter) > 0 ? Number(task.deleteAfter) : null,
     schedule: task.schedule,
   };
   if (task.type === 'shell') m.command = task.command;
@@ -76,6 +78,8 @@ export function fromManifest(obj, dir) {
   const task = {
     name: String(obj.name || '').trim(),
     enabled: obj.enabled !== false,
+    once: !!obj.once,
+    deleteAfter: Number(obj.deleteAfter) > 0 ? Number(obj.deleteAfter) : null,
     type: obj.type,
     schedule: obj.schedule,
     cwd: dir,

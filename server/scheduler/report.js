@@ -32,6 +32,39 @@ export function runPaths(store, task, runId) {
   };
 }
 
+function listMarkdown(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.md'))
+      .map((e) => e.name)
+      .sort((a, b) => a.localeCompare(b));
+  } catch { return []; }
+}
+
+// 优先使用 AI 在 result.json 里指定的报告，否则扫描运行目录里的 Markdown。
+export function scanReportFile(store, task, runId, preferred = null) {
+  const p = runPaths(store, task, runId);
+  const root = path.resolve(p.runDir);
+  const candidates = [];
+  if (typeof preferred === 'string' && preferred.trim()) {
+    const abs = path.isAbsolute(preferred) ? path.resolve(preferred) : path.resolve(root, preferred);
+    if (abs === root || abs.startsWith(root + path.sep)) candidates.push(abs);
+  }
+  candidates.push(p.defaultReportPath);
+  const reportDir = path.join(root, 'report');
+  for (const name of listMarkdown(reportDir)) candidates.push(path.join(reportDir, name));
+  for (const name of listMarkdown(root)) {
+    if (name.toLowerCase() === 'prompt.md') continue;
+    candidates.push(path.join(root, name));
+  }
+  for (const abs of candidates) {
+    try {
+      if (abs.toLowerCase().endsWith('.md') && fs.readFileSync(abs, 'utf8').trim()) return abs;
+    } catch { /* next */ }
+  }
+  return null;
+}
+
 export function writeRunContext({ store, task, run, callback = null }) {
   const p = runPaths(store, task, run.id);
   const contextFile = store.contextFileFor(task.id, run.id);
@@ -101,8 +134,16 @@ export function fallbackMarkdown({ task, run, result = {}, logText = '' }) {
   return lines.join('\n') + '\n';
 }
 
-export function ensureReport({ store, task, run, result = {} }) {
+export function ensureReport({ store, task, run, result = {}, reportPathHint = null }) {
   const p = runPaths(store, task, run.id);
+  const found = scanReportFile(store, task, run.id, reportPathHint);
+  if (found) {
+    return {
+      reportFile: path.relative(store.tasksDir, found),
+      reportDir: p.reportDir,
+      files: listMarkdown(p.runDir),
+    };
+  }
   const reportPath = store.reportPath(store.reportFileFor(task.id, run.id));
   let text = '';
   try { text = fs.readFileSync(reportPath, 'utf8'); } catch { /* missing */ }

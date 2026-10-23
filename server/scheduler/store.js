@@ -99,6 +99,8 @@ export class SchedulerStore {
       id: base.id || 't_' + crypto.randomBytes(4).toString('hex'),
       name: String(input.name).trim(),
       enabled: input.enabled !== false,
+      once: !!input.once,
+      deleteAfter: Number(input.deleteAfter) > 0 ? Number(input.deleteAfter) : null,
       projectId: input.projectId || null,
       cwd: input.cwd || null,
       filePath: toAbs(input.filePath, input.cwd),

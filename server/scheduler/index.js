@@ -11,7 +11,7 @@ import { createConsumer } from './queue/consumer.js';
 export function createScheduler({
   dir, projectResolver = () => null, logger = console, runner = null, agentCmd = 'opencode',
   opencodeDataDir = null, manifestRoot = null,
-  machineId = 'local', hostport = '127.0.0.1:22222', role = 'master', version = '',
+  machineId = 'local', hostport = '127.0.0.1:22222', publicBaseUrl = null, role = 'master', version = '',
   dbFile = null, pullQueueConfig = null, onJobEvent = () => {},
 }) {
   const store = new SchedulerStore({ dir, logger, ...(manifestRoot ? { manifestRoot } : {}) });
@@ -19,8 +19,29 @@ export function createScheduler({
   let registry = null;
   let consumer = null;
   let started = false;
+  let cleanupTimer = null;
+  const ONCE_TTL_MS = 15 * 24 * 60 * 60 * 1000;
 
   const engine = createEngine({ store, queue, logger, onStop: (id) => consumer?.stopTask(id) });
+
+  async function cleanupExpiredOnce() {
+    const at = Date.now();
+    let changed = false;
+    for (const task of store.listTasks()) {
+      if (!task.once || !task.deleteAfter || task.deleteAfter > at) continue;
+      try {
+        await queue.deleteTaskJobs(task.id);
+        store.deleteTask(task.id);
+        changed = true;
+      } catch (e) {
+        logger?.warn?.('cleanup once task failed', (e && e.message) || e);
+      }
+    }
+    if (changed) {
+      engine.refreshAll();
+      engine.notifyTasksChanged();
+    }
+  }
 
   function applyQueueConfig(c) {
     if (!c) return;
@@ -38,6 +59,11 @@ export function createScheduler({
       applyQueueConfig(c);
     }
     await queue.ready();
+    await cleanupExpiredOnce();
+    if (!cleanupTimer) {
+      cleanupTimer = setInterval(() => { void cleanupExpiredOnce(); }, 6 * 60 * 60 * 1000);
+      cleanupTimer.unref?.();
+    }
     for (const id of store.removedTaskIds) await queue.purgeTaskJobs(id);
     store.removedTaskIds = [];
     if (startWorkers) {
@@ -47,7 +73,7 @@ export function createScheduler({
       consumer = createConsumer({
         queue, store, runner: runner || createRunner(),
         aiPromptLoader: (name) => readAiCommand(name), worker: { id: `${machineId}:${queue.topic}`, hostport, machineId },
-        aiBin: agentCmd, opencodeDataDir, projectResolver, logger,
+        aiBin: agentCmd, opencodeDataDir, projectResolver, publicBaseUrl, logger,
         onEvent: (evt, payload) => onJobEvent(evt, payload),
       });
       registry.start({
@@ -60,7 +86,10 @@ export function createScheduler({
     engine.start();
     started = true;
   }
-  async function stop() { consumer?.stop(); registry?.stop(); engine.stopAll(); await queue.close(); started = false; }
+  async function stop() {
+    if (cleanupTimer) { clearInterval(cleanupTimer); cleanupTimer = null; }
+    consumer?.stop(); registry?.stop(); engine.stopAll(); await queue.close(); started = false;
+  }
   async function syncQueueConfig() {
     if (!pullQueueConfig) return null;
     const c = await pullQueueConfig().catch(() => null);

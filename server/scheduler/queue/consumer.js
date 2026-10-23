@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { buildSpawnSpec } from '../runner.js';
 import { writeRunContext, ensureReport, writeRunResult, stripAnsi } from '../report.js';
@@ -64,6 +65,24 @@ function baseUrlOf(hostport) {
   return `http://127.0.0.1:${m ? m[1] : '22222'}`;
 }
 
+function lanAddress() {
+  try {
+    const ifs = os.networkInterfaces();
+    for (const name of Object.keys(ifs)) {
+      for (const ni of ifs[name] || []) {
+        if (ni.family === 'IPv4' && !ni.internal) return ni.address;
+      }
+    }
+  } catch { /* ignore */ }
+  return '127.0.0.1';
+}
+
+function shareBaseOf(hostport, publicBaseUrl = null) {
+  if (publicBaseUrl) return String(publicBaseUrl).replace(/\/+$/, '');
+  const m = String(hostport || '').match(/:(\d+)$/);
+  return `http://${lanAddress()}:${m ? m[1] : '22222'}`;
+}
+
 function normalizeStatus(v) {
   if (v === 'success') return S.SUCCESS;
   if (v === 'failed') return S.FAILED;
@@ -72,11 +91,28 @@ function normalizeStatus(v) {
   return n === S.SUCCESS || n === S.FAILED || n === S.RUNNING ? n : null;
 }
 
+function readAiResult(file) {
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!data || typeof data !== 'object') return {};
+    if (data.writer === 'system' && data.status === 'running') return {};
+    return data;
+  } catch { return {}; }
+}
+
+function aiStatusOf(ai) {
+  const v = ai && ai.status;
+  if (v === S.SUCCESS || v === 'success' || v === 'ok' || v === true || ai?.success === true || ai?.ok === true) return S.SUCCESS;
+  if (v === S.FAILED || v === 'failed' || v === 'error' || v === false || ai?.success === false || ai?.ok === false) return S.FAILED;
+  return null;
+}
+
 export function createConsumer({
   queue, store, runner, aiPromptLoader = () => '',
   worker, logger = console, now = () => Date.now(), pollMs = 1000,
-  aiBin = 'opencode', opencodeDataDir = null, projectResolver = () => null, onEvent = () => {},
+  aiBin = 'opencode', opencodeDataDir = null, projectResolver = () => null, publicBaseUrl = null, onEvent = () => {},
 }) {
+  const shareBase = shareBaseOf(worker.hostport, publicBaseUrl);
   const loops = new Map();
   const running = new Map();
   const callbacks = new Map();
@@ -127,7 +163,7 @@ export function createConsumer({
     let ctx;
     try {
       ctx = writeRunContext({ store, task, run, callback });
-      writeRunResult({ store, task, run, data: { status: S.RUNNING, statusText: 'running' } });
+      writeRunResult({ store, task, run, data: { writer: 'system', status: S.RUNNING, statusText: 'running' } });
     } catch (e) {
       callbacks.delete(job.jobId);
       await queue.complete(job.jobId, {
@@ -236,38 +272,64 @@ export function createConsumer({
       callbacks.delete(job.jobId);
     }
 
+    // 一次性任务：本次执行完成后保留 15 天，到期由调度器清理。
+    if (task.once) {
+      try { store.updateTask(task.id, { deleteAfter: now() + 15 * 24 * 60 * 60 * 1000 }); } catch { /* ignore */ }
+    }
+
     const cur = queue.getJob ? await queue.getJob(job.jobId).catch(() => null) : null;
     if (cur && cur.status !== S.RUNNING) {
       onEvent('run-end', { jobId: job.jobId, taskId: task.id, status: cur.status });
       return;
     }
+    const aiResult = readAiResult(ctx.resultPath);
+    const aiStatus = aiStatusOf(aiResult);
+    if (aiStatus !== null) status = aiStatus;
+    const statusText = status === S.SUCCESS ? 'success' : 'failed';
     try { writeAiReport(store, task, job.jobId, aiBuf); } catch { /* best-effort */ }
     let info = null;
     try {
-      info = ensureReport({ store, task, run: { ...run, status, exitCode: result.exitCode, durationMs: result.durationMs, error: result.error }, result });
+      info = ensureReport({
+        store, task,
+        run: { ...run, status, exitCode: result.exitCode, durationMs: result.durationMs, error: result.error },
+        result,
+        reportPathHint: aiResult.reportPath || aiResult.reportFile || null,
+      });
     } catch (e) { logger?.error?.('scheduler report failed', e); }
     const reportMarkdown = (readReport(store, info?.reportFile) || '').slice(0, SCHED_REPORT_MAX_BYTES);
     const reported = parseResult(cur);
+    const reportPath = info?.reportFile ? store.reportPath(info.reportFile) : null;
+    const reportUrl = info?.reportFile
+      ? `${shareBase}/api/scheduler/jobs/${encodeURIComponent(job.jobId)}/report`
+      : null;
     const final = {
       ...result,
       ...reported,
+      ...aiResult,
+      status: statusText,
+      statusCode: status,
       reportFile: info?.reportFile || reported.reportFile || null,
-      reportMarkdown: reported.reportMarkdown || reportMarkdown,
+      reportPath,
+      reportUrl,
+      reportMarkdown: reportMarkdown || reported.reportMarkdown || String(aiResult.reportMarkdown || ''),
       logPath,
     };
     try {
       writeRunResult({
         store, task, run,
         data: {
-          status,
-          statusText: status === S.SUCCESS ? 'success' : 'failed',
+          ...aiResult,
+          status: statusText,
+          statusCode: status,
+          writer: 'app',
           finishedAt: now(),
           durationMs: final.durationMs ?? null,
           exitCode: final.exitCode ?? null,
           error: final.error || null,
           reason: final.reason || null,
           reportFile: final.reportFile,
-          reportPath: final.reportFile ? store.reportPath(final.reportFile) : null,
+          reportPath,
+          reportUrl,
           ngaSessionId: final.ngaSessionId || null,
           logPath,
         },
