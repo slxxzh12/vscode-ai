@@ -813,7 +813,7 @@ onBeforeUnmount(() => {
         <option v-for="c in colorOptions" :key="c.id" :value="c.id">{{ $t(c.key) }}</option>
       </select>
       <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
-      <button class="snap-btn" :class="{ on: isSchedulerTab }" :title="$t('nav.scheduler')" @click="openSchedulerTab">📅</button>
+      <button class="snap-btn scheduler-btn" :class="{ on: isSchedulerTab }" :title="$t('nav.scheduler')" @click="openSchedulerTab">📅 <span>{{ $t('nav.scheduler') }}</span></button>
       <button class="snap-btn" :title="$t('top.remote')" @click="onPhone">📱</button>
       <button class="theme-btn" :title="theme === 'dark' ? $t('app.theme.to_light') : $t('app.theme.to_dark')" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
     </header>
@@ -910,6 +910,8 @@ onBeforeUnmount(() => {
 .theme-btn:hover { border-color: var(--ac2); }
 .snap-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .snap-btn:hover { border-color: var(--ac2); }
+.scheduler-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 8px; }
+.scheduler-btn.on { color: var(--ac2); border-color: var(--ac2); }
 .lang-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
 .lang-btn:hover { border-color: var(--ac2); }
 .color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
