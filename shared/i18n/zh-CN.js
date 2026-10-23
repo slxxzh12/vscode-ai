@@ -440,6 +440,7 @@ export const messages = {
   'sched.source.file_hint': '运行时用 opencode --file 附加「文件路径」指向的文件。',
   'sched.ai.file_prompt': '请阅读并执行附件文件中的任务。',
   'sched.ai.prompt_file_message': '请阅读并执行附件 prompt.md 中的任务。',
+  'sched.prompt.output_hint': '【输出要求】请把最终结果写入报告文件：{reportPath}；附件/中间产物写入运行目录：{outputDir}；运行状态由系统写入：{resultPath}；运行上下文 JSON：{contextPath}（环境变量 DEVFLOW_RUN_CONTEXT）。',
   'sched.field.choose': '请选择',
   'sched.field.ai_command': 'AI 命令行/命令名',
   'sched.field.ai_command_ph': '输入 Nga command 名称',

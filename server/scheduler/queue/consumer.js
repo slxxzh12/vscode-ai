@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { buildSpawnSpec } from '../runner.js';
 import { writeRunContext, ensureReport, writeRunResult, stripAnsi } from '../report.js';
 import { SchedulerJobStatus as S, SCHED_REPORT_MAX_BYTES } from '@devflow/shared/scheduler';
+import { t } from '../../i18n.js';
 
 function readReport(store, reportFile) {
   if (!reportFile) return '';
@@ -14,6 +15,17 @@ function writePromptFile(promptPath, text) {
   fs.mkdirSync(path.dirname(promptPath), { recursive: true });
   fs.writeFileSync(promptPath, String(text ?? ''), 'utf8');
   return promptPath;
+}
+
+function promptWithOutput(text, ctx) {
+  const base = String(text ?? '').trim();
+  const hint = t('sched.prompt.output_hint', {
+    outputDir: ctx.outputDir,
+    reportPath: ctx.reportPath,
+    resultPath: ctx.resultPath,
+    contextPath: ctx.contextPath,
+  });
+  return `${base}${base ? '\n\n---\n\n' : ''}${hint}`;
 }
 
 // 从 Nga --format json 事件流里提取最终文本，作为 Markdown 报告。
@@ -170,7 +182,7 @@ export function createConsumer({
             status = S.FAILED;
             result = { exitCode: 0, shellExitCode: 0, error: 'empty-output', durationMs: now() - startedAt, reason: 'empty-output' };
           } else {
-            const promptFile = writePromptFile(ctx.promptPath, prompt);
+            const promptFile = writePromptFile(ctx.promptPath, promptWithOutput(prompt, ctx));
             const aiRes = await runner.run({
               runId: job.jobId,
               spec: buildSpawnSpec({ type: 'ai', ai: { source: 'prompt' } }, {
@@ -196,7 +208,7 @@ export function createConsumer({
         let prompt = null;
         if (task.ai?.source === 'command') prompt = aiPromptLoader(task.ai.commandName) || '';
         else prompt = task.ai?.prompt || '';
-        const promptFile = task.ai?.source === 'prompt' ? writePromptFile(ctx.promptPath, prompt) : null;
+        const promptFile = task.ai?.source === 'prompt' ? writePromptFile(ctx.promptPath, promptWithOutput(prompt, ctx)) : null;
         const aiRes = await runner.run({
           runId: job.jobId,
           spec: buildSpawnSpec(task, {
