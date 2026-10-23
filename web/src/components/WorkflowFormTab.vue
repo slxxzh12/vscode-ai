@@ -155,7 +155,7 @@ function dropPrompt(wi: number, si: number, pi: number) {
 
       <div v-for="(band, bi) in groupBands(row.w.stages)" :key="bi" class="band"
         @dragover.prevent @drop="dropOnBand(row.wi, band)">
-        <div class="bhead">
+        <div v-if="!(band.stages.length === 1 && band.name === band.stages[0].label)" class="bhead">
           <span class="bname" :class="{ unnamed: !band.name }" :title="$t('wfe.group_rename_tip')"
             @dblclick="promptBandRename(row.wi, band)">
             {{ band.name || $t('wfe.group_unnamed') }}
@@ -185,6 +185,7 @@ function dropPrompt(wi: number, si: number, pi: number) {
           <button class="mini add" @click="addPrompt(row.wi, band.startIndex + sInBand)">{{ $t('wfe.add_prompt') }}</button>
         </div>
       </div>
+      <button class="mini add big" @click="addStage(row.wi)">{{ $t('wfe.add_stage') }}</button>
     </div>
     <button v-if="!activeId" class="mini add big" @click="addWorkflow">{{ $t('wfe.add_workflow') }}</button>
   </div>

@@ -87,7 +87,7 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
             logger?.warn?.(`workflow skill read failed: ${fileName}`, (e && e.message) || e);
           }
         }
-        stages.push({ id: groupName, label: stripPrefix(groupName), group: '', prompts });
+        stages.push({ id: groupName, label: stripPrefix(groupName), group: stripPrefix(groupName), prompts });
       }
       out.push({
         id: wfName,
