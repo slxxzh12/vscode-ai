@@ -30,17 +30,16 @@ test('manifestDirOf：有 cwd 用 cwd，无 cwd 落到 manifestRoot/<id>', () =>
   assert.equal(manifestDirOf({ id: 't1', cwd: null }, root), path.join(root, 't1'));
 });
 
-test('toManifest/fromManifest 往返（script + runtime）', () => {
+test('toManifest/fromManifest 往返（shell + runtime）', () => {
   const dir = tmpDir();
   const task = {
-    id: 't1', name: 'build', enabled: false, type: 'script', cwd: dir,
-    script: { path: path.join(dir, 'scripts', 'build.ps1') },
+    id: 't1', name: 'build', enabled: false, type: 'shell', command: 'echo hi', cwd: dir,
     schedule: { mode: 'interval', interval: { every: 5, unit: 'minute' } },
   };
   const m = toManifest(task, dir, { nextRunAt: 123, lastRun: { startedAt: 1, status: 'success', exitCode: 0, durationMs: 5 } });
   assert.equal(m.format, 'void_manifest');
   assert.equal(m.version, 1);
-  assert.equal(m.script.path, 'scripts/build.ps1');
+  assert.equal(m.command, 'echo hi');
   assert.equal(m.runtime.nextRunAt, 123);
   assert.equal(m.runtime.lastRun.status, 'success');
   assert.equal('id' in m, false);
@@ -48,7 +47,7 @@ test('toManifest/fromManifest 往返（script + runtime）', () => {
 
   const back = fromManifest(m, dir);
   assert.equal(back.cwd, dir);
-  assert.equal(back.script.path, path.join(dir, 'scripts', 'build.ps1'));
+  assert.equal(back.command, 'echo hi');
   assert.equal(back.enabled, false);
 });
 
@@ -96,18 +95,4 @@ test('writeManifest / removeManifest', () => {
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).runtime.nextRunAt, 9);
   removeManifest(dir);
   assert.equal(fs.existsSync(file), false);
-});
-
-test('manifest 往返保留 workflow 字段', () => {
-  const dir = tmpDir();
-  const task = {
-    id: 't4', name: 'wf', enabled: true, type: 'workflow', cwd: dir,
-    workflow: { workflowId: 'dev', agentId: 'opencode' },
-    schedule: { mode: 'interval', interval: { every: 1, unit: 'day' } },
-  };
-  const m = toManifest(task, dir);
-  assert.deepEqual(m.workflow, { workflowId: 'dev', agentId: 'opencode' });
-  const back = fromManifest(m, dir);
-  assert.deepEqual(back.workflow, { workflowId: 'dev', agentId: 'opencode' });
-  assert.equal(back.type, 'workflow');
 });

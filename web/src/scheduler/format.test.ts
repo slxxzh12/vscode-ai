@@ -32,9 +32,9 @@ describe('runStatusLabel / formatTime', () => {
 });
 
 describe('typeLabel', () => {
-  it('workflow 有标签', () => {
-    expect(typeLabel('workflow')).toBe('工作流');
-    expect(typeLabel('ai')).toBe('AI');
+  it('只保留普通命令与 AI 命令', () => {
+    expect(typeLabel('shell')).toBe('普通命令');
+    expect(typeLabel('ai')).toBe('AI 命令');
   });
 });
 

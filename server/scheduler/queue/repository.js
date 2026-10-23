@@ -101,6 +101,11 @@ export function createRepository(driver) {
     return out;
   }
 
+  async function purgeTaskJobs(topic, taskId) {
+    const r = await driver.run('DELETE FROM t_sched_job WHERE topic=? AND taskId=?', [topic, taskId]);
+    return r.changes;
+  }
+
   async function deleteFinished({ topic, partitionId = null }) {
     const params = [topic];
     let sql = 'DELETE FROM t_sched_job WHERE topic=? AND status IN (1,2)';
@@ -156,7 +161,7 @@ export function createRepository(driver) {
 
   return {
     insertJob, updateJob, getJob, listJobs, claim, summary, partitionStats,
-    deleteFinished, rehash, upsertWorker, listWorkers, setWorkerPartitions,
+    deleteFinished, purgeTaskJobs, rehash, upsertWorker, listWorkers, setWorkerPartitions,
     markStaleWorkers, getConfig, setConfig, driver,
   };
 }

@@ -13,8 +13,16 @@ export function stripFrontmatter(s) {
   return String(s ?? '').replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 }
 
-export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null, runContextPath = null, reportPath = null, reportDir = null, progressPath = null } = {}) {
-  const ocEnv = { ...AGENT_ENV, ...(opencodeDataDir ? { XDG_DATA_HOME: opencodeDataDir } : {}) };
+export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null, opencodeDataDir = null, runContextPath = null, jobCallback = null } = {}) {
+  const ocEnv = {
+    ...AGENT_ENV,
+    ...(opencodeDataDir ? { XDG_DATA_HOME: opencodeDataDir } : {}),
+    ...(jobCallback ? {
+      DEVFLOW_JOB_ID: jobCallback.jobId,
+      DEVFLOW_JOB_TOKEN: jobCallback.token,
+      DEVFLOW_JOB_CALLBACK: jobCallback.url,
+    } : {}),
+  };
   const withContext = (spec) => {
     if (!runContextPath) return spec;
     return { ...spec, env: { ...(spec.env || {}), DEVFLOW_RUN_CONTEXT: runContextPath } };
@@ -37,20 +45,6 @@ export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null,
       return withContext({ bin: aiBin, args, cwd, env: ocEnv });
     }
     return withContext({ bin: aiBin, args: ['run', stripFrontmatter(aiPrompt ?? '')], cwd, env: ocEnv });
-  }
-  if (task.type === 'script') {
-    const abs = path.isAbsolute(task.script.path) ? task.script.path : path.join(cwd, task.script.path);
-    if (task.script.exe) {
-      const args = progressPath && reportDir ? [progressPath, reportDir] : [];
-      return withContext({ bin: abs, args, cwd });
-    }
-    const ext = path.extname(abs).toLowerCase();
-    const reportArgs = runContextPath && reportPath ? [runContextPath, reportPath] : [];
-    if (ext === '.ps1') return withContext({ bin: 'powershell.exe', args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', abs, ...reportArgs], cwd });
-    if (ext === '.bat' || ext === '.cmd') return withContext({ bin: 'cmd.exe', args: ['/c', abs, ...reportArgs], cwd });
-    if (ext === '.sh') return withContext({ bin: 'bash', args: [abs, ...reportArgs], cwd });
-    if (ext === '.py') return withContext({ bin: 'python', args: [abs, ...reportArgs], cwd });
-    throw Object.assign(new Error('unsupported script type'), { code: 'unsupported-script' });
   }
   throw Object.assign(new Error('unknown task type'), { code: 'bad-task' });
 }
@@ -84,16 +78,17 @@ export function createRunner({ spawnFn = spawn, killChild = defaultKill } = {}) 
       const startedAt = Date.now();
       let done = false;
       let timedOut = false;
+      let stdout = '';
       const timer = timeoutMs > 0 ? setTimeout(() => { timedOut = true; killChild(child); finish(null); }, timeoutMs) : null;
       const write = (c) => { stream.write(c); onData?.(String(c)); };
-      child.stdout?.on('data', write);
+      child.stdout?.on('data', (c) => { stdout += String(c); write(c); });
       child.stderr?.on('data', write);
       const finish = (code, spawnError = false, errMsg = null) => {
         if (done) return;
         done = true;
         if (timer) clearTimeout(timer);
         running.delete(runId);
-        const result = { exitCode: code ?? null, timedOut, spawnError, error: errMsg, durationMs: Date.now() - startedAt };
+        const result = { exitCode: code ?? null, timedOut, spawnError, error: errMsg, durationMs: Date.now() - startedAt, stdout };
         onExit?.(result);
         stream.end(() => resolve(result));
       };

@@ -4,7 +4,7 @@ import {
   SCHED_QUEUE_TOPIC, SCHED_PARTITION_COUNT_DEFAULT, SchedulerJobStatus as S,
 } from '@devflow/shared/scheduler';
 
-const DEFAULT_MS = { ai: 1800000, shell: 600000, script: 600000, workflow: 600000 };
+const DEFAULT_MS = { ai: 1800000, shell: 600000 };
 
 function maxRunFor(task) {
   return Number(task.maxRunMilliSecond) > 0 ? Number(task.maxRunMilliSecond) : (DEFAULT_MS[task.type] || 600000);
@@ -15,7 +15,7 @@ export function buildSnapshot(task, trigger, scheduledAt, createMachineId) {
     task: {
       id: task.id, name: task.name, type: task.type, enabled: task.enabled !== false,
       projectId: task.projectId || null, cwd: task.cwd || null, filePath: task.filePath || null,
-      command: task.command, ai: task.ai, script: task.script, workflow: task.workflow,
+      command: task.command, ai: task.ai,
       approvalRequired: !!task.approvalRequired, onlyLocal: !!task.onlyLocal,
       uniqueKey: task.uniqueKey || null, weight: Number(task.weight) || 0,
       maxRunMilliSecond: maxRunFor(task), groupName: task.groupName || 'default',
@@ -106,6 +106,13 @@ export function createQueueService({ repo, topic = SCHED_QUEUE_TOPIC, now = () =
     });
   }
 
+  async function applyCallback(jobId, patch = {}) {
+    const job = await repo.getJob(jobId);
+    if (!job || job.status !== S.RUNNING) return { error: 'not-running' };
+    const r = await repo.updateJob(jobId, { ...patch, lastUpdateTime: now() });
+    return r.error ? r : { ok: true };
+  }
+
   async function retry(jobId, { createIP = null, createMachineId = null } = {}) {
     const job = await repo.getJob(jobId);
     if (!job || job.status !== S.FAILED) return { error: 'not-failed' };
@@ -119,6 +126,10 @@ export function createQueueService({ repo, topic = SCHED_QUEUE_TOPIC, now = () =
 
   async function cleanupFinished({ partitionId = null } = {}) {
     return repo.deleteFinished({ topic, partitionId });
+  }
+
+  async function purgeTaskJobs(taskId) {
+    return repo.purgeTaskJobs(topic, taskId);
   }
 
   async function deleteTaskJobs(taskId) {
@@ -159,8 +170,8 @@ export function createQueueService({ repo, topic = SCHED_QUEUE_TOPIC, now = () =
 
   return {
     topic, repo, partitionCount, enqueueTask, approve, reject, cancel, claim, complete,
-    retry, cleanupFinished, deleteTaskJobs, failRunningByWorker, recoverRunning,
-    setPartitionCount, rehash,
+    retry, cleanupFinished, deleteTaskJobs, purgeTaskJobs, failRunningByWorker, recoverRunning,
+    setPartitionCount, rehash, applyCallback,
     getJob: (id) => repo.getJob(id),
     get: (id) => repo.getJob(id),
     listJobs: (opts) => repo.listJobs({ topic, ...opts }),

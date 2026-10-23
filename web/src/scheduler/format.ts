@@ -38,9 +38,8 @@ export function jobStatusClass(s: number): string {
 }
 
 export function typeLabel(type: string): string {
-  if (type === 'ai') return 'AI';
-  if (type === 'workflow') return t('sched.type.workflow');
-  return t(`sched.type.${type}`);
+  if (type === 'ai') return t('sched.type.ai');
+  return t('sched.type.shell');
 }
 
 // jobs 为倒序（最新在前）；取最新 n 条并按时间递增返回，便于左→右展示

@@ -50,3 +50,19 @@ test('master 审批与重试', async () => {
   assert.equal((await call(mount, 'POST', '/api/scheduler/jobs/j1/approve')).status, 200);
   assert.equal((await call(mount, 'POST', '/api/scheduler/jobs/j1/retry')).status, 200);
 });
+
+test('AI 回调：令牌正确返回 200，错误令牌返回 403', async () => {
+  const seen = [];
+  const mount = createJobsMount({
+    queue: setup().q,
+    role: 'slave',
+    logger: console,
+    onCallback: async (id, token, body) => {
+      seen.push({ id, token, body });
+      return token === 'good' ? { ok: true } : { error: 'bad-token' };
+    },
+  });
+  assert.equal((await call(mount, 'POST', '/api/scheduler/jobs/j2/callback', { token: 'good', status: 1 })).status, 200);
+  assert.equal((await call(mount, 'POST', '/api/scheduler/jobs/j2/callback', { token: 'bad', status: 1 })).status, 403);
+  assert.equal(seen.length, 2);
+});

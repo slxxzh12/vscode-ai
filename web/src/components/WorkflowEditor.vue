@@ -6,8 +6,6 @@ import { serializeWorkflow, parseWorkflowsXml, sortWorkflows } from '@devflow/sh
 import WorkflowFormTab from './WorkflowFormTab.vue';
 import WorkflowXmlTab from './WorkflowXmlTab.vue';
 import WorkflowPreviewTab from './WorkflowPreviewTab.vue';
-import { findWorkflowTask, findWorkflowTasks, buildWorkflowTask } from '../scheduler/workflowTask';
-import type { SchedulerTask } from '@devflow/shared/scheduler';
 
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>();
 const tabs = ['form', 'xml', 'preview'] as const;
@@ -25,40 +23,6 @@ const current = computed<Workflow | null>(() => model.value.find((w) => w.id ===
 watch(model, () => {
   if (!model.value.some((w) => w.id === currentId.value)) currentId.value = model.value[0]?.id || '';
 }, { deep: true });
-
-// —— 定时任务设定 ——
-const schedOn = ref(false);
-const schedAgent = ref('');
-const agents = ref<{ id: string; name: string }[]>([]);
-const schedTasks = ref<SchedulerTask[]>([]);
-const sched = ref<any>({ mode: 'interval', interval: { every: 1, unit: 'hour' }, daily: { at: '09:30', weekdays: [] } });
-const WEEKDAYS = computed(() => [1, 2, 3, 4, 5, 6, 7].map((v) => ({ v, t: t('sched.wdshort.' + v) })));
-function toggleWeekday(v: number) {
-  const s = sched.value;
-  if (s.mode !== 'daily') return;
-  const i = s.daily.weekdays.indexOf(v);
-  if (i >= 0) s.daily.weekdays.splice(i, 1); else s.daily.weekdays.push(v);
-}
-async function loadSchedulerOptions() {
-  try { agents.value = ((await fetch('/api/agents').then((r) => r.json())).agents || []).map((a: any) => ({ id: a.id, name: a.name || a.id })); } catch { agents.value = []; }
-  try { schedTasks.value = ((await fetch('/api/scheduler/tasks').then((r) => r.json())).tasks || []); } catch { schedTasks.value = []; }
-}
-function prefillScheduler() {
-  const first = findWorkflowTasks(schedTasks.value, currentId.value)[0];
-  if (first) { schedOn.value = true; schedAgent.value = first.workflow?.agentId || ''; sched.value = JSON.parse(JSON.stringify(first.schedule)); }
-  else { schedOn.value = false; schedAgent.value = ''; }
-}
-async function syncSchedulerTask(): Promise<'created' | 'updated'> {
-  const wf = current.value;
-  if (!wf) throw new Error('no workflow');
-  const existing = findWorkflowTask(schedTasks.value, wf.id, sched.value);
-  const body = buildWorkflowTask({ workflowId: wf.id, label: wf.label, agentId: schedAgent.value, schedule: sched.value });
-  const url = existing ? `/api/scheduler/tasks/${encodeURIComponent(existing.id)}` : '/api/scheduler/tasks';
-  const res = await fetch(url, { method: existing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) { const j: any = await res.json().catch(() => ({})); throw new Error(String(j?.error || `HTTP ${res.status}`)); }
-  return existing ? 'updated' : 'created';
-}
-watch(currentId, () => { prefillScheduler(); });
 
 function applyWorkflow(wf: Workflow) {
   const next = model.value.slice();
@@ -121,13 +85,10 @@ async function load() {
   history.value = [JSON.stringify(model.value)];
   hIndex.value = 0;
   dirty.value = false;
-  await loadSchedulerOptions();
-  prefillScheduler();
 }
 
 async function save(): Promise<boolean> {
   if (report.value.errors.length) { msg.value = report.value.errors.map((e) => t(e.key, e.params)).join('；'); return false; }
-  if (schedOn.value && !schedAgent.value) { msg.value = t('wfe.sched.need_agent'); return false; }
   busy.value = true; msg.value = '';
   try {
     const payload = sanitizeModel(model.value);
@@ -141,12 +102,7 @@ async function save(): Promise<boolean> {
     }
     dirty.value = false;
     emit('saved');
-    if (schedOn.value) {
-      const kind = await syncSchedulerTask();
-      msg.value = `${t('wfe.saved')} · ${t(kind === 'updated' ? 'wfe.sched.updated' : 'wfe.sched.created')}`;
-    } else {
-      msg.value = t('wfe.saved');
-    }
+    msg.value = t('wfe.saved');
     return true;
   } catch (e: any) { msg.value = t('wfe.failed', { msg: String(e?.message || e) }); return false; }
   finally { busy.value = false; }
@@ -216,35 +172,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
           <WorkflowXmlTab v-else-if="tab === 'xml'" :workflow="current" @update:workflow="applyWorkflow" />
           <WorkflowPreviewTab v-else :model="model" />
         </div>
-      </div>
-      <div class="wesched">
-        <label class="wechk"><input type="checkbox" v-model="schedOn" />{{ $t('wfe.sched.enable') }}</label>
-        <template v-if="schedOn">
-          <select v-model="sched.mode" class="wesel">
-            <option value="interval">{{ $t('sched.mode.interval') }}</option>
-            <option value="daily">{{ $t('sched.mode.daily') }}</option>
-          </select>
-          <template v-if="sched.mode === 'interval'">
-            <input type="number" min="1" v-model.number="sched.interval.every" class="wenum" />
-            <select v-model="sched.interval.unit" class="wesel">
-              <option value="second">{{ $t('sched.unit.second') }}</option>
-              <option value="minute">{{ $t('sched.unit.minute') }}</option>
-              <option value="hour">{{ $t('sched.unit.hour') }}</option>
-              <option value="day">{{ $t('sched.unit.day') }}</option>
-            </select>
-          </template>
-          <template v-else>
-            <input type="time" v-model="sched.daily.at" class="wetime" />
-            <label v-for="w in WEEKDAYS" :key="w.v" class="wewd">
-              <input type="checkbox" :checked="sched.daily.weekdays.includes(w.v)" @change="toggleWeekday(w.v)" />{{ w.t }}
-            </label>
-          </template>
-          <select v-model="schedAgent" class="wesel">
-            <option value="">{{ $t('sched.field.choose') }}</option>
-            <option v-for="a in agents" :key="a.id" :value="a.id">{{ a.name }}</option>
-          </select>
-          <span v-if="!agents.length" class="wedim">{{ $t('wfe.sched.no_agent') }}</span>
-        </template>
       </div>
       <footer class="wef">
         <span class="wemsg">{{ msg }}</span>

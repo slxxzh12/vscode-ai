@@ -42,7 +42,7 @@ describe('SchedulerView', () => {
     expect(w.find('.modal').exists()).toBe(true);
   });
 
-  it('脚本任务勾选 EXE 后显示进度文件、报告目录和命令行', async () => {
+  it('类型只有普通命令和 AI 命令，普通命令提示会交给 AI', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url === '/api/scheduler/tasks') return ok({ tasks: [] });
       if (url === '/api/scheduler/summary') return ok({ total: 0, success: 0, failed: 0, running: 0, queued: 0, pending: 0 });
@@ -52,9 +52,8 @@ describe('SchedulerView', () => {
     await flushPromises();
     await w.find('.blank button').trigger('click');
     await flushPromises();
-    await w.findAll('select')[0].setValue('script');
-    await w.find('.exe-check').setValue(true);
-    expect(w.find('.cmdpreview').text()).toContain('result.json');
-    expect(w.find('.cmdpreview').text()).toContain('/report');
+    const values = w.findAll('select')[0].findAll('option').map((o) => o.attributes('value'));
+    expect(values).toEqual(['shell', 'ai']);
+    expect(w.find('.shell-hint').exists()).toBe(true);
   });
 });

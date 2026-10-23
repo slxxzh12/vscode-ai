@@ -1,6 +1,7 @@
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { buildSpawnSpec } from '../runner.js';
-import { writeRunContext, ensureReport } from '../report.js';
+import { writeRunContext, ensureReport, stripAnsi } from '../report.js';
 import { SchedulerJobStatus as S, SCHED_REPORT_MAX_BYTES } from '@devflow/shared/scheduler';
 
 function readReport(store, reportFile) {
@@ -8,14 +9,61 @@ function readReport(store, reportFile) {
   try { return fs.readFileSync(store.reportPath(reportFile), 'utf8'); } catch { return ''; }
 }
 
+function parseResult(job) {
+  if (!job || !job.result) return {};
+  try { return JSON.parse(job.result); } catch { return {}; }
+}
+
+function baseUrlOf(hostport) {
+  const m = String(hostport || '').match(/:(\d+)$/);
+  return `http://127.0.0.1:${m ? m[1] : '22222'}`;
+}
+
+function normalizeStatus(v) {
+  if (v === 'success') return S.SUCCESS;
+  if (v === 'failed') return S.FAILED;
+  if (v === 'running') return S.RUNNING;
+  const n = Number(v);
+  return n === S.SUCCESS || n === S.FAILED || n === S.RUNNING ? n : null;
+}
+
 export function createConsumer({
-  queue, store, runner, workflowExecutor, aiPromptLoader = () => '',
+  queue, store, runner, aiPromptLoader = () => '',
   worker, logger = console, now = () => Date.now(), pollMs = 1000,
   aiBin = 'opencode', opencodeDataDir = null, projectResolver = () => null, onEvent = () => {},
 }) {
   const loops = new Map();
   const running = new Map();
+  const callbacks = new Map();
   let stopped = false;
+
+  function issueCallback(jobId) {
+    const token = crypto.randomUUID();
+    callbacks.set(jobId, token);
+    return {
+      jobId,
+      token,
+      url: `${baseUrlOf(worker.hostport)}/api/scheduler/jobs/${encodeURIComponent(jobId)}/callback`,
+    };
+  }
+
+  async function handleCallback(jobId, token, body = {}) {
+    if (!token || callbacks.get(jobId) !== token) return { error: 'bad-token' };
+    const status = normalizeStatus(body.status);
+    const patch = {};
+    if (status !== null) patch.status = status;
+    if (body.result !== undefined || body.reportMarkdown !== undefined) {
+      const cur = await queue.getJob(jobId);
+      const prev = parseResult(cur);
+      const merged = { ...prev, ...(body.result || {}) };
+      if (body.reportMarkdown !== undefined) merged.reportMarkdown = String(body.reportMarkdown || '');
+      patch.result = JSON.stringify(merged);
+    }
+    if (!Object.keys(patch).length) return { error: 'empty-callback' };
+    const r = await queue.applyCallback(jobId, patch);
+    if (r && r.error) return r;
+    return { ok: true };
+  }
 
   async function execute(job) {
     let snap;
@@ -30,10 +78,12 @@ export function createConsumer({
     const startedAt = now();
     const logFile = store.logFileFor(task.id, job.jobId);
     const run = { id: job.jobId, taskId: task.id, status: 'running', trigger: snap.trigger, startedAt, logFile };
+    const callback = issueCallback(job.jobId);
     let ctx;
     try {
-      ctx = writeRunContext({ store, task, run });
+      ctx = writeRunContext({ store, task, run, callback });
     } catch (e) {
+      callbacks.delete(job.jobId);
       await queue.complete(job.jobId, {
         status: S.FAILED, runtime: 0, workIP: worker.hostport,
         result: { error: String(e?.message || e), reason: 'failed', reportMarkdown: '' },
@@ -41,70 +91,102 @@ export function createConsumer({
       return;
     }
     const cwd = task.cwd || projectResolver(task.projectId) || process.cwd();
+    const logPath = store.logPath(logFile);
+    const deadline = job.maxRunMilliSecond > 0 ? startedAt + job.maxRunMilliSecond : Infinity;
+    const remaining = () => Math.max(1, deadline - now());
+
     let status = S.FAILED;
     let result = { exitCode: null, error: null, durationMs: null, reason: 'failed' };
     try {
-      if (task.type === 'workflow' && workflowExecutor) {
-        const statusPromise = new Promise((resolve) => {
-          let timer = null;
-          let done = false;
-          const handle = workflowExecutor.start({
-            task, runId: job.jobId, logFile, runContextPath: ctx.contextPath,
-            onStatus: (s) => {
-              if (s.status === 'success' || s.status === 'failed' || s.status === 'aborted') {
-                done = true;
-                if (timer) clearTimeout(timer);
-                resolve(s);
-              }
-            },
-          });
-          if (!handle || handle.error) {
-            resolve({ status: 'failed', error: (handle && handle.error) || 'executor-error' });
-            return;
-          }
-          running.set(job.jobId, { kind: 'workflow', handle });
-          if (!done) {
-            timer = setTimeout(() => {
-              try { handle.abort?.(); } catch { /* ignore */ }
-              resolve({ status: 'failed', error: 'timeout' });
-            }, job.maxRunMilliSecond);
-          }
+      if (task.type === 'shell') {
+        const shellRes = await runner.run({
+          runId: job.jobId,
+          spec: buildSpawnSpec(task, { cwd, runContextPath: ctx.contextPath }),
+          logPath,
+          timeoutMs: Number.isFinite(deadline) ? remaining() : 0,
         });
-        const res = await statusPromise;
-        status = res.status === 'success' ? S.SUCCESS : S.FAILED;
-        result = { exitCode: null, error: res.error || null, durationMs: now() - startedAt, sessionId: res.sessionId || null, reason: res.error || res.status };
+        if (shellRes.spawnError || shellRes.timedOut || shellRes.exitCode !== 0) {
+          status = S.FAILED;
+          result = {
+            exitCode: shellRes.exitCode ?? null,
+            shellExitCode: shellRes.exitCode ?? null,
+            error: shellRes.error || (shellRes.timedOut ? 'timeout' : 'shell-failed'),
+            durationMs: now() - startedAt,
+            reason: shellRes.timedOut ? 'timeout' : 'shell-failed',
+          };
+        } else {
+          const prompt = stripAnsi(shellRes.stdout || '').trim();
+          if (!prompt) {
+            status = S.FAILED;
+            result = { exitCode: 0, shellExitCode: 0, error: 'empty-output', durationMs: now() - startedAt, reason: 'empty-output' };
+          } else {
+            const aiRes = await runner.run({
+              runId: job.jobId,
+              spec: buildSpawnSpec({ type: 'ai', ai: { source: 'prompt' } }, {
+                cwd, aiPrompt: prompt, aiBin, opencodeDataDir,
+                runContextPath: ctx.contextPath, jobCallback: callback,
+              }),
+              logPath,
+              timeoutMs: Number.isFinite(deadline) ? remaining() : 0,
+            });
+            status = aiRes.spawnError || aiRes.timedOut || aiRes.exitCode !== 0 ? S.FAILED : S.SUCCESS;
+            result = {
+              exitCode: aiRes.exitCode ?? null,
+              shellExitCode: shellRes.exitCode ?? 0,
+              aiExitCode: aiRes.exitCode ?? null,
+              error: aiRes.error || (aiRes.timedOut ? 'timeout' : null),
+              durationMs: now() - startedAt,
+              reason: aiRes.timedOut ? 'timeout' : (aiRes.exitCode === 0 ? 'success' : 'failed'),
+            };
+          }
+        }
       } else {
         let prompt = null;
-        if (task.type === 'ai') prompt = task.ai?.source === 'command' ? (aiPromptLoader(task.ai.commandName) || '') : (task.ai?.prompt || '');
-        const spec = buildSpawnSpec(task, {
-          cwd, aiPrompt: prompt, aiBin, opencodeDataDir,
-          runContextPath: ctx.contextPath, reportPath: ctx.reportPath, reportDir: ctx.reportDir, progressPath: ctx.progressPath,
+        if (task.ai?.source === 'command') prompt = aiPromptLoader(task.ai.commandName) || '';
+        else prompt = task.ai?.prompt || '';
+        const aiRes = await runner.run({
+          runId: job.jobId,
+          spec: buildSpawnSpec(task, {
+            cwd, aiPrompt: prompt, aiBin, opencodeDataDir,
+            runContextPath: ctx.contextPath, jobCallback: callback,
+          }),
+          logPath,
+          timeoutMs: Number.isFinite(deadline) ? remaining() : 0,
         });
-        const res = await runner.run({ runId: job.jobId, spec, logPath: store.logPath(logFile), timeoutMs: job.maxRunMilliSecond });
-        status = res.spawnError || res.timedOut || res.exitCode !== 0 ? S.FAILED : S.SUCCESS;
+        status = aiRes.spawnError || aiRes.timedOut || aiRes.exitCode !== 0 ? S.FAILED : S.SUCCESS;
         result = {
-          exitCode: res.exitCode ?? null, error: res.error || (res.timedOut ? 'timeout' : null),
-          durationMs: res.durationMs ?? (now() - startedAt), reason: res.timedOut ? 'timeout' : (res.exitCode === 0 ? 'success' : 'failed'),
+          exitCode: aiRes.exitCode ?? null,
+          aiExitCode: aiRes.exitCode ?? null,
+          error: aiRes.error || (aiRes.timedOut ? 'timeout' : null),
+          durationMs: aiRes.durationMs ?? (now() - startedAt),
+          reason: aiRes.timedOut ? 'timeout' : (aiRes.exitCode === 0 ? 'success' : 'failed'),
         };
       }
     } catch (e) {
       result = { exitCode: null, error: String(e?.message || e), durationMs: now() - startedAt, reason: 'failed' };
     } finally {
       running.delete(job.jobId);
+      callbacks.delete(job.jobId);
+    }
+
+    const cur = queue.getJob ? await queue.getJob(job.jobId).catch(() => null) : null;
+    if (cur && cur.status !== S.RUNNING) {
+      onEvent('run-end', { jobId: job.jobId, taskId: task.id, status: cur.status });
+      return;
     }
     let info = null;
     try {
       info = ensureReport({ store, task, run: { ...run, status, exitCode: result.exitCode, durationMs: result.durationMs, error: result.error }, result });
     } catch (e) { logger?.error?.('scheduler report failed', e); }
     const reportMarkdown = (readReport(store, info?.reportFile) || '').slice(0, SCHED_REPORT_MAX_BYTES);
+    const reported = parseResult(cur);
     const final = {
       ...result,
-      reportFile: info?.reportFile || null,
-      reportMarkdown,
-      logPath: store.logPath(logFile),
+      ...reported,
+      reportFile: info?.reportFile || reported.reportFile || null,
+      reportMarkdown: reported.reportMarkdown || reportMarkdown,
+      logPath,
     };
-    const cur = queue.getJob ? await queue.getJob(job.jobId).catch(() => null) : null;
-    if (cur && cur.status !== S.RUNNING) { onEvent('run-end', { jobId: job.jobId, taskId: task.id, status: cur.status }); return; }
     await queue.complete(job.jobId, { status, runtime: result.durationMs, workIP: worker.hostport, result: final });
     onEvent('run-end', { jobId: job.jobId, taskId: task.id, status });
   }
@@ -140,10 +222,7 @@ export function createConsumer({
 
   async function stopJob(jobId) {
     const h = running.get(jobId);
-    if (h) {
-      if (h.kind === 'workflow') { try { h.handle?.abort?.(); } catch { /* ignore */ } }
-      else runner.stop(jobId);
-    }
+    if (h) runner.stop(jobId);
     await queue.complete(jobId, { status: S.FAILED, runtime: null, workIP: worker.hostport, result: { error: 'cancelled', reason: 'cancelled' } });
     return true;
   }
@@ -155,6 +234,11 @@ export function createConsumer({
     return stopJob(job.jobId);
   }
 
-  function stop() { stopped = true; for (const loop of loops.values()) clearInterval(loop.timer); loops.clear(); }
-  return { execute, runOnce, setPartitions, stopJob, stopTask, stop };
+  function stop() {
+    stopped = true;
+    for (const loop of loops.values()) clearInterval(loop.timer);
+    loops.clear();
+    callbacks.clear();
+  }
+  return { execute, runOnce, setPartitions, stopJob, stopTask, handleCallback, stop };
 }

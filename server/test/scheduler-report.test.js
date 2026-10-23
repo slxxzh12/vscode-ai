@@ -66,34 +66,3 @@ test('legacyReport 兼容没有 logFile 的旧记录', () => {
 test('stripAnsi 去除颜色码', () => {
   assert.equal(stripAnsi('\u001b[31mred\u001b[0m'), 'red');
 });
-
-test('EXE 任务：上下文含 result.json 与 report 目录，报告取 report/ 第一个文件', () => {
-  const store = new SchedulerStore({ dir: tmpDir() });
-  const { task } = store.createTask({
-    name: 'exe-scan', type: 'script', script: { path: 'scan.exe', exe: true },
-    schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } },
-  });
-  const run = { id: 'r9', taskId: task.id, trigger: 'manual', startedAt: 100, logFile: store.logFileFor(task.id, 'r9') };
-  const ctx = writeRunContext({ store, task, run });
-  assert.equal(ctx.progressPath, path.join(ctx.outputDir, 'result.json'));
-  assert.equal(ctx.reportDir, path.join(ctx.outputDir, 'report'));
-  fs.writeFileSync(path.join(ctx.reportDir, 'b.md'), '# b');
-  fs.writeFileSync(path.join(ctx.reportDir, 'a.md'), '# a');
-  const info = ensureReport({ store, task, run, result: { status: 'success' } });
-  assert.equal(path.basename(info.reportFile), 'a.md');
-  assert.equal(info.files.length, 2);
-  assert.equal(info.reportDir, ctx.reportDir);
-});
-
-test('EXE 任务：report 目录为空时写兜底报告', () => {
-  const store = new SchedulerStore({ dir: tmpDir() });
-  const { task } = store.createTask({
-    name: 'exe-empty', type: 'script', script: { path: 'scan.exe', exe: true },
-    schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } },
-  });
-  const run = { id: 'r10', taskId: task.id, trigger: 'manual', startedAt: 100, logFile: store.logFileFor(task.id, 'r10'), status: 'failed', error: 'x' };
-  writeRunContext({ store, task, run });
-  const info = ensureReport({ store, task, run, result: { status: 'failed', error: 'x' } });
-  assert.equal(path.basename(info.reportFile), 'report.md');
-  assert.match(fs.readFileSync(store.reportPath(info.reportFile), 'utf8'), /失败/);
-});

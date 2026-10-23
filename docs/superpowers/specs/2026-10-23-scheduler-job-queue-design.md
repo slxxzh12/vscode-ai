@@ -3,6 +3,8 @@
 日期：2026-10-23
 状态：待复核
 
+> 后续变更（同日）：定时任务类型只保留 `shell`（普通命令）和 `ai`（AI 命令）；脚本/工作流类型已删除，旧任务启动时自动清理。`shell` 先执行命令，将 stdout 作为 prompt，再执行 AI 命令。AI 命令可通过 `DEVFLOW_JOB_CALLBACK` / `DEVFLOW_JOB_TOKEN` 调用 `POST /api/scheduler/jobs/<jobId>/callback` 回写状态与结果。本文件其余内容是队列设计，类型细节以本节为准。
+
 ## 背景
 
 现有定时任务（`server/scheduler/`）到点后直接在进程内 `startRun`：

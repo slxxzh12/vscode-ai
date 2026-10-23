@@ -9,7 +9,7 @@ const readBody = (req, limit = 1024 * 1024) => new Promise((resolve, reject) => 
   req.on('error', reject);
 });
 
-export function createJobsMount({ queue, registry = () => null, role = 'master', logger = console, hostport = '', machineId = '', stopJob = null }) {
+export function createJobsMount({ queue, registry = () => null, role = 'master', logger = console, hostport = '', machineId = '', stopJob = null, onCallback = null }) {
   const isMaster = () => role === 'master';
   return async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -31,7 +31,7 @@ export function createJobsMount({ queue, registry = () => null, role = 'master',
           topic: queue.topic, partitionCount: await queue.partitionCount(),
         });
       }
-      const m = p.match(/^\/api\/scheduler\/jobs\/([^/]+)(?:\/(approve|reject|cancel|retry))?$/);
+      const m = p.match(/^\/api\/scheduler\/jobs\/([^/]+)(?:\/(approve|reject|cancel|retry|callback))?$/);
       if (m) {
         const id = decodeURIComponent(m[1]);
         const action = m[2];
@@ -39,6 +39,14 @@ export function createJobsMount({ queue, registry = () => null, role = 'master',
           const job = await queue.getJob(id);
           if (!job) return sendJson(res, 404, { error: 'not-found' });
           return sendJson(res, 200, { job, local: job.workIP === hostport });
+        }
+        if (action === 'callback' && req.method === 'POST') {
+          if (!onCallback) return sendJson(res, 501, { error: 'callback-unavailable' });
+          const body = await readBody(req, 4 * 1024 * 1024);
+          const token = String(req.headers?.['x-df-job-token'] || body.token || '');
+          const r = await onCallback(id, token, body);
+          if (!r || r.error) return sendJson(res, r && r.error === 'bad-token' ? 403 : 409, { error: (r && r.error) || 'callback-failed' });
+          return sendJson(res, 200, r);
         }
         if (action === 'approve' || action === 'reject') {
           if (!isMaster()) return sendJson(res, 403, { error: 'master-only' });

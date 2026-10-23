@@ -34,7 +34,7 @@ export function createQueue({ dir, dbFile = null, logger = console, now = () => 
     get repo() { return service?.repo || null; },
   };
   for (const name of ['partitionCount', 'enqueueTask', 'approve', 'reject', 'cancel', 'claim', 'complete', 'retry',
-    'cleanupFinished', 'deleteTaskJobs', 'failRunningByWorker', 'recoverRunning', 'setPartitionCount', 'rehash',
+    'cleanupFinished', 'deleteTaskJobs', 'purgeTaskJobs', 'failRunningByWorker', 'recoverRunning', 'setPartitionCount', 'rehash', 'applyCallback',
     'getJob', 'listJobs', 'summary', 'partitionStats', 'parseParam']) {
     proxy[name] = async (...args) => (await init())[name](...args);
   }

@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { manifestDirOf, writeManifest, removeManifest, scanManifests, fromManifest, isDir } from './manifest.js';
 
-const TYPES = new Set(['shell', 'ai', 'script', 'workflow']);
+const TYPES = new Set(['shell', 'ai']);
 const UNITS = new Set(['second', 'minute', 'hour', 'day']);
 const WEEKDAYS = new Set([1, 2, 3, 4, 5, 6, 7]);
 
@@ -26,7 +26,7 @@ function toAbs(p, cwd) {
 export function validateTask(input) {
   const t = input || {};
   if (!t.name || typeof t.name !== 'string') return { error: 'name required' };
-  if (!TYPES.has(t.type)) return { error: 'type must be shell|ai|script|workflow' };
+  if (!TYPES.has(t.type)) return { error: 'type must be shell|ai' };
   if (t.type === 'shell' && typeof t.command !== 'string') return { error: 'command required' };
   if (t.type === 'ai') {
     const ai = t.ai || {};
@@ -34,15 +34,6 @@ export function validateTask(input) {
     if (ai.source === 'command' && !ai.commandName) return { error: 'ai.commandName required' };
     if (ai.source === 'prompt' && typeof ai.prompt !== 'string') return { error: 'ai.prompt required' };
     if (ai.source === 'file' && !t.filePath) return { error: 'ai.filePath required' };
-  }
-  if (t.type === 'script') {
-    const s = t.script || {};
-    if (!s.path || typeof s.path !== 'string') return { error: 'script.path required' };
-  }
-  if (t.type === 'workflow') {
-    const w = t.workflow || {};
-    if (!w.workflowId) return { error: 'workflowId required' };
-    if (!w.agentId) return { error: 'agentId required' };
   }
   const sc = t.schedule || {};
   if (sc.mode !== 'interval' && sc.mode !== 'daily') return { error: 'schedule.mode must be interval|daily' };
@@ -70,6 +61,25 @@ export class SchedulerStore {
     this.tasksDir = path.join(dir, 'tasks');
     const tasks = readJson(this.tasksFile, []);
     this.tasks = Array.isArray(tasks) ? tasks : [];
+    this.removedTaskIds = [];
+    this._purgeUnsupportedTasks();
+  }
+  _purgeUnsupportedTasks() {
+    const kept = [];
+    for (const task of this.tasks) {
+      if (TYPES.has(task && task.type)) { kept.push(task); continue; }
+      if (task && task.id) this.removedTaskIds.push(task.id);
+      try { this._removeManifest(task); } catch { /* ignore */ }
+      if (task && task.id) {
+        try { fs.rmSync(path.join(this.logsDir, task.id), { recursive: true, force: true }); } catch { /* ignore */ }
+        try { fs.rmSync(path.join(this.tasksDir, task.id), { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+    }
+    if (this.removedTaskIds.length) {
+      this.tasks = kept;
+      this.saveTasks();
+      this.log?.warn?.('scheduler removed unsupported tasks', this.removedTaskIds);
+    }
   }
   setRuntimeProvider(fn) { this.runtimeProvider = fn; }
   saveTasks() { atomicWriteJson(this.tasksFile, this.tasks); }
@@ -95,8 +105,6 @@ export class SchedulerStore {
       type: input.type,
       command: input.type === 'shell' ? input.command : undefined,
       ai: input.type === 'ai' ? { ...input.ai } : undefined,
-      script: input.type === 'script' ? { ...input.script, path: toAbs(input.script.path, input.cwd) } : undefined,
-      workflow: input.type === 'workflow' ? { workflowId: String(input.workflow.workflowId), agentId: String(input.workflow.agentId) } : undefined,
       schedule: { ...input.schedule },
       approvalRequired: !!input.approvalRequired,
       onlyLocal: !!input.onlyLocal,
@@ -157,7 +165,6 @@ export class SchedulerStore {
     const prev = this.tasks[i];
     const merged = { ...prev, ...patch, id, createdAt: prev.createdAt, updatedAt: Date.now() };
     merged.filePath = toAbs(merged.filePath, merged.cwd);
-    if (merged.type === 'script' && merged.script) merged.script = { ...merged.script, path: toAbs(merged.script.path, merged.cwd) };
     const v = validateTask(merged);
     if (v.error) return { error: v.error };
     if (this._cwdMissing(merged)) return { error: 'cwd-missing' };
@@ -196,8 +203,8 @@ export class SchedulerStore {
   }
   logFileFor(taskId, runId) { return path.join(taskId, runId + '.log'); }
   logPath(rel) { return path.join(this.logsDir, rel); }
-  reportFileFor(taskId, runId, exe = false) {
-    return exe ? path.join(taskId, runId, 'report', 'report.md') : path.join(taskId, runId, 'report.md');
+  reportFileFor(taskId, runId) {
+    return path.join(taskId, runId, 'report.md');
   }
   contextFileFor(taskId, runId) { return path.join(taskId, runId, 'run.json'); }
   runDirFor(taskId, runId) { return path.join(this.tasksDir, taskId, runId); }

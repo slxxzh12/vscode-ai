@@ -59,11 +59,10 @@ test('importManifestDir 覆盖时旧类型字段不残留', () => {
   writeAt(proj, manifest());
   const store = new SchedulerStore({ dir: tmpDir() });
   store.importManifestDir(root);
-  fs.writeFileSync(path.join(proj, 'run.ps1'), 'x');
-  writeAt(proj, manifest({ type: 'script', command: undefined, script: { path: 'run.ps1' } }));
+  writeAt(proj, manifest({ type: 'ai', command: undefined, ai: { source: 'prompt', prompt: 'go' } }));
   store.importManifestDir(root);
   const t = store.listTasks()[0];
-  assert.equal(t.type, 'script');
+  assert.equal(t.type, 'ai');
   assert.equal(t.command, undefined);
-  assert.equal(t.script.path, path.join(proj, 'run.ps1'));
+  assert.equal(t.ai.prompt, 'go');
 });

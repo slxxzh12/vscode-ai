@@ -10,7 +10,7 @@ import { createConsumer } from './queue/consumer.js';
 
 export function createScheduler({
   dir, projectResolver = () => null, logger = console, runner = null, agentCmd = 'opencode',
-  opencodeDataDir = null, manifestRoot = null, workflowExecutor = null,
+  opencodeDataDir = null, manifestRoot = null,
   machineId = 'local', hostport = '127.0.0.1:22222', role = 'master', version = '',
   dbFile = null, pullQueueConfig = null, onJobEvent = () => {},
 }) {
@@ -38,12 +38,14 @@ export function createScheduler({
       applyQueueConfig(c);
     }
     await queue.ready();
+    for (const id of store.removedTaskIds) await queue.purgeTaskJobs(id);
+    store.removedTaskIds = [];
     if (startWorkers) {
       await queue.rehash();
       await queue.recoverRunning(hostport);
       registry = createWorkerRegistry({ repo: queue.repo, topic: queue.topic, count: await queue.partitionCount(), logger });
       consumer = createConsumer({
-        queue, store, runner: runner || createRunner(), workflowExecutor,
+        queue, store, runner: runner || createRunner(),
         aiPromptLoader: (name) => readAiCommand(name), worker: { id: `${machineId}:${queue.topic}`, hostport, machineId },
         aiBin: agentCmd, opencodeDataDir, projectResolver, logger,
         onEvent: (evt, payload) => onJobEvent(evt, payload),
@@ -70,6 +72,7 @@ export function createScheduler({
   const jobsMount = createJobsMount({
     queue, registry: () => registry, role, hostport, machineId, logger,
     stopJob: (jobId) => consumer?.stopJob(jobId),
+    onCallback: (jobId, token, body) => (consumer ? consumer.handleCallback(jobId, token, body) : Promise.resolve({ error: 'not-running' })),
   });
   return {
     store, engine, queue, mount, jobsMount, start, stop, syncQueueConfig,

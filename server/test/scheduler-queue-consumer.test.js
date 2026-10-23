@@ -8,7 +8,7 @@ import { createConsumer } from '../scheduler/queue/consumer.js';
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'qcons-')); }
 
-test('领取 shell 作业、执行、写回成功与报告', async () => {
+test('普通命令：输出作为 prompt 再执行 AI，并写回成功与报告', async () => {
   const dir = tmp();
   const store = new SchedulerStore({ dir });
   const task = store.createTask({
@@ -24,13 +24,61 @@ test('领取 shell 作业、执行、写回成功与报告', async () => {
     complete: async (id, r) => { completed = { id, ...r }; },
     listJobs: async () => [],
   };
-  const runner = { run: async () => ({ exitCode: 0, timedOut: false, durationMs: 7 }), stop: () => true };
+  const specs = [];
+  const runner = {
+    run: async ({ spec }) => {
+      specs.push(spec);
+      return specs.length === 1
+        ? { exitCode: 0, timedOut: false, durationMs: 3, stdout: 'collected output' }
+        : { exitCode: 0, timedOut: false, durationMs: 4, stdout: 'ai done' };
+    },
+    stop: () => true,
+  };
   const c = createConsumer({
-    queue, store, runner, workflowExecutor: null, worker: { id: 'm1:scheduler.jobs', hostport: 'w:1', machineId: 'm1' },
+    queue, store, runner, worker: { id: 'm1:scheduler.jobs', hostport: 'w:1', machineId: 'm1' },
     aiPromptLoader: () => '', now: () => 1000, pollMs: 999999,
   });
   await c.runOnce(0);
+  assert.equal(specs.length, 2);
+  assert.ok(specs[1].args.includes('collected output'));
   assert.equal(completed.status, 1);
-  assert.equal(completed.runtime, 7);
+  assert.equal(completed.result.shellExitCode, 0);
+  assert.equal(completed.result.aiExitCode, 0);
   assert.ok(completed.result.reportMarkdown.includes('a'));
+});
+
+test('AI 命令通过回调回写最终状态与结果', async () => {
+  const dir = tmp();
+  const store = new SchedulerStore({ dir });
+  const task = store.createTask({
+    name: 'ai', type: 'ai', ai: { source: 'prompt', prompt: 'do it' }, schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } },
+  }).task;
+  const snap = { task, trigger: 'manual', scheduledAt: 1, createMachineId: 'm1' };
+  let callbackStatus = null;
+  let callbackResult = null;
+  let completed = null;
+  const queue = {
+    claim: async () => ({ jobId: 'j2', partitionId: 0, paramStr: JSON.stringify(snap), maxRunMilliSecond: 1000 }),
+    parseParam: async (job) => JSON.parse(job.paramStr),
+    complete: async (id, r) => { completed = { id, ...r }; },
+    listJobs: async () => [],
+    getJob: async () => ({ jobId: 'j2', status: callbackStatus ?? 3, result: callbackResult }),
+    applyCallback: async (_id, patch) => { callbackStatus = patch.status ?? callbackStatus; callbackResult = patch.result ?? callbackResult; return { ok: true }; },
+  };
+  let consumer = null;
+  const runner = {
+    run: async ({ spec }) => {
+      await consumer.handleCallback('j2', spec.env.DEVFLOW_JOB_TOKEN, { status: 'success', result: { reportMarkdown: '# ai report' } });
+      return { exitCode: 0, timedOut: false, durationMs: 4, stdout: '' };
+    },
+    stop: () => true,
+  };
+  consumer = createConsumer({
+    queue, store, runner, worker: { id: 'm1:scheduler.jobs', hostport: 'w:1', machineId: 'm1' },
+    aiPromptLoader: () => '', now: () => 1000, pollMs: 999999,
+  });
+  await consumer.runOnce(0);
+  assert.equal(callbackStatus, 1);
+  assert.ok(callbackResult.includes('ai report'));
+  assert.equal(completed, null);
 });

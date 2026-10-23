@@ -10,12 +10,10 @@ export interface SchedulerTask {
   enabled: boolean;
   projectId: string | null;
   cwd: string | null;
-  type: 'shell' | 'ai' | 'script' | 'workflow';
+  type: 'shell' | 'ai';
   filePath?: string | null;
   command?: string;
   ai?: { source: 'command' | 'prompt' | 'file'; commandName?: string; prompt?: string };
-  script?: { path: string; exe?: boolean };
-  workflow?: { workflowId: string; agentId: string };
   schedule: Schedule;
   approvalRequired?: boolean;
   onlyLocal?: boolean;
@@ -82,9 +80,9 @@ export interface SchedulerRunContext {
   startedAt: number;
   reportPath: string;
   reportDir: string;
-  progressPath: string;
   logPath: string;
   outputDir: string;
+  callback?: { jobId: string; token: string; url: string };
 }
 
 export const SchedulerS2C: Readonly<{

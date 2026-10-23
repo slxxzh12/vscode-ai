@@ -14,7 +14,7 @@ function shellTask(over = {}) {
 test('validateTask 校验各字段', () => {
   assert.ok(validateTask(shellTask()).ok);
   assert.equal(validateTask({}).error, 'name required');
-  assert.equal(validateTask(shellTask({ type: 'x' })).error, 'type must be shell|ai|script|workflow');
+  assert.equal(validateTask(shellTask({ type: 'x' })).error, 'type must be shell|ai');
   assert.equal(validateTask(shellTask({ type: 'ai', ai: { source: 'command' } })).error, 'ai.commandName required');
   assert.equal(validateTask(shellTask({ schedule: { mode: 'daily', daily: { at: 'x' } } })).error, 'daily.at must be HH:MM');
   assert.equal(validateTask(shellTask({ schedule: { mode: 'interval', interval: { every: 0, unit: 'minute' } } })).error, 'interval.every must be > 0');
@@ -41,17 +41,16 @@ test('updateTask 合并并刷新 updatedAt；未知 id 返回 not-found', () => 
   assert.equal(store.updateTask('nope', {}).error, 'not-found');
 });
 
-test('filePath / script.path 记录为绝对路径', () => {
+test('filePath 记录为绝对路径', () => {
   const store = new SchedulerStore({ dir: tmpDir() });
   const cwd = path.join(os.tmpdir(), 'sched-cwd');
   fs.mkdirSync(cwd, { recursive: true });
-  const { task } = store.createTask({ name: 's', enabled: true, type: 'script', cwd,
-    filePath: 'sub/y.py', script: { path: 'sub/y.py' },
+  const { task } = store.createTask({ name: 's', enabled: true, type: 'ai', cwd,
+    ai: { source: 'file' }, filePath: 'sub/y.md',
     schedule: { mode: 'interval', interval: { every: 5, unit: 'minute' } } });
-  assert.equal(task.filePath, path.resolve(cwd, 'sub/y.py'));
-  assert.equal(task.script.path, path.resolve(cwd, 'sub/y.py'));
-  const upd = store.updateTask(task.id, { filePath: 'z.py' });
-  assert.equal(upd.task.filePath, path.resolve(cwd, 'z.py'));
+  assert.equal(task.filePath, path.resolve(cwd, 'sub/y.md'));
+  const upd = store.updateTask(task.id, { filePath: 'z.md' });
+  assert.equal(upd.task.filePath, path.resolve(cwd, 'z.md'));
 });
 
 test('deleteTask 连带删除日志与任务目录', () => {
@@ -151,27 +150,25 @@ test('syncManifest 写入 runtime（nextRunAt / lastRun）', () => {
   assert.equal(m.runtime.lastRun.status, 'success');
 });
 
-test('validateTask 支持 workflow 类型', () => {
-  const base = { name: 'w', type: 'workflow', schedule: { mode: 'interval', interval: { every: 1, unit: 'day' } } };
-  assert.equal(validateTask(base).error, 'workflowId required');
-  assert.equal(validateTask({ ...base, workflow: { workflowId: 'dev' } }).error, 'agentId required');
-  assert.ok(validateTask({ ...base, workflow: { workflowId: 'dev', agentId: 'opencode' } }).ok);
-});
-
-test('createTask 保存 workflow 字段并可重新加载', () => {
+test('只允许 shell / ai，旧 script/workflow 任务启动时删除', () => {
   const dir = tmpDir();
+  const schedule = { mode: 'interval', interval: { every: 1, unit: 'day' } };
+  fs.writeFileSync(path.join(dir, 'tasks.json'), JSON.stringify([
+    { id: 't_keep', name: 'keep', type: 'shell', command: 'echo', schedule },
+    { id: 't_script', name: 'old', type: 'script', script: { path: 'x.py' }, schedule },
+    { id: 't_wf', name: 'old', type: 'workflow', workflow: { workflowId: 'dev', agentId: 'opencode' }, schedule },
+  ]));
   const store = new SchedulerStore({ dir });
-  const { task } = store.createTask({ name: 'wf', type: 'workflow', workflow: { workflowId: 'dev', agentId: 'opencode' },
-    schedule: { mode: 'interval', interval: { every: 1, unit: 'day' } } });
-  assert.deepEqual(task.workflow, { workflowId: 'dev', agentId: 'opencode' });
-  assert.equal(task.command, undefined);
-  assert.equal(new SchedulerStore({ dir }).getTask(task.id).workflow.workflowId, 'dev');
+  assert.deepEqual(store.listTasks().map((t) => t.id), ['t_keep']);
+  assert.deepEqual(store.removedTaskIds, ['t_script', 't_wf']);
+  assert.equal(validateTask({ name: 'w', type: 'workflow', schedule }).error, 'type must be shell|ai');
+  assert.equal(validateTask({ name: 's', type: 'script', schedule }).error, 'type must be shell|ai');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'tasks.json'), 'utf8')).map((t) => t.id), ['t_keep']);
 });
 
 test('报告路径按 taskId/runId 归档', () => {
   const store = new SchedulerStore({ dir: tmpDir() });
   assert.equal(store.reportFileFor('t1', 'r1'), path.join('t1', 'r1', 'report.md'));
-  assert.equal(store.reportFileFor('t1', 'r1', true), path.join('t1', 'r1', 'report', 'report.md'));
   assert.equal(store.contextFileFor('t1', 'r1'), path.join('t1', 'r1', 'run.json'));
   assert.equal(store.reportPath(store.reportFileFor('t1', 'r1')), path.join(store.dir, 'tasks', 't1', 'r1', 'report.md'));
 });

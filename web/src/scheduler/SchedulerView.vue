@@ -20,33 +20,11 @@ function emptyForm() {
   return {
     name: '', enabled: true, cwd: '', filePath: '', type: 'shell', command: '',
     ai: { source: 'command', commandName: '', prompt: '' },
-    workflow: { workflowId: '', agentId: '' },
     schedule: { mode: 'interval', interval: { every: 30, unit: 'minute' }, daily: { at: '09:30', weekdays: [] } },
-    script: { path: '', exe: false },
     approvalRequired: false, onlyLocal: false, uniqueKey: '', weight: 0, maxRunMilliSecond: 0, groupName: 'default',
   };
 }
-const previewRunDir = computed(() => `<${t('sched.field.run_dir_placeholder')}>`);
-const previewProgress = computed(() => `${previewRunDir.value}/result.json`);
-const previewReportDir = computed(() => `${previewRunDir.value}/report`);
-const exeCommand = computed(() => `"${form.value.script?.path || `<${t('sched.field.exe_path_placeholder')}>`}" "${previewProgress.value}" "${previewReportDir.value}"`);
-const workflows = ref<{ id: string; label: string }[]>([]);
-const agents = ref<{ id: string; name: string }[]>([]);
-async function loadWorkflowOptions() {
-  try {
-    const w = await fetch('/api/workflows-xml').then((r) => r.json());
-    workflows.value = (w.workflows || []).map((x: any) => ({ id: x.id, label: x.label || x.id }));
-  } catch { workflows.value = []; }
-  try {
-    const a = await fetch('/api/agents').then((r) => r.json());
-    agents.value = (a.agents || []).map((x: any) => ({ id: x.id, name: x.name || x.id }));
-  } catch { agents.value = []; }
-}
-function wfLabel(id: string) { return workflows.value.find((w) => w.id === id)?.label || id; }
-function agentName(id: string) { return agents.value.find((a) => a.id === id)?.name || id; }
 function taskIcon(t: TaskView): string {
-  if (t.type === 'workflow') return '🔀';
-  if (t.type === 'script') return '📜';
   if (t.type === 'shell') return '⌨';
   if (t.type === 'ai') return t.ai?.source === 'file' ? '📄' : '🤖';
   return '•';
@@ -59,11 +37,10 @@ function openCreate() {
 }
 function openEdit(task: TaskView) {
   editingId.value = task.id;
-  pickedPath.value = task.filePath || (task.type === 'script' ? (task.script?.path || '') : '');
+  pickedPath.value = task.filePath || '';
   form.value = JSON.parse(JSON.stringify({
     name: task.name, enabled: task.enabled, cwd: task.cwd || '', filePath: task.filePath || '', type: task.type,
-    command: task.command || '', ai: task.ai || { source: 'command', commandName: '', prompt: '' },
-    script: task.script || { path: '', exe: false }, workflow: task.workflow || { workflowId: '', agentId: '' }, schedule: task.schedule,
+    command: task.command || '', ai: task.ai || { source: 'command', commandName: '', prompt: '' }, schedule: task.schedule,
     approvalRequired: !!task.approvalRequired, onlyLocal: !!task.onlyLocal, uniqueKey: task.uniqueKey || '',
     weight: task.weight || 0, maxRunMilliSecond: task.maxRunMilliSecond || 0, groupName: task.groupName || 'default',
   }));
@@ -88,9 +65,6 @@ async function pickCommandFile() {
       form.value.ai = isCommand
         ? { source: 'command', commandName: base, prompt: '' }
         : { source: 'file', commandName: '', prompt: t('sched.ai.file_prompt') };
-    } else if (['.py', '.bat', '.cmd', '.ps1', '.sh'].includes(ext)) {
-      form.value.type = 'script';
-      form.value.script = { path: r.path };
     } else {
       state.error = t('sched.unsupported_file', { ext: ext || '?' });
     }
@@ -125,11 +99,8 @@ async function save() {
   if (!body.filePath) body.filePath = null;
   if (body.type !== 'shell') delete body.command;
   if (body.type !== 'ai') delete body.ai;
-  if (body.type !== 'script') delete body.script;
-  if (body.type !== 'workflow') delete body.workflow;
   if (body.uniqueKey === '') body.uniqueKey = null;
   if (!body.maxRunMilliSecond) body.maxRunMilliSecond = null;
-  if (body.type === 'workflow' && (!body.workflow?.workflowId || !body.workflow?.agentId)) { state.error = t('sched.wf.need_select'); return; }
   try {
     if (editingId.value) await sched.updateTask(editingId.value, body);
     else await sched.createTask(body);
@@ -151,17 +122,6 @@ const runPending = ref<Record<string, boolean>>({});
 function isRunning(task: TaskView) { return !!runPending.value[task.id] || !!task.recentJobs?.some((j) => j.status === 3); }
 async function stop(task: TaskView) { await sched.stopTask(task.id); await sched.refresh(); }
 async function toggle(task: TaskView) { await sched.updateTask(task.id, { enabled: !task.enabled }); }
-async function openWfRun(task: TaskView) {
-  state.error = '';
-  const list = await sched.loadJobs(task.id, 20);
-  let sessionId = '';
-  for (const job of list) {
-    try { sessionId = JSON.parse(job.result || '{}').sessionId || ''; } catch { sessionId = ''; }
-    if (sessionId) break;
-  }
-  if (!sessionId) { state.error = t('sched.wf.no_run'); return; }
-  props.onOpenSession?.(sessionId);
-}
 function openDetail(task: TaskView) { detailTask.value = task; }
 const WEEKDAYS = computed(() => [1, 2, 3, 4, 5, 6, 7].map((v) => ({ v, t: t('sched.wdshort.' + v) })));
 function toggleWeekday(v: number) {
@@ -180,7 +140,7 @@ function barClass(status: number): string {
   return 'killed';
 }
 
-onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); void loadWorkflowOptions(); });
+onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); });
 onBeforeUnmount(() => { sched.dispose(); });
 </script>
 
@@ -223,7 +183,6 @@ onBeforeUnmount(() => { sched.dispose(); });
             <div class="name">
               <span class="badge" :class="t.type"><span class="bi">{{ taskIcon(t) }}</span>{{ typeLabel(t.type) }}</span>
               {{ t.name }}
-              <span v-if="t.type === 'workflow' && t.workflow" class="dim">{{ $t('sched.wf.task_meta', { wf: wfLabel(t.workflow.workflowId), agent: agentName(t.workflow.agentId) }) }}</span>
               <span class="dim">{{ scheduleSummary(t.schedule) }}</span>
             </div>
             <div class="meta">
@@ -244,7 +203,6 @@ onBeforeUnmount(() => { sched.dispose(); });
             <button v-else @click.stop="toggle(t)">{{ $t('sched.start') }}</button>
             <button v-if="!isRunning(t)" @click.stop="runNow(t)">{{ $t('sched.run') }}</button>
             <button v-else @click.stop="stop(t)">{{ $t('sched.stop') }}</button>
-            <button v-if="t.type === 'workflow'" @click.stop="openWfRun(t)">{{ $t('sched.wf.open') }}</button>
             <button @click.stop="openDetail(t)">{{ $t('sched.history') }}</button>
             <button @click.stop="openEdit(t)">{{ $t('sched.edit') }}</button>
             <button @click.stop="remove(t)">{{ $t('sched.delete') }}</button>
@@ -274,13 +232,12 @@ onBeforeUnmount(() => { sched.dispose(); });
         <label>{{ $t('sched.field.type') }}
           <select v-model="form.type">
             <option value="shell">{{ $t('sched.type.shell') }}</option>
-            <option value="ai">AI {{ $t('sched.type.shell') }}</option>
-            <option value="script">{{ $t('sched.type.script') }}</option>
-            <option value="workflow">{{ $t('sched.type.workflow') }}</option>
+            <option value="ai">{{ $t('sched.type.ai') }}</option>
           </select>
         </label>
         <template v-if="form.type === 'shell'">
           <label>{{ $t('sched.field.command') }} <CodeEditor v-model="form.command" class="sched-edit" language="cmd.sh" /></label>
+          <div class="dim shell-hint">{{ $t('sched.shell.ai_hint') }}</div>
         </template>
         <template v-else-if="form.type === 'ai'">
           <label>{{ $t('sched.field.source') }}
@@ -299,39 +256,6 @@ onBeforeUnmount(() => { sched.dispose(); });
           <label v-else-if="form.ai.source === 'prompt'">Prompt <CodeEditor v-model="form.ai.prompt" class="sched-edit" /></label>
           <div v-else class="dim">{{ $t('sched.source.file_hint') }}</div>
         </template>
-        <template v-else-if="form.type === 'workflow'">
-          <label>{{ $t('sched.wf.select') }}
-            <select v-model="form.workflow.workflowId">
-              <option value="">{{ $t('sched.field.choose') }}</option>
-              <option v-for="w in workflows" :key="w.id" :value="w.id">{{ w.label }}</option>
-            </select>
-            <span v-if="!workflows.length" class="dim">{{ $t('sched.wf.none') }}</span>
-          </label>
-          <label>{{ $t('sched.agent.select') }}
-            <select v-model="form.workflow.agentId">
-              <option value="">{{ $t('sched.field.choose') }}</option>
-              <option v-for="a in agents" :key="a.id" :value="a.id">{{ a.name }}</option>
-            </select>
-          </label>
-        </template>
-        <template v-else>
-          <label>{{ $t('sched.field.script_path') }} <input v-model="form.script.path" /></label>
-          <label class="inline">
-            <input type="checkbox" class="exe-check" v-model="form.script.exe" /> {{ $t('sched.field.exe') }}
-          </label>
-          <template v-if="form.script.exe">
-            <label>{{ $t('sched.field.progress_path') }}
-              <input class="fileinp" :value="previewProgress" readonly />
-            </label>
-            <label>{{ $t('sched.field.report_dir') }}
-              <input class="fileinp" :value="previewReportDir" readonly />
-            </label>
-            <label>{{ $t('sched.field.command_preview') }}
-              <div class="cmdpreview">{{ exeCommand }}</div>
-            </label>
-          </template>
-        </template>
-
         <label>{{ $t('sched.field.mode') }}
           <select v-model="form.schedule.mode">
             <option value="interval">{{ $t('sched.mode.interval') }}</option>

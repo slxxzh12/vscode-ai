@@ -65,8 +65,6 @@ export function toManifest(task, dir, runtime = null) {
     m.ai = { ...(task.ai || {}) };
     if (task.filePath) m.filePath = toRel(task.filePath, dir);
   }
-  if (task.type === 'script') m.script = { path: toRel(task.script && task.script.path, dir) };
-  if (task.type === 'workflow') m.workflow = { ...(task.workflow || {}) };
   m.runtime = pickRuntime(runtime);
   return m;
 }
@@ -87,8 +85,6 @@ export function fromManifest(obj, dir) {
     task.ai = { ...(obj.ai || {}) };
     if (obj.filePath) task.filePath = toAbs(obj.filePath, dir);
   }
-  if (obj.type === 'script') task.script = { path: toAbs(obj.script && obj.script.path, dir) };
-  if (obj.type === 'workflow') task.workflow = { ...(obj.workflow || {}) };
   return task;
 }
 

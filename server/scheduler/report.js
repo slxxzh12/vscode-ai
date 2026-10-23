@@ -8,10 +8,6 @@ export function stripAnsi(s) {
   return String(s ?? '').replace(ANSI_RE, '');
 }
 
-export function isExeTask(task) {
-  return !!(task && task.script && task.script.exe);
-}
-
 export function readLogTail(file, maxLines = 100) {
   if (!file) return '';
   try {
@@ -27,31 +23,16 @@ function logFileOf(store, run) {
   return run.logFile ? store.logPath(run.logFile) : '';
 }
 
-function listFiles(dir) {
-  try {
-    return fs.readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isFile())
-      .map((e) => e.name)
-      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  } catch {
-    return [];
-  }
-}
-
 export function runPaths(store, task, runId) {
   const runDir = store.runDirFor(task.id, runId);
-  const exe = isExeTask(task);
-  const reportDir = exe ? path.join(runDir, 'report') : runDir;
   return {
-    exe,
     runDir,
-    reportDir,
-    progressPath: exe ? path.join(runDir, 'result.json') : '',
-    defaultReportPath: exe ? path.join(reportDir, 'report.md') : path.join(runDir, 'report.md'),
+    reportDir: runDir,
+    defaultReportPath: path.join(runDir, 'report.md'),
   };
 }
 
-export function writeRunContext({ store, task, run }) {
+export function writeRunContext({ store, task, run, callback = null }) {
   const p = runPaths(store, task, run.id);
   const contextFile = store.contextFileFor(task.id, run.id);
   const contextPath = store.reportPath(contextFile);
@@ -65,19 +46,17 @@ export function writeRunContext({ store, task, run }) {
     startedAt: run.startedAt,
     reportPath: p.defaultReportPath,
     reportDir: p.reportDir,
-    progressPath: p.progressPath,
     logPath: logFileOf(store, run),
     outputDir: p.runDir,
+    ...(callback ? { callback } : {}),
   };
   fs.writeFileSync(contextPath, JSON.stringify(context, null, 2), 'utf8');
   return {
     contextPath,
     reportPath: p.defaultReportPath,
-    reportFile: store.reportFileFor(task.id, run.id, p.exe),
+    reportFile: store.reportFileFor(task.id, run.id),
     reportDir: p.reportDir,
-    progressPath: p.progressPath,
     outputDir: p.runDir,
-    exe: p.exe,
   };
 }
 
@@ -104,21 +83,7 @@ export function fallbackMarkdown({ task, run, result = {}, logText = '' }) {
 
 export function ensureReport({ store, task, run, result = {} }) {
   const p = runPaths(store, task, run.id);
-  const files = p.exe ? listFiles(p.reportDir) : ['report.md'];
-
-  if (p.exe) {
-    for (const name of files) {
-      const abs = path.join(p.reportDir, name);
-      try {
-        const text = fs.readFileSync(abs, 'utf8');
-        if (text.trim()) {
-          return { reportFile: path.relative(store.tasksDir, abs), reportDir: p.reportDir, files };
-        }
-      } catch { /* try next */ }
-    }
-  }
-
-  const reportPath = store.reportPath(store.reportFileFor(task.id, run.id, p.exe));
+  const reportPath = store.reportPath(store.reportFileFor(task.id, run.id));
   let text = '';
   try { text = fs.readFileSync(reportPath, 'utf8'); } catch { /* missing */ }
   if (!text.trim()) {
@@ -129,7 +94,7 @@ export function ensureReport({ store, task, run, result = {} }) {
   return {
     reportFile: path.relative(store.tasksDir, reportPath),
     reportDir: p.reportDir,
-    files: p.exe ? listFiles(p.reportDir) : ['report.md'],
+    files: ['report.md'],
   };
 }
 

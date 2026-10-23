@@ -87,8 +87,8 @@
 
 - **一个独立功能放一个独立文件夹，不要把不相关的代码平铺到同一个目录下**：新功能优先新建自己的模块文件/子目录（必要时含各自的测试文件），按职责聚合，而不是往现有大文件或根目录里堆。
 - 参照现有做法：`server/` 顶层只放与应用装配/HTTP 面相关的少量文件，功能模块各自成文件（如 `usage-store.js`、`usage-peers.js`、`usage-report.js`、`usage-mount.js`、`task-store.js`、`seed-store.js`、`collab-db.js`）；协作子系统的多个文件集中在 `server/collaboration/`；前端同理由 `web/src/collaboration/`、`web/src/components/` 分域存放。
-- 定时任务报告：`server/scheduler/report.js`（运行上下文 `run.json`、兜底报告）+ `web/src/scheduler/SchedulerReportView.vue`（任务详情 + 历史 Markdown 报告）；每次运行落在 `scheduler/tasks/<taskId>/<runId>/`，通过 `DEVFLOW_RUN_CONTEXT` 注入上下文；普通脚本追加 `run.json`、`report.md` 两个路径参数，勾选 EXE 时追加 `result.json`、`report/` 两个路径参数。
-- 调度作业队列：后端 `server/scheduler/queue/`（`partition`/`config`/`schema`/`driver-sqlite`/`driver-mysql`/`repository`/`service`/`workers`/`consumer`/`index`）+ `server/scheduler/jobs-mount.js`；前端 `web/src/jobs/`（`useJobs.ts`/`format.ts`/`JobsView.vue`）。定时器只入队，worker 按 partition 领取执行；状态码 `0排队 1成功 2失败 3调度中 4待审`；不再读写 `runs.json`，作业与报告正文都在队列表。
+- 定时任务类型只有 `shell`（普通命令）和 `ai`（AI 命令）；**两者最终都执行 AI 命令**：`shell` 先运行命令，把 stdout 作为 prompt 再调用 AI；脚本/工作流类型已彻底删除（启动时自动清理旧任务及其队列作业）。报告：`server/scheduler/report.js`（运行上下文 `run.json`、兜底报告）+ `web/src/scheduler/SchedulerReportView.vue`；每次运行落在 `scheduler/tasks/<taskId>/<runId>/`，通过 `DEVFLOW_RUN_CONTEXT` 注入上下文。
+- 调度作业队列：后端 `server/scheduler/queue/`（`partition`/`config`/`schema`/`driver-sqlite`/`driver-mysql`/`repository`/`service`/`workers`/`consumer`/`index`）+ `server/scheduler/jobs-mount.js`；前端 `web/src/jobs/`（`useJobs.ts`/`format.ts`/`JobsView.vue`）。定时器只入队，worker 按 partition 领取执行；状态码 `0排队 1成功 2失败 3调度中 4待审`；不再读写 `runs.json`，作业与报告正文都在队列表。AI 进程通过环境变量 `DEVFLOW_JOB_ID`/`DEVFLOW_JOB_TOKEN`/`DEVFLOW_JOB_CALLBACK` 调用 `POST /api/scheduler/jobs/<jobId>/callback` 自动回写状态与结果（请求头 `X-DF-Job-Token` 或 body.token），回调成功后 consumer 不再覆盖最终状态。
 - 同一功能的后端/前端/词条/测试改动尽量落在一起，便于一个 commit 说清一件事；新增目录时同步在「目录速览」补一行说明。
 - 拆分判据：一个文件只承担一件清晰的事、能被单独理解与测试；文件明显变大且混了多种职责时，先拆再改（但不要为拆分而重构无关代码）。
 
