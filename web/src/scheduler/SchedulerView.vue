@@ -8,7 +8,7 @@ import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
 import { renderRemoteMarkdown } from '../markdown';
 
-const props = defineProps<{ terminal: any; onOpenSession?: (sessionId: string) => void; projectRoot?: string }>();
+const props = defineProps<{ terminal: any; onOpenSession?: (sessionId: string) => void; projectRoot?: string; projectId?: string | null }>();
 const sched = useScheduler(props.terminal);
 const { state } = sched;
 
@@ -228,14 +228,21 @@ async function sendChat() {
   try {
     let taskId = chatTaskId.value;
     if (!taskId) {
-      const created = await sched.createTask({
+      const base = {
         name: autoTaskName(text),
         enabled: false,
-        cwd: props.projectRoot || null,
+        projectId: props.projectId || null,
         type: 'ai',
         ai: { source: 'prompt', prompt: text },
         schedule: DEFAULT_SCHEDULE,
-      });
+      };
+      let created;
+      try {
+        created = await sched.createTask({ ...base, cwd: props.projectId ? null : (props.projectRoot || null) });
+      } catch (e: any) {
+        if (!String(e?.message || e).includes('dir-taken')) throw e;
+        created = await sched.createTask({ ...base, cwd: null });
+      }
       taskId = created.id;
       chatTaskId.value = taskId;
       chatPrompt.value = text;
@@ -244,7 +251,7 @@ async function sendChat() {
       const task = state.tasks.find((x) => x.id === taskId);
       const base = task?.ai?.prompt || chatPrompt.value;
       const nextPrompt = `${base}\n\n---\n\n${text}`;
-      await sched.updateTask(taskId, { ai: { ...(task?.ai || { source: 'prompt' }), prompt: nextPrompt }, cwd: task?.cwd || props.projectRoot || null });
+      await sched.updateTask(taskId, { ai: { ...(task?.ai || { source: 'prompt' }), prompt: nextPrompt } });
       chatPrompt.value = nextPrompt;
       chatMessages.value.push({ role: 'assistant', text: t('sched.chat.appended'), status: 0 });
     }
