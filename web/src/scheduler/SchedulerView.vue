@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useScheduler, type TaskView } from './useScheduler';
 import SchedulerReportView from './SchedulerReportView.vue';
-import { scheduleSummary, formatTime, runStatusLabel, recentRunsOf, typeLabel } from './format';
+import { scheduleSummary, formatTime, runStatusLabel, recentJobsOf, typeLabel } from './format';
 import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
 
@@ -23,6 +23,7 @@ function emptyForm() {
     workflow: { workflowId: '', agentId: '' },
     schedule: { mode: 'interval', interval: { every: 30, unit: 'minute' }, daily: { at: '09:30', weekdays: [] } },
     script: { path: '', exe: false },
+    approvalRequired: false, onlyLocal: false, uniqueKey: '', weight: 0, maxRunMilliSecond: 0, groupName: 'default',
   };
 }
 const previewRunDir = computed(() => `<${t('sched.field.run_dir_placeholder')}>`);
@@ -63,6 +64,8 @@ function openEdit(task: TaskView) {
     name: task.name, enabled: task.enabled, cwd: task.cwd || '', filePath: task.filePath || '', type: task.type,
     command: task.command || '', ai: task.ai || { source: 'command', commandName: '', prompt: '' },
     script: task.script || { path: '', exe: false }, workflow: task.workflow || { workflowId: '', agentId: '' }, schedule: task.schedule,
+    approvalRequired: !!task.approvalRequired, onlyLocal: !!task.onlyLocal, uniqueKey: task.uniqueKey || '',
+    weight: task.weight || 0, maxRunMilliSecond: task.maxRunMilliSecond || 0, groupName: task.groupName || 'default',
   }));
   showEditor.value = true;
 }
@@ -124,6 +127,8 @@ async function save() {
   if (body.type !== 'ai') delete body.ai;
   if (body.type !== 'script') delete body.script;
   if (body.type !== 'workflow') delete body.workflow;
+  if (body.uniqueKey === '') body.uniqueKey = null;
+  if (!body.maxRunMilliSecond) body.maxRunMilliSecond = null;
   if (body.type === 'workflow' && (!body.workflow?.workflowId || !body.workflow?.agentId)) { state.error = t('sched.wf.need_select'); return; }
   try {
     if (editingId.value) await sched.updateTask(editingId.value, body);
@@ -143,15 +148,19 @@ async function runNow(task: TaskView) {
   finally { delete runPending.value[task.id]; }
 }
 const runPending = ref<Record<string, boolean>>({});
-function isRunning(task: TaskView) { return !!task.runningRunId || !!runPending.value[task.id]; }
+function isRunning(task: TaskView) { return !!runPending.value[task.id] || !!task.recentJobs?.some((j) => j.status === 3); }
 async function stop(task: TaskView) { await sched.stopTask(task.id); await sched.refresh(); }
 async function toggle(task: TaskView) { await sched.updateTask(task.id, { enabled: !task.enabled }); }
 async function openWfRun(task: TaskView) {
   state.error = '';
-  const list = await sched.loadRuns(task.id, 20);
-  const run = list.find((r) => r.sessionId);
-  if (!run || !run.sessionId) { state.error = t('sched.wf.no_run'); return; }
-  props.onOpenSession?.(run.sessionId);
+  const list = await sched.loadJobs(task.id, 20);
+  let sessionId = '';
+  for (const job of list) {
+    try { sessionId = JSON.parse(job.result || '{}').sessionId || ''; } catch { sessionId = ''; }
+    if (sessionId) break;
+  }
+  if (!sessionId) { state.error = t('sched.wf.no_run'); return; }
+  props.onOpenSession?.(sessionId);
 }
 function openDetail(task: TaskView) { detailTask.value = task; }
 const WEEKDAYS = computed(() => [1, 2, 3, 4, 5, 6, 7].map((v) => ({ v, t: t('sched.wdshort.' + v) })));
@@ -162,11 +171,12 @@ function toggleWeekday(v: number) {
 }
 // 近 N 次执行结果（左→右 时间递增）
 const RECENT_N = 10;
-function lastRuns(task: TaskView) { return recentRunsOf(task.recentRuns, RECENT_N); }
-function barClass(status: string): string {
-  if (status === 'success') return 'success';
-  if (status === 'failed' || status === 'timeout') return 'failed';
-  if (status === 'running') return 'running';
+function lastJobs(task: TaskView) { return recentJobsOf(task.recentJobs, RECENT_N); }
+function barClass(status: number): string {
+  if (status === 1) return 'success';
+  if (status === 2) return 'failed';
+  if (status === 3) return 'running';
+  if (status === 4) return 'wait';
   return 'killed';
 }
 
@@ -191,6 +201,8 @@ onBeforeUnmount(() => { sched.dispose(); });
         <div class="sum-card sum-success"><span class="num">{{ sched.state.summary.success }}</span><span>{{ $t('sched.summary.success') }}</span></div>
         <div class="sum-card sum-failed"><span class="num">{{ sched.state.summary.failed }}</span><span>{{ $t('sched.summary.failed') }}</span></div>
         <div class="sum-card sum-running"><span class="num">{{ sched.state.summary.running }}</span><span>{{ $t('sched.summary.running') }}</span></div>
+        <div class="sum-card sum-queued"><span class="num">{{ sched.state.summary.queued }}</span><span>{{ $t('jobs.summary.queued') }}</span></div>
+        <div class="sum-card sum-pending"><span class="num">{{ sched.state.summary.pending }}</span><span>{{ $t('jobs.summary.pending') }}</span></div>
         <div class="sum-card sum-total"><span class="num">{{ sched.state.summary.total }}</span><span>{{ $t('sched.summary.total') }}</span></div>
       </div>
       <div class="list">
@@ -225,13 +237,13 @@ onBeforeUnmount(() => { sched.dispose(); });
             <span class="st" :class="t.enabled ? 'on' : 'paused'">{{ t.enabled ? $t('sched.status.running') : $t('sched.status.paused') }}</span>
           </div>
           <div class="histcol" :title="$t('sched.recent_runs')">
-            <span v-for="r in lastRuns(t)" :key="r.id" class="vbar" :class="barClass(r.status)" :title="`${runStatusLabel(r.status)} · ${formatTime(r.startedAt)}`" />
+            <span v-for="j in lastJobs(t)" :key="j.jobId" class="vbar" :class="barClass(j.status)" :title="`${runStatusLabel(j.status)} · ${formatTime(j.createTime)}`" />
           </div>
           <div class="acts">
             <button v-if="t.enabled" @click.stop="toggle(t)">{{ $t('sched.pause') }}</button>
             <button v-else @click.stop="toggle(t)">{{ $t('sched.start') }}</button>
             <button v-if="!isRunning(t)" @click.stop="runNow(t)">{{ $t('sched.run') }}</button>
-            <button v-else-if="t.runningRunId" @click.stop="stop(t)">{{ $t('sched.stop') }}</button>
+            <button v-else @click.stop="stop(t)">{{ $t('sched.stop') }}</button>
             <button v-if="t.type === 'workflow'" @click.stop="openWfRun(t)">{{ $t('sched.wf.open') }}</button>
             <button @click.stop="openDetail(t)">{{ $t('sched.history') }}</button>
             <button @click.stop="openEdit(t)">{{ $t('sched.edit') }}</button>
@@ -245,12 +257,9 @@ onBeforeUnmount(() => { sched.dispose(); });
     <SchedulerReportView
       v-else-if="detailTask"
       :task="detailTask"
-      :load-runs="sched.loadRuns"
-      :load-report="sched.loadReport"
-      :load-log="sched.loadLog"
+      :load-jobs="sched.loadJobs"
       :on-back="() => (detailTask = null)"
       :on-open-session="props.onOpenSession"
-      :open-report-dir="sched.openReportDir"
     />
 
     <div v-if="showEditor" class="overlay">
@@ -351,6 +360,12 @@ onBeforeUnmount(() => { sched.dispose(); });
             </label>
           </div>
         </template>
+
+        <label class="inline"><input type="checkbox" v-model="form.approvalRequired" /> {{ $t('sched.field.approval_required') }}</label>
+        <label class="inline"><input type="checkbox" v-model="form.onlyLocal" /> {{ $t('sched.field.only_local') }}</label>
+        <label class="inline">{{ $t('sched.field.unique_key') }} <input v-model="form.uniqueKey" /></label>
+        <label class="inline">{{ $t('sched.field.weight') }} <input type="number" v-model.number="form.weight" class="num" /></label>
+        <label class="inline">{{ $t('sched.field.max_run_ms') }} <input type="number" v-model.number="form.maxRunMilliSecond" class="num" /></label>
 
         <div class="modalacts">
           <button @click="showEditor = false">{{ $t('sched.cancel') }}</button>

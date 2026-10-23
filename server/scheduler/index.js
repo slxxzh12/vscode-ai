@@ -2,15 +2,80 @@ import { SchedulerStore } from './store.js';
 import { createEngine } from './engine.js';
 import { createRunner } from './runner.js';
 import { createSchedulerMount } from './http-mount.js';
+import { createJobsMount } from './jobs-mount.js';
 import { readAiCommand } from './ai-commands.js';
+import { createQueue } from './queue/index.js';
+import { createWorkerRegistry } from './queue/workers.js';
+import { createConsumer } from './queue/consumer.js';
 
-export function createScheduler({ dir, projectResolver = () => null, logger = console, runner = null, agentCmd = 'opencode', opencodeDataDir = null, manifestRoot = null, workflowExecutor = null }) {
+export function createScheduler({
+  dir, projectResolver = () => null, logger = console, runner = null, agentCmd = 'opencode',
+  opencodeDataDir = null, manifestRoot = null, workflowExecutor = null,
+  machineId = 'local', hostport = '127.0.0.1:22222', role = 'master', version = '',
+  dbFile = null, pullQueueConfig = null, onJobEvent = () => {},
+}) {
   const store = new SchedulerStore({ dir, logger, ...(manifestRoot ? { manifestRoot } : {}) });
-  const engine = createEngine({ store, runner: runner || createRunner(), logger, aiBin: agentCmd, opencodeDataDir, workflowExecutor });
-  engine.setProjectResolver(projectResolver);
-  engine.setAiPromptLoader((name) => readAiCommand(name));
-  const mount = createSchedulerMount({ engine, store, logger });
-  return { store, engine, mount };
+  const queue = createQueue({ dir, dbFile, logger });
+  let registry = null;
+  let consumer = null;
+  let started = false;
+
+  const engine = createEngine({ store, queue, logger, onStop: (id) => consumer?.stopTask(id) });
+
+  function applyQueueConfig(c) {
+    if (!c) return;
+    const cur = queue.config.get();
+    const same = cur.backend === 'mysql'
+      && cur.mysql.host === c.host && cur.mysql.port === Number(c.port) && cur.mysql.user === c.user
+      && cur.mysql.database === c.database && queue.config.openPassword() === c.password;
+    if (!same) queue.config.save(c);
+  }
+
+  async function start({ startWorkers = true } = {}) {
+    if (started) return;
+    if (role !== 'master' && pullQueueConfig) {
+      const c = await pullQueueConfig().catch(() => null);
+      applyQueueConfig(c);
+    }
+    await queue.ready();
+    if (startWorkers) {
+      await queue.rehash();
+      await queue.recoverRunning(hostport);
+      registry = createWorkerRegistry({ repo: queue.repo, topic: queue.topic, count: await queue.partitionCount(), logger });
+      consumer = createConsumer({
+        queue, store, runner: runner || createRunner(), workflowExecutor,
+        aiPromptLoader: (name) => readAiCommand(name), worker: { id: `${machineId}:${queue.topic}`, hostport, machineId },
+        aiBin: agentCmd, opencodeDataDir, projectResolver, logger,
+        onEvent: (evt, payload) => onJobEvent(evt, payload),
+      });
+      registry.start({
+        self: { id: `${machineId}:${queue.topic}`, hostport, role, version },
+        onPartitions: (ids) => consumer.setPartitions(ids),
+        onOffline: (deadHostport) => queue.failRunningByWorker(deadHostport),
+        count: await queue.partitionCount(),
+      });
+    }
+    engine.start();
+    started = true;
+  }
+  async function stop() { consumer?.stop(); registry?.stop(); engine.stopAll(); await queue.close(); started = false; }
+  async function syncQueueConfig() {
+    if (!pullQueueConfig) return null;
+    const c = await pullQueueConfig().catch(() => null);
+    applyQueueConfig(c);
+    return c;
+  }
+
+  const mount = createSchedulerMount({ engine, store, queue, logger });
+  const jobsMount = createJobsMount({
+    queue, registry: () => registry, role, hostport, machineId, logger,
+    stopJob: (jobId) => consumer?.stopJob(jobId),
+  });
+  return {
+    store, engine, queue, mount, jobsMount, start, stop, syncQueueConfig,
+    getRole: () => role,
+    get registry() { return registry; }, get consumer() { return consumer; },
+  };
 }
 
 export { SchedulerStore } from './store.js';

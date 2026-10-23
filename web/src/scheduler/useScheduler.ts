@@ -1,11 +1,10 @@
 import { reactive } from 'vue';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
-import type { SchedulerTask, SchedulerRun, SchedulerSummary } from '@devflow/shared/scheduler';
+import type { SchedulerTask, SchedulerJob, SchedulerSummary } from '@devflow/shared/scheduler';
 
 export interface TaskView extends SchedulerTask {
   nextRunAt: number | null;
-  runningRunId: string | null;
-  recentRuns?: { id: string; status: string; startedAt: number }[];
+  recentJobs?: SchedulerJob[];
 }
 export interface AiCommandInfo { name: string; preview: string; }
 
@@ -27,7 +26,7 @@ type TerminalLike = { on: (type: string, handler: (msg: any) => void) => () => v
 export function useScheduler(terminal?: TerminalLike) {
   const state = reactive({
     tasks: [] as TaskView[],
-    summary: { total: 0, success: 0, failed: 0, running: 0 } as SchedulerSummary,
+    summary: { total: 0, success: 0, failed: 0, running: 0, queued: 0, pending: 0 } as SchedulerSummary,
     aiCommands: [] as AiCommandInfo[],
     loading: false,
     error: '',
@@ -62,27 +61,18 @@ export function useScheduler(terminal?: TerminalLike) {
   }
   function runNow(id: string) { return api('POST', `/api/scheduler/tasks/${encodeURIComponent(id)}/run`); }
   function stopTask(id: string) { return api('POST', `/api/scheduler/tasks/${encodeURIComponent(id)}/stop`); }
-  async function loadRuns(taskId: string, limit = 50): Promise<SchedulerRun[]> {
-    const d = await api('GET', `/api/scheduler/runs?taskId=${encodeURIComponent(taskId)}&limit=${limit}`);
-    return d.runs || [];
-  }
-  async function loadLog(runId: string): Promise<string> {
-    const res = await fetch(`/api/scheduler/runs/${encodeURIComponent(runId)}/log`);
-    return res.ok ? res.text() : '';
+  async function loadJobs(taskId: string, limit = 50): Promise<SchedulerJob[]> {
+    const d = await api('GET', `/api/scheduler/jobs?taskId=${encodeURIComponent(taskId)}&limit=${limit}`);
+    return d.jobs || [];
   }
   async function loadSummary() {
     try {
       const d = await api('GET', '/api/scheduler/summary');
-      state.summary = { total: d.total || 0, success: d.success || 0, failed: d.failed || 0, running: d.running || 0 };
+      state.summary = {
+        total: d.total || 0, success: d.success || 0, failed: d.failed || 0, running: d.running || 0,
+        queued: d.queued || 0, pending: d.pending || 0,
+      };
     } catch { /* 汇总失败不影响任务列表 */ }
-  }
-  async function loadReport(runId: string): Promise<string> {
-    const res = await fetch(`/api/scheduler/runs/${encodeURIComponent(runId)}/report`);
-    return res.ok ? res.text() : '';
-  }
-  async function openReportDir(runId: string) {
-    const res = await fetch(`/api/scheduler/runs/${encodeURIComponent(runId)}/reveal-report`, { method: 'POST' });
-    if (!res.ok) throw new Error('open-report-dir-failed');
   }
   async function loadAiCommands() {
     try {
@@ -110,5 +100,5 @@ export function useScheduler(terminal?: TerminalLike) {
     unsubs.push(terminal.on(SchedulerS2C.SCHED_RUN_END, onAny));
   }
 
-  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadRuns, loadLog, loadSummary, loadReport, openReportDir, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
+  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadJobs, loadSummary, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
 }

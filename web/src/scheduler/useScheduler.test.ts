@@ -10,7 +10,10 @@ beforeEach(() => {
       return { ok: true, text: async () => JSON.stringify({ tasks: [{ id: 't1', name: 'a' }] }) } as any;
     }
     if (url === '/api/scheduler/summary') {
-      return { ok: true, text: async () => JSON.stringify({ total: 3, success: 2, failed: 1, running: 0 }) } as any;
+      return { ok: true, text: async () => JSON.stringify({ total: 5, success: 2, failed: 1, running: 0, queued: 1, pending: 1 }) } as any;
+    }
+    if (url.startsWith('/api/scheduler/jobs?')) {
+      return { ok: true, text: async () => JSON.stringify({ jobs: [{ jobId: 'j1', status: 1 }] }) } as any;
     }
     return { ok: true, text: async () => JSON.stringify({}) } as any;
   }));
@@ -56,12 +59,10 @@ describe('useScheduler', () => {
     expect(calls.map((c) => c.url)).toContain('/api/scheduler/tasks/t1/stop');
   });
 
-  it('loadRuns/loadLog/pickFile 走对应路由', async () => {
+  it('loadJobs/pickFile 走对应路由', async () => {
     const s = useScheduler();
-    expect(await s.loadRuns('t1', 5)).toEqual([]);
-    expect(calls.some((c) => c.url === '/api/scheduler/runs?taskId=t1&limit=5')).toBe(true);
-    expect(await s.loadLog('r1')).toBe('{}');
-    expect(calls.some((c) => c.url === '/api/scheduler/runs/r1/log')).toBe(true);
+    expect((await s.loadJobs('t1', 5)).length).toBe(1);
+    expect(calls.some((c) => c.url === '/api/scheduler/jobs?taskId=t1&limit=5')).toBe(true);
     await s.pickFile();
     expect(calls.some((c) => c.method === 'POST' && c.url === '/api/scheduler/pick-file')).toBe(true);
   });
@@ -107,18 +108,6 @@ describe('useScheduler', () => {
   it('loadSummary 写入 state.summary', async () => {
     const s = useScheduler();
     await s.loadSummary();
-    expect(s.state.summary).toEqual({ total: 3, success: 2, failed: 1, running: 0 });
-  });
-
-  it('loadReport 返回 Markdown 文本', async () => {
-    const s = useScheduler();
-    expect(await s.loadReport('r1')).toBe('{}');
-    expect(calls.some((c) => c.url === '/api/scheduler/runs/r1/report')).toBe(true);
-  });
-
-  it('openReportDir 调用 reveal-report', async () => {
-    const s = useScheduler();
-    await s.openReportDir('r1');
-    expect(calls.some((c) => c.method === 'POST' && c.url === '/api/scheduler/runs/r1/reveal-report')).toBe(true);
+    expect(s.state.summary).toEqual({ total: 5, success: 2, failed: 1, running: 0, queued: 1, pending: 1 });
   });
 });

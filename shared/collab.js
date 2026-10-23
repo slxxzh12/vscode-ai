@@ -24,4 +24,5 @@ export const CollabPeer = Object.freeze({
   LIST_DOWNLOADS: 'list-downloads',
   PKG_UPLOAD: 'pkg-upload',
   USAGE_PULL: 'usage-pull',
+  QUEUE_CONFIG: 'queue-config',
 });

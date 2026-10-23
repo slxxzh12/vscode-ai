@@ -670,6 +670,8 @@ function buildWorkspace({ paths, port }) {
     resolveAgent: (id) => (loadDevflowConfig(configFile).agents.list || []).find((a) => a.id === id) || null,
     logger: log,
   });
+  const groups = engine.store.listGroups();
+  const isHub = groups.some((g) => g.hubId === engine.pub.machineId);
   const scheduler = createScheduler({
     dir: paths.schedulerDir,
     manifestRoot: path.join(paths.schedulerDir, 'manifests'),
@@ -677,19 +679,23 @@ function buildWorkspace({ paths, port }) {
     logger: log,
     opencodeDataDir: path.join(paths.dir, 'opencode-data'),
     workflowExecutor,
+    machineId: engine.pub.machineId,
+    hostport: `${HOST}:${port}`,
+    role: isHub || !groups.length ? 'master' : 'slave',
+    version: VERSION,
+    dbFile: usageDbFile,
+    pullQueueConfig: () => engine.pullQueueConfig?.(),
+    onJobEvent: (evt, payload) => {
+      broadcastSched(evt === 'run-end' ? SchedulerS2C.SCHED_RUN_END : SchedulerS2C.SCHED_RUN_START, payload);
+    },
   });
+  engine.setQueueConfigProvider?.(() => scheduler.queue.config.syncConfig());
   scheduler.store.setRuntimeProvider((id) => ({
     nextRunAt: scheduler.engine.nextRunAtOf(id),
-    lastRun: scheduler.store.listRuns({ taskId: id, limit: 1 })[0] || null,
+    lastRun: null,
   }));
   scheduler.engine.onEvent((evt, payload) => {
-    if (evt === 'run-end' && payload && payload.run && payload.run.taskId) {
-      try { scheduler.store.syncManifest(payload.run.taskId); } catch { /* 清单刷新失败不影响运行 */ }
-    }
-    const type = evt === 'run-start' ? SchedulerS2C.SCHED_RUN_START
-      : evt === 'run-end' ? SchedulerS2C.SCHED_RUN_END
-      : SchedulerS2C.SCHED_TASKS_CHANGED;
-    broadcastSched(type, payload);
+    broadcastSched(SchedulerS2C.SCHED_TASKS_CHANGED, payload);
   });
 
   const postmanHistory = createPostmanHistory({ dir: paths.postmanDir });
@@ -774,9 +780,12 @@ function initWorkspace(paths, port) {
   const upgradeTimer = setInterval(() => { upgradeChecker.check().catch(() => { /* ignore */ }); }, 10 * 24 * 3600 * 1000);
   upgradeTimer.unref?.();
   if (!['0', 'off', 'false'].includes(String(process.env.DEVFLOW_SCHEDULER || '').toLowerCase())) {
-    ws.scheduler.engine.start();
-    log.info('scheduler started');
+    ws.scheduler.start().then(() => log.info('scheduler started')).catch((e) => log.error('scheduler start failed', e));
   }
+  const queueCfgTimer = setInterval(() => {
+    if (ws.scheduler.getRole?.() === 'slave') ws.scheduler.syncQueueConfig?.().catch(() => { /* ignore */ });
+  }, 60000);
+  queueCfgTimer.unref?.();
   log.info(`workspace ready: port=${port} dataDir=${paths.dir}`);
 }
 
@@ -1231,6 +1240,9 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/translate')) { await ws.translateMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/usage/')) { await ws.usageMount(req, res, url); return; }
+  if (url.pathname.startsWith('/api/scheduler/jobs') || url.pathname === '/api/scheduler/workers' || url.pathname.startsWith('/api/scheduler/queue')) {
+    await ws.scheduler.jobsMount(req, res); return;
+  }
   if (url.pathname.startsWith('/api/scheduler')) { await ws.scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/navicat')) { await ws.navicatMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/nginx')) { await ws.proxyMount(req, res, url); return; }

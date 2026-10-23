@@ -9,9 +9,8 @@ function ok(data: unknown) { return { ok: true, text: async () => JSON.stringify
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url === '/api/scheduler/tasks') return ok({ tasks: [{ id: 't1', name: 'scan', enabled: true, type: 'shell', schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } } }] });
-    if (url === '/api/scheduler/summary') return ok({ total: 3, success: 2, failed: 1, running: 0 });
-    if (String(url).startsWith('/api/scheduler/runs?')) return ok({ runs: [] });
-    if (String(url).endsWith('/report')) return { ok: true, text: async () => '# 报告' } as any;
+    if (url === '/api/scheduler/summary') return ok({ total: 5, success: 2, failed: 1, running: 0, queued: 1, pending: 1 });
+    if (String(url).startsWith('/api/scheduler/jobs?')) return ok({ jobs: [] });
     return ok({});
   }));
 });
@@ -30,7 +29,7 @@ describe('SchedulerView', () => {
   it('没有任务时显示空白提示，可直接新建', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url === '/api/scheduler/tasks') return ok({ tasks: [] });
-      if (url === '/api/scheduler/summary') return ok({ total: 0, success: 0, failed: 0, running: 0 });
+      if (url === '/api/scheduler/summary') return ok({ total: 0, success: 0, failed: 0, running: 0, queued: 0, pending: 0 });
       return ok({});
     }));
     const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
@@ -46,7 +45,7 @@ describe('SchedulerView', () => {
   it('脚本任务勾选 EXE 后显示进度文件、报告目录和命令行', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url === '/api/scheduler/tasks') return ok({ tasks: [] });
-      if (url === '/api/scheduler/summary') return ok({ total: 0, success: 0, failed: 0, running: 0 });
+      if (url === '/api/scheduler/summary') return ok({ total: 0, success: 0, failed: 0, running: 0, queued: 0, pending: 0 });
       return ok({});
     }));
     const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });

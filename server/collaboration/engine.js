@@ -455,6 +455,7 @@ export class CollabEngine {
       case CollabPeer.LIST_DOWNLOADS: return this._inListDownloads(env);
       case CollabPeer.PKG_UPLOAD: return this._inPkgUpload(env);
       case CollabPeer.USAGE_PULL: return this._inUsagePull(env);
+      case CollabPeer.QUEUE_CONFIG: return this._inQueueConfig(env);
       default: return { ok: false, error: 'unknown-type' };
     }
   }
@@ -755,6 +756,28 @@ export class CollabEngine {
     const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();
     if (!g || !g.members.find((m) => m.machineId === env.from.machineId)) return { ok: false, error: 'not-member' };
     return { ok: true, data: { updatedAt: Date.now(), members: (this.peers && this.peers.list) ? this.peers.list() : {} } };
+  }
+  setQueueConfigProvider(fn) { this.queueConfigProvider = fn; }
+  _inQueueConfig(env) {
+    const groupId = env.payload && env.payload.groupId;
+    const g = this.store.getGroup(groupId);
+    if (!g) return { ok: false, error: 'no-group' };
+    if (!g.members.find((m) => m.machineId === this.pub.machineId)) return { ok: false, error: 'not-member' };
+    if (g.hubId !== this.pub.machineId) return { ok: false, error: 'not-hub' };
+    const config = this.queueConfigProvider ? this.queueConfigProvider() : null;
+    if (!config) return { ok: false, error: 'no-config' };
+    return { ok: true, data: { config } };
+  }
+  async pullQueueConfig() {
+    for (const g of this.store.listGroups()) {
+      const me = g.members.find((m) => m.machineId === this.pub.machineId);
+      if (!me || g.hubId === this.pub.machineId) continue;
+      const hub = g.members.find((m) => m.machineId === g.hubId);
+      if (!hub) continue;
+      const res = await this._post(hub.host, hub.port, this._sign(CollabPeer.QUEUE_CONFIG, { groupId: g.id }));
+      if (res && res.ok && res.data && res.data.config) return res.data.config;
+    }
+    return null;
   }
   _inPullDownloads(env) {
     const g = this.store.ownedGroup(this.pub.machineId) || this.store.getGroup();

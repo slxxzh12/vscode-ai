@@ -1,14 +1,8 @@
 import fs from 'node:fs';
 import { listAiCommands } from './ai-commands.js';
 import { pickFile, pickFolder as defaultPickFolder } from '../native-dialog.js';
-import { legacyReport, reportDirOf } from './report.js';
-import { revealInOs } from '../reveal.js';
-import { t } from '../i18n.js';
 
-const LOG_TAIL_MAX = 256 * 1024;
-const REPORT_MAX = 2 * 1024 * 1024;
-
-export function createSchedulerMount({ engine, store, logger = console, pickFolder = defaultPickFolder, reveal = revealInOs }) {
+export function createSchedulerMount({ engine, store, queue, logger = console, pickFolder = defaultPickFolder }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -26,11 +20,10 @@ export function createSchedulerMount({ engine, store, logger = console, pickFold
     });
     req.on('error', reject);
   });
-  const withNext = (task) => ({
+  const withNext = async (task) => ({
     ...task,
     nextRunAt: engine.nextRunAtOf(task.id),
-    runningRunId: engine.runIdOf(task.id),
-    recentRuns: store.listRuns({ taskId: task.id, limit: 10 }).map((r) => ({ id: r.id, status: r.status, startedAt: r.startedAt })),
+    recentJobs: await queue.listJobs({ taskIds: [task.id], limit: 10 }),
   });
 
   return async (req, res) => {
@@ -38,27 +31,27 @@ export function createSchedulerMount({ engine, store, logger = console, pickFold
     const p = url.pathname;
     try {
       if (p === '/api/scheduler/tasks' && req.method === 'GET') {
-        return sendJson(res, 200, { tasks: store.listTasks().map(withNext), serverTime: Date.now() });
+        return sendJson(res, 200, { tasks: await Promise.all(store.listTasks().map(withNext)), serverTime: Date.now() });
       }
       if (p === '/api/scheduler/tasks' && req.method === 'POST') {
         const r = store.createTask(await readBody(req));
         if (r.error) return sendJson(res, 400, { error: r.error });
         engine.reschedule(r.task);
         engine.notifyTasksChanged();
-        return sendJson(res, 200, { task: withNext(r.task) });
+        return sendJson(res, 200, { task: await withNext(r.task) });
       }
       const m = p.match(/^\/api\/scheduler\/tasks\/([^/]+)(?:\/(run|stop))?$/);
       if (m) {
         const id = decodeURIComponent(m[1]);
         const action = m[2];
         if (action === 'run' && req.method === 'POST') {
-          const r = engine.manualRun(id);
+          const r = await engine.manualRun(id);
           if (r.error === 'not-found') return sendJson(res, 404, { error: 'not-found' });
           if (r.error) return sendJson(res, 409, { error: r.error });
-          return sendJson(res, 200, { run: r.run });
+          return sendJson(res, 200, { job: r.job });
         }
         if (action === 'stop' && req.method === 'POST') {
-          return sendJson(res, 200, { ok: engine.stop(id) });
+          return sendJson(res, 200, { ok: await engine.stop(id) });
         }
         if (!action && req.method === 'PUT') {
           const r = store.updateTask(id, await readBody(req));
@@ -67,9 +60,12 @@ export function createSchedulerMount({ engine, store, logger = console, pickFold
           engine.reschedule(r.task);
           store.syncManifest(r.task.id);
           engine.notifyTasksChanged();
-          return sendJson(res, 200, { task: withNext(r.task) });
+          return sendJson(res, 200, { task: await withNext(r.task) });
         }
         if (!action && req.method === 'DELETE') {
+          if (!store.getTask(id)) return sendJson(res, 404, { error: 'not-found' });
+          await engine.stop(id);
+          await queue.deleteTaskJobs(id);
           const r = store.deleteTask(id);
           if (r.error) return sendJson(res, 404, { error: 'not-found' });
           engine.notifyTasksChanged();
@@ -77,45 +73,7 @@ export function createSchedulerMount({ engine, store, logger = console, pickFold
         }
       }
       if (p === '/api/scheduler/summary' && req.method === 'GET') {
-        return sendJson(res, 200, store.summary());
-      }
-      if (p === '/api/scheduler/runs' && req.method === 'GET') {
-        const taskId = url.searchParams.get('taskId');
-        const rawLimit = url.searchParams.get('limit');
-        const limit = rawLimit == null ? null : Number(rawLimit);
-        return sendJson(res, 200, { runs: store.listRuns({ taskId, limit }) });
-      }
-      const rep = p.match(/^\/api\/scheduler\/runs\/([^/]+)\/report$/);
-      if (rep && req.method === 'GET') {
-        const run = store.getRun(decodeURIComponent(rep[1]));
-        if (!run) return sendJson(res, 404, { error: 'not-found' });
-        let text = '';
-        if (run.reportFile) {
-          try { text = fs.readFileSync(store.reportPath(run.reportFile), 'utf8'); } catch { /* missing */ }
-        }
-        if (!text) text = legacyReport({ store, run, task: store.getTask(run.taskId) });
-        if (text.length > REPORT_MAX) text = text.slice(0, REPORT_MAX) + `\n\n---\n\n${t('sched.report.truncated')}`;
-        res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-store' });
-        return res.end(text);
-      }
-      const rev = p.match(/^\/api\/scheduler\/runs\/([^/]+)\/reveal-report$/);
-      if (rev && req.method === 'POST') {
-        const run = store.getRun(decodeURIComponent(rev[1]));
-        if (!run) return sendJson(res, 404, { error: 'not-found' });
-        const dir = reportDirOf(store, run, store.getTask(run.taskId));
-        if (!dir || !fs.existsSync(dir)) return sendJson(res, 404, { error: 'not-found' });
-        if (!reveal(dir, true)) return sendJson(res, 501, { error: 'platform not supported' });
-        return sendJson(res, 200, { ok: true, dir });
-      }
-      const rm = p.match(/^\/api\/scheduler\/runs\/([^/]+)\/log$/);
-      if (rm && req.method === 'GET') {
-        const run = store.getRun(decodeURIComponent(rm[1]));
-        if (!run) return sendJson(res, 404, { error: 'not-found' });
-        let text = '';
-        try { text = fs.readFileSync(store.logPath(run.logFile), 'utf8'); } catch { text = ''; }
-        if (text.length > LOG_TAIL_MAX) text = text.slice(text.length - LOG_TAIL_MAX);
-        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
-        return res.end(text);
+        return sendJson(res, 200, await queue.summary());
       }
       if (p === '/api/scheduler/ai-commands' && req.method === 'GET') {
         return sendJson(res, 200, { commands: listAiCommands() });

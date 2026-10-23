@@ -24,9 +24,17 @@ export function formatTime(ts: number | null | undefined): string {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-const STATUS_KEY: Record<string, string> = { running: 'sched.status.running', success: 'sched.status.success', failed: 'sched.status.failed', timeout: 'sched.status.timeout', killed: 'sched.status.killed', paused: 'sched.status.paused' };
-export function runStatusLabel(s: string): string {
-  return STATUS_KEY[s] ? t(STATUS_KEY[s]) : s;
+const LEGACY_STATUS_KEY: Record<string, string> = { running: 'sched.status.running', success: 'sched.status.success', failed: 'sched.status.failed', timeout: 'sched.status.timeout', killed: 'sched.status.killed', paused: 'sched.status.paused' };
+const JOB_STATUS_KEY: Record<number, string> = {
+  0: 'jobs.status.queued', 1: 'jobs.status.success', 2: 'jobs.status.failed', 3: 'jobs.status.running', 4: 'jobs.status.pending',
+};
+export function runStatusLabel(s: number | string): string {
+  if (typeof s === 'number') return t(JOB_STATUS_KEY[s] || 'jobs.status.failed');
+  return LEGACY_STATUS_KEY[s] ? t(LEGACY_STATUS_KEY[s]) : s;
+}
+
+export function jobStatusClass(s: number): string {
+  return s === 1 ? 'ok' : s === 2 ? 'bad' : s === 3 ? 'run' : s === 4 ? 'wait' : 'queue';
 }
 
 export function typeLabel(type: string): string {
@@ -35,7 +43,9 @@ export function typeLabel(type: string): string {
   return t(`sched.type.${type}`);
 }
 
-// runs 为倒序（最新在前）；取最新 n 条并按时间递增返回，便于左→右展示
-export function recentRunsOf<T extends { startedAt: number }>(runs: T[] | null | undefined, n = 5): T[] {
-  return (runs || []).slice(0, Math.max(0, n)).reverse();
+// jobs 为倒序（最新在前）；取最新 n 条并按时间递增返回，便于左→右展示
+export function recentJobsOf<T extends { createTime: number }>(jobs: T[] | null | undefined, n = 5): T[] {
+  return (jobs || []).slice(0, Math.max(0, n)).reverse();
 }
+
+export const recentRunsOf = recentJobsOf;

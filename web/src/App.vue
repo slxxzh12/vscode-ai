@@ -7,6 +7,7 @@ import { useMessageHistory } from './useMessageHistory';
 import CollaborationView from './collaboration/CollaborationView.vue';
 import DistTaskNotifier from './collaboration/DistTaskNotifier.vue';
 import SchedulerView from './scheduler/SchedulerView.vue';
+import JobsView from './jobs/JobsView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
 import ToolSidebar from './components/ToolSidebar.vue';
@@ -183,7 +184,7 @@ function onColorChange() {
 let colorHeartbeat: ReturnType<typeof setInterval> | null = null;
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
-const rail = ref<'explorer' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
+const rail = ref<'explorer' | 'contacts' | 'stat' | 'scheduler' | 'jobs' | 'proxy' | 'mobile'>('explorer');
 // 工具页签意图：切到 explorer 并打开对应工具页签（磁贴 / 活动栏图标触发）
 watch(pendingToolTab, (id) => {
   if (!id) return;
@@ -209,7 +210,7 @@ const historyTab = ref<HistoryTab>(NEW_WINDOW ? 'messages' : 'tree');
 const collabTab = ref<'group' | 'tasks' | 'master'>('group');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
-const RAILS = ['explorer', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
+const RAILS = ['explorer', 'contacts', 'stat', 'scheduler', 'jobs', 'proxy', 'mobile'];
 const TOOL_IDS = MINI_TOOLS.map((m) => m.id);
 const SIDE_TABS = ['messages', 'files', 'tree'];
 function parseHashSegs(): string[] {
@@ -811,6 +812,7 @@ onBeforeUnmount(() => {
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
+        <button class="a-btn" :class="{ on: rail === 'jobs' }" :title="$t('nav.jobs')" @click="rail = 'jobs'">🗂</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🧰</button>
         <button class="a-btn" :class="{ on: rail === 'proxy' }" :title="$t('nav.proxy')" @click="rail = 'proxy'">🔀</button>
@@ -830,6 +832,11 @@ onBeforeUnmount(() => {
       <template v-else-if="rail === 'scheduler'">
         <section class="center">
           <SchedulerView :terminal="terminal" :on-open-session="openLiveSession" />
+        </section>
+      </template>
+      <template v-else-if="rail === 'jobs'">
+        <section class="center">
+          <JobsView />
         </section>
       </template>
       <template v-else-if="rail === 'proxy'">

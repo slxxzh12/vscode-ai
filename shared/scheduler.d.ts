@@ -17,6 +17,12 @@ export interface SchedulerTask {
   script?: { path: string; exe?: boolean };
   workflow?: { workflowId: string; agentId: string };
   schedule: Schedule;
+  approvalRequired?: boolean;
+  onlyLocal?: boolean;
+  uniqueKey?: string | null;
+  weight?: number;
+  maxRunMilliSecond?: number | null;
+  groupName?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -45,6 +51,27 @@ export interface SchedulerSummary {
   success: number;
   failed: number;
   running: number;
+  queued?: number;
+  pending?: number;
+}
+
+export interface SchedulerJob {
+  jobId: string;
+  parentJobId?: string | null;
+  topic?: string;
+  groupName?: string | null;
+  partitionId: number;
+  status: number;
+  weight?: number;
+  runtime?: number | null;
+  createIP?: string | null;
+  workIP?: string | null;
+  traceId?: string | null;
+  createTime: number;
+  lastUpdateTime: number;
+  paramStr?: string;
+  result?: string | null;
+  maxRunMilliSecond?: number;
 }
 
 export interface SchedulerRunContext {
@@ -65,3 +92,21 @@ export const SchedulerS2C: Readonly<{
   SCHED_RUN_START: 'sched-run-start';
   SCHED_RUN_END: 'sched-run-end';
 }>;
+
+export const SchedulerQueueS2C: Readonly<{
+  SCHED_JOBS_CHANGED: 'sched-jobs-changed';
+}>;
+
+export const SchedulerJobStatus: Readonly<{
+  QUEUED: 0;
+  SUCCESS: 1;
+  FAILED: 2;
+  RUNNING: 3;
+  PENDING: 4;
+}>;
+
+export const SCHED_QUEUE_TOPIC: string;
+export const SCHED_PARTITION_COUNT_DEFAULT: number;
+export const SCHED_HEARTBEAT_MS: number;
+export const SCHED_WORKER_OFFLINE_MS: number;
+export const SCHED_REPORT_MAX_BYTES: number;

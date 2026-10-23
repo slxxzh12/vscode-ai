@@ -6,7 +6,6 @@ import { manifestDirOf, writeManifest, removeManifest, scanManifests, fromManife
 const TYPES = new Set(['shell', 'ai', 'script', 'workflow']);
 const UNITS = new Set(['second', 'minute', 'hour', 'day']);
 const WEEKDAYS = new Set([1, 2, 3, 4, 5, 6, 7]);
-const DEFAULT_RUN_LIMIT = Number(process.env.DEVFLOW_SCHED_RUN_LIMIT) || 0;
 
 function atomicWriteJson(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -61,24 +60,19 @@ export function validateTask(input) {
 }
 
 export class SchedulerStore {
-  constructor({ dir, logger = console, runLimit = DEFAULT_RUN_LIMIT, manifestRoot = path.join(dir, 'manifests') }) {
+  constructor({ dir, logger = console, manifestRoot = path.join(dir, 'manifests') }) {
     this.dir = dir;
     this.log = logger;
-    this.runLimit = runLimit;
     this.manifestRoot = manifestRoot;
     this.runtimeProvider = null;
     this.tasksFile = path.join(dir, 'tasks.json');
-    this.runsFile = path.join(dir, 'runs.json');
     this.logsDir = path.join(dir, 'logs');
     this.tasksDir = path.join(dir, 'tasks');
     const tasks = readJson(this.tasksFile, []);
-    const runs = readJson(this.runsFile, []);
     this.tasks = Array.isArray(tasks) ? tasks : [];
-    this.runs = Array.isArray(runs) ? runs : [];
   }
   setRuntimeProvider(fn) { this.runtimeProvider = fn; }
   saveTasks() { atomicWriteJson(this.tasksFile, this.tasks); }
-  saveRuns() { atomicWriteJson(this.runsFile, this.runs); }
   _key(p) {
     const r = path.resolve(p);
     return process.platform === 'win32' ? r.toLowerCase() : r;
@@ -104,6 +98,12 @@ export class SchedulerStore {
       script: input.type === 'script' ? { ...input.script, path: toAbs(input.script.path, input.cwd) } : undefined,
       workflow: input.type === 'workflow' ? { workflowId: String(input.workflow.workflowId), agentId: String(input.workflow.agentId) } : undefined,
       schedule: { ...input.schedule },
+      approvalRequired: !!input.approvalRequired,
+      onlyLocal: !!input.onlyLocal,
+      uniqueKey: input.uniqueKey ? String(input.uniqueKey).slice(0, 191) : null,
+      weight: Number(input.weight) || 0,
+      maxRunMilliSecond: Number(input.maxRunMilliSecond) > 0 ? Number(input.maxRunMilliSecond) : null,
+      groupName: input.groupName ? String(input.groupName).slice(0, 128) : 'default',
       createdAt: base.createdAt || now,
       updatedAt: now,
     };
@@ -190,16 +190,9 @@ export class SchedulerStore {
     const [task] = this.tasks.splice(i, 1);
     this.saveTasks();
     this._removeManifest(task);
-    const removed = this.runs.filter((r) => r.taskId === id);
-    this.runs = this.runs.filter((r) => r.taskId !== id);
-    this.saveRuns();
-    for (const r of removed) {
-      try { fs.rmSync(this.logPath(r.logFile), { force: true }); } catch { /* ignore */ }
-      try { fs.rmSync(this.runDirFor(r.taskId, r.id), { recursive: true, force: true }); } catch { /* ignore */ }
-    }
     try { fs.rmSync(path.join(this.logsDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
     try { fs.rmSync(path.join(this.tasksDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
-    return { ok: true };
+    return { ok: true, task };
   }
   logFileFor(taskId, runId) { return path.join(taskId, runId + '.log'); }
   logPath(rel) { return path.join(this.logsDir, rel); }
@@ -209,40 +202,4 @@ export class SchedulerStore {
   contextFileFor(taskId, runId) { return path.join(taskId, runId, 'run.json'); }
   runDirFor(taskId, runId) { return path.join(this.tasksDir, taskId, runId); }
   reportPath(rel) { return path.join(this.tasksDir, rel); }
-  addRun(run) {
-    this.runs.unshift(run);
-    if (this.runLimit > 0) {
-      const overflow = this.runs.splice(this.runLimit);
-      for (const r of overflow) {
-        try { fs.rmSync(this.logPath(r.logFile), { force: true }); } catch { /* ignore */ }
-        if (r.taskId && r.id) {
-          try { fs.rmSync(this.runDirFor(r.taskId, r.id), { recursive: true, force: true }); } catch { /* ignore */ }
-        }
-      }
-    }
-    this.saveRuns();
-    return run;
-  }
-  listRuns({ taskId = null, limit = null } = {}) {
-    const arr = taskId ? this.runs.filter((r) => r.taskId === taskId) : this.runs.slice();
-    if (limit == null) return arr;
-    return arr.slice(0, Math.max(1, Math.min(5000, limit | 0 || 50)));
-  }
-  summary() {
-    const out = { total: this.runs.length, success: 0, failed: 0, running: 0 };
-    for (const r of this.runs) {
-      if (r.status === 'success') out.success += 1;
-      else if (r.status === 'running' || r.status === 'paused') out.running += 1;
-      else out.failed += 1;
-    }
-    return out;
-  }
-  getRun(id) { return this.runs.find((r) => r.id === id) || null; }
-  updateRun(id, patch) {
-    const r = this.runs.find((x) => x.id === id);
-    if (!r) return null;
-    Object.assign(r, patch);
-    this.saveRuns();
-    return r;
-  }
 }

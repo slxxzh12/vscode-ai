@@ -54,40 +54,39 @@ test('filePath / script.path 记录为绝对路径', () => {
   assert.equal(upd.task.filePath, path.resolve(cwd, 'z.py'));
 });
 
-test('deleteTask 连带删除运行记录与日志文件', () => {
+test('deleteTask 连带删除日志与任务目录', () => {
   const dir = tmpDir();
   const store = new SchedulerStore({ dir });
   const { task } = store.createTask(shellTask());
   const logFile = store.logFileFor(task.id, 'r_x');
   fs.mkdirSync(path.dirname(store.logPath(logFile)), { recursive: true });
   fs.writeFileSync(store.logPath(logFile), 'out');
-  store.addRun({ id: 'r_x', taskId: task.id, status: 'success', logFile });
-  store.deleteTask(task.id);
+  fs.mkdirSync(store.runDirFor(task.id, 'r_x'), { recursive: true });
+  const r = store.deleteTask(task.id);
   assert.equal(store.listTasks().length, 0);
-  assert.equal(store.getRun('r_x'), null);
+  assert.equal(r.task.id, task.id);
   assert.equal(fs.existsSync(store.logPath(logFile)), false);
+  assert.equal(fs.existsSync(store.runDirFor(task.id, 'r_x')), false);
 });
 
-test('addRun 超过 runLimit 淘汰最旧并删除日志', () => {
-  const dir = tmpDir();
-  const store = new SchedulerStore({ dir, runLimit: 2 });
-  const { task } = store.createTask(shellTask());
-  for (const id of ['r1', 'r2', 'r3']) {
-    const logFile = store.logFileFor(task.id, id);
-    fs.mkdirSync(path.dirname(store.logPath(logFile)), { recursive: true });
-    fs.writeFileSync(store.logPath(logFile), id);
-    store.addRun({ id, taskId: task.id, status: 'success', logFile });
-  }
-  assert.deepEqual(store.listRuns({ taskId: task.id }).map((r) => r.id), ['r3', 'r2']);
-  assert.equal(fs.existsSync(store.logPath(store.logFileFor(task.id, 'r1'))), false);
-});
-
-test('updateRun 修改并持久化', () => {
+test('任务支持队列字段', () => {
   const store = new SchedulerStore({ dir: tmpDir() });
-  store.addRun({ id: 'r1', taskId: 't1', status: 'running' });
-  const r = store.updateRun('r1', { status: 'success', exitCode: 0 });
-  assert.equal(r.status, 'success');
-  assert.equal(new SchedulerStore({ dir: store.dir }).getRun('r1').exitCode, 0);
+  const r = store.createTask(shellTask({
+    approvalRequired: true, onlyLocal: true, uniqueKey: 'u1', weight: 5, maxRunMilliSecond: 1234, groupName: 'g1',
+  }));
+  assert.equal(r.task.approvalRequired, true);
+  assert.equal(r.task.onlyLocal, true);
+  assert.equal(r.task.uniqueKey, 'u1');
+  assert.equal(r.task.weight, 5);
+  assert.equal(r.task.maxRunMilliSecond, 1234);
+  assert.equal(r.task.groupName, 'g1');
+});
+
+test('不再写 runs.json', () => {
+  const dir = tmpDir();
+  const store = new SchedulerStore({ dir });
+  store.createTask(shellTask());
+  assert.equal(fs.existsSync(path.join(dir, 'runs.json')), false);
 });
 
 test('createTask/updateTask/deleteTask 同步 void_manifest.json', () => {
@@ -144,9 +143,8 @@ test('syncManifest 写入 runtime（nextRunAt / lastRun）', () => {
   const dir = tmpDir();
   const store = new SchedulerStore({ dir });
   const cwd = tmpDir();
-  store.setRuntimeProvider((id) => ({ nextRunAt: 555, lastRun: store.listRuns({ taskId: id, limit: 1 })[0] || null }));
+  store.setRuntimeProvider(() => ({ nextRunAt: 555, lastRun: { id: 'r1', status: 'success', startedAt: 1, exitCode: 0, durationMs: 2, logFile: 'x' } }));
   const { task } = store.createTask(shellTask({ cwd }));
-  store.addRun({ id: 'r1', taskId: task.id, status: 'success', startedAt: 1, exitCode: 0, durationMs: 2, logFile: 'x' });
   store.syncManifest(task.id);
   const m = JSON.parse(fs.readFileSync(path.join(cwd, 'void_manifest.json'), 'utf8'));
   assert.equal(m.runtime.nextRunAt, 555);
@@ -178,36 +176,6 @@ test('报告路径按 taskId/runId 归档', () => {
   assert.equal(store.reportPath(store.reportFileFor('t1', 'r1')), path.join(store.dir, 'tasks', 't1', 'r1', 'report.md'));
 });
 
-test('summary 统计成功、失败、运行中', () => {
-  const store = new SchedulerStore({ dir: tmpDir() });
-  store.addRun({ id: 'r1', taskId: 't1', status: 'success' });
-  store.addRun({ id: 'r2', taskId: 't1', status: 'failed' });
-  store.addRun({ id: 'r3', taskId: 't1', status: 'timeout' });
-  store.addRun({ id: 'r4', taskId: 't1', status: 'killed' });
-  store.addRun({ id: 'r5', taskId: 't1', status: 'running' });
-  store.addRun({ id: 'r6', taskId: 't1', status: 'paused' });
-  assert.deepEqual(store.summary(), { total: 6, success: 1, failed: 3, running: 2 });
-});
-
-test('默认保留全部运行记录', () => {
-  const store = new SchedulerStore({ dir: tmpDir() });
-  for (let i = 0; i < 60; i += 1) store.addRun({ id: `r${i}`, taskId: 't1', status: 'success' });
-  assert.equal(store.listRuns({ taskId: 't1' }).length, 60);
-});
-
-test('显式 runLimit 时连带删除报告目录', () => {
-  const dir = tmpDir();
-  const store = new SchedulerStore({ dir, runLimit: 1 });
-  const { task } = store.createTask(shellTask());
-  const reportFile = store.reportFileFor(task.id, 'r1');
-  fs.mkdirSync(path.dirname(store.reportPath(reportFile)), { recursive: true });
-  fs.writeFileSync(store.reportPath(reportFile), '# r1');
-  store.addRun({ id: 'r1', taskId: task.id, status: 'success', reportFile });
-  store.addRun({ id: 'r2', taskId: task.id, status: 'success' });
-  assert.equal(store.listRuns({ taskId: task.id }).length, 1);
-  assert.equal(fs.existsSync(path.dirname(store.reportPath(reportFile))), false);
-});
-
 test('deleteTask 连带删除报告目录', () => {
   const dir = tmpDir();
   const store = new SchedulerStore({ dir });
@@ -215,7 +183,6 @@ test('deleteTask 连带删除报告目录', () => {
   const reportFile = store.reportFileFor(task.id, 'r1');
   fs.mkdirSync(path.dirname(store.reportPath(reportFile)), { recursive: true });
   fs.writeFileSync(store.reportPath(reportFile), '# r1');
-  store.addRun({ id: 'r1', taskId: task.id, status: 'success', reportFile });
   store.deleteTask(task.id);
   assert.equal(fs.existsSync(path.join(dir, 'tasks', task.id)), false);
 });
