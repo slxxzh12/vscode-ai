@@ -5,10 +5,15 @@ import { validateWorkflows } from './devflow-config.js';
 
 const PREFIX_RE = /^(\d+)_/;
 const MD_EXT = '.md';
+const DEFAULT_GROUP = '默认';
 
 function prefixOf(name) {
   const m = String(name || '').match(PREFIX_RE);
   return m ? Number(m[1]) : 0;
+}
+function prefixText(name) {
+  const m = String(name || '').match(PREFIX_RE);
+  return m ? m[1] : '';
 }
 function stripPrefix(name) {
   return String(name || '').replace(PREFIX_RE, '');
@@ -57,19 +62,70 @@ function uniqueName(base, used) {
   return name;
 }
 function folderName(id, label, used) {
-  const rawPrefix = String(id || '').match(PREFIX_RE);
+  const rawPrefix = prefixText(id);
   if (rawPrefix) {
-    return uniqueName(`${rawPrefix[1]}_${safeName(label || stripPrefix(id), 'workflow')}`, used);
+    return uniqueName(`${rawPrefix}_${safeName(label || stripPrefix(id), 'workflow')}`, used);
   }
-  const names = [...used];
-  return uniqueName(`${nextPrefix(names)}_${safeName(label || id, 'workflow')}`, used);
+  return uniqueName(`${nextPrefix([...used])}_${safeName(label || id, 'workflow')}`, used);
+}
+function stageFolderName(id, label, existing, used) {
+  const oldName = String(id || '').split('/').pop() || '';
+  const oldPrefix = prefixText(oldName);
+  if (oldPrefix) return uniqueName(`${oldPrefix}_${safeName(label || stripPrefix(oldName), 'stage')}`, used);
+  return uniqueName(`${nextPrefix([...existing, ...used])}_${safeName(label || 'stage', 'stage')}`, used);
 }
 
 // 工作流目录结构：
-//   <workflows>/100_工作流/200_小组/300_技能.md
-// 文件夹名（含数字前缀）就是 id，显示名称去掉前缀；任一层按数字前缀升序。
+//   <workflows>/100_工作流/200_小组/300_阶段/400_技能.md
+// 文件夹名（含数字前缀）就是 id，显示名称去掉前缀；同一层按数字前缀升序。
 export function createWorkflowStore({ dir, configFile = null, seedStore = null, logger = console } = {}) {
   fs.mkdirSync(dir, { recursive: true });
+
+  function groupHints() {
+    const hints = new Map();
+    const files = [configFile, path.join(process.cwd(), 'config', 'devflow.xml')];
+    for (const file of files) {
+      if (!file || !fs.existsSync(file)) continue;
+      try {
+        for (const wf of parseWorkflowsXml(fs.readFileSync(file, 'utf8'))) {
+          for (const st of wf.stages || []) {
+            if (st.label && st.group) hints.set(st.label, st.group);
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    return hints;
+  }
+
+  // 旧的三层目录（工作流/阶段/技能）迁移为四层（工作流/小组/阶段/技能）。
+  function migrateOldLayout() {
+    const hints = groupHints();
+    for (const wfName of listDirs(dir)) {
+      const wfDir = path.join(dir, wfName);
+      const children = listDirs(wfDir);
+      const oldStages = children.filter((name) => listMd(path.join(wfDir, name)).length > 0);
+      if (!oldStages.length) continue;
+      const used = new Set(children.filter((name) => !oldStages.includes(name)));
+      for (const oldName of oldStages) {
+        const groupLabel = hints.get(stripPrefix(oldName)) || DEFAULT_GROUP;
+        let groupName = [...used].find((name) => stripPrefix(name) === groupLabel);
+        if (!groupName) {
+          groupName = `${nextPrefix([...used])}_${safeName(groupLabel, 'group')}`;
+          used.add(groupName);
+        }
+        const groupDir = path.join(wfDir, groupName);
+        fs.mkdirSync(groupDir, { recursive: true });
+        const from = path.join(wfDir, oldName);
+        const to = path.join(groupDir, oldName);
+        try {
+          if (!fs.existsSync(to)) fs.renameSync(from, to);
+          else fs.rmSync(from, { recursive: true, force: true });
+        } catch (e) {
+          logger?.warn?.(`workflow migrate failed: ${oldName}`, (e && e.message) || e);
+        }
+      }
+    }
+  }
 
   function readAll() {
     const out = [];
@@ -78,23 +134,26 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
       const stages = [];
       for (const groupName of listDirs(wfDir)) {
         const groupDir = path.join(wfDir, groupName);
-        const prompts = [];
-        for (const fileName of listMd(groupDir)) {
-          try {
-            const text = fs.readFileSync(path.join(groupDir, fileName), 'utf8').replace(/\s+$/, '');
-            if (text.trim()) prompts.push(text);
-          } catch (e) {
-            logger?.warn?.(`workflow skill read failed: ${fileName}`, (e && e.message) || e);
+        for (const stageName of listDirs(groupDir)) {
+          const stageDir = path.join(groupDir, stageName);
+          const prompts = [];
+          for (const fileName of listMd(stageDir)) {
+            try {
+              const text = fs.readFileSync(path.join(stageDir, fileName), 'utf8').replace(/\s+$/, '');
+              if (text.trim()) prompts.push(text);
+            } catch (e) {
+              logger?.warn?.(`workflow skill read failed: ${fileName}`, (e && e.message) || e);
+            }
           }
+          stages.push({
+            id: `${groupName}/${stageName}`,
+            label: stripPrefix(stageName),
+            group: stripPrefix(groupName),
+            prompts,
+          });
         }
-        stages.push({ id: groupName, label: stripPrefix(groupName), group: stripPrefix(groupName), prompts });
       }
-      out.push({
-        id: wfName,
-        label: stripPrefix(wfName),
-        priority: -prefixOf(wfName),
-        stages,
-      });
+      out.push({ id: wfName, label: stripPrefix(wfName), priority: -prefixOf(wfName), stages });
     }
     return sortWorkflows(out);
   }
@@ -107,27 +166,52 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
       const wfName = folderName(wf.id, wf.label, wantedWf);
       const wfDir = path.join(dir, wfName);
       fs.mkdirSync(wfDir, { recursive: true });
+      const existingGroups = listDirs(wfDir);
       const usedGroups = new Set();
+      const groupNameByLabel = new Map();
       for (const stage of wf.stages || []) {
-        const groupName = folderName(stage.id, stage.label, usedGroups);
+        const groupLabel = String(stage.group || '').trim() || DEFAULT_GROUP;
+        if (groupNameByLabel.has(groupLabel)) continue;
+        let groupName = existingGroups.find((name) => stripPrefix(name) === groupLabel && !usedGroups.has(name));
+        if (!groupName) groupName = `${nextPrefix([...usedGroups])}_${safeName(groupLabel, 'group')}`;
+        usedGroups.add(groupName);
+        groupNameByLabel.set(groupLabel, groupName);
+      }
+      const usedStages = new Map();
+      for (const stage of wf.stages || []) {
+        const groupLabel = String(stage.group || '').trim() || DEFAULT_GROUP;
+        const groupName = groupNameByLabel.get(groupLabel);
         const groupDir = path.join(wfDir, groupName);
         fs.mkdirSync(groupDir, { recursive: true });
+        if (!usedStages.has(groupName)) usedStages.set(groupName, new Set());
+        const existingStages = listDirs(groupDir);
+        const stageName = stageFolderName(stage.id, stage.label, existingStages, usedStages.get(groupName));
+        const stageDir = path.join(groupDir, stageName);
+        fs.mkdirSync(stageDir, { recursive: true });
         const usedFiles = new Set();
         const prompts = (stage.prompts || []).filter((p) => String(p).trim() !== '');
         prompts.forEach((prompt, index) => {
           const base = `${(index + 1) * 100}_${promptSlug(prompt)}${MD_EXT}`;
           const fileName = uniqueName(base, usedFiles);
-          fs.writeFileSync(path.join(groupDir, fileName), `${String(prompt).replace(/\s+$/, '')}\n`, 'utf8');
+          fs.writeFileSync(path.join(stageDir, fileName), `${String(prompt).replace(/\s+$/, '')}\n`, 'utf8');
         });
-        for (const fileName of listMd(groupDir)) {
+        for (const fileName of listMd(stageDir)) {
           if (!usedFiles.has(fileName)) {
-            try { fs.rmSync(path.join(groupDir, fileName), { force: true }); } catch { /* ignore */ }
+            try { fs.rmSync(path.join(stageDir, fileName), { force: true }); } catch { /* ignore */ }
           }
         }
       }
-      for (const oldGroup of listDirs(wfDir)) {
-        if (!usedGroups.has(oldGroup)) {
-          try { fs.rmSync(path.join(wfDir, oldGroup), { recursive: true, force: true }); } catch { /* ignore */ }
+      for (const groupName of listDirs(wfDir)) {
+        const groupDir = path.join(wfDir, groupName);
+        if (!usedGroups.has(groupName)) {
+          try { fs.rmSync(groupDir, { recursive: true, force: true }); } catch { /* ignore */ }
+          continue;
+        }
+        const used = usedStages.get(groupName) || new Set();
+        for (const stageName of listDirs(groupDir)) {
+          if (!used.has(stageName)) {
+            try { fs.rmSync(path.join(groupDir, stageName), { recursive: true, force: true }); } catch { /* ignore */ }
+          }
         }
       }
     }
@@ -141,6 +225,39 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
     }
     seedStore?.update?.(clean);
     return readAll();
+  }
+
+  function tree(workflowId = '') {
+    const all = listDirs(dir);
+    const names = workflowId ? all.filter((n) => n === workflowId) : all;
+    return names.map((wfName) => ({
+      name: wfName,
+      type: 'dir',
+      path: wfName,
+      children: listDirs(path.join(dir, wfName)).map((groupName) => ({
+        name: groupName,
+        type: 'dir',
+        path: `${wfName}/${groupName}`,
+        children: listDirs(path.join(dir, wfName, groupName)).map((stageName) => ({
+          name: stageName,
+          type: 'dir',
+          path: `${wfName}/${groupName}/${stageName}`,
+          children: listMd(path.join(dir, wfName, groupName, stageName)).map((fileName) => ({
+            name: fileName,
+            type: 'file',
+            path: `${wfName}/${groupName}/${stageName}/${fileName}`,
+          })),
+        })),
+      })),
+    }));
+  }
+
+  function readFile(rel) {
+    const root = path.resolve(dir);
+    const abs = path.resolve(root, String(rel || ''));
+    if (abs !== root && !abs.startsWith(root + path.sep)) throw new Error('bad-path');
+    if (!abs.toLowerCase().endsWith(MD_EXT)) throw new Error('bad-file');
+    return fs.readFileSync(abs, 'utf8');
   }
 
   function migrateXmlFiles() {
@@ -174,35 +291,8 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
     return wfs.length > 0;
   }
 
-  function tree(workflowId = '') {
-    const all = listDirs(dir);
-    const names = workflowId ? all.filter((n) => n === workflowId) : all;
-    return names.map((wfName) => ({
-      name: wfName,
-      type: 'dir',
-      path: wfName,
-      children: listDirs(path.join(dir, wfName)).map((groupName) => ({
-        name: groupName,
-        type: 'dir',
-        path: `${wfName}/${groupName}`,
-        children: listMd(path.join(dir, wfName, groupName)).map((fileName) => ({
-          name: fileName,
-          type: 'file',
-          path: `${wfName}/${groupName}/${fileName}`,
-        })),
-      })),
-    }));
-  }
-
-  function readFile(rel) {
-    const root = path.resolve(dir);
-    const abs = path.resolve(root, String(rel || ''));
-    if (abs !== root && !abs.startsWith(root + path.sep)) throw new Error('bad-path');
-    if (!abs.toLowerCase().endsWith(MD_EXT)) throw new Error('bad-file');
-    return fs.readFileSync(abs, 'utf8');
-  }
-
   migrateXmlFiles();
+  migrateOldLayout();
 
   return { readAll, writeAll, tree, readFile, migrateFromConfigXml, dir };
 }

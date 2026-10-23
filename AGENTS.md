@@ -80,7 +80,7 @@
 - Nginx 反代（内置反向代理）：`server/proxy-store.js`（规则 `<端口数据目录>/proxy/rules.json`）+ `server/proxy-capture.js`（抓包 `<端口数据目录>/proxy/captures/<ruleId>/`）+ `server/proxy-engine.js`（HTTP/WS/SSE 转发引擎，路径规则接入主 server 分发与 `upgrade`）+ `server/proxy-mount.js`（`/api/nginx/*`）；前端 `web/src/tools/nginx/`（`NginxTool.vue` 自包含左规则列表 + 右表单/访问日志/抓包，空侧栏）。两种接入：独立监听端口 / 挂 devflow 路径；上游 https 默认不校验证书；抓包默认关、手动开、落盘、不设条数上限。
 - 手机遥控（remote_coder）：`server/remote-coder-store.js`（`remote_coder/` 文件层：`messages.jsonc` 收发、`screen.png` 覆盖写、commit+push）+ `server/remote-coder-mount.js`（`/api/remote-coder/*` 端点）；前端在 `web/src/remote-coder/`（`PhoneView.vue` 手机页、`useRemoteCoder.ts` 手机侧、`useDesktopRemoteCoder.ts` 桌面侧取件）。顶栏 `📱` 新标签打开 `/?phone=1`；桌面端每 2s 拉 `/inbox`（拿到即 ack）→ 截图或把消息送进当前活动会话。
 - 提示词收藏（prompts）：`web/src/prompts/`（`promptCollect.ts` 纯函数追加/去重、`usePromptCollect.ts` 模块级共享状态、`PromptCollectAddon.vue` 可复用「+」控件）；左侧历史「消息」行与终端阶段提示 chips 的「＋」都走它，点选即追加进目标工作流的阶段并保存（`GET /api/workflows-xml` → 去重 → `POST /api/workflows`，服务端零改动）。无工作流时点「＋」自动建「我的工作流 / 常用提示词」并写入（`collectToMyWorkflow`）；工作流编辑器（`WorkflowEditor.vue`）现为「左侧导航列出所有工作流名 + 右侧编辑选中工作流」布局，`WorkflowFormTab.vue` 支持 `active-id` 单选渲染。
-- 工作流存储：`<数据目录>/workflows/<100_工作流>/<200_小组>/<300_技能.md>`；文件夹名（含前缀）就是 id，同一层按数字前缀升序，每个技能一个 Markdown 文件；旧 XML 文件启动时自动迁移为文件夹并删除。
+- 工作流存储：`<数据目录>/workflows/<100_工作流>/<200_小组>/<300_阶段>/<400_技能.md>`；文件夹名（含前缀）就是 id，同一层按数字前缀升序，每个技能一个 Markdown 文件；旧 XML 文件启动时自动迁移为文件夹并删除。
 - 数据按端口隔离在 `%USERPROFILE%\.local\share\void\ports\<端口>\`；宿主端口文件在仓库根/绿色包根的 `data/port.txt`。
 - 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`；代码行统计：`npm.cmd run count:code`（去注释/空行/纯括号/无英文行，输出每文件实际代码行）。
 
