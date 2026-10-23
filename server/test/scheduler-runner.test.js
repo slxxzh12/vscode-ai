@@ -132,5 +132,7 @@ test('buildSpawnSpec：AI prompt 任务使用临时 prompt.md 启动', () => {
     { cwd: 'C:/p', aiBin: 'nga.exe', aiPrompt: 'hello', promptFilePath: 'C:/data/tasks/t/r/prompt.md' },
   );
   assert.equal(spec.bin, 'nga.exe');
-  assert.deepEqual(spec.args, ['run', '--file', 'C:/data/tasks/t/r/prompt.md']);
+  assert.equal(spec.args[0], 'run');
+  assert.ok(spec.args[1]);
+  assert.deepEqual(spec.args.slice(2), ['--file', 'C:/data/tasks/t/r/prompt.md']);
 });

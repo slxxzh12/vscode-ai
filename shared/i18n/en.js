@@ -434,6 +434,7 @@ export const messages = {
   'sched.source.file': 'Attached file (--file)',
   'sched.source.file_hint': 'Runs with opencode --file attaching the file at "File path".',
   'sched.ai.file_prompt': 'Read and execute the task in the attached file.',
+  'sched.ai.prompt_file_message': 'Read and execute the task in the attached prompt.md.',
   'sched.field.choose': 'Select',
   'sched.field.ai_command': 'AI command line / name',
   'sched.field.ai_command_ph': 'Enter an Nga command name',

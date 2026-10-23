@@ -670,6 +670,7 @@ function buildWorkspace({ paths, port }) {
     manifestRoot: path.join(paths.schedulerDir, 'manifests'),
     projectResolver: (id) => projects.listProjects().find((p) => p.id === id)?.root ?? null,
     logger: log,
+    agentCmd: agentBin || agent?.cmd || 'opencode',
     opencodeDataDir: path.join(paths.dir, 'opencode-data'),
     machineId: engine.pub.machineId,
     hostport: `${HOST}:${port}`,

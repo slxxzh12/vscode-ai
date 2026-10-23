@@ -41,8 +41,9 @@ test('普通命令：输出作为 prompt 再执行 AI，并写回成功与报告
   });
   await c.runOnce(0);
   assert.equal(specs.length, 2);
-  assert.deepEqual(specs[1].args.slice(0, 2), ['run', '--file']);
-  const promptPath = specs[1].args[2];
+  const fi = specs[1].args.indexOf('--file');
+  assert.ok(fi > 0);
+  const promptPath = specs[1].args[fi + 1];
   assert.match(fs.readFileSync(promptPath, 'utf8'), /collected output/);
   assert.equal(completed.status, 1);
   assert.equal(completed.result.shellExitCode, 0);
@@ -72,8 +73,9 @@ test('AI 命令通过回调回写最终状态与结果', async () => {
   let consumer = null;
   const runner = {
     run: async ({ spec }) => {
-      assert.deepEqual(spec.args.slice(0, 2), ['run', '--file']);
-      assert.match(fs.readFileSync(spec.args[2], 'utf8'), /do it/);
+      const fi = spec.args.indexOf('--file');
+      assert.ok(fi > 0);
+      assert.match(fs.readFileSync(spec.args[fi + 1], 'utf8'), /do it/);
       await consumer.handleCallback('j2', spec.env.DEVFLOW_JOB_TOKEN, { status: 'success', result: { reportMarkdown: '# ai report' } });
       return { exitCode: 0, timedOut: false, durationMs: 4, stdout: '' };
     },

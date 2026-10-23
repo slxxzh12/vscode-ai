@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { wrapCmdBin } from '../win-spawn.js';
 import { AGENT_ENV } from '../agent-env.js';
+import { t } from '../i18n.js';
 
 export function resolveCwd(task, projectRoot, fallback) {
   return task.cwd || projectRoot || fallback;
@@ -46,7 +47,7 @@ export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null,
       return withContext({ bin: aiBin, args, cwd, env: ocEnv });
     }
     if (task.ai && task.ai.source === 'prompt' && promptFilePath) {
-      return withContext({ bin: aiBin, args: ['run', '--file', promptFilePath, ...jsonArgs], cwd, env: ocEnv });
+      return withContext({ bin: aiBin, args: ['run', t('sched.ai.prompt_file_message'), '--file', promptFilePath, ...jsonArgs], cwd, env: ocEnv });
     }
     return withContext({ bin: aiBin, args: ['run', stripFrontmatter(aiPrompt ?? ''), ...jsonArgs], cwd, env: ocEnv });
   }

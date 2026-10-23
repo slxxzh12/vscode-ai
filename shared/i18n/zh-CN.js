@@ -434,6 +434,7 @@ export const messages = {
   'sched.source.file': '附件文件（--file）',
   'sched.source.file_hint': '运行时用 opencode --file 附加「文件路径」指向的文件。',
   'sched.ai.file_prompt': '请阅读并执行附件文件中的任务。',
+  'sched.ai.prompt_file_message': '请阅读并执行附件 prompt.md 中的任务。',
   'sched.field.choose': '请选择',
   'sched.field.ai_command': 'AI 命令行/命令名',
   'sched.field.ai_command_ph': '输入 Nga command 名称',
