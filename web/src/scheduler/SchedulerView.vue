@@ -3,6 +3,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useScheduler, type TaskView } from './useScheduler';
 import SchedulerReportView from './SchedulerReportView.vue';
 import JobsView from '../jobs/JobsView.vue';
+import NgaProcessTerminal from './NgaProcessTerminal.vue';
+import { formatNgaEvents } from './ngaProcess';
 import { scheduleSummary, formatTime, runStatusLabel, recentJobsOf, typeLabel } from './format';
 import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
@@ -180,6 +182,7 @@ let chatTimer: ReturnType<typeof setInterval> | null = null;
 
 const chatReportHtml = computed(() => (chatReport.value ? renderRemoteMarkdown(chatReport.value) : ''));
 const chatStatusLabel = computed(() => (chatStatus.value == null ? '' : runStatusLabel(chatStatus.value)));
+const chatProcess = computed(() => formatNgaEvents(chatLog.value));
 const DEFAULT_SCHEDULE = { mode: 'interval' as const, interval: { every: 1, unit: 'day' as const }, daily: { at: '09:30', weekdays: [] as number[] } };
 
 function resetChat() {
@@ -518,7 +521,8 @@ onBeforeUnmount(() => {
               <button :class="{ on: chatTab === 'process' }" @click="chatTab = 'process'">{{ $t('sched.chat.process') }}</button>
               <button :class="{ on: chatTab === 'result' }" @click="chatTab = 'result'">{{ $t('sched.chat.result') }}</button>
             </div>
-            <pre v-if="chatTab === 'process'" class="chat-log">{{ chatLog || $t('sched.chat.empty_process') }}</pre>
+            <NgaProcessTerminal v-if="chatTab === 'process' && chatProcess" :text="chatProcess" />
+            <div v-else-if="chatTab === 'process'" class="chat-empty">{{ $t('sched.chat.empty_process') }}</div>
             <template v-else>
               <div v-if="chatReport" class="chat-report md-body" v-html="chatReportHtml" />
               <div v-else class="chat-empty">{{ $t('sched.chat.empty_result') }}</div>
