@@ -82,6 +82,7 @@ export interface SchedulerRunContext {
   reportPath: string;
   reportDir: string;
   promptPath?: string;
+  resultPath?: string;
   logPath: string;
   outputDir: string;
   callback?: { jobId: string; token: string; url: string };

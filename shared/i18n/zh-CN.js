@@ -392,6 +392,8 @@ export const messages = {
   'sched.chat.schedule': '执行方式',
   'sched.chat.once': '只跑一次',
   'sched.chat.file_prompt': '请处理文件：{path}',
+  'sched.chat.success': '执行成功',
+  'sched.chat.failure': '执行失败',
   'sched.chat.default_name': 'AI 任务 · {time}',
   'sched.tab.tasks': '定时任务',
   'sched.tab.jobs': '任务队列',

@@ -392,6 +392,8 @@ export const messages = {
   'sched.chat.schedule': 'Schedule',
   'sched.chat.once': 'Run once',
   'sched.chat.file_prompt': 'Work with this file: {path}',
+  'sched.chat.success': 'Run succeeded',
+  'sched.chat.failure': 'Run failed',
   'sched.chat.default_name': 'AI task · {time}',
   'sched.tab.tasks': 'Scheduler',
   'sched.tab.jobs': 'Job queue',

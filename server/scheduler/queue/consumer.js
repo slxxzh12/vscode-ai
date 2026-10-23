@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { buildSpawnSpec } from '../runner.js';
-import { writeRunContext, ensureReport, stripAnsi } from '../report.js';
+import { writeRunContext, ensureReport, writeRunResult, stripAnsi } from '../report.js';
 import { SchedulerJobStatus as S, SCHED_REPORT_MAX_BYTES } from '@devflow/shared/scheduler';
 
 function readReport(store, reportFile) {
@@ -115,6 +115,7 @@ export function createConsumer({
     let ctx;
     try {
       ctx = writeRunContext({ store, task, run, callback });
+      writeRunResult({ store, task, run, data: { status: S.RUNNING, statusText: 'running' } });
     } catch (e) {
       callbacks.delete(job.jobId);
       await queue.complete(job.jobId, {
@@ -242,6 +243,26 @@ export function createConsumer({
       reportMarkdown: reported.reportMarkdown || reportMarkdown,
       logPath,
     };
+    try {
+      writeRunResult({
+        store, task, run,
+        data: {
+          status,
+          statusText: status === S.SUCCESS ? 'success' : 'failed',
+          finishedAt: now(),
+          durationMs: final.durationMs ?? null,
+          exitCode: final.exitCode ?? null,
+          error: final.error || null,
+          reason: final.reason || null,
+          reportFile: final.reportFile,
+          reportPath: final.reportFile ? store.reportPath(final.reportFile) : null,
+          ngaSessionId: final.ngaSessionId || null,
+          logPath,
+        },
+      });
+    } catch (e) {
+      logger?.error?.('scheduler result.json write failed', e);
+    }
     await queue.complete(job.jobId, { status, runtime: result.durationMs, workIP: worker.hostport, result: final });
     onEvent('run-end', { jobId: job.jobId, taskId: task.id, status });
   }

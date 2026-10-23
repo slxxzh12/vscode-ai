@@ -47,6 +47,7 @@ export function writeRunContext({ store, task, run, callback = null }) {
     reportPath: p.defaultReportPath,
     reportDir: p.reportDir,
     promptPath: path.join(p.runDir, 'prompt.md'),
+    resultPath: path.join(p.runDir, 'result.json'),
     logPath: logFileOf(store, run),
     outputDir: p.runDir,
     ...(callback ? { callback } : {}),
@@ -58,8 +59,25 @@ export function writeRunContext({ store, task, run, callback = null }) {
     reportFile: store.reportFileFor(task.id, run.id),
     reportDir: p.reportDir,
     promptPath: context.promptPath,
+    resultPath: context.resultPath,
     outputDir: p.runDir,
   };
+}
+
+export function writeRunResult({ store, task, run, data = {} }) {
+  const p = runPaths(store, task, run.id);
+  const file = path.join(p.runDir, 'result.json');
+  fs.mkdirSync(p.runDir, { recursive: true });
+  const payload = {
+    runId: run.id,
+    taskId: task.id,
+    taskName: task.name,
+    trigger: run.trigger,
+    startedAt: run.startedAt,
+    ...data,
+  };
+  fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+  return file;
 }
 
 export function fallbackMarkdown({ task, run, result = {}, logText = '' }) {

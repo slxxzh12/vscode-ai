@@ -685,6 +685,9 @@ onBeforeUnmount(() => {
             <NgaProcessTerminal v-if="chatTab === 'process' && chatProcess" :text="chatProcess" />
             <div v-else-if="chatTab === 'process'" class="chat-empty">{{ $t('sched.chat.empty_process') }}</div>
             <template v-else>
+              <div v-if="chatStatus != null" class="chat-result-state" :class="chatStatus === 1 ? 'ok' : chatStatus === 2 ? 'bad' : 'run'">
+                {{ chatStatus === 1 ? $t('sched.chat.success') : chatStatus === 2 ? $t('sched.chat.failure') : chatStatusLabel }}
+              </div>
               <div v-if="chatReport" class="chat-report md-body" v-html="chatReportHtml" />
               <div v-else class="chat-empty">{{ $t('sched.chat.empty_result') }}</div>
             </template>
@@ -862,4 +865,8 @@ onBeforeUnmount(() => {
 .chat-tabs button.on { background: var(--ac2); color: #fff; }
 .chat-log { flex: 1; margin: 0; overflow: auto; padding: 12px; background: var(--bg6, var(--bg1)); color: var(--tx2); font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
 .chat-report { flex: 1; overflow: auto; padding: 14px 18px; color: var(--tx); }
+.chat-result-state { padding: 8px 14px; font-size: 12px; border-bottom: 1px solid var(--bd); }
+.chat-result-state.ok { color: #3fb950; }
+.chat-result-state.bad { color: #e5534b; }
+.chat-result-state.run { color: var(--ac2); }
 </style>
