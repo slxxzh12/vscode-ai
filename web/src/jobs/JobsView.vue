@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { t } from '../i18n';
 import { useJobs, type Job } from './useJobs';
 import { jobStatusLabel, jobStatusClass } from './format';
+import { renderRemoteMarkdown } from '../markdown';
 
 const jobs = useJobs();
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -44,8 +45,21 @@ function taskNameOf(job: Job): string {
   try { return JSON.parse(job.paramStr || '{}').task?.name || '—'; } catch { return '—'; }
 }
 function reportOf(job: Job): string {
-  try { return JSON.parse(job.result || '{}').reportMarkdown || ''; } catch { return ''; }
+  try {
+    const r = JSON.parse(job.result || '{}');
+    for (const k of ['reportMarkdown', 'result', 'output', 'text']) {
+      if (typeof r[k] === 'string' && r[k].trim()) return r[k];
+    }
+    return '';
+  } catch { return ''; }
 }
+function ngaSessionOf(job: Job | null): string {
+  if (!job) return '';
+  try { return String(JSON.parse(job.result || '{}').ngaSessionId || ''); } catch { return ''; }
+}
+const detailReport = computed(() => (detail.value ? reportOf(detail.value) : ''));
+const detailReportHtml = computed(() => (detailReport.value ? renderRemoteMarkdown(detailReport.value) : ''));
+const detailNgaSession = computed(() => ngaSessionOf(detail.value));
 </script>
 
 <template>
@@ -99,7 +113,9 @@ function reportOf(job: Job): string {
       <div>status: {{ jobStatusLabel(detail.status) }}</div>
       <div>workIP: {{ detail.workIP || '—' }}</div>
       <div>runtime: {{ detail.runtime ?? '—' }} ms</div>
-      <pre class="report">{{ reportOf(detail) }}</pre>
+      <div v-if="detailNgaSession" class="dim">nga session: {{ detailNgaSession }}</div>
+      <div v-if="detailReport" class="report md-body" v-html="detailReportHtml" />
+      <pre v-else class="report">{{ $t('sched.report.empty') }}</pre>
       <div class="acts">
         <button v-if="detail.status === 4" @click="jobs.approve(detail.jobId)">{{ $t('jobs.action.approve') }}</button>
         <button v-if="detail.status === 4" @click="jobs.reject(detail.jobId)">{{ $t('jobs.action.reject') }}</button>

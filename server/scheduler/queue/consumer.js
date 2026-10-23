@@ -104,6 +104,22 @@ export function createConsumer({
 
     let status = S.FAILED;
     let result = { exitCode: null, error: null, durationMs: null, reason: 'failed' };
+    let ngaSessionId = null;
+    let aiBuf = '';
+    const captureSessionId = (chunk) => {
+      aiBuf += String(chunk || '');
+      if (ngaSessionId) return;
+      const m = aiBuf.match(/"sessionID"\s*:\s*"([^"]+)"/);
+      if (!m) return;
+      ngaSessionId = m[1];
+      void (async () => {
+        try {
+          const curJob = queue.getJob ? await queue.getJob(job.jobId) : null;
+          const prev = parseResult(curJob);
+          await queue.applyCallback(job.jobId, { result: JSON.stringify({ ...prev, ngaSessionId }) });
+        } catch { /* best-effort */ }
+      })();
+    };
     try {
       if (task.type === 'shell') {
         const shellRes = await runner.run({
@@ -132,10 +148,11 @@ export function createConsumer({
               runId: job.jobId,
               spec: buildSpawnSpec({ type: 'ai', ai: { source: 'prompt' } }, {
                 cwd, aiPrompt: prompt, aiBin, opencodeDataDir,
-                runContextPath: ctx.contextPath, jobCallback: callback, promptFilePath: promptFile,
+                runContextPath: ctx.contextPath, jobCallback: callback, promptFilePath: promptFile, jsonFormat: true,
               }),
               logPath,
               timeoutMs: Number.isFinite(deadline) ? remaining() : 0,
+              onData: captureSessionId,
             });
             status = aiRes.spawnError || aiRes.timedOut || aiRes.exitCode !== 0 ? S.FAILED : S.SUCCESS;
             result = {
@@ -157,10 +174,11 @@ export function createConsumer({
           runId: job.jobId,
           spec: buildSpawnSpec(task, {
             cwd, aiPrompt: prompt, aiBin, opencodeDataDir,
-            runContextPath: ctx.contextPath, jobCallback: callback, promptFilePath: promptFile,
+            runContextPath: ctx.contextPath, jobCallback: callback, promptFilePath: promptFile, jsonFormat: true,
           }),
           logPath,
           timeoutMs: Number.isFinite(deadline) ? remaining() : 0,
+          onData: captureSessionId,
         });
         status = aiRes.spawnError || aiRes.timedOut || aiRes.exitCode !== 0 ? S.FAILED : S.SUCCESS;
         result = {
@@ -174,6 +192,7 @@ export function createConsumer({
     } catch (e) {
       result = { exitCode: null, error: String(e?.message || e), durationMs: now() - startedAt, reason: 'failed' };
     } finally {
+      if (ngaSessionId) result.ngaSessionId = ngaSessionId;
       running.delete(job.jobId);
       callbacks.delete(job.jobId);
     }

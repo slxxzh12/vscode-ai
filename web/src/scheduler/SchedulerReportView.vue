@@ -18,7 +18,13 @@ let timer: ReturnType<typeof setInterval> | null = null;
 
 const activeJob = computed(() => jobs.value.find((j) => j.jobId === activeId.value) || null);
 const activeResult = computed(() => parseResult(activeJob.value));
-const report = computed(() => String(activeResult.value.reportMarkdown || ''));
+const report = computed(() => {
+  const r = activeResult.value;
+  for (const k of ['reportMarkdown', 'result', 'output', 'text']) {
+    if (typeof r[k] === 'string' && r[k].trim()) return r[k];
+  }
+  return '';
+});
 const reportHtml = computed(() => (report.value ? renderRemoteMarkdown(report.value) : ''));
 const hasRunning = computed(() => jobs.value.some((j) => j.status === 3));
 
@@ -49,6 +55,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); });
       <button class="rv-back" @click="onBack">← {{ $t('sched.detail.back') }}</button>
       <span class="rv-title">{{ task.name }}</span>
       <span v-if="activeJob" class="rv-meta">{{ runStatusLabel(activeJob.status) }} · {{ formatTime(activeJob.createTime) }}</span>
+      <span v-if="activeResult.ngaSessionId" class="rv-meta" :title="String(activeResult.ngaSessionId)">Nga: {{ activeResult.ngaSessionId }}</span>
       <button v-if="activeResult.sessionId" class="rv-session" @click="openSession">{{ $t('sched.open_session') }}</button>
     </header>
     <div class="rv-body">
