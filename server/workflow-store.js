@@ -174,7 +174,35 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
     return wfs.length > 0;
   }
 
+  function tree(workflowId = '') {
+    const all = listDirs(dir);
+    const names = workflowId ? all.filter((n) => n === workflowId) : all;
+    return names.map((wfName) => ({
+      name: wfName,
+      type: 'dir',
+      path: wfName,
+      children: listDirs(path.join(dir, wfName)).map((groupName) => ({
+        name: groupName,
+        type: 'dir',
+        path: `${wfName}/${groupName}`,
+        children: listMd(path.join(dir, wfName, groupName)).map((fileName) => ({
+          name: fileName,
+          type: 'file',
+          path: `${wfName}/${groupName}/${fileName}`,
+        })),
+      })),
+    }));
+  }
+
+  function readFile(rel) {
+    const root = path.resolve(dir);
+    const abs = path.resolve(root, String(rel || ''));
+    if (abs !== root && !abs.startsWith(root + path.sep)) throw new Error('bad-path');
+    if (!abs.toLowerCase().endsWith(MD_EXT)) throw new Error('bad-file');
+    return fs.readFileSync(abs, 'utf8');
+  }
+
   migrateXmlFiles();
 
-  return { readAll, writeAll, migrateFromConfigXml, dir };
+  return { readAll, writeAll, tree, readFile, migrateFromConfigXml, dir };
 }

@@ -68,6 +68,21 @@ test('迁移旧 XML 文件为文件夹并删除 XML', () => {
   assert.equal(out[0].stages[0].prompts[0], 'p');
 });
 
+test('tree/readFile 返回当前工作流的文件夹树和技能内容', () => {
+  const dir = tmp();
+  const store = createWorkflowStore({ dir });
+  const out = store.writeAll([wf('a', 'A', ['第一段'])])[0];
+  const tree = store.tree(out.id);
+  assert.equal(tree.length, 1);
+  assert.equal(tree[0].name, out.id);
+  assert.equal(tree[0].children[0].name, out.stages[0].id);
+  const file = tree[0].children[0].children[0];
+  assert.match(file.name, /\.md$/);
+  assert.equal(store.readFile(file.path).trim(), '第一段');
+  assert.throws(() => store.readFile('../x.md'));
+  assert.throws(() => store.readFile(file.path.replace(/\.md$/, '.js')));
+});
+
 test('migrateFromConfigXml 拆分 <workflows> 并从配置移除该段', () => {
   const dir = tmp();
   const cfg = path.join(tmp(), 'devflow.xml');

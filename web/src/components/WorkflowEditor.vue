@@ -5,12 +5,13 @@ import { sanitizeModel, validateModel, newWorkflow, type Workflow } from '../wor
 import { serializeWorkflow, parseWorkflowsXml, sortWorkflows } from '@devflow/shared/workflow-xml';
 import WorkflowFormTab from './WorkflowFormTab.vue';
 import WorkflowXmlTab from './WorkflowXmlTab.vue';
+import WorkflowFilesTab from './WorkflowFilesTab.vue';
 import WorkflowPreviewTab from './WorkflowPreviewTab.vue';
 
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>();
-const tabs = ['form', 'xml', 'preview'] as const;
+const tabs = ['form', 'xml', 'files', 'preview'] as const;
 const model = ref<Workflow[]>([]);
-const tab = ref<'form' | 'xml' | 'preview'>('form');
+const tab = ref<'form' | 'xml' | 'files' | 'preview'>('form');
 const busy = ref(false);
 const msg = ref('');
 const dirty = ref(false);
@@ -170,6 +171,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
         <div class="wemain">
           <WorkflowFormTab v-if="tab === 'form'" :model="model" :active-id="currentId" @update:model="applyModel" />
           <WorkflowXmlTab v-else-if="tab === 'xml'" :workflow="current" @update:workflow="applyWorkflow" />
+          <WorkflowFilesTab v-else-if="tab === 'files'" :workflow-id="currentId" />
           <WorkflowPreviewTab v-else :model="model" />
         </div>
       </div>

@@ -860,6 +860,24 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ workflows }));
     return;
   }
+  if (url.pathname === '/api/workflows-tree' && req.method === 'GET') {
+    const tree = ws?.workflowStore?.tree(url.searchParams.get('workflowId') || '') || [];
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ tree }));
+    return;
+  }
+  if (url.pathname === '/api/workflows-file' && req.method === 'GET') {
+    if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
+    try {
+      const text = ws.workflowStore.readFile(url.searchParams.get('path') || '');
+      res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(text);
+    } catch (e) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: String(e && e.message || e) }));
+    }
+    return;
+  }
   if (url.pathname === '/api/agents' && req.method === 'GET') {
     const c = loadDevflowConfig(configFile);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
