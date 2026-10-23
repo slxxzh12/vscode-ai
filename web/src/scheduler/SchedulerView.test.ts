@@ -54,6 +54,7 @@ describe('SchedulerView', () => {
     await flushPromises();
     const values = w.findAll('select')[0].findAll('option').map((o) => o.attributes('value'));
     expect(values).toEqual(['shell', 'ai']);
+    await w.findAll('select')[0].setValue('shell');
     expect(w.find('.shell-hint').exists()).toBe(true);
   });
 

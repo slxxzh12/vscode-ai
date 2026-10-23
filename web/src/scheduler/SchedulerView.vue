@@ -21,8 +21,8 @@ const mainTab = ref<'tasks' | 'jobs'>('tasks');
 
 function emptyForm() {
   return {
-    name: '', enabled: true, cwd: '', filePath: '', type: 'shell', command: '',
-    ai: { source: 'command', commandName: '', prompt: '' },
+    name: '', enabled: true, cwd: '', filePath: '', type: 'ai', command: '',
+    ai: { source: 'prompt', commandName: '', prompt: '' },
     schedule: { mode: 'interval', interval: { every: 30, unit: 'minute' }, daily: { at: '09:30', weekdays: [] } },
     approvalRequired: false, onlyLocal: false, uniqueKey: '', weight: 0, maxRunMilliSecond: 0, groupName: 'default',
   };
@@ -67,7 +67,7 @@ async function pickCommandFile() {
       form.value.type = 'ai';
       form.value.ai = isCommand
         ? { source: 'command', commandName: base, prompt: '' }
-        : { source: 'file', commandName: '', prompt: t('sched.ai.file_prompt') };
+        : { source: 'prompt', commandName: '', prompt: (r.content || '').trim() || t('sched.ai.file_prompt') };
     } else {
       state.error = t('sched.unsupported_file', { ext: ext || '?' });
     }
@@ -114,6 +114,27 @@ async function remove(task: TaskView) {
   if (!confirm(t('sched.remove_confirm', { name: task.name }))) return;
   await sched.removeTask(task.id);
   if (detailTask.value?.id === task.id) detailTask.value = null;
+}
+function exportTask(task: TaskView) {
+  const data: any = {
+    format: 'void_manifest',
+    version: 1,
+    name: task.name,
+    type: task.type,
+    enabled: task.enabled,
+    schedule: task.schedule,
+  };
+  if (task.type === 'shell') data.command = task.command;
+  if (task.type === 'ai') {
+    data.ai = { ...(task.ai || {}) };
+    if (task.filePath) data.filePath = task.filePath;
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${task.name || task.id}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 async function runNow(task: TaskView) {
   runPending.value[task.id] = true;
@@ -350,6 +371,7 @@ onBeforeUnmount(() => {
             <button v-else @click.stop="stop(t)">{{ $t('sched.stop') }}</button>
             <button @click.stop="openDetail(t)">{{ $t('sched.history') }}</button>
             <button @click.stop="openEdit(t)">{{ $t('sched.edit') }}</button>
+            <button @click.stop="exportTask(t)">{{ $t('sched.export') }}</button>
             <button @click.stop="remove(t)">{{ $t('sched.delete') }}</button>
           </div>
         </div>
@@ -393,11 +415,11 @@ onBeforeUnmount(() => {
               <option value="file">{{ $t('sched.source.file') }}</option>
             </select>
           </label>
-          <label v-if="form.ai.source === 'command'">Command
-            <select v-model="form.ai.commandName">
-              <option value="">{{ $t('sched.field.choose') }}</option>
-              <option v-for="c in state.aiCommands" :key="c.name" :value="c.name">{{ c.name }}</option>
-            </select>
+          <label v-if="form.ai.source === 'command'">{{ $t('sched.field.ai_command') }}
+            <input v-model="form.ai.commandName" list="sched-ai-commands" :placeholder="$t('sched.field.ai_command_ph')" />
+            <datalist id="sched-ai-commands">
+              <option v-for="c in state.aiCommands" :key="c.name" :value="c.name" />
+            </datalist>
           </label>
           <label v-else-if="form.ai.source === 'prompt'">Prompt <CodeEditor v-model="form.ai.prompt" class="sched-edit" /></label>
           <div v-else class="dim">{{ $t('sched.source.file_hint') }}</div>
