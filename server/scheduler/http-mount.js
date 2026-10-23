@@ -40,6 +40,44 @@ export function createSchedulerMount({ engine, store, queue, logger = console, p
         engine.notifyTasksChanged();
         return sendJson(res, 200, { task: await withNext(r.task) });
       }
+      if (p === '/api/scheduler/tasks/export' && req.method === 'GET') {
+        return sendJson(res, 200, {
+          format: 'devflow_scheduler_tasks',
+          version: 1,
+          exportedAt: Date.now(),
+          tasks: store.listTasks(),
+        });
+      }
+      if (p === '/api/scheduler/tasks/import-all' && req.method === 'POST') {
+        const body = await readBody(req, 8 * 1024 * 1024);
+        const tasks = Array.isArray(body?.tasks) ? body.tasks : (Array.isArray(body) ? body : []);
+        const result = { imported: 0, updated: 0, failed: [] };
+        for (const raw of tasks) {
+          const input = { ...(raw || {}) };
+          const id = typeof input.id === 'string' ? input.id : '';
+          delete input.id;
+          delete input.createdAt;
+          delete input.updatedAt;
+          try {
+            if (id && store.getTask(id)) {
+              let r = store.replaceTask(id, input);
+              if (r.error === 'dir-taken') r = store.replaceTask(id, { ...input, cwd: null });
+              if (r.error) result.failed.push({ name: input.name || id, error: r.error });
+              else result.updated += 1;
+            } else {
+              let r = store.createTask(input);
+              if (r.error === 'dir-taken') r = store.createTask({ ...input, cwd: null });
+              if (r.error) result.failed.push({ name: input.name || id, error: r.error });
+              else result.imported += 1;
+            }
+          } catch (e) {
+            result.failed.push({ name: input.name || id, error: String(e && e.message || e) });
+          }
+        }
+        engine.refreshAll();
+        engine.notifyTasksChanged();
+        return sendJson(res, 200, result);
+      }
       const m = p.match(/^\/api\/scheduler\/tasks\/([^/]+)(?:\/(run|stop))?$/);
       if (m) {
         const id = decodeURIComponent(m[1]);

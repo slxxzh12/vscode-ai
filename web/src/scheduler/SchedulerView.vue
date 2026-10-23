@@ -138,6 +138,53 @@ function exportTask(task: TaskView) {
   a.click();
   URL.revokeObjectURL(a.href);
 }
+function downloadJson(name: string, text: string) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+async function exportAllTasks() {
+  state.error = '';
+  try {
+    const res = await fetch('/api/scheduler/tasks/export');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    downloadJson(`scheduled-tasks-${new Date().toISOString().slice(0, 10)}.json`, text);
+  } catch (e: any) { state.error = String(e?.message || e); }
+}
+const importAllInput = ref<HTMLInputElement | null>(null);
+function pickImportAll() {
+  importAllInput.value?.click();
+}
+async function onImportAllFile(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  state.error = '';
+  let tasks: any[] = [];
+  try {
+    const data = JSON.parse(await file.text());
+    tasks = Array.isArray(data) ? data : data?.tasks;
+    if (!Array.isArray(tasks)) throw new Error('bad-file');
+  } catch {
+    state.error = t('sched.import_all.bad_file');
+    return;
+  }
+  try {
+    const res = await fetch('/api/scheduler/tasks/import-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tasks }),
+    });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(r.message || r.error || `HTTP ${res.status}`);
+    await sched.refresh();
+    alert(t('sched.import_all.result', { imported: r.imported || 0, updated: r.updated || 0, failed: (r.failed || []).length }));
+  } catch (e: any) { state.error = String(e?.message || e); }
+}
 async function runNow(task: TaskView) {
   runPending.value[task.id] = true;
   try { await sched.runNow(task.id); await sched.refresh(); }
@@ -178,12 +225,73 @@ const chatStatus = ref<number | null>(null);
 const chatLog = ref('');
 const chatReport = ref('');
 const chatTab = ref<'process' | 'result'>('process');
+const chatBodyRef = ref<HTMLDivElement | null>(null);
+const chatScheduleMode = ref<'once' | 'interval' | 'daily'>('once');
+const chatEvery = ref(1);
+const chatUnit = ref<'minute' | 'hour' | 'day'>('hour');
+const chatAt = ref('09:30');
+const chatFile = ref<{ path: string; name: string } | null>(null);
+const chatLeftW = ref((() => {
+  try {
+    const n = Number(localStorage.getItem('devflow-sched-chat-left'));
+    return n >= 28 && n <= 72 ? n : 44;
+  } catch { return 44; }
+})());
+let chatResizing = ref(false);
+
+function onChatResizeDown(e: MouseEvent) {
+  e.preventDefault();
+  chatResizing.value = true;
+  const move = (ev: MouseEvent) => {
+    const el = chatBodyRef.value;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+    chatLeftW.value = Math.min(72, Math.max(28, pct));
+  };
+  const up = () => {
+    chatResizing.value = false;
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    try { localStorage.setItem('devflow-sched-chat-left', String(Math.round(chatLeftW.value))); } catch { /* ignore */ }
+  };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+function resetChatWidth() {
+  chatLeftW.value = 44;
+  try { localStorage.setItem('devflow-sched-chat-left', '44'); } catch { /* ignore */ }
+}
 let chatTimer: ReturnType<typeof setInterval> | null = null;
 
 const chatReportHtml = computed(() => (chatReport.value ? renderRemoteMarkdown(chatReport.value) : ''));
 const chatStatusLabel = computed(() => (chatStatus.value == null ? '' : runStatusLabel(chatStatus.value)));
 const chatProcess = computed(() => formatNgaEvents(chatLog.value));
 const DEFAULT_SCHEDULE = { mode: 'interval' as const, interval: { every: 1, unit: 'day' as const }, daily: { at: '09:30', weekdays: [] as number[] } };
+
+function chatScheduleBody() {
+  if (chatScheduleMode.value === 'daily') {
+    return {
+      enabled: true,
+      schedule: {
+        mode: 'daily' as const,
+        interval: { every: 1, unit: 'day' as const },
+        daily: { at: chatAt.value || '09:30', weekdays: [] as number[] },
+      },
+    };
+  }
+  if (chatScheduleMode.value === 'interval') {
+    return {
+      enabled: true,
+      schedule: {
+        mode: 'interval' as const,
+        interval: { every: Math.max(1, Number(chatEvery.value) || 1), unit: chatUnit.value },
+        daily: { at: '09:30', weekdays: [] as number[] },
+      },
+    };
+  }
+  return { enabled: false, schedule: DEFAULT_SCHEDULE };
+}
 
 function resetChat() {
   stopChatTimer();
@@ -197,10 +305,31 @@ function resetChat() {
   chatLog.value = '';
   chatReport.value = '';
   chatTab.value = 'process';
+  chatScheduleMode.value = 'once';
+  chatEvery.value = 1;
+  chatUnit.value = 'hour';
+  chatAt.value = '09:30';
+  chatFile.value = null;
 }
 function openChatCreate() {
   resetChat();
   chatOpen.value = true;
+}
+async function pickChatFile() {
+  state.error = '';
+  try {
+    const r = await sched.pickFile();
+    if (r.error) { state.error = r.error === 'unsupported' ? t('sched.pick_unsupported') : t('sched.pick_failed', { msg: r.message || r.error }); return; }
+    if (r.cancelled || !r.path) return;
+    const name = r.path.replace(/\\/g, '/').split('/').pop() || r.path;
+    chatFile.value = { path: r.path, name };
+    const ext = (name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+    const content = ext === '.md' && r.content ? String(r.content).trim() : '';
+    chatInput.value = content || t('sched.chat.file_prompt', { path: r.path });
+  } catch (e: any) { state.error = String(e?.message || e); }
+}
+function clearChatFile() {
+  chatFile.value = null;
 }
 function closeChat() {
   chatOpen.value = false;
@@ -233,11 +362,11 @@ async function sendChat() {
     if (!taskId) {
       const base = {
         name: autoTaskName(text),
-        enabled: false,
         projectId: props.projectId || null,
         type: 'ai',
         ai: { source: 'prompt', prompt: text },
-        schedule: DEFAULT_SCHEDULE,
+        ...(chatFile.value ? { filePath: chatFile.value.path } : {}),
+        ...chatScheduleBody(),
       };
       let created;
       try {
@@ -254,7 +383,7 @@ async function sendChat() {
       const task = state.tasks.find((x) => x.id === taskId);
       const base = task?.ai?.prompt || chatPrompt.value;
       const nextPrompt = `${base}\n\n---\n\n${text}`;
-      await sched.updateTask(taskId, { ai: { ...(task?.ai || { source: 'prompt' }), prompt: nextPrompt } });
+      await sched.updateTask(taskId, { ai: { ...(task?.ai || { source: 'prompt' }), prompt: nextPrompt }, ...(chatFile.value ? { filePath: chatFile.value.path } : {}), ...chatScheduleBody() });
       chatPrompt.value = nextPrompt;
       chatMessages.value.push({ role: 'assistant', text: t('sched.chat.appended'), status: 0 });
     }
@@ -320,6 +449,9 @@ onBeforeUnmount(() => {
       <button @click="sched.refresh()">{{ $t('sched.refresh') }}</button>
       <button class="primary" @click="openCreate">{{ $t('sched.create') }}</button>
       <button @click="showImport = true">{{ $t('sched.import') }}</button>
+      <button @click="exportAllTasks">{{ $t('sched.export_all') }}</button>
+      <button @click="pickImportAll">{{ $t('sched.import_all') }}</button>
+      <input ref="importAllInput" class="hidden-file" type="file" accept="application/json,.json" @change="onImportAllFile" />
     </header>
 
     <div class="main-tabs">
@@ -501,13 +633,41 @@ onBeforeUnmount(() => {
           <span v-if="chatStatusLabel" class="chat-status" :class="'s' + chatStatus">{{ chatStatusLabel }}</span>
           <button @click="closeChat">{{ $t('sched.chat.close') }}</button>
         </header>
-        <div class="chat-body">
-          <section class="chat-left">
+        <div ref="chatBodyRef" class="chat-body" :class="{ resizing: chatResizing }">
+          <section class="chat-left" :style="{ width: chatLeftW + '%' }">
+            <div class="chat-schedule">
+              <span class="cs-label">{{ $t('sched.chat.schedule') }}</span>
+              <select v-model="chatScheduleMode">
+                <option value="once">{{ $t('sched.chat.once') }}</option>
+                <option value="interval">{{ $t('sched.mode.interval') }}</option>
+                <option value="daily">{{ $t('sched.mode.daily') }}</option>
+              </select>
+              <template v-if="chatScheduleMode === 'interval'">
+                <span>{{ $t('sched.field.every') }}</span>
+                <input v-model.number="chatEvery" class="cs-num" type="number" min="1" />
+                <select v-model="chatUnit">
+                  <option value="minute">{{ $t('sched.unit.minute') }}</option>
+                  <option value="hour">{{ $t('sched.unit.hour') }}</option>
+                  <option value="day">{{ $t('sched.unit.day') }}</option>
+                </select>
+              </template>
+              <template v-else-if="chatScheduleMode === 'daily'">
+                <span>{{ $t('sched.field.at') }}</span>
+                <input v-model="chatAt" class="cs-time" type="time" />
+              </template>
+            </div>
             <div class="chat-messages">
               <div v-for="(m, i) in chatMessages" :key="i" class="chat-msg" :class="m.role">
                 <div class="bubble">{{ m.text }}</div>
               </div>
               <div v-if="!chatMessages.length" class="chat-empty">{{ $t('sched.chat.empty_chat') }}</div>
+            </div>
+            <div class="chat-filebar">
+              <button class="chat-pick" @click="pickChatFile">{{ $t('sched.pick_file') }}</button>
+              <span v-if="chatFile" class="chat-filechip" :title="chatFile.path">
+                {{ chatFile.name }}
+                <button @click="clearChatFile">×</button>
+              </span>
             </div>
             <div class="chat-input">
               <textarea v-model="chatInput" :placeholder="$t('sched.chat.input_ph')" @keydown.enter.exact.prevent="sendChat" />
@@ -516,6 +676,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </section>
+          <div class="chat-divider" @mousedown.prevent="onChatResizeDown" @dblclick="resetChatWidth" />
           <section class="chat-right">
             <div class="chat-tabs">
               <button :class="{ on: chatTab === 'process' }" @click="chatTab = 'process'">{{ $t('sched.chat.process') }}</button>
@@ -540,6 +701,7 @@ onBeforeUnmount(() => {
 .bar .title { font-weight: 700; color: var(--tx1); }
 .bar .spacer { flex: 1; }
 .bar .err { color: var(--warn, #e5534b); font-size: 12px; }
+.hidden-file { display: none; }
 .bar button, .modalacts button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; }
 .bar button.primary, .modalacts button.primary { background: var(--ac3, var(--ac2)); border-color: var(--ac3, var(--ac2)); color: #fff; }
 .body { flex: 1; overflow: auto; padding: 8px 12px; }
@@ -670,9 +832,20 @@ onBeforeUnmount(() => {
 .chat-status.s1 { color: #3fb950; }
 .chat-status.s2 { color: #e5534b; }
 .chat-status.s3, .chat-status.s0, .chat-status.s4 { color: var(--ac2); }
-.chat-body { flex: 1; display: flex; min-height: 0; }
-.chat-left { width: 44%; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid var(--bd); background: var(--bg1); }
+.chat-body { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.chat-body.resizing { user-select: none; cursor: col-resize; }
+.chat-left { flex: 0 0 auto; max-width: 72%; min-width: 240px; display: flex; flex-direction: column; border-right: 1px solid var(--bd); background: var(--bg1); overflow: hidden; }
+.chat-divider { width: 6px; flex: 0 0 6px; cursor: col-resize; background: transparent; z-index: 2; }
+.chat-divider:hover { background: var(--ac2); opacity: .45; }
 .chat-messages { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.chat-schedule { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--bd); color: var(--tx5); font-size: 12px; }
+.chat-schedule select, .chat-schedule input { background: var(--bg4, var(--bg5)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 6px; font-size: 12px; }
+.chat-schedule .cs-num { width: 58px; }
+.chat-schedule .cs-time { width: auto; }
+.chat-filebar { display: flex; align-items: center; gap: 8px; padding: 6px 12px 0; }
+.chat-pick { background: var(--bg5, var(--bg4)); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; font-size: 12px; font-family: inherit; }
+.chat-filechip { display: inline-flex; align-items: center; gap: 4px; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tx4); font-size: 12px; }
+.chat-filechip button { background: none; border: none; color: var(--tx5); cursor: pointer; font-size: 13px; padding: 0 2px; }
 .chat-msg { display: flex; }
 .chat-msg.user { justify-content: flex-end; }
 .chat-msg .bubble { max-width: 82%; padding: 8px 11px; border-radius: 8px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
@@ -683,7 +856,7 @@ onBeforeUnmount(() => {
 .chat-input textarea { flex: 1; min-height: 52px; max-height: 140px; resize: vertical; background: var(--bg4, var(--bg5)); color: var(--tx); border: 1px solid var(--bd); border-radius: 6px; padding: 7px 9px; font-family: inherit; font-size: 13px; }
 .chat-input button { background: var(--ac2); color: #fff; border: 1px solid var(--ac2); border-radius: 5px; padding: 7px 14px; cursor: pointer; }
 .chat-input button:disabled { opacity: .5; cursor: default; }
-.chat-right { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg0, var(--bg1)); }
+.chat-right { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; background: var(--bg0, var(--bg1)); overflow: hidden; }
 .chat-tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--bd); }
 .chat-tabs button { background: var(--bg5, var(--bg4)); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 12px; cursor: pointer; font-size: 12px; }
 .chat-tabs button.on { background: var(--ac2); color: #fff; }

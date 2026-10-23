@@ -74,6 +74,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.process-terminal { flex: 1; min-height: 0; background: #0b0b0b; overflow: hidden; }
-.host { width: 100%; height: 100%; padding: 8px 10px; box-sizing: border-box; }
+.process-terminal { flex: 1 1 0; min-height: 0; background: #0b0b0b; overflow: hidden; padding: 6px 8px; box-sizing: border-box; }
+.host { width: 100%; height: 100%; }
 </style>

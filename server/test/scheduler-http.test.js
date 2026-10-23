@@ -160,3 +160,20 @@ test('GET /summary 来自队列', async () => {
   assert.equal(res.status, 200);
   assert.deepEqual(JSON.parse(res.body), { total: 4, success: 1, failed: 2, running: 1, queued: 0, pending: 0 });
 });
+
+test('导出全部任务并重新导入', async () => {
+  const { mount, store } = setup();
+  const create = await call(mount, 'POST', '/api/scheduler/tasks', {
+    name: 'a', type: 'shell', command: 'echo', schedule: { mode: 'interval', interval: { every: 5, unit: 'minute' } },
+  });
+  const id = JSON.parse(create.body).task.id;
+  const exp = await call(mount, 'GET', '/api/scheduler/tasks/export');
+  const body = JSON.parse(exp.body);
+  assert.equal(body.format, 'devflow_scheduler_tasks');
+  assert.equal(body.tasks.length, 1);
+  store.deleteTask(id);
+  const imp = await call(mount, 'POST', '/api/scheduler/tasks/import-all', { tasks: body.tasks });
+  assert.equal(imp.status, 200);
+  assert.equal(JSON.parse(imp.body).imported, 1);
+  assert.equal(store.listTasks().length, 1);
+});
