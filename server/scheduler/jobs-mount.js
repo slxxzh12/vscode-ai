@@ -1,3 +1,5 @@
+import { readLogTail } from './report.js';
+
 const sendJson = (res, status, obj) => {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(obj));
@@ -9,7 +11,7 @@ const readBody = (req, limit = 1024 * 1024) => new Promise((resolve, reject) => 
   req.on('error', reject);
 });
 
-export function createJobsMount({ queue, registry = () => null, role = 'master', logger = console, hostport = '', machineId = '', stopJob = null, onCallback = null }) {
+export function createJobsMount({ queue, registry = () => null, role = 'master', logger = console, hostport = '', machineId = '', stopJob = null, onCallback = null, store = null }) {
   const isMaster = () => role === 'master';
   return async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -31,7 +33,7 @@ export function createJobsMount({ queue, registry = () => null, role = 'master',
           topic: queue.topic, partitionCount: await queue.partitionCount(),
         });
       }
-      const m = p.match(/^\/api\/scheduler\/jobs\/([^/]+)(?:\/(approve|reject|cancel|retry|callback))?$/);
+      const m = p.match(/^\/api\/scheduler\/jobs\/([^/]+)(?:\/(approve|reject|cancel|retry|callback|log))?$/);
       if (m) {
         const id = decodeURIComponent(m[1]);
         const action = m[2];
@@ -39,6 +41,17 @@ export function createJobsMount({ queue, registry = () => null, role = 'master',
           const job = await queue.getJob(id);
           if (!job) return sendJson(res, 404, { error: 'not-found' });
           return sendJson(res, 200, { job, local: job.workIP === hostport });
+        }
+        if (action === 'log' && req.method === 'GET') {
+          const job = await queue.getJob(id);
+          if (!job) return sendJson(res, 404, { error: 'not-found' });
+          let result = {};
+          try { result = job.result ? JSON.parse(job.result) : {}; } catch { result = {}; }
+          const logPath = String(result.logPath || (store && job.taskId ? store.logPath(store.logFileFor(job.taskId, job.jobId)) : ''));
+          if (!logPath) return sendJson(res, 404, { error: 'no-log' });
+          const text = readLogTail(logPath, 300);
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+          return res.end(text);
         }
         if (action === 'callback' && req.method === 'POST') {
           if (!onCallback) return sendJson(res, 501, { error: 'callback-unavailable' });

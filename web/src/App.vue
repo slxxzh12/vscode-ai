@@ -868,7 +868,7 @@ onBeforeUnmount(() => {
           <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
         </template>
         <section class="center">
-          <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine" :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive" />
+          <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :project-root="currentProjectInfo?.root || ''" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine" :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive" />
         </section>
       </template>
     </div>

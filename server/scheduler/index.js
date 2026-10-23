@@ -70,7 +70,7 @@ export function createScheduler({
 
   const mount = createSchedulerMount({ engine, store, queue, logger });
   const jobsMount = createJobsMount({
-    queue, registry: () => registry, role, hostport, machineId, logger,
+    queue, store, registry: () => registry, role, hostport, machineId, logger,
     stopJob: (jobId) => consumer?.stopJob(jobId),
     onCallback: (jobId, token, body) => (consumer ? consumer.handleCallback(jobId, token, body) : Promise.resolve({ error: 'not-running' })),
   });

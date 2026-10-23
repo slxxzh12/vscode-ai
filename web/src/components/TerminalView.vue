@@ -48,6 +48,7 @@ const props = defineProps<{
   terminal: ReturnType<typeof useTerminal>;
   center: ReturnType<typeof useCenter>;
   projectId: string | null;
+  projectRoot?: string;
   detailToken?: number;
   detailPath?: string;
   locateToken?: number;
@@ -1456,7 +1457,7 @@ onBeforeUnmount(() => {
       <NginxTool v-else-if="activeToolName === 'nginx'" />
     </div>
     <div v-if="activeScheduler" class="scheduler-layer">
-      <SchedulerView :terminal="terminal" :on-open-session="openSchedulerSession" />
+      <SchedulerView :terminal="terminal" :project-root="props.projectRoot" :on-open-session="openSchedulerSession" />
     </div>
     <div v-show="!!activeLocal" class="local-layer">
       <template v-if="localIsRoot">

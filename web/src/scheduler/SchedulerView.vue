@@ -5,8 +5,9 @@ import SchedulerReportView from './SchedulerReportView.vue';
 import { scheduleSummary, formatTime, runStatusLabel, recentJobsOf, typeLabel } from './format';
 import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
+import { renderRemoteMarkdown } from '../markdown';
 
-const props = defineProps<{ terminal: any; onOpenSession?: (sessionId: string) => void }>();
+const props = defineProps<{ terminal: any; onOpenSession?: (sessionId: string) => void; projectRoot?: string }>();
 const sched = useScheduler(props.terminal);
 const { state } = sched;
 
@@ -140,8 +141,129 @@ function barClass(status: number): string {
   return 'killed';
 }
 
+// —— 聊天式新建 AI 任务 ——
+const chatOpen = ref(false);
+const chatMessages = ref<{ role: 'user' | 'assistant'; text: string; status?: number }[]>([]);
+const chatInput = ref('');
+const chatBusy = ref(false);
+const chatTaskId = ref<string | null>(null);
+const chatPrompt = ref('');
+const chatJobId = ref('');
+const chatStatus = ref<number | null>(null);
+const chatLog = ref('');
+const chatReport = ref('');
+const chatTab = ref<'process' | 'result'>('process');
+let chatTimer: ReturnType<typeof setInterval> | null = null;
+
+const chatReportHtml = computed(() => (chatReport.value ? renderRemoteMarkdown(chatReport.value) : ''));
+const chatStatusLabel = computed(() => (chatStatus.value == null ? '' : runStatusLabel(chatStatus.value)));
+const DEFAULT_SCHEDULE = { mode: 'interval' as const, interval: { every: 1, unit: 'day' as const }, daily: { at: '09:30', weekdays: [] as number[] } };
+
+function resetChat() {
+  stopChatTimer();
+  chatMessages.value = [];
+  chatInput.value = '';
+  chatBusy.value = false;
+  chatTaskId.value = null;
+  chatPrompt.value = '';
+  chatJobId.value = '';
+  chatStatus.value = null;
+  chatLog.value = '';
+  chatReport.value = '';
+  chatTab.value = 'process';
+}
+function openChatCreate() {
+  resetChat();
+  chatOpen.value = true;
+}
+function closeChat() {
+  chatOpen.value = false;
+  stopChatTimer();
+}
+function autoTaskName(text: string) {
+  const s = text.replace(/\s+/g, ' ').trim();
+  if (!s) return t('sched.chat.default_name', { time: formatTime(Date.now()) });
+  return s.length > 24 ? `${s.slice(0, 24)}…` : s;
+}
+function setLastAssistant(text: string, status?: number) {
+  const last = chatMessages.value[chatMessages.value.length - 1];
+  if (last && last.role === 'assistant') { last.text = text; last.status = status; }
+}
+async function sendChat() {
+  const text = chatInput.value.trim();
+  if (!text || chatBusy.value) return;
+  chatInput.value = '';
+  chatMessages.value.push({ role: 'user', text });
+  chatBusy.value = true;
+  chatStatus.value = null;
+  chatLog.value = '';
+  chatReport.value = '';
+  chatTab.value = 'process';
+  try {
+    let taskId = chatTaskId.value;
+    if (!taskId) {
+      const created = await sched.createTask({
+        name: autoTaskName(text),
+        enabled: false,
+        cwd: props.projectRoot || null,
+        type: 'ai',
+        ai: { source: 'prompt', prompt: text },
+        schedule: DEFAULT_SCHEDULE,
+      });
+      taskId = created.id;
+      chatTaskId.value = taskId;
+      chatPrompt.value = text;
+      chatMessages.value.push({ role: 'assistant', text: t('sched.chat.created'), status: 0 });
+    } else {
+      const task = state.tasks.find((x) => x.id === taskId);
+      const base = task?.ai?.prompt || chatPrompt.value;
+      const nextPrompt = `${base}\n\n---\n\n${text}`;
+      await sched.updateTask(taskId, { ai: { ...(task?.ai || { source: 'prompt' }), prompt: nextPrompt }, cwd: task?.cwd || props.projectRoot || null });
+      chatPrompt.value = nextPrompt;
+      chatMessages.value.push({ role: 'assistant', text: t('sched.chat.appended'), status: 0 });
+    }
+    if (!taskId) throw new Error('task-create-failed');
+    const r = await sched.runNow(taskId);
+    chatJobId.value = r?.job?.jobId || '';
+    startChatTimer();
+  } catch (e: any) {
+    chatBusy.value = false;
+    chatMessages.value.push({ role: 'assistant', text: t('sched.chat.failed', { msg: String(e?.message || e) }), status: 2 });
+  }
+}
+function startChatTimer() {
+  stopChatTimer();
+  void pollChat();
+  chatTimer = setInterval(() => { void pollChat(); }, 1200);
+}
+function stopChatTimer() {
+  if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
+}
+async function pollChat() {
+  if (!chatTaskId.value || !chatJobId.value) return;
+  try {
+    const jobs = await sched.loadJobs(chatTaskId.value, 10);
+    const job = jobs.find((j) => j.jobId === chatJobId.value) || jobs[0];
+    if (!job) return;
+    chatStatus.value = job.status;
+    chatLog.value = await sched.loadJobLog(job.jobId);
+    if (job.status !== 1 && job.status !== 2) return;
+    let result: any = {};
+    try { result = job.result ? JSON.parse(job.result) : {}; } catch { result = {}; }
+    chatReport.value = String(result.reportMarkdown || '');
+    chatBusy.value = false;
+    stopChatTimer();
+    if (job.status === 1) {
+      setLastAssistant(t('sched.chat.done'), 1);
+      chatTab.value = 'result';
+    } else {
+      setLastAssistant(t('sched.chat.failed', { msg: result.error || runStatusLabel(job.status) }), 2);
+    }
+  } catch { /* keep polling */ }
+}
+
 onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); });
-onBeforeUnmount(() => { sched.dispose(); });
+onBeforeUnmount(() => { stopChatTimer(); sched.dispose(); });
 </script>
 
 <template>
@@ -166,6 +288,11 @@ onBeforeUnmount(() => { sched.dispose(); });
         <div class="sum-card sum-total"><span class="num">{{ sched.state.summary.total }}</span><span>{{ $t('sched.summary.total') }}</span></div>
       </div>
       <div class="list">
+        <button class="new-task-entry" @click="openChatCreate">
+          <span class="plus">＋</span>
+          <span class="nt-main">{{ $t('sched.chat.new') }}</span>
+          <span class="nt-hint">{{ $t('sched.chat.hint') }}</span>
+        </button>
         <div v-if="state.tasks.length" class="listhead">
           <span class="lh-main">{{ $t('sched.col.name') }}</span>
           <span class="lh-status">{{ $t('sched.col.status') }}</span>
@@ -312,6 +439,45 @@ onBeforeUnmount(() => { sched.dispose(); });
         </div>
       </div>
     </div>
+
+    <div v-if="chatOpen" class="chat-overlay">
+      <div class="chat-page">
+        <header class="chat-head">
+          <span class="chat-title">{{ $t('sched.chat.title') }}</span>
+          <span v-if="chatTaskId" class="dim">{{ $t('sched.chat.saved_hint') }}</span>
+          <div class="spacer" />
+          <span v-if="chatStatusLabel" class="chat-status" :class="'s' + chatStatus">{{ chatStatusLabel }}</span>
+          <button @click="closeChat">{{ $t('sched.chat.close') }}</button>
+        </header>
+        <div class="chat-body">
+          <section class="chat-left">
+            <div class="chat-messages">
+              <div v-for="(m, i) in chatMessages" :key="i" class="chat-msg" :class="m.role">
+                <div class="bubble">{{ m.text }}</div>
+              </div>
+              <div v-if="!chatMessages.length" class="chat-empty">{{ $t('sched.chat.empty_chat') }}</div>
+            </div>
+            <div class="chat-input">
+              <textarea v-model="chatInput" :placeholder="$t('sched.chat.input_ph')" @keydown.enter.exact.prevent="sendChat" />
+              <button class="primary" :disabled="chatBusy || !chatInput.trim()" @click="sendChat">
+                {{ chatBusy ? $t('sched.chat.running') : $t('sched.chat.send') }}
+              </button>
+            </div>
+          </section>
+          <section class="chat-right">
+            <div class="chat-tabs">
+              <button :class="{ on: chatTab === 'process' }" @click="chatTab = 'process'">{{ $t('sched.chat.process') }}</button>
+              <button :class="{ on: chatTab === 'result' }" @click="chatTab = 'result'">{{ $t('sched.chat.result') }}</button>
+            </div>
+            <pre v-if="chatTab === 'process'" class="chat-log">{{ chatLog || $t('sched.chat.empty_process') }}</pre>
+            <template v-else>
+              <div v-if="chatReport" class="chat-report md-body" v-html="chatReportHtml" />
+              <div v-else class="chat-empty">{{ $t('sched.chat.empty_result') }}</div>
+            </template>
+          </section>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -431,4 +597,38 @@ onBeforeUnmount(() => { sched.dispose(); });
 .histitem { padding: 5px 6px; cursor: pointer; border-radius: 4px; font-size: 12px; color: var(--tx2); }
 .histitem.on { background: var(--bg5, var(--bg4)); }
 .logview { flex: 1; margin: 0; overflow: auto; background: var(--bg6, var(--bg1)); color: var(--tx2); font-family: ui-monospace, Consolas, monospace; font-size: 12px; padding: 8px; white-space: pre-wrap; }
+.new-task-entry { display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 8px; padding: 9px 12px; background: var(--bg1); color: var(--tx2); border: 1px dashed var(--bd); border-radius: 6px; cursor: pointer; text-align: left; font-family: inherit; }
+.new-task-entry:hover { border-color: var(--ac2); color: var(--tx1); }
+.new-task-entry .plus { color: var(--ac2); font-size: 16px; font-weight: 700; }
+.new-task-entry .nt-main { color: var(--tx1); font-weight: 600; }
+.new-task-entry .nt-hint { color: var(--tx5); font-size: 12px; }
+.chat-overlay { position: fixed; inset: 0; z-index: 80; background: var(--bg0, var(--bg1)); display: flex; }
+.chat-page { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.chat-head { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--bd); }
+.chat-head .spacer { flex: 1; }
+.chat-header button, .chat-head button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 12px; cursor: pointer; }
+.chat-title { font-weight: 700; color: var(--tx1); }
+.chat-status { font-size: 12px; color: var(--tx5); }
+.chat-status.s1 { color: #3fb950; }
+.chat-status.s2 { color: #e5534b; }
+.chat-status.s3, .chat-status.s0, .chat-status.s4 { color: var(--ac2); }
+.chat-body { flex: 1; display: flex; min-height: 0; }
+.chat-left { width: 44%; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid var(--bd); background: var(--bg1); }
+.chat-messages { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.chat-msg { display: flex; }
+.chat-msg.user { justify-content: flex-end; }
+.chat-msg .bubble { max-width: 82%; padding: 8px 11px; border-radius: 8px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.chat-msg.user .bubble { background: var(--ac2); color: #fff; border-bottom-right-radius: 2px; }
+.chat-msg.assistant .bubble { background: var(--bg5, var(--bg4)); color: var(--tx2); border-bottom-left-radius: 2px; }
+.chat-empty { color: var(--tx5); font-size: 12px; text-align: center; padding: 28px 12px; }
+.chat-input { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px; border-top: 1px solid var(--bd); }
+.chat-input textarea { flex: 1; min-height: 52px; max-height: 140px; resize: vertical; background: var(--bg4, var(--bg5)); color: var(--tx); border: 1px solid var(--bd); border-radius: 6px; padding: 7px 9px; font-family: inherit; font-size: 13px; }
+.chat-input button { background: var(--ac2); color: #fff; border: 1px solid var(--ac2); border-radius: 5px; padding: 7px 14px; cursor: pointer; }
+.chat-input button:disabled { opacity: .5; cursor: default; }
+.chat-right { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg0, var(--bg1)); }
+.chat-tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--bd); }
+.chat-tabs button { background: var(--bg5, var(--bg4)); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 12px; cursor: pointer; font-size: 12px; }
+.chat-tabs button.on { background: var(--ac2); color: #fff; }
+.chat-log { flex: 1; margin: 0; overflow: auto; padding: 12px; background: var(--bg6, var(--bg1)); color: var(--tx2); font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; }
+.chat-report { flex: 1; overflow: auto; padding: 14px 18px; color: var(--tx); }
 </style>

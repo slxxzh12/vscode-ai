@@ -66,3 +66,17 @@ test('AI 回调：令牌正确返回 200，错误令牌返回 403', async () => 
   assert.equal((await call(mount, 'POST', '/api/scheduler/jobs/j2/callback', { token: 'bad', status: 1 })).status, 403);
   assert.equal(seen.length, 2);
 });
+
+test('GET /api/scheduler/jobs/:id/log 返回作业日志', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'job-log-')), 'run.log');
+  fs.writeFileSync(file, 'line-1\nline-2');
+  const q = { ...setup().q, getJob: async () => ({ jobId: 'j1', status: 2, result: JSON.stringify({ logPath: file }) }) };
+  const mount = createJobsMount({ queue: q, role: 'master', logger: console });
+  const r = await call(mount, 'GET', '/api/scheduler/jobs/j1/log');
+  assert.equal(r.status, 200);
+  assert.match(r.body, /line-1/);
+  assert.match(r.body, /line-2/);
+});
