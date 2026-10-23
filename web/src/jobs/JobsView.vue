@@ -134,8 +134,8 @@ function reportOf(job: Job): string {
 .sum-card .num { font-size: 20px; font-weight: 600; }
 .workers { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; opacity: .8; }
 .worker.off { opacity: .45; }
-.partitions { display: flex; gap: 8px; overflow-x: auto; align-items: flex-start; }
-.partition-col { min-width: 170px; max-width: 220px; flex: 0 0 auto; border: 1px solid var(--border-color, #333); border-radius: 6px; padding: 6px; }
+.partitions { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.partition-col { width: 100%; border: 1px solid var(--border-color, #333); border-radius: 6px; padding: 6px; }
 .partition-col header { font-size: 12px; opacity: .7; margin-bottom: 6px; cursor: pointer; }
 .job-card { display: flex; flex-direction: column; gap: 2px; padding: 6px; margin-bottom: 6px; border-radius: 4px; cursor: pointer; background: var(--hover-bg, rgba(128,128,128,.12)); }
 .job-card .st { font-size: 11px; font-weight: 600; }
