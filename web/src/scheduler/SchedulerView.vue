@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useScheduler, type TaskView } from './useScheduler';
 import SchedulerReportView from './SchedulerReportView.vue';
-import SchedulerJobsView from './SchedulerJobsView.vue';
+import JobsView from '../jobs/JobsView.vue';
 import { scheduleSummary, formatTime, runStatusLabel, recentJobsOf, typeLabel } from './format';
 import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
@@ -182,6 +182,9 @@ function closeChat() {
   chatOpen.value = false;
   stopChatTimer();
 }
+function onChatKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && chatOpen.value) closeChat();
+}
 function autoTaskName(text: string) {
   const s = text.replace(/\s+/g, ' ').trim();
   if (!s) return t('sched.chat.default_name', { time: formatTime(Date.now()) });
@@ -264,8 +267,16 @@ async function pollChat() {
   } catch { /* keep polling */ }
 }
 
-onMounted(async () => { await sched.refresh(); sched.loadAiCommands(); });
-onBeforeUnmount(() => { stopChatTimer(); sched.dispose(); });
+onMounted(async () => {
+  window.addEventListener('keydown', onChatKey);
+  await sched.refresh();
+  sched.loadAiCommands();
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onChatKey);
+  stopChatTimer();
+  sched.dispose();
+});
 </script>
 
 <template>
@@ -344,12 +355,7 @@ onBeforeUnmount(() => { stopChatTimer(); sched.dispose(); });
         </div>
       </div>
     </div>
-    <SchedulerJobsView
-      v-else
-      :tasks="state.tasks"
-      :load-jobs="sched.loadAllJobs"
-      :load-log="sched.loadJobLog"
-    />
+    <JobsView v-else />
     </template>
 
     <SchedulerReportView
@@ -456,6 +462,7 @@ onBeforeUnmount(() => { stopChatTimer(); sched.dispose(); });
     <div v-if="chatOpen" class="chat-overlay">
       <div class="chat-page">
         <header class="chat-head">
+          <button class="chat-back" @click="closeChat">← {{ $t('sched.chat.back') }}</button>
           <span class="chat-title">{{ $t('sched.chat.title') }}</span>
           <span v-if="chatTaskId" class="dim">{{ $t('sched.chat.saved_hint') }}</span>
           <div class="spacer" />
@@ -624,6 +631,8 @@ onBeforeUnmount(() => { stopChatTimer(); sched.dispose(); });
 .chat-head .spacer { flex: 1; }
 .chat-header button, .chat-head button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 12px; cursor: pointer; }
 .chat-title { font-weight: 700; color: var(--tx1); }
+.chat-back { background: none; border: none; color: var(--tx2); cursor: pointer; padding: 3px 4px; font-family: inherit; }
+.chat-back:hover { color: var(--ac2); }
 .chat-status { font-size: 12px; color: var(--tx5); }
 .chat-status.s1 { color: #3fb950; }
 .chat-status.s2 { color: #e5534b; }

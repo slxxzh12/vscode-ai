@@ -82,10 +82,12 @@ describe('SchedulerView', () => {
     expect(calls.some((c) => c.url === '/api/scheduler/tasks' && c.method === 'POST' && c.body.type === 'ai')).toBe(true);
     expect(calls.some((c) => c.url === '/api/scheduler/tasks/t1/run' && c.method === 'POST')).toBe(true);
     expect(w.find('.chat-msg.user .bubble').text()).toBe('hello');
+    await w.find('.chat-back').trigger('click');
+    expect(w.find('.chat-overlay').exists()).toBe(false);
     w.unmount();
   });
 
-  it('可在任务列表与执行记录两个页签之间切换', async () => {
+  it('可在定时任务与任务队列两个页签之间切换', async () => {
     const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
     await flushPromises();
     expect(w.find('.body').exists()).toBe(true);
