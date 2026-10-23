@@ -84,4 +84,15 @@ describe('SchedulerView', () => {
     expect(w.find('.chat-msg.user .bubble').text()).toBe('hello');
     w.unmount();
   });
+
+  it('可在任务列表与执行记录两个页签之间切换', async () => {
+    const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
+    await flushPromises();
+    expect(w.find('.body').exists()).toBe(true);
+    await w.findAll('.main-tabs button')[1].trigger('click');
+    await flushPromises();
+    expect(w.find('.jobs-view').exists()).toBe(true);
+    await w.findAll('.main-tabs button')[0].trigger('click');
+    expect(w.find('.body').exists()).toBe(true);
+  });
 });

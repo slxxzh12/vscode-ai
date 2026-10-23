@@ -65,6 +65,10 @@ export function useScheduler(terminal?: TerminalLike) {
     const d = await api('GET', `/api/scheduler/jobs?taskId=${encodeURIComponent(taskId)}&limit=${limit}`);
     return d.jobs || [];
   }
+  async function loadAllJobs(limit = 200): Promise<SchedulerJob[]> {
+    const d = await api('GET', `/api/scheduler/jobs?limit=${limit}`);
+    return d.jobs || [];
+  }
   async function loadJobLog(jobId: string): Promise<string> {
     const res = await fetch(`/api/scheduler/jobs/${encodeURIComponent(jobId)}/log`);
     return res.ok ? res.text() : '';
@@ -104,5 +108,5 @@ export function useScheduler(terminal?: TerminalLike) {
     unsubs.push(terminal.on(SchedulerS2C.SCHED_RUN_END, onAny));
   }
 
-  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadJobs, loadJobLog, loadSummary, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
+  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadJobs, loadAllJobs, loadJobLog, loadSummary, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
 }

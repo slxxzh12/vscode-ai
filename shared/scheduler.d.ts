@@ -55,6 +55,7 @@ export interface SchedulerSummary {
 
 export interface SchedulerJob {
   jobId: string;
+  taskId?: string | null;
   parentJobId?: string | null;
   topic?: string;
   groupName?: string | null;

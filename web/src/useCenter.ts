@@ -3,7 +3,7 @@ import { useLocalSources } from './local/useLocalSources';
 
 export interface CenterTab {
   id: string;
-  kind: 'session' | 'file' | 'tool' | 'local' | 'scheduler';
+  kind: 'session' | 'file' | 'tool' | 'local';
   label: string;
   sub?: string;
   projectId?: string | null;
@@ -16,7 +16,6 @@ const fid = (p: string, path: string) => `f:${p}|${path}`;
 const tid = (tool: string) => `t:${tool}`;
 const lidRoot = 'l:root';
 const lidFile = (key: string) => `l:f:${key}`;
-const schedulerId = 'x:scheduler';
 
 export function useCenter() {
   const tabs = ref<CenterTab[]>([]);
@@ -66,10 +65,6 @@ export function useCenter() {
     upsert({ id, kind: 'tool', label: label ?? tool, tool });
     setActive(id);
   }
-  function openScheduler(label = 'scheduler') {
-    upsert({ id: schedulerId, kind: 'scheduler', label });
-    setActive(schedulerId);
-  }
   function openLocalRoot(label: string) {
     const ex = tabs.value.find((t) => t.id === lidRoot);
     if (ex) { ex.label = label || ex.label; setActive(lidRoot); return; }
@@ -118,5 +113,5 @@ export function useCenter() {
     if (activeId.value === id) { const s = activeSessionTab.value; setActive(s ? s.id : null); }
   }
 
-  return { tabs, activeId, active, activeKind, visibleTabs, scopeProjectId, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab, openTool, openScheduler, openLocalRoot, openLocalFile };
+  return { tabs, activeId, active, activeKind, visibleTabs, scopeProjectId, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab, openTool, openLocalRoot, openLocalFile };
 }

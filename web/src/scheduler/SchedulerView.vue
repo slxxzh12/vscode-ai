@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useScheduler, type TaskView } from './useScheduler';
 import SchedulerReportView from './SchedulerReportView.vue';
+import SchedulerJobsView from './SchedulerJobsView.vue';
 import { scheduleSummary, formatTime, runStatusLabel, recentJobsOf, typeLabel } from './format';
 import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
@@ -16,6 +17,7 @@ const editingId = ref<string | null>(null);
 const pickedPath = ref('');
 const form = ref<any>(emptyForm());
 const detailTask = ref<TaskView | null>(null);
+const mainTab = ref<'tasks' | 'jobs'>('tasks');
 
 function emptyForm() {
   return {
@@ -278,7 +280,12 @@ onBeforeUnmount(() => { stopChatTimer(); sched.dispose(); });
       <button @click="showImport = true">{{ $t('sched.import') }}</button>
     </header>
 
-    <div class="body">
+    <div class="main-tabs">
+      <button :class="{ on: mainTab === 'tasks' }" @click="mainTab = 'tasks'">{{ $t('sched.tab.tasks') }}</button>
+      <button :class="{ on: mainTab === 'jobs' }" @click="mainTab = 'jobs'">{{ $t('sched.tab.jobs') }}</button>
+    </div>
+
+    <div v-if="mainTab === 'tasks'" class="body">
       <div class="summary">
         <div class="sum-card sum-success"><span class="num">{{ sched.state.summary.success }}</span><span>{{ $t('sched.summary.success') }}</span></div>
         <div class="sum-card sum-failed"><span class="num">{{ sched.state.summary.failed }}</span><span>{{ $t('sched.summary.failed') }}</span></div>
@@ -337,6 +344,12 @@ onBeforeUnmount(() => { stopChatTimer(); sched.dispose(); });
         </div>
       </div>
     </div>
+    <SchedulerJobsView
+      v-else
+      :tasks="state.tasks"
+      :load-jobs="sched.loadAllJobs"
+      :load-log="sched.loadJobLog"
+    />
     </template>
 
     <SchedulerReportView
@@ -490,6 +503,9 @@ onBeforeUnmount(() => { stopChatTimer(); sched.dispose(); });
 .bar button, .modalacts button { background: var(--bg5, var(--bg4)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 10px; cursor: pointer; }
 .bar button.primary, .modalacts button.primary { background: var(--ac3, var(--ac2)); border-color: var(--ac3, var(--ac2)); color: #fff; }
 .body { flex: 1; overflow: auto; padding: 8px 12px; }
+.main-tabs { display: flex; gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--bd); }
+.main-tabs button { background: var(--bg5, var(--bg4)); color: var(--tx2); border: 1px solid var(--bd); border-bottom: none; border-radius: 5px 5px 0 0; padding: 5px 14px; cursor: pointer; font-size: 12px; }
+.main-tabs button.on { background: var(--bg1); color: var(--tx1); }
 .summary { display: flex; gap: 8px; margin-bottom: 10px; }
 .sum-card { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--bd); border-radius: 6px; background: var(--bg1); color: var(--tx5); font-size: 12px; }
 .sum-card .num { font-size: 22px; font-weight: 700; color: var(--tx1); }
