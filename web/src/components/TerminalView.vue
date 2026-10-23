@@ -13,6 +13,7 @@ import ToolDocPane from '../tools/doc/ToolDocPane.vue';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
 import NavicatTool from '../tools/navicat/NavicatTool.vue';
 import NginxTool from '../tools/nginx/NginxTool.vue';
+import SchedulerView from '../scheduler/SchedulerView.vue';
 import { useLocalSources } from '../local/useLocalSources';
 import { localRootDocSource, localFileDocSource } from '../local/localDocSource';
 import type { DocSource } from '../tools/doc/docSource';
@@ -78,6 +79,7 @@ const activeTool = computed(() => (props.center.active.value?.kind === 'tool' ? 
 // 本地来源页签（拖入文件/文件夹）
 const local = useLocalSources();
 const activeLocal = computed(() => (props.center.active.value?.kind === 'local' ? props.center.active.value : null));
+const activeScheduler = computed(() => props.center.active.value?.kind === 'scheduler');
 const localIsRoot = computed(() => activeLocal.value?.id === 'l:root');
 const localRootSource = localRootDocSource();
 const localLeafName = computed(() => {
@@ -1195,10 +1197,16 @@ function onTabClose(id: string, ev: Event) {
   if (!tab) return;
   if (tab.kind === 'session' && tab.id.startsWith('s:')) {
     const sid = tab.id.slice(2);
-    props.terminal.killSession(sid);   // 点击即关闭，不弹确认框
+    props.terminal.killSession(sid);   // 关闭会话需确认弹窗
   } else {
     props.center.closeById(id);
   }
+}
+
+function openSchedulerSession(sid: string) {
+  if (!sid) return;
+  props.center.activateSession(sid);
+  props.terminal.switchTo(sid);
 }
 
 watch([agentId, agents, wfKind], saveCfg, { deep: true });
@@ -1416,6 +1424,7 @@ onBeforeUnmount(() => {
         :class="{ active: center.activeId.value === t.id }" @click="onTabClick(t.id)"
         @dblclick="t.kind === 'session' && openTabDialog(t.id)">
         <span v-if="t.kind === 'session'" :class="['dot', sessionState(t.id.slice(2))]" />
+        <span v-else-if="t.kind === 'scheduler'" class="file-ic">📅</span>
         <span v-else class="file-ic">▤</span>
         <span class="nm" :title="t.kind === 'file' ? t.path : (tabDisplayLabel(t) + ' — ' + $t('term.tab_rename'))">{{ tabDisplayLabel(t) }}</span>
         <span class="x" @click="onTabClose(t.id, $event)" @dblclick.stop>×</span>
@@ -1445,6 +1454,9 @@ onBeforeUnmount(() => {
       <PostmanTool v-else-if="activeToolName === 'postman'" />
       <NavicatTool v-else-if="activeToolName === 'navicat'" />
       <NginxTool v-else-if="activeToolName === 'nginx'" />
+    </div>
+    <div v-if="activeScheduler" class="scheduler-layer">
+      <SchedulerView :terminal="terminal" :on-open-session="openSchedulerSession" />
     </div>
     <div v-show="!!activeLocal" class="local-layer">
       <template v-if="localIsRoot">
@@ -1750,6 +1762,7 @@ onBeforeUnmount(() => {
 .file-layer { flex: 1; min-height: 0; overflow: hidden; }
 .tool-layer { flex: 1; min-height: 0; overflow: hidden; }
 .local-layer { flex: 1; min-height: 0; overflow: hidden; }
+.scheduler-layer { flex: 1; min-height: 0; overflow: hidden; }
 .local-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--tx4); font-size: 13px; }
 .phone-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 24px; text-align: center; color: var(--tx4); font-size: 13px; background: var(--bg3); z-index: 2; }
 .fgroup .gplay { background: var(--bg4); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 0 5px; cursor: pointer; font-size: 10px; line-height: 16px; }

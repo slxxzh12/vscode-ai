@@ -221,3 +221,17 @@ test('关闭活动文件页签兜底不落到隐藏会话页签', () => {
   c.closeById('f:p1|x.ts');
   expect(c.activeId.value).toBe('s:a');
 });
+
+test('openScheduler 打开唯一调度页签并激活，closeById 可关闭', () => {
+  const c = useCenter();
+  c.ensureSession('a', 'A', 'running');
+  c.activateSession('a');
+  c.openScheduler('任务');
+  expect(c.activeKind.value).toBe('scheduler');
+  expect(c.tabs.value.filter((t) => t.kind === 'scheduler')).toHaveLength(1);
+  c.openScheduler('任务2');
+  expect(c.tabs.value.filter((t) => t.kind === 'scheduler')).toHaveLength(1);
+  expect(c.tabs.value.find((t) => t.kind === 'scheduler')?.label).toBe('任务2');
+  c.closeById('x:scheduler');
+  expect(c.activeId.value).toBe('s:a');
+});

@@ -6,7 +6,6 @@ import { useCenter } from './useCenter';
 import { useMessageHistory } from './useMessageHistory';
 import CollaborationView from './collaboration/CollaborationView.vue';
 import DistTaskNotifier from './collaboration/DistTaskNotifier.vue';
-import SchedulerView from './scheduler/SchedulerView.vue';
 import JobsView from './jobs/JobsView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
@@ -184,7 +183,12 @@ function onColorChange() {
 let colorHeartbeat: ReturnType<typeof setInterval> | null = null;
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
-const rail = ref<'explorer' | 'contacts' | 'stat' | 'scheduler' | 'jobs' | 'proxy' | 'mobile'>('explorer');
+const rail = ref<'explorer' | 'contacts' | 'stat' | 'jobs' | 'proxy' | 'mobile'>('explorer');
+const isSchedulerTab = computed(() => center.active.value?.kind === 'scheduler');
+function openSchedulerTab() {
+  rail.value = 'explorer';
+  center.openScheduler(t('nav.scheduler'));
+}
 // 工具页签意图：切到 explorer 并打开对应工具页签（磁贴 / 活动栏图标触发）
 watch(pendingToolTab, (id) => {
   if (!id) return;
@@ -210,7 +214,7 @@ const historyTab = ref<HistoryTab>(NEW_WINDOW ? 'messages' : 'tree');
 const collabTab = ref<'group' | 'tasks' | 'master'>('group');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
-const RAILS = ['explorer', 'contacts', 'stat', 'scheduler', 'jobs', 'proxy', 'mobile'];
+const RAILS = ['explorer', 'contacts', 'stat', 'jobs', 'proxy', 'mobile'];
 const TOOL_IDS = MINI_TOOLS.map((m) => m.id);
 const SIDE_TABS = ['messages', 'files', 'tree'];
 function parseHashSegs(): string[] {
@@ -247,6 +251,7 @@ function applyHash() {
     if (sub === 'nginx' || sub === 'llm') requestProxyTab(sub);
     return;
   }
+  if (r === 'scheduler') { openSchedulerTab(); return; }
   if (!r || (!RAILS.includes(r) && !historyAlias)) return;
   rail.value = (historyAlias ? 'explorer' : r) as typeof rail.value;
   if ((r === 'explorer' || historyAlias) && isSideTab(sub)) historyTab.value = sub;
@@ -255,6 +260,7 @@ function applyHash() {
 function currentHash() {
   if (rail.value === 'explorer') {
     const a = center.active.value;
+    if (a?.kind === 'scheduler') return '#scheduler';
     if (a?.kind === 'tool' && a.tool) return `#tools/${a.tool}`;
     return `#explorer/${historyTab.value}`;
   }
@@ -352,6 +358,7 @@ function currentWindowState() {
 async function restoreWindowState(projectsReady: Promise<void>) {
   await projectsReady;
   const ws = await fetchWindowState();
+  const hashScheduler = parseHashSegs()[0] === 'scheduler';
   const plan = planRestore(ws, {
     projectIds: projects.value.map((p) => p.id),
     hashRail: hashRailOf(),
@@ -359,14 +366,16 @@ async function restoreWindowState(projectsReady: Promise<void>) {
     deepLinkOpened,
     newWindow: NEW_WINDOW,
   });
-  if (plan.rail && RAILS.includes(plan.rail)) rail.value = plan.rail;
+  if (!hashScheduler && plan.rail && RAILS.includes(plan.rail)) rail.value = plan.rail;
   if (plan.historyTab) historyTab.value = plan.historyTab;
   if (typeof plan.msgFilter === 'boolean') msgFilter.value = plan.msgFilter;
   if (plan.msgAllStyle) msgAllStyle.value = plan.msgAllStyle;
   const tabs = bootAllowed ? plan.tabs.filter((t) => bootAllowed.has(`f:${t.projectId}|${t.path}`)) : plan.tabs;
   const opened = tabs.map((t) => `f:${t.projectId}|${t.path}`);
   for (const t of tabs) center.openFile(t.projectId, t.path, t.label);
-  if (deepLinkOpened) {
+  if (hashScheduler) {
+    openSchedulerTab();
+  } else if (deepLinkOpened) {
     // 深链优先：不动激活项
   } else if (plan.activeFileTab && opened.includes(plan.activeFileTab)) {
     center.setActive(plan.activeFileTab);
@@ -804,6 +813,7 @@ onBeforeUnmount(() => {
         <option v-for="c in colorOptions" :key="c.id" :value="c.id">{{ $t(c.key) }}</option>
       </select>
       <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
+      <button class="snap-btn" :class="{ on: isSchedulerTab }" :title="$t('nav.scheduler')" @click="openSchedulerTab">📅</button>
       <button class="snap-btn" :title="$t('top.remote')" @click="onPhone">📱</button>
       <button class="theme-btn" :title="theme === 'dark' ? $t('app.theme.to_light') : $t('app.theme.to_dark')" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
     </header>
@@ -811,7 +821,6 @@ onBeforeUnmount(() => {
     <div class="main">
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
-        <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
         <button class="a-btn" :class="{ on: rail === 'jobs' }" :title="$t('nav.jobs')" @click="rail = 'jobs'">🗂</button>
         <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
         <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🧰</button>
@@ -827,11 +836,6 @@ onBeforeUnmount(() => {
       <template v-else-if="rail === 'stat'">
         <section class="center">
           <CodeStats :project-root="currentProjectInfo?.root || ''" />
-        </section>
-      </template>
-      <template v-else-if="rail === 'scheduler'">
-        <section class="center">
-          <SchedulerView :terminal="terminal" :on-open-session="openLiveSession" />
         </section>
       </template>
       <template v-else-if="rail === 'jobs'">
@@ -850,17 +854,19 @@ onBeforeUnmount(() => {
         </section>
       </template>
       <template v-else>
-        <aside class="side" :style="{ width: sideW + 'px' }">
-          <ToolSidebar v-if="activeTool" :tool="activeTool" />
-          <LocalSidebar v-else-if="activeLocalRoot" />
-          <HistoryList v-else :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter" :all-style="msgAllStyle"
-            :live-session-ids="liveSessionIds" :sessions="sessionExtras" :session-names="sessionNames" :project-id="currentProject" :active-path="activeFilePath"
-            @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
-            @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
-            @update:filter="msgFilter = $event" @update:all-style="msgAllStyle = $event" @open-session="openHistorySession" @edit-session="editHistorySession"
-            @open-file="openFile" @detail-file="onDetailFile" @open-file-at="onOpenFileAt" />
-        </aside>
-        <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
+        <template v-if="!isSchedulerTab">
+          <aside class="side" :style="{ width: sideW + 'px' }">
+            <ToolSidebar v-if="activeTool" :tool="activeTool" />
+            <LocalSidebar v-else-if="activeLocalRoot" />
+            <HistoryList v-else :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter" :all-style="msgAllStyle"
+              :live-session-ids="liveSessionIds" :sessions="sessionExtras" :session-names="sessionNames" :project-id="currentProject" :active-path="activeFilePath"
+              @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
+              @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
+              @update:filter="msgFilter = $event" @update:all-style="msgAllStyle = $event" @open-session="openHistorySession" @edit-session="editHistorySession"
+              @open-file="openFile" @detail-file="onDetailFile" @open-file-at="onOpenFileAt" />
+          </aside>
+          <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
+        </template>
         <section class="center">
           <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine" :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive" />
         </section>
