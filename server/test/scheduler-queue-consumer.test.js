@@ -28,7 +28,10 @@ test('普通命令：输出作为 prompt 再执行 AI，并写回成功与报告
   const runner = {
     run: async ({ spec, onData }) => {
       specs.push(spec);
-      if (specs.length === 2) onData?.('{"type":"error","sessionID":"ses_test_1"}');
+      if (specs.length === 2) {
+        onData?.('{"type":"error","sessionID":"ses_test_1"}\n');
+        onData?.('{"type":"text","sessionID":"ses_test_1","part":{"text":"# 结果"}}\n');
+      }
       return specs.length === 1
         ? { exitCode: 0, timedOut: false, durationMs: 3, stdout: 'collected output' }
         : { exitCode: 0, timedOut: false, durationMs: 4, stdout: 'ai done' };
@@ -49,7 +52,7 @@ test('普通命令：输出作为 prompt 再执行 AI，并写回成功与报告
   assert.equal(completed.result.shellExitCode, 0);
   assert.equal(completed.result.aiExitCode, 0);
   assert.equal(completed.result.ngaSessionId, 'ses_test_1');
-  assert.ok(completed.result.reportMarkdown.includes('a'));
+  assert.ok(completed.result.reportMarkdown.includes('结果'));
 });
 
 test('AI 命令通过回调回写最终状态与结果', async () => {

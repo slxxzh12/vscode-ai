@@ -16,6 +16,32 @@ function writePromptFile(promptPath, text) {
   return promptPath;
 }
 
+// 从 Nga --format json 事件流里提取最终文本，作为 Markdown 报告。
+function markdownFromEvents(text) {
+  const parts = [];
+  const normalized = String(text || '').replace(/}\s*{/g, '}\n{');
+  for (const line of normalized.split(/\r?\n/)) {
+    const s = line.trim();
+    if (!s) continue;
+    try {
+      const evt = JSON.parse(s);
+      if (evt.type === 'text' && evt.part && typeof evt.part.text === 'string' && evt.part.text.trim()) {
+        parts.push(evt.part.text.trim());
+      }
+    } catch { /* not a JSON event line */ }
+  }
+  return parts.join('\n\n');
+}
+
+function writeAiReport(store, task, jobId, output) {
+  const markdown = markdownFromEvents(output);
+  if (!markdown) return;
+  const file = store.reportPath(store.reportFileFor(task.id, jobId));
+  if (fs.existsSync(file)) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${markdown}\n`, 'utf8');
+}
+
 function parseResult(job) {
   if (!job || !job.result) return {};
   try { return JSON.parse(job.result); } catch { return {}; }
@@ -202,6 +228,7 @@ export function createConsumer({
       onEvent('run-end', { jobId: job.jobId, taskId: task.id, status: cur.status });
       return;
     }
+    try { writeAiReport(store, task, job.jobId, aiBuf); } catch { /* best-effort */ }
     let info = null;
     try {
       info = ensureReport({ store, task, run: { ...run, status, exitCode: result.exitCode, durationMs: result.durationMs, error: result.error }, result });
