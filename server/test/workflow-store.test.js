@@ -3,53 +3,69 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createWorkflowStore, safeWorkflowFile } from '../workflow-store.js';
+import { createWorkflowStore } from '../workflow-store.js';
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'df-wfstore-')); }
-const wf = (id, label, priority) => ({ id, label, ...(priority ? { priority } : {}), stages: [{ id: 's', label: 'S', prompts: ['p'] }] });
+function wf(id, label, prompts = ['p']) {
+  return { id, label, stages: [{ id: 's', label: 'S', prompts }] };
+}
+function dirs(dir) { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); }
+function files(dir) { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).sort(); }
 
-test('safeWorkflowFile 净化非法字符并防穿越', () => {
-  assert.equal(safeWorkflowFile('dev'), 'dev.xml');
-  assert.equal(safeWorkflowFile('a/b\\c'), 'a_b_c.xml');
-  assert.ok(!safeWorkflowFile('..').includes('/'));
-  assert.ok(!safeWorkflowFile('..').includes('\\'));
-});
-
-test('writeAll 落盘为单文件，readAll 读回并按 priority 排序', () => {
+test('writeAll 生成 工作流/小组/技能 目录，readAll 读回', () => {
   const dir = tmp();
   const store = createWorkflowStore({ dir });
-  store.writeAll([wf('b', 'B', 0), wf('a', 'A', 5)]);
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['a.xml', 'b.xml']);
-  const out = store.readAll();
-  assert.deepEqual(out.map((w) => w.id), ['a', 'b']);
-  assert.equal(out[0].priority, 5);
+  const out = store.writeAll([wf('dev', '测试流', ['第一步', '第二步'])]);
+  assert.equal(out.length, 1);
+  assert.match(out[0].id, /^100_测试流$/);
+  assert.equal(out[0].label, '测试流');
+  const wfDir = path.join(dir, '100_测试流');
+  assert.ok(fs.existsSync(wfDir));
+  const group = dirs(wfDir)[0];
+  assert.match(group, /^100_S$/);
+  const skillFiles = files(path.join(wfDir, group));
+  assert.equal(skillFiles.length, 2);
+  assert.match(skillFiles[0], /^100_/);
+  assert.match(skillFiles[1], /^200_/);
+  assert.equal(fs.readFileSync(path.join(wfDir, group, skillFiles[0]), 'utf8').trim(), '第一步');
+  const again = store.readAll();
+  assert.equal(again[0].stages[0].prompts[0], '第一步');
+  assert.equal(again[0].stages[0].prompts[1], '第二步');
 });
 
-test('writeAll 删除不再存在的文件', () => {
+test('按文件夹数字前缀升序读取工作流/小组/技能', () => {
   const dir = tmp();
   const store = createWorkflowStore({ dir });
-  store.writeAll([wf('a', 'A'), wf('b', 'B')]);
-  store.writeAll([wf('a', 'A')]);
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['a.xml']);
-  assert.deepEqual(store.readAll().map((w) => w.id), ['a']);
+  store.writeAll([wf('b', 'B'), wf('a', 'A'), wf('c', 'C', ['z', 'a'])]);
+  const names = dirs(dir);
+  assert.deepEqual(names, ['100_B', '200_A', '300_C']);
+  assert.deepEqual(store.readAll().map((w) => w.label), ['B', 'A', 'C']);
+  assert.deepEqual(store.readAll()[2].stages[0].prompts, ['z', 'a']);
 });
 
-test('单文件损坏被跳过，其余照常', () => {
+test('writeAll 删除不再存在的工作流/小组/技能', () => {
   const dir = tmp();
   const store = createWorkflowStore({ dir });
-  store.writeAll([wf('a', 'A')]);
-  fs.writeFileSync(path.join(dir, 'broken.xml'), '<workflow', 'utf8');
-  assert.deepEqual(store.readAll().map((w) => w.id), ['a']);
+  const one = store.writeAll([wf('a', 'A', ['keep', 'remove'])])[0];
+  const wfDir = path.join(dir, one.id);
+  const groupDir = path.join(wfDir, one.stages[0].id);
+  const oldSkill = files(groupDir).find((n) => n.includes('remove'));
+  assert.ok(oldSkill);
+  store.writeAll([{ id: one.id, label: 'A', stages: [{ id: one.stages[0].id, label: 'S', prompts: ['keep'] }] }]);
+  assert.equal(files(groupDir).length, 1);
+  store.writeAll([]);
+  assert.deepEqual(dirs(dir), []);
 });
 
-test('同 id 重复文件：按文件名后者覆盖并告警', () => {
+test('迁移旧 XML 文件为文件夹并删除 XML', () => {
   const dir = tmp();
-  const store = createWorkflowStore({ dir, logger: { warn() {} } });
-  fs.writeFileSync(path.join(dir, '1.xml'), '<workflow id="dup" label="First"><stage id="s" label="S"><prompt>p</prompt></stage></workflow>', 'utf8');
-  fs.writeFileSync(path.join(dir, '2.xml'), '<workflow id="dup" label="Second"><stage id="s" label="S"><prompt>p</prompt></stage></workflow>', 'utf8');
+  fs.writeFileSync(path.join(dir, 'dev.xml'), '<workflow id="dev" label="D"><stage id="s" label="S"><prompt>p</prompt></stage></workflow>', 'utf8');
+  const store = createWorkflowStore({ dir });
+  assert.equal(files(dir).filter((n) => n.endsWith('.xml')).length, 0);
   const out = store.readAll();
   assert.equal(out.length, 1);
-  assert.equal(out[0].label, 'Second');
+  assert.equal(out[0].label, 'D');
+  assert.equal(out[0].stages[0].prompts[0], 'p');
 });
 
 test('migrateFromConfigXml 拆分 <workflows> 并从配置移除该段', () => {
@@ -59,18 +75,19 @@ test('migrateFromConfigXml 拆分 <workflows> 并从配置移除该段', () => {
   fs.writeFileSync(cfg, xml, 'utf8');
   const store = createWorkflowStore({ dir, configFile: cfg });
   assert.equal(store.migrateFromConfigXml(), true);
-  assert.deepEqual(store.readAll().map((w) => w.id), ['dev']);
+  assert.equal(store.readAll()[0].label, 'D');
+  assert.ok(dirs(dir).length > 0);
   const after = fs.readFileSync(cfg, 'utf8');
   assert.ok(!/<workflows\b/i.test(after));
   assert.ok(/<server\b/.test(after) && /<agents\b/.test(after));
 });
 
-test('migrateFromConfigXml 目录已有文件时不迁移', () => {
+test('目录已有文件夹时不迁移配置 XML', () => {
   const dir = tmp();
   const cfg = path.join(tmp(), 'devflow.xml');
   fs.writeFileSync(cfg, '<devflow><workflows><workflow id="x" label="X"><stage id="s" label="S"><prompt>p</prompt></stage></workflow></workflows></devflow>', 'utf8');
   const store = createWorkflowStore({ dir });
   store.writeAll([wf('keep', 'K')]);
   assert.equal(store.migrateFromConfigXml(), false);
-  assert.deepEqual(store.readAll().map((w) => w.id), ['keep']);
+  assert.deepEqual(store.readAll().map((w) => w.label), ['K']);
 });
