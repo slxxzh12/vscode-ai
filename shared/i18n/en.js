@@ -328,6 +328,7 @@ export const messages = {
   'jobs.title': 'Job Queue',
   'jobs.filter.all': 'All statuses',
   'jobs.filter.task': 'Search by task',
+  'jobs.filter.partition': 'Filter by partition',
   'jobs.filter.all_partitions': 'All partitions',
   'jobs.worker.online': 'online',
   'jobs.worker.offline': 'offline',

@@ -10,10 +10,9 @@ let timer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => { void jobs.refresh(); void loadWorkers(); void loadConfig(); timer = setInterval(() => { void jobs.refresh(); void loadWorkers(); }, 2000); });
 onUnmounted(() => { if (timer) clearInterval(timer); });
 const detail = ref<Job | null>(null);
-const focus = ref<number | null>(null);
-const visiblePartitions = computed(() => focus.value === null
-  ? jobs.state.partitions
-  : jobs.state.partitions.filter((p) => p.id === focus.value));
+const partitionInput = ref('');
+const sortedJobs = computed(() => [...jobs.state.jobs].sort((a, b) =>
+  (b.createTime || 0) - (a.createTime || 0) || String(b.jobId).localeCompare(String(a.jobId))));
 const workers = ref<any[]>([]);
 const isMaster = ref(false);
 const configOpen = ref(false);
@@ -36,6 +35,12 @@ async function cleanup() {
   await jobs.cleanup();
   await jobs.refresh();
 }
+function applyFilters() {
+  const v = partitionInput.value.trim();
+  const p = v === '' ? null : Number(v);
+  jobs.state.partition = p !== null && Number.isFinite(p) ? p : null;
+  void jobs.refresh();
+}
 async function savePartitions() {
   await jobs.setPartitions(config.value.partitionCount);
   configOpen.value = false;
@@ -43,6 +48,10 @@ async function savePartitions() {
 }
 function taskNameOf(job: Job): string {
   try { return JSON.parse(job.paramStr || '{}').task?.name || '—'; } catch { return '—'; }
+}
+function formatTime(ts: number | null | undefined): string {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleString();
 }
 function reportOf(job: Job): string {
   try {
@@ -72,7 +81,7 @@ const detailReportUrl = computed(() => {
       <span class="title">{{ $t('jobs.title') }}</span>
       <span class="dim">{{ jobs.state.topic }} · {{ jobs.state.partitionCount }} partitions</span>
       <button @click="jobs.refresh()">{{ $t('sched.refresh') }}</button>
-      <select v-model="jobs.state.status" @change="jobs.refresh()">
+      <select v-model="jobs.state.status" @change="applyFilters()">
         <option :value="null">{{ $t('jobs.filter.all') }}</option>
         <option :value="0">{{ $t('jobs.status.queued') }}</option>
         <option :value="3">{{ $t('jobs.status.running') }}</option>
@@ -80,8 +89,8 @@ const detailReportUrl = computed(() => {
         <option :value="1">{{ $t('jobs.status.success') }}</option>
         <option :value="2">{{ $t('jobs.status.failed') }}</option>
       </select>
-      <input v-model="jobs.state.taskId" :placeholder="$t('jobs.filter.task')" @keyup.enter="jobs.refresh()" />
-      <button @click="focus = null">{{ $t('jobs.filter.all_partitions') }}</button>
+      <input v-model="jobs.state.taskId" :placeholder="$t('jobs.filter.task')" @keyup.enter="applyFilters()" />
+      <input v-model="partitionInput" type="number" min="0" :placeholder="$t('jobs.filter.partition')" @keyup.enter="applyFilters()" />
       <button v-if="isMaster" @click="cleanup()">{{ $t('jobs.action.cleanup') }}</button>
       <button v-if="isMaster" @click="configOpen = true; loadConfig()">{{ $t('jobs.config.title') }}</button>
     </header>
@@ -97,15 +106,17 @@ const detailReportUrl = computed(() => {
         {{ w.hostport }} · {{ w.role }} · {{ w.online ? $t('jobs.worker.online') : $t('jobs.worker.offline') }} · P{{ w.partitionIds }}
       </span>
     </section>
-    <div class="partitions">
-      <section v-for="p in visiblePartitions" :key="p.id" class="partition-col" @click="focus = p.id">
-        <header>P{{ p.id }} · {{ $t('jobs.partition.queued', { n: p.queued }) }} · {{ $t('jobs.partition.running', { n: p.running }) }}</header>
-        <article v-for="job in jobs.state.jobs.filter((j) => j.partitionId === p.id)" :key="job.jobId" class="job-card" @click.stop="detail = job">
-          <span class="st" :class="jobStatusClass(job.status)">{{ jobStatusLabel(job.status) }}</span>
-          <span class="name">{{ taskNameOf(job) }}</span>
-          <span class="ip">{{ job.workIP || job.createIP || '—' }}</span>
-        </article>
-      </section>
+    <div class="job-list">
+      <article v-for="job in sortedJobs" :key="job.jobId" class="job-row" @click="detail = job">
+        <span class="st" :class="jobStatusClass(job.status)">{{ jobStatusLabel(job.status) }}</span>
+        <span class="name">{{ taskNameOf(job) }}</span>
+        <span class="tag">P{{ job.partitionId }}</span>
+        <span class="ip">{{ job.workIP || job.createIP || '—' }}</span>
+        <span class="time">{{ formatTime(job.createTime) }}</span>
+        <span class="runtime">{{ job.runtime != null ? `${job.runtime} ms` : '—' }}</span>
+        <span class="jid">{{ job.jobId }}</span>
+      </article>
+      <p v-if="!sortedJobs.length" class="empty">{{ $t('sched.jobs.empty') }}</p>
     </div>
     <aside v-if="detail" class="job-drawer">
       <button class="close" @click="detail = null">×</button>
@@ -155,13 +166,16 @@ const detailReportUrl = computed(() => {
 .sum-card .num { font-size: 20px; font-weight: 600; }
 .workers { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; opacity: .8; }
 .worker.off { opacity: .45; }
-.partitions { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
-.partition-col { width: 100%; border: 1px solid var(--border-color, #333); border-radius: 6px; padding: 6px; }
-.partition-col header { font-size: 12px; opacity: .7; margin-bottom: 6px; cursor: pointer; }
-.job-card { display: flex; flex-direction: column; gap: 2px; padding: 6px; margin-bottom: 6px; border-radius: 4px; cursor: pointer; background: var(--hover-bg, rgba(128,128,128,.12)); }
-.job-card .st { font-size: 11px; font-weight: 600; }
-.job-card .name { font-size: 13px; }
-.job-card .ip { font-size: 11px; opacity: .6; }
+.job-list { display: flex; flex-direction: column; border: 1px solid var(--border-color, #333); border-radius: 6px; overflow: hidden; }
+.job-row { display: grid; grid-template-columns: 64px minmax(120px, 1.4fr) 44px minmax(100px, 1fr) 170px 90px minmax(120px, 1.2fr); gap: 8px; align-items: center; padding: 6px 8px; font-size: 12px; cursor: pointer; border-bottom: 1px solid var(--border-color, #333); }
+.job-row:last-child { border-bottom: none; }
+.job-row:hover { background: var(--hover-bg, rgba(128,128,128,.12)); }
+.job-row .st { font-size: 11px; font-weight: 600; }
+.job-row .name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-row .tag { opacity: .75; }
+.job-row .ip, .job-row .time, .job-row .runtime { opacity: .7; }
+.job-row .jid { opacity: .5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { padding: 12px; text-align: center; opacity: .6; font-size: 12px; margin: 0; }
 .st.ok { color: #2ea043; } .st.bad { color: #f85149; } .st.run { color: #58a6ff; } .st.wait { color: #d29922; } .st.queue { opacity: .75; }
 .job-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 360px; overflow: auto; padding: 14px; background: var(--panel-bg, #1e1e1e); border-left: 1px solid var(--border-color, #333); z-index: 20; }
 .job-drawer .close { float: right; }

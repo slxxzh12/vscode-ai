@@ -328,6 +328,7 @@ export const messages = {
   'jobs.title': '作业队列',
   'jobs.filter.all': '全部状态',
   'jobs.filter.task': '按任务搜索',
+  'jobs.filter.partition': '按 Partition 筛选',
   'jobs.filter.all_partitions': '全部 Partitions',
   'jobs.worker.online': '在线',
   'jobs.worker.offline': '离线',
