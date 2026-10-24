@@ -42,12 +42,9 @@ test('shared: 无 stage 的 workflow 被丢弃', () => {
   assert.deepEqual(parseWorkflowsXml(xml), []);
 });
 
-test('shared: 对整份 devflow.xml 解析得到期望工作流', () => {
+test('shared: 仓库 devflow.xml 不再用 XML 描述工作流', () => {
   const full = fs.readFileSync(path.join(repoRoot, 'config', 'devflow.xml'), 'utf8');
-  const wfs = parseWorkflowsXml(full);
-  assert.equal(wfs[0].id, 'dev');
-  assert.ok(wfs.some((w) => w.id === 'test'));
-  assert.ok(wfs[0].stages.every((s) => s.id && s.label));
+  assert.equal(/<workflows\b/i.test(full), false);
 });
 
 test('shared: escXml/decode 互逆', () => {

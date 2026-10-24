@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadJson, loadProjects, loadWorkflows, ensureDefaults } from '../config.js';
+import { loadJson, loadProjects, ensureDefaults } from '../config.js';
 
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'dfcfg-')); }
 
@@ -21,19 +21,11 @@ test('loadProjects 缺字段抛错', () => {
   assert.throws(() => loadProjects(file), /id/);
 });
 
-test('loadWorkflows 校验 advance 取值', () => {
-  const dir = tmpDir();
-  const file = path.join(dir, 'w.json');
-  fs.writeFileSync(file, JSON.stringify([{ id: 'w', name: 'W', steps: [{ id: 's', cmd: 'ls', advance: 'weird' }] }]));
-  assert.throws(() => loadWorkflows(file), /advance/);
-});
-
-test('ensureDefaults 生成示例文件', () => {
+test('ensureDefaults 生成示例项目文件', () => {
   const dir = tmpDir();
   const p = path.join(dir, 'projects.json');
-  const w = path.join(dir, 'workflows.json');
-  ensureDefaults(p, w);
-  assert.ok(fs.existsSync(p) && fs.existsSync(w));
+  ensureDefaults(p);
+  assert.ok(fs.existsSync(p));
   assert.deepEqual(loadProjects(p), []);
 });
 

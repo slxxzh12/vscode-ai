@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseWorkflowsXml, sortWorkflows } from '@devflow/shared/workflow-xml';
 import { validateWorkflows } from './devflow-config.js';
+import { t } from './i18n.js';
 
 const PREFIX_RE = /^(\d+)_/;
 const MD_EXT = '.md';
-const DEFAULT_GROUP = '默认';
 
 function prefixOf(name) {
   const m = String(name || '').match(PREFIX_RE);
@@ -75,10 +75,20 @@ function stageFolderName(id, label, existing, used) {
   return uniqueName(`${nextPrefix([...existing, ...used])}_${safeName(label || 'stage', 'stage')}`, used);
 }
 
+function copyTree(from, to) {
+  fs.mkdirSync(to, { recursive: true });
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const src = path.join(from, entry.name);
+    const dest = path.join(to, entry.name);
+    if (entry.isDirectory()) copyTree(src, dest);
+    else if (entry.isFile()) fs.copyFileSync(src, dest);
+  }
+}
+
 // 工作流目录结构：
 //   <workflows>/100_工作流/200_小组/300_阶段/400_技能.md
 // 文件夹名（含数字前缀）就是 id，显示名称去掉前缀；同一层按数字前缀升序。
-export function createWorkflowStore({ dir, configFile = null, seedStore = null, logger = console } = {}) {
+export function createWorkflowStore({ dir, configFile = null, seedDir = null, seedStore = null, logger = console } = {}) {
   fs.mkdirSync(dir, { recursive: true });
 
   function groupHints() {
@@ -94,7 +104,29 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
         }
       } catch { /* ignore */ }
     }
+    if (seedDir) {
+      for (const wfName of listDirs(seedDir)) {
+        const wfDir = path.join(seedDir, wfName);
+        for (const groupName of listDirs(wfDir)) {
+          for (const stageName of listDirs(path.join(wfDir, groupName))) {
+            hints.set(stripPrefix(stageName), stripPrefix(groupName));
+          }
+        }
+      }
+    }
     return hints;
+  }
+
+  // 首次启动从包内 config/workflows 复制默认工作流到本端口数据目录（已有数据不覆盖）。
+  function seedFromDir() {
+    if (!seedDir || !fs.existsSync(seedDir) || listDirs(dir).length) return false;
+    try {
+      copyTree(seedDir, dir);
+      return true;
+    } catch (e) {
+      logger?.warn?.('workflow seed copy failed', (e && e.message) || e);
+      return false;
+    }
   }
 
   // 旧的三层目录（工作流/阶段/技能）迁移为四层（工作流/小组/阶段/技能）。
@@ -107,7 +139,7 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
       if (!oldStages.length) continue;
       const used = new Set(children.filter((name) => !oldStages.includes(name)));
       for (const oldName of oldStages) {
-        const groupLabel = hints.get(stripPrefix(oldName)) || DEFAULT_GROUP;
+        const groupLabel = hints.get(stripPrefix(oldName)) || t('workflow.default_group');
         let groupName = [...used].find((name) => stripPrefix(name) === groupLabel);
         if (!groupName) {
           groupName = `${nextPrefix([...used])}_${safeName(groupLabel, 'group')}`;
@@ -170,7 +202,7 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
       const usedGroups = new Set();
       const groupNameByLabel = new Map();
       for (const stage of wf.stages || []) {
-        const groupLabel = String(stage.group || '').trim() || DEFAULT_GROUP;
+        const groupLabel = String(stage.group || '').trim() || t('workflow.default_group');
         if (groupNameByLabel.has(groupLabel)) continue;
         let groupName = existingGroups.find((name) => stripPrefix(name) === groupLabel && !usedGroups.has(name));
         if (!groupName) groupName = `${nextPrefix([...usedGroups])}_${safeName(groupLabel, 'group')}`;
@@ -179,7 +211,7 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
       }
       const usedStages = new Map();
       for (const stage of wf.stages || []) {
-        const groupLabel = String(stage.group || '').trim() || DEFAULT_GROUP;
+        const groupLabel = String(stage.group || '').trim() || t('workflow.default_group');
         const groupName = groupNameByLabel.get(groupLabel);
         const groupDir = path.join(wfDir, groupName);
         fs.mkdirSync(groupDir, { recursive: true });
@@ -291,6 +323,7 @@ export function createWorkflowStore({ dir, configFile = null, seedStore = null, 
     return wfs.length > 0;
   }
 
+  seedFromDir();
   migrateXmlFiles();
   migrateOldLayout();
 

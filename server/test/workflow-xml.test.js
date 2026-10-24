@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseWorkflowXml, loadWorkflowXml, defaultWorkflowFile } from '../workflow-xml.js';
@@ -26,15 +27,10 @@ test('parseWorkflowXml 解析多工作流/多阶段/多提示语', () => {
   assert.equal(wfs[1].stages[0].label, '盘点');
 });
 
-test('仓库 config/devflow.xml 可解析出 开发/测试/文档 三个工作流且阶段均有提示语', () => {
+test('仓库 config/devflow.xml 不再描述工作流，读取时回退内置', () => {
   const file = defaultWorkflowFile(path.join(__dirname, '..', '..'));
-  const wfs = loadWorkflowXml(file);
-  const ids = wfs.map((w) => w.id);
-  assert.ok(ids.includes('dev') && ids.includes('test') && ids.includes('doc'), `ids=${ids.join(',')}`);
-  for (const w of wfs) {
-    assert.ok(w.stages.length > 0, `${w.id} 无阶段`);
-    for (const s of w.stages) assert.ok(s.prompts.length > 0, `${w.id}/${s.id} 无提示语`);
-  }
+  assert.equal(/<workflows\b/i.test(fs.readFileSync(file, 'utf8')), false);
+  assert.ok(loadWorkflowXml(file).length >= 1);
 });
 
 test('配置缺失时回退内置工作流', () => {

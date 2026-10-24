@@ -11,7 +11,7 @@ import { createHttpApi, requireAuthHttp } from './http-api.js';
 import { Projects } from './projects.js';
 import { createLogger } from './log.js';
 import { createStaticServer } from './static.js';
-import { ensureDefaults, loadProjects, loadWorkflows } from './config.js';
+import { ensureDefaults, loadProjects } from './config.js';
 import { createCodeGroups } from './code-groups.js';
 import { createCodePrefs } from './code-prefs.js';
 import { createComposerPrefs } from './composer-prefs.js';
@@ -285,13 +285,12 @@ function buildWorkspace({ paths, port }) {
   const downloadStore = createDownloadStore({ file: usageDbFile, logger: log });
   const syncStore = createSyncStore({ file: usageDbFile, logger: log });
   const workflowSeedStore = createWorkflowSeedStore({ file: usageDbFile, logger: log });
-  // 工作流改为每端口一个目录、单文件存一条；启动时把旧 devflow.xml 的 <workflows> 一次性拆出来
-  const workflowStore = createWorkflowStore({ dir: paths.workflowsDir, configFile, seedStore: workflowSeedStore, logger: log });
+  // 工作流改为每端口一个目录、单文件存一条；首次启动从包内 config/workflows 复制种子
+  const workflowStore = createWorkflowStore({ dir: paths.workflowsDir, configFile, seedDir: path.join(__dirname, '..', 'config', 'workflows'), seedStore: workflowSeedStore, logger: log });
   workflowStore.migrateFromConfigXml();
   if (!workflowStore.readAll().length) workflowStore.writeAll(fallbackWorkflows());
   const projectsFile = process.env.DEVFLOW_PROJECTS || paths.projectsFile;
-  const workflowsFile = process.env.DEVFLOW_WORKFLOWS || paths.workflowsFile;
-  ensureDefaults(projectsFile, workflowsFile);
+  ensureDefaults(projectsFile);
   const projects = new Projects({ projects: loadProjects(projectsFile), logger: log });
   const saveProjects = () => {
     try { fs.writeFileSync(projectsFile, JSON.stringify({ projects: projects.rawProjects() }, null, 2), 'utf8'); }
@@ -340,7 +339,6 @@ function buildWorkspace({ paths, port }) {
   let statsStartDir = '';
   const setStatsCwd = (root) => { statsStartDir = String(root || ''); };
   const getStatsStartDir = () => statsStartDir || os.homedir();
-  const workflows = loadWorkflows(workflowsFile);
   const codeGroups = createCodeGroups({ file: paths.codeGroupsFile, logger: log });
   const codePrefs = createCodePrefs({ file: paths.codePrefsFile, logger: log });
   const composerPrefs = createComposerPrefs({ file: paths.composerPrefsFile, logger: log });
@@ -559,7 +557,6 @@ function buildWorkspace({ paths, port }) {
   setInterval(() => sessionLedger.flushAll(), 10000).unref?.();
   const workflowRunner = new WorkflowRunner({
     sessionManager,
-    workflows,
     getWorkflows: () => workflowStore.readAll(),
     doneMarker: (token, { runId, index }) => t('wf.done_marker', { runId, index }),
     logger: log,
@@ -725,7 +722,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflows, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
+  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
 }
 
 // ---- 工作区（端口档案）----
@@ -1380,7 +1377,6 @@ function startListening(port = currentPort) {
         relayPluginsDir: path.join(stateRoot, 'downloads', 'relay-plugins'),
         schedulerDir: path.join(stateRoot, 'scheduler'),
         projectsFile: path.join(stateRoot, 'projects.json'),
-        workflowsFile: path.join(stateRoot, 'workflows.json'),
         workflowsDir: path.join(stateRoot, 'workflows'),
         historyFile: path.join(stateRoot, 'message-history.jsonc'),
         skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(stateRoot, 'skills-opencode'),

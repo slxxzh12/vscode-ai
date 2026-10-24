@@ -143,3 +143,14 @@ test('目录已有文件夹时不迁移配置 XML', () => {
   assert.equal(store.migrateFromConfigXml(), false);
   assert.deepEqual(store.readAll().map((w) => w.label), ['K']);
 });
+
+test('seedDir：数据目录为空时复制种子，已有工作流不覆盖', () => {
+  const seed = tmp();
+  createWorkflowStore({ dir: seed }).writeAll([wf('seed', '种子')]);
+  const dir = tmp();
+  const store = createWorkflowStore({ dir, seedDir: seed });
+  assert.deepEqual(store.readAll().map((w) => w.label), ['种子']);
+  store.writeAll([wf('mine', '我的')]);
+  const again = createWorkflowStore({ dir, seedDir: seed });
+  assert.deepEqual(again.readAll().map((w) => w.label), ['我的']);
+});

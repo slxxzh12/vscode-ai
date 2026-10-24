@@ -24,7 +24,7 @@
 - 开发：两个终端分别 `npm.cmd run dev:server`（= `set DEVFLOW_PORT=33333&& node --watch server/index.js`，dev 固定端口 **33333**，与 release 的 22222 区分；改后端自动重启）与 `npm.cmd run dev:web`（Vite :5173，代理 `/api`、`/ws` 到 33333）。访问 http://localhost:5173。dev 与绿色包各用各的数据目录（`ports/33333` 与 `ports/22222`），互不干扰。也可一条命令 `npm.cmd run dev`（= `node scripts/dev.js`）同时起两者，Ctrl-C 一并结束。
 - **dev 日志一律写 `logs\`**（`npm run dev` 固定写 `logs\dev-server.log` / `logs\dev-web.log`；手工重定向也必须指到 `logs\`）；**严禁把日志丢在仓库根目录**（`logs/` 已在 `.gitignore`）。
 - 生产/绿色包：`node server/index.js`（静态托管 `web/dist`，端口取 `data/port.txt`，默认 22222，访问 http://127.0.0.1:22222）。
-- 改 `projects.json` / `workflows.json` 后需重启后端才生效（dev:server 的 `--watch` 不监听 json）。
+- 改 `projects.json` 后需重启后端才生效（dev:server 的 `--watch` 不监听 json）。
 
 ## 已验证教训（勿再犯）
 
@@ -80,7 +80,7 @@
 - Nginx 反代（内置反向代理）：`server/proxy-store.js`（规则 `<端口数据目录>/proxy/rules.json`）+ `server/proxy-capture.js`（抓包 `<端口数据目录>/proxy/captures/<ruleId>/`）+ `server/proxy-engine.js`（HTTP/WS/SSE 转发引擎，路径规则接入主 server 分发与 `upgrade`）+ `server/proxy-mount.js`（`/api/nginx/*`）；前端 `web/src/tools/nginx/`（`NginxTool.vue` 自包含左规则列表 + 右表单/访问日志/抓包，空侧栏）。两种接入：独立监听端口 / 挂 devflow 路径；上游 https 默认不校验证书；抓包默认关、手动开、落盘、不设条数上限。
 - 手机遥控（remote_coder）：`server/remote-coder-store.js`（`remote_coder/` 文件层：`messages.jsonc` 收发、`screen.png` 覆盖写、commit+push）+ `server/remote-coder-mount.js`（`/api/remote-coder/*` 端点）；前端在 `web/src/remote-coder/`（`PhoneView.vue` 手机页、`useRemoteCoder.ts` 手机侧、`useDesktopRemoteCoder.ts` 桌面侧取件）。顶栏 `📱` 新标签打开 `/?phone=1`；桌面端每 2s 拉 `/inbox`（拿到即 ack）→ 截图或把消息送进当前活动会话。
 - 提示词收藏（prompts）：`web/src/prompts/`（`promptCollect.ts` 纯函数追加/去重、`usePromptCollect.ts` 模块级共享状态、`PromptCollectAddon.vue` 可复用「+」控件）；左侧历史「消息」行与终端阶段提示 chips 的「＋」都走它，点选即追加进目标工作流的阶段并保存（`GET /api/workflows-xml` → 去重 → `POST /api/workflows`，服务端零改动）。无工作流时点「＋」自动建「我的工作流 / 常用提示词」并写入（`collectToMyWorkflow`）；工作流编辑器（`WorkflowEditor.vue`）现为「左侧导航列出所有工作流名 + 右侧编辑选中工作流」布局，`WorkflowFormTab.vue` 支持 `active-id` 单选渲染。
-- 工作流存储：`<数据目录>/workflows/<100_工作流>/<200_小组>/<300_阶段>/<400_技能.md>`；文件夹名（含前缀）就是 id，同一层按数字前缀升序，每个技能一个 Markdown 文件；旧 XML 文件启动时自动迁移为文件夹并删除。
+- 工作流存储：`<数据目录>/workflows/<100_工作流>/<200_小组>/<300_阶段>/<400_技能.md>`；文件夹名（含前缀）就是 id，同一层按数字前缀升序，每个技能一个 Markdown 文件。默认工作流种子在 `config/workflows/`（随绿色包发布），首次启动复制到数据目录，已有数据不覆盖；**不再用 XML/JSON 描述工作流**。
 - 数据按端口隔离在 `%USERPROFILE%\.local\share\void\ports\<端口>\`；宿主端口文件在仓库根/绿色包根的 `data/port.txt`。
 - 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`；代码行统计：`npm.cmd run count:code`（去注释/空行/纯括号/无英文行，输出每文件实际代码行）。
 
@@ -97,9 +97,9 @@
 
 - **监听端口**存 `<应用目录>/data/port.txt`（单行纯数字；应用目录 = 仓库根 / 绿色包根，即 `server/` 的上一级，与启动 cwd 无关）。优先级：`DEVFLOW_PORT` 环境变量 > `data/port.txt` > 默认 `22222`。设置面板保存端口只写该文件，**需重启后端**才生效；`devflow.xml` 不再有 `port` 属性。
 - **改端口后如何生效**：绿色包在设置面板保存端口后点「重启后端」即可；或关闭服务窗口后重新双击 `start.bat`（启动器比对 `data/port.txt`（期望端口）与 `data/runtime-port.txt`（上次运行端口），不一致时结束旧实例并按新端口启动）。dev 环境端口由 `DEVFLOW_PORT=33333` 固定，界面改端口无效、重启按钮禁用。
-- **数据目录按端口隔离**：`<dataHome>/ports/<端口>/`（Windows：`%USERPROFILE%\.local\share\void\ports\<端口>\`），内含 `projects.json`、`workflows.json`、`scheduler/`、`collab/`、`upload/`、`download/`、`downloads/devflow.xml` + `relay-plugins/`、`message-history.jsonc`、`skills-opencode/`、`tools/postman/`（小工具 Postman 的 curl 记录，按 curl 去重）、`void.db`（单一 SQLite 表：`usage`/`seed`/`member`/`member_command`/`message`/`task`/`task_cursor` + `t_sched_job`/`t_work_status`/`t_sched_config`；其中 `usage` 一表两粒度——`agent='*'` 是该机器当天合计，其余为 agent 明细）、`input-stats.json`（按用户/日/月记录输入框消息条数的精确计数，不去重不截断；Master 月度统计以它为准）、`llm.vault.json`。**一个端口一份档案，端口之间零共享；换端口 = 换一份数据。**
-- 活动配置文件：`<dataHome>/ports/<端口>/downloads/devflow.xml`（只含 `<server language host>` + `<agents>` + `<workflows>`）；首次启动从仓库模板 `config/devflow.xml` 复制生成，**已存在则不覆盖**。
-- 语言可在 UI 设置面板修改，服务端就改写该文件的 `<server language>`；**Agent 列表与工作流提示语直接编辑该文件，改完刷新页面即生效**（`/api/agents`、`/api/workflows-xml`、`/api/settings` 每次请求都重新 `loadDevflowConfig`，服务端不缓存 xml）。**例外——语言**：服务端语言是启动时读进内存的（`server/i18n.js` 的 `currentLocale`），手改 xml 的 `<server language>` 需**重启后端**才生效；走 UI 设置面板改则即时生效（`POST /api/settings/language` 会同时 `setLocale`）。仓库 `config/devflow.xml` 仅作首次 seed 模板，**改它不影响既有实例，需同步改活动配置**。
+- **数据目录按端口隔离**：`<dataHome>/ports/<端口>/`（Windows：`%USERPROFILE%\.local\share\void\ports\<端口>\`），内含 `projects.json`、`workflows/`、`scheduler/`、`collab/`、`upload/`、`download/`、`downloads/devflow.xml` + `relay-plugins/`、`message-history.jsonc`、`skills-opencode/`、`tools/postman/`（小工具 Postman 的 curl 记录，按 curl 去重）、`void.db`（单一 SQLite 表：`usage`/`seed`/`member`/`member_command`/`message`/`task`/`task_cursor` + `t_sched_job`/`t_work_status`/`t_sched_config`；其中 `usage` 一表两粒度——`agent='*'` 是该机器当天合计，其余为 agent 明细）、`input-stats.json`（按用户/日/月记录输入框消息条数的精确计数，不去重不截断；Master 月度统计以它为准）、`llm.vault.json`。**一个端口一份档案，端口之间零共享；换端口 = 换一份数据。**
+- 活动配置文件：`<dataHome>/ports/<端口>/downloads/devflow.xml`（只含 `<server language host>` + `<agents>`）；首次启动从仓库模板 `config/devflow.xml` 复制生成，**已存在则不覆盖**。
+- 语言可在 UI 设置面板修改，服务端就改写该文件的 `<server language>`；**Agent 列表直接编辑该文件，改完刷新页面即生效**（`/api/agents`、`/api/settings` 每次请求都重新 `loadDevflowConfig`，服务端不缓存 xml）。**例外——语言**：服务端语言是启动时读进内存的（`server/i18n.js` 的 `currentLocale`），手改 xml 的 `<server language>` 需**重启后端**才生效；走 UI 设置面板改则即时生效（`POST /api/settings/language` 会同时 `setLocale`）。仓库 `config/devflow.xml` 仅作首次 seed 模板，**改它不影响既有实例，需同步改活动配置**。
 - 运行时端口记录写 `<应用目录>/data/runtime-port.txt`（供启动器打开浏览器用）。
 - **不做自动迁移**：旧 `%USERPROFILE%\.local\share\devflow` 的数据不会被读取；需要时手动把 `...\devflow\ports\22222\` 内容复制到 `...\void\ports\<新端口>\`。
 - `config/server.json`、`config/workflow.xml` 已废弃。
