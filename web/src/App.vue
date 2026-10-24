@@ -36,6 +36,7 @@ import { useLedgerSessions } from './ledgerSessions';
 import type { SessionExtra } from './sessionTree';
 import { allowedRestoreIds, loadRecentTabs, loadRestoreTabs, pushRecentTab, saveRecentTabs } from './restorePrefs';
 import { pendingToolTab, clearPendingToolTab, pendingProxyTab, requestProxyTab } from './uiIntents';
+import { parseSchedulerPromptFromSearch, requestSchedulerPrompt, SCHEDULER_PROMPT_PARAMS } from './scheduler/schedulerIntent';
 import { useNavicatWorkbench } from './tools/navicat/useNavicatWorkbench';
 import { shouldOpenInNavicat } from './tools/navicat/sqliteFile';
 
@@ -744,6 +745,15 @@ onMounted(async () => {
     if (landing.openMobile) rail.value = 'mobile';
   } catch { /* ignore */ }
   applyHash();
+  const promptIntent = parseSchedulerPromptFromSearch(window.location.search);
+  if (promptIntent) {
+    rail.value = 'scheduler';
+    requestSchedulerPrompt(promptIntent.prompt, promptIntent.run);
+    syncHash();
+    const u = new URL(window.location.href);
+    for (const k of SCHEDULER_PROMPT_PARAMS) u.searchParams.delete(k);
+    window.history.replaceState({}, '', u.pathname + u.search + u.hash);
+  }
   initFileHistory();
   const projectsReady = (async () => { await checkFirstRunAgentChoice(); await checkFirstRunFileAssoc(); await loadProjects(); })();
   // 首启设置框只自动弹一次（本地记住），之后不再自动弹；用户仍可点 ⚙ 手动打开

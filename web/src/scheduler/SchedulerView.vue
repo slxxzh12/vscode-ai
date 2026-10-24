@@ -5,6 +5,7 @@ import SchedulerReportView from './SchedulerReportView.vue';
 import JobsView from '../jobs/JobsView.vue';
 import NgaProcessTerminal from './NgaProcessTerminal.vue';
 import { formatNgaEvents } from './ngaProcess';
+import { pendingSchedulerPrompt, clearSchedulerPrompt } from './schedulerIntent';
 import { scheduleSummary, formatTime, runStatusLabel, recentJobsOf, typeLabel } from './format';
 import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
@@ -447,6 +448,13 @@ async function pollChat() {
 
 onMounted(async () => {
   window.addEventListener('keydown', onChatKey);
+  const intent = pendingSchedulerPrompt.value;
+  if (intent) {
+    clearSchedulerPrompt();
+    openChatCreate();
+    chatInput.value = intent.prompt;
+    if (intent.run) void sendChat();
+  }
   await sched.refresh();
   sched.loadAiCommands();
 });
