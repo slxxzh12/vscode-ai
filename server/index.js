@@ -10,6 +10,7 @@ import { createGateway } from './ws-gateway.js';
 import { createHttpApi, requireAuthHttp } from './http-api.js';
 import { Projects } from './projects.js';
 import { createLogger } from './log.js';
+import { revealInOs } from './reveal.js';
 import { createStaticServer } from './static.js';
 import { ensureDefaults, loadProjects } from './config.js';
 import { createCodeGroups } from './code-groups.js';
@@ -156,6 +157,9 @@ function remoteUserOf(req) {
   if (isLocalReq(req)) return null;
   const tk = parseCookies(req)[ACCESS_COOKIE];
   return tk && remoteUsers ? remoteUsers.findByToken(tk) : null;
+}
+function clientIpOf(req) {
+  return String((req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/, '');
 }
 // 文档请求（打开/刷新页面）即使持 Cookie 也要求重新输密码：登录后发一次性页面令牌随 302 带回
 const PAGE_TOKEN_MS = 60 * 1000;
@@ -675,6 +679,11 @@ function buildWorkspace({ paths, port }) {
     version: VERSION,
     dbFile: usageDbFile,
     pullQueueConfig: () => engine.pullQueueConfig?.(),
+    operatorOf: (req) => ({
+      createIP: clientIpOf(req),
+      employeeId: String(remoteUserOf(req)?.username || engine.pub.employeeId || identity.employeeId || engine.pub.username || identity.username || ''),
+    }),
+    defaultOperator: { createIP: '127.0.0.1', employeeId: String(engine.pub.employeeId || identity.employeeId || engine.pub.username || identity.username || '') },
     onJobEvent: (evt, payload) => {
       broadcastSched(evt === 'run-end' ? SchedulerS2C.SCHED_RUN_END : SchedulerS2C.SCHED_RUN_START, payload);
     },
@@ -860,7 +869,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/workflows-tree' && req.method === 'GET') {
     const tree = ws?.workflowStore?.tree(url.searchParams.get('workflowId') || '') || [];
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ tree }));
+    res.end(JSON.stringify({ tree, root: ws?.workflowStore?.dir || '' }));
     return;
   }
   if (url.pathname === '/api/workflows-file' && req.method === 'GET') {
@@ -873,6 +882,24 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: String(e && e.message || e) }));
     }
+    return;
+  }
+  if (url.pathname === '/api/workflows-reveal' && req.method === 'POST') {
+    if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      let abs = '';
+      try { abs = ws.workflowStore.absPath(typeof body.path === 'string' ? body.path : ''); }
+      catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'bad-path' })); return; }
+      let st = null;
+      try { st = fs.statSync(abs); } catch { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-found' })); return; }
+      if (!revealInOs(abs, st.isDirectory())) { res.writeHead(501, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unsupported' })); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, abs }));
+    });
     return;
   }
   if (url.pathname === '/api/agents' && req.method === 'GET') {

@@ -338,9 +338,6 @@ const currentAgent = computed(() => agents.value.find((a) => a.id === agentId.va
 const agentCmd = computed(() => currentAgent.value.cmd || 'opencode');
 const wfKind = ref<string>('dev');
 const promptCollect = usePromptCollect();
-const PROMPT_AUTOSEND_KEY = 'devflow-prompt-autosend';
-const promptAutoSend = ref<boolean>((() => { try { return localStorage.getItem(PROMPT_AUTOSEND_KEY) === '1'; } catch { return false; } })());
-watch(promptAutoSend, (v) => { try { localStorage.setItem(PROMPT_AUTOSEND_KEY, v ? '1' : '0'); } catch { /* ignore */ } });
 const agentStarted = ref(false);
 const agentCliReady = ref(false);   // agent CLI 是否已在固定会话里启动
 let agentLaunching = false;         // 启动命令注入中，避免重复注入
@@ -908,7 +905,6 @@ watch(() => props.terminal.state.activeSessionId, () => { wfRun.value = null; wf
 function onChipClick(c: Chip) {
   if (!c.append) {
     composerText.value = c.text;
-    if (promptAutoSend.value) void submitComposer();
     return;
   }
   composerText.value = appendText(composerText.value, c.text);
@@ -1470,7 +1466,6 @@ onBeforeUnmount(() => {
       <div class="cbar" @mousedown="onComposerDragDown">
         <div v-if="activeIsAgent" class="wfbtns" @mousedown.stop>
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
-          <label class="wfauto" :title="$t('term.prompt_autosend')"><input type="checkbox" v-model="promptAutoSend" />{{ $t('term.prompt_autosend') }}</label>
         </div>
         <button v-if="activeIsAgent && wfDefs.length" class="wfbtn edit" :title="$t('wfe.title')" @mousedown.stop @click="editorOpen = true"><svg class="ico" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>{{ $t('wfe.open') }}</button>
         <button class="cmin" :title="composerCollapsed ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerCollapsed ? '❐' : '—' }}</button>
@@ -1604,8 +1599,6 @@ onBeforeUnmount(() => {
 .wfbtn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--tx3); padding: 2px 12px 3px; cursor: pointer; font-size: 11px; }
 .wfbtn:hover { color: var(--tx1); }
 .wfbtn.on { color: var(--ac2); border-bottom-color: var(--ac2); font-weight: 700; }
-.wfauto { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--tx3); font-size: 11px; cursor: pointer; user-select: none; }
-.wfauto input { margin: 0; cursor: pointer; }
 .wfbtn.edit { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; color: var(--warn2); border: 1px solid color-mix(in srgb, var(--warn2) 60%, transparent); background: color-mix(in srgb, var(--warn2) 12%, transparent); border-radius: 4px; }
 .wfbtn.edit:hover { border-color: var(--warn2); background: color-mix(in srgb, var(--warn2) 22%, transparent); }
 .wfbtn.edit .ico { flex: none; }

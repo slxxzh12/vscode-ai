@@ -165,7 +165,7 @@ export function useCollab() {
     uploadPackage: (id: string, groupId: string) => post<{ code: string; packageId?: string; name?: string; url?: string }>(`/api/collab/packages/${id}/upload`, { groupId }),
     installDownload: (name: string) => post<{ code: string }>('/api/collab/downloads/install', { name }),
     pollTasks: () => post<{ code: string; tasks?: number; updates?: { groupId: string; masterId?: string; version: string }[] }>('/api/collab/tasks/poll'),
-    listTasks: (status?: string) => http<{ tasks: import('./distTasks').DistTask[] }>(`/api/collab/tasks${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+    listTasks: (status?: string) => http<{ tasks: any[] }>(`/api/collab/tasks${status ? `?status=${encodeURIComponent(status)}` : ''}`),
     acceptTask: (id: string) => post<{ code: string; counts?: Record<string, number> }>(`/api/collab/tasks/${id}/accept`),
     ignoreTask: (id: string) => post<{ code: string }>(`/api/collab/tasks/${id}/ignore`),
     getDirs: () => http<{ upload: string | null; download: string | null }>('/api/collab/dirs'),

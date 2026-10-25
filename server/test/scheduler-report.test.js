@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SchedulerStore } from '../scheduler/store.js';
-import { writeRunContext, ensureReport, legacyReport, stripAnsi } from '../scheduler/report.js';
+import { writeRunContext, ensureReport, legacyReport, stripAnsi, archiveReport } from '../scheduler/report.js';
 
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'sched-report-')); }
 function mkStore() {
@@ -65,4 +65,34 @@ test('legacyReport 兼容没有 logFile 的旧记录', () => {
 
 test('stripAnsi 去除颜色码', () => {
   assert.equal(stripAnsi('\u001b[31mred\u001b[0m'), 'red');
+});
+
+test('archiveReport：无唯一键留在临时目录，有唯一键复制到独立目录', () => {
+  const { store, task } = mkStore();
+  const run = { id: 'j1', taskId: task.id, trigger: 'manual', startedAt: 100, logFile: store.logFileFor(task.id, 'j1') };
+  const ctx = writeRunContext({ store, task, run });
+  fs.writeFileSync(ctx.reportPath, '# temp report');
+  const info = ensureReport({ store, task, run, result: { status: 'success' } });
+
+  const plain = archiveReport({ store, task, jobId: 'j1', reportFile: info.reportFile, now: 123 });
+  assert.equal(plain.reportId, 'j1');
+  assert.equal(plain.reportArchivePath, undefined);
+
+  const { task: keyed } = store.createTask({
+    name: 'rag', type: 'shell', command: 'echo', uniqueKey: 'rag-doc-1',
+    schedule: { mode: 'interval', interval: { every: 1, unit: 'hour' } },
+  });
+  const run2 = { id: 'j2', taskId: keyed.id, trigger: 'manual', startedAt: 100, logFile: store.logFileFor(keyed.id, 'j2') };
+  const ctx2 = writeRunContext({ store, task: keyed, run: run2 });
+  fs.writeFileSync(ctx2.reportPath, '# archived report');
+  const info2 = ensureReport({ store, task: keyed, run: run2, result: { status: 'success' } });
+  const archived = archiveReport({ store, task: keyed, jobId: 'j2', reportFile: info2.reportFile, result: { status: 'success' }, now: 456 });
+
+  assert.equal(archived.reportId, 'rag-doc-1');
+  assert.equal(fs.readFileSync(archived.reportArchiveFile, 'utf8'), '# archived report');
+  const meta = JSON.parse(fs.readFileSync(path.join(archived.reportArchivePath, 'meta.json'), 'utf8'));
+  assert.equal(meta.reportId, 'rag-doc-1');
+  assert.equal(meta.jobId, 'j2');
+  assert.equal(meta.reportFile, 'report.md');
+  assert.equal(meta.createdAt, 456);
 });

@@ -132,6 +132,42 @@ export function createQueueService({ repo, topic = SCHED_QUEUE_TOPIC, now = () =
     return repo.purgeTaskJobs(topic, taskId);
   }
 
+  async function recordPrompt(taskId, prompt, { createIP = '', employeeId = '' } = {}) {
+    const text = String(prompt ?? '');
+    if (!text.trim()) return { skipped: true };
+    const hash = crypto.createHash('sha256').update(text).digest('hex');
+    const latest = await repo.getLatestPrompt(taskId);
+    if (latest && latest.hash === hash) return { skipped: true, prompt: latest };
+    const createdAt = now();
+    const r = await repo.insertPrompt({
+      taskId, prompt: text, hash, createdAt,
+      createIP: String(createIP || '').slice(0, 64),
+      employeeId: String(employeeId || '').slice(0, 64),
+    });
+    if (r.duplicate) {
+      const existing = await repo.getPromptByHash(taskId, hash);
+      return existing ? { skipped: true, prompt: existing } : { skipped: true };
+    }
+    return { id: r.id, taskId, prompt: text, hash, createIP, employeeId, createdAt };
+  }
+
+  async function getLatestPrompt(taskId) {
+    return repo.getLatestPrompt(taskId);
+  }
+
+  async function getPromptByHash(taskId, hash) {
+    if (!taskId || !hash) return null;
+    return repo.getPromptByHash(taskId, String(hash));
+  }
+
+  async function listPrompts(taskId, limit = 50) {
+    return repo.listPrompts(taskId, limit);
+  }
+
+  async function deleteTaskPrompts(taskId) {
+    return repo.deleteTaskPrompts(taskId);
+  }
+
   async function deleteTaskJobs(taskId) {
     const jobs = await repo.listJobs({ topic, taskIds: [taskId], status: [S.QUEUED, S.RUNNING, S.PENDING], limit: 5000 });
     const running = [];
@@ -171,7 +207,7 @@ export function createQueueService({ repo, topic = SCHED_QUEUE_TOPIC, now = () =
   return {
     topic, repo, partitionCount, enqueueTask, approve, reject, cancel, claim, complete,
     retry, cleanupFinished, deleteTaskJobs, purgeTaskJobs, failRunningByWorker, recoverRunning,
-    setPartitionCount, rehash, applyCallback,
+    setPartitionCount, rehash, applyCallback, recordPrompt, getLatestPrompt, getPromptByHash, listPrompts, deleteTaskPrompts,
     getJob: (id) => repo.getJob(id),
     get: (id) => repo.getJob(id),
     listJobs: (opts) => repo.listJobs({ topic, ...opts }),

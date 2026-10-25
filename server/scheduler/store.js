@@ -51,10 +51,12 @@ export function validateTask(input) {
 }
 
 export class SchedulerStore {
-  constructor({ dir, logger = console, manifestRoot = path.join(dir, 'manifests') }) {
+  constructor({ dir, logger = console, manifestRoot = path.join(dir, 'manifests'), onPromptChange = null, onPromptDelete = null }) {
     this.dir = dir;
     this.log = logger;
     this.manifestRoot = manifestRoot;
+    this.onPromptChange = onPromptChange;
+    this.onPromptDelete = onPromptDelete;
     this.runtimeProvider = null;
     this.tasksFile = path.join(dir, 'tasks.json');
     this.logsDir = path.join(dir, 'logs');
@@ -129,8 +131,26 @@ export class SchedulerStore {
     removeManifest(dir);
     if (!task.cwd) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } }
   }
+  promptTextOf(task) {
+    if (!task || task.type !== 'ai' || task.ai?.source !== 'prompt') return '';
+    return String(task.ai.prompt || '');
+  }
+  promptHashOf(task) {
+    const text = this.promptTextOf(task);
+    return text.trim() ? crypto.createHash('sha256').update(text).digest('hex') : '';
+  }
+  _notifyPromptChange(task, prev = null, meta = {}) {
+    if (!this.onPromptChange) return;
+    const next = this.promptTextOf(task);
+    if (!next.trim() || next === this.promptTextOf(prev)) return;
+    try { void this.onPromptChange(task, next, meta); } catch (e) { this.log?.warn?.('scheduler prompt change failed', (e && e.message) || e); }
+  }
+  _notifyPromptDelete(taskId) {
+    if (!this.onPromptDelete) return;
+    try { void this.onPromptDelete(taskId); } catch (e) { this.log?.warn?.('scheduler prompt delete failed', (e && e.message) || e); }
+  }
   syncManifest(id) { const t = this.getTask(id); if (t) this._syncManifest(t); }
-  importManifestDir(root) {
+  importManifestDir(root, meta = {}) {
     const summary = { imported: 0, overwritten: 0, failed: [] };
     for (const file of scanManifests(root)) {
       const dir = path.dirname(file);
@@ -142,7 +162,7 @@ export class SchedulerStore {
         continue;
       }
       const existing = this.tasks.find((t) => this._key(this._dirOf(t)) === this._key(dir));
-      const r = existing ? this.replaceTask(existing.id, input) : this.createTask(input);
+      const r = existing ? this.replaceTask(existing.id, input, meta) : this.createTask(input, meta);
       if (r.error) { summary.failed.push({ path: file, error: r.error }); continue; }
       if (existing) summary.overwritten += 1; else summary.imported += 1;
     }
@@ -150,7 +170,7 @@ export class SchedulerStore {
   }
   listTasks() { return this.tasks.map((t) => ({ ...t })); }
   getTask(id) { const t = this.tasks.find((x) => x.id === id); return t ? { ...t } : null; }
-  createTask(input) {
+  createTask(input, meta = {}) {
     const v = validateTask(input);
     if (v.error) return { error: v.error };
     const task = this._buildTask(input);
@@ -159,9 +179,10 @@ export class SchedulerStore {
     this.tasks.push(task);
     this.saveTasks();
     this._syncManifest(task);
+    this._notifyPromptChange(task, null, meta);
     return { task: { ...task } };
   }
-  updateTask(id, patch) {
+  updateTask(id, patch, meta = {}) {
     const i = this.tasks.findIndex((x) => x.id === id);
     if (i < 0) return { error: 'not-found' };
     const prev = this.tasks[i];
@@ -176,9 +197,10 @@ export class SchedulerStore {
     this.saveTasks();
     if (moved) this._removeManifest(prev);
     this._syncManifest(merged);
+    this._notifyPromptChange(merged, prev, meta);
     return { task: { ...merged } };
   }
-  replaceTask(id, input) {
+  replaceTask(id, input, meta = {}) {
     const i = this.tasks.findIndex((x) => x.id === id);
     if (i < 0) return { error: 'not-found' };
     const v = validateTask(input);
@@ -191,6 +213,7 @@ export class SchedulerStore {
     this.saveTasks();
     if (moved) this._removeManifest(prev);
     this._syncManifest(task);
+    this._notifyPromptChange(task, prev, meta);
     return { task: { ...task } };
   }
   deleteTask(id) {
@@ -201,6 +224,7 @@ export class SchedulerStore {
     this._removeManifest(task);
     try { fs.rmSync(path.join(this.logsDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
     try { fs.rmSync(path.join(this.tasksDir, id), { recursive: true, force: true }); } catch { /* ignore */ }
+    this._notifyPromptDelete(id);
     return { ok: true, task };
   }
   logFileFor(taskId, runId) { return path.join(taskId, runId + '.log'); }

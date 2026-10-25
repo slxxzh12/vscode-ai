@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { useScheduler, type TaskView } from './useScheduler';
+import { useScheduler, type TaskView, type TaskPrompt } from './useScheduler';
 import SchedulerReportView from './SchedulerReportView.vue';
 import JobsView from '../jobs/JobsView.vue';
 import NgaProcessTerminal from './NgaProcessTerminal.vue';
 import { formatNgaEvents } from './ngaProcess';
-import { pendingSchedulerPrompt, clearSchedulerPrompt } from './schedulerIntent';
+import { pendingSchedulerPrompt, clearSchedulerPrompt, pendingSchedulerEdit, clearSchedulerEdit } from './schedulerIntent';
 import { scheduleSummary, formatTime, runStatusLabel, recentJobsOf, typeLabel } from './format';
 import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
@@ -17,6 +17,9 @@ const { state } = sched;
 
 const showEditor = ref(false);
 const editingId = ref<string | null>(null);
+const editPrompts = ref<TaskPrompt[]>([]);
+const editPromptId = ref('');
+const editPromptHash = ref('');
 const pickedPath = ref('');
 const form = ref<any>(emptyForm());
 const detailTask = ref<TaskView | null>(null);
@@ -43,12 +46,18 @@ function taskIcon(t: TaskView): string {
 }
 function openCreate() {
   editingId.value = null;
+  editPrompts.value = [];
+  editPromptId.value = '';
+  editPromptHash.value = '';
   pickedPath.value = '';
   form.value = emptyForm();
   showEditor.value = true;
 }
-function openEdit(task: TaskView) {
+async function openEdit(task: TaskView) {
   editingId.value = task.id;
+  editPrompts.value = [];
+  editPromptId.value = '';
+  editPromptHash.value = task.promptHash || '';
   pickedPath.value = task.filePath || '';
   form.value = JSON.parse(JSON.stringify({
     name: task.name, enabled: task.enabled, once: !!task.once, cwd: task.cwd || '', filePath: task.filePath || '', type: task.type,
@@ -57,6 +66,37 @@ function openEdit(task: TaskView) {
     weight: task.weight || 0, maxRunMilliSecond: task.maxRunMilliSecond || 0, groupName: task.groupName || 'default',
   }));
   showEditor.value = true;
+  if (task.type !== 'ai' || task.ai?.source !== 'prompt') return;
+  try {
+    const r = await sched.loadTaskPrompts(task.id, task.promptHash || '');
+    editPrompts.value = r.prompts;
+    const active = r.prompts.find((p) => p.id === r.activeId) || r.prompts[0];
+    if (active) {
+      editPromptId.value = String(active.id);
+      editPromptHash.value = active.hash;
+    } else {
+      editPromptHash.value = task.promptHash || '';
+    }
+  } catch { /* 无历史版本时按当前提示词编辑 */ }
+}
+function applyPromptRef() {
+  const id = editPromptId.value.trim();
+  const hash = editPromptHash.value.trim();
+  const found = editPrompts.value.find((p) =>
+    (id && String(p.id) === id)
+    || (hash && (p.hash === hash || (hash.length >= 8 && p.hash.startsWith(hash))))) || null;
+  if (!found) return;
+  editPromptId.value = String(found.id);
+  editPromptHash.value = found.hash;
+  form.value.ai.prompt = found.prompt;
+}
+function applyPromptById() {
+  editPromptHash.value = '';
+  applyPromptRef();
+}
+function applyPromptByHash() {
+  editPromptId.value = '';
+  applyPromptRef();
 }
 function extOf(p: string): string { const i = p.lastIndexOf('.'); return i >= 0 ? p.slice(i).toLowerCase() : ''; }
 function dirOf(p: string): string { const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')); return i > 0 ? p.slice(0, i) : p; }
@@ -116,8 +156,17 @@ async function save() {
   if (body.once) body.enabled = false;
   else body.once = false;
   try {
-    if (editingId.value) await sched.updateTask(editingId.value, body);
-    else await sched.createTask(body);
+    const saved = editingId.value
+      ? await sched.updateTask(editingId.value, body)
+      : await sched.createTask(body);
+    if (saved?.id && saved.type === 'ai' && saved.ai?.source === 'prompt') {
+      try {
+        const r = await sched.loadTaskPrompts(saved.id, saved.promptHash || '');
+        const active = r.prompts.find((p) => p.hash === saved.promptHash) || r.prompts.find((p) => p.id === r.activeId) || r.prompts[0];
+        editPromptId.value = active ? String(active.id) : '';
+        editPromptHash.value = active?.hash || saved.promptHash || '';
+      } catch { /* 提示词历史加载失败不影响任务保存 */ }
+    }
     showEditor.value = false;
   } catch (e: any) { state.error = String(e?.message || e); }
 }
@@ -209,6 +258,16 @@ async function toggle(task: TaskView) {
   await sched.updateTask(task.id, { enabled, ...(enabled && task.once ? { once: false, deleteAfter: null } : {}) });
 }
 function openDetail(task: TaskView) { detailTask.value = task; }
+async function editPromptFromDetail(promptId: number | null) {
+  const task = detailTask.value;
+  if (!task) return;
+  await openEdit(task);
+  if (promptId != null) {
+    editPromptId.value = String(promptId);
+    editPromptHash.value = '';
+    applyPromptRef();
+  }
+}
 const WEEKDAYS = computed(() => [1, 2, 3, 4, 5, 6, 7].map((v) => ({ v, t: t('sched.wdshort.' + v) })));
 function toggleWeekday(v: number) {
   const arr: number[] = form.value.schedule.daily.weekdays;
@@ -228,6 +287,7 @@ function barClass(status: number): string {
 
 // —— 聊天式新建 AI 任务 ——
 const chatOpen = ref(false);
+const chatHideLeft = ref(false);
 const chatMessages = ref<{ role: 'user' | 'assistant'; text: string; status?: number }[]>([]);
 const chatInput = ref('');
 const chatBusy = ref(false);
@@ -311,6 +371,7 @@ function chatScheduleBody() {
 
 function resetChat() {
   stopChatTimer();
+  chatHideLeft.value = false;
   chatMessages.value = [];
   chatInput.value = '';
   chatBusy.value = false;
@@ -453,9 +514,33 @@ onMounted(async () => {
     clearSchedulerPrompt();
     openChatCreate();
     chatInput.value = intent.prompt;
+    chatHideLeft.value = intent.hideInput;
     if (intent.run) void sendChat();
   }
   await sched.refresh();
+  const editIntent = pendingSchedulerEdit.value;
+  if (editIntent) {
+    clearSchedulerEdit();
+    const task = state.tasks.find((x) => x.id === editIntent.taskId);
+    if (task) {
+      await openEdit(task);
+      if (editIntent.promptId) editPromptId.value = editIntent.promptId;
+      if (editIntent.promptHash) editPromptHash.value = editIntent.promptHash;
+      if (editIntent.prompt) {
+        editPromptId.value = '';
+        editPromptHash.value = '';
+        form.value.ai.prompt = editIntent.prompt;
+      } else if (editIntent.promptId) {
+        editPromptId.value = editIntent.promptId;
+        editPromptHash.value = '';
+        applyPromptRef();
+      } else if (editIntent.promptHash) {
+        editPromptId.value = '';
+        editPromptHash.value = editIntent.promptHash;
+        applyPromptRef();
+      }
+    }
+  }
   sched.loadAiCommands();
 });
 onBeforeUnmount(() => {
@@ -559,6 +644,8 @@ onBeforeUnmount(() => {
       v-else-if="detailTask"
       :task="detailTask"
       :load-jobs="sched.loadJobs"
+      :load-prompts="sched.loadTaskPrompts"
+      :on-edit-prompt="editPromptFromDetail"
       :on-back="() => (detailTask = null)"
       :on-open-session="props.onOpenSession"
     />
@@ -597,7 +684,14 @@ onBeforeUnmount(() => {
               <option v-for="c in state.aiCommands" :key="c.name" :value="c.name" />
             </datalist>
           </label>
-          <label v-else-if="form.ai.source === 'prompt'">Prompt <CodeEditor v-model="form.ai.prompt" class="sched-edit" /></label>
+          <template v-else-if="form.ai.source === 'prompt'">
+            <label>Prompt <CodeEditor v-model="form.ai.prompt" class="sched-edit" /></label>
+            <div v-if="editingId && (editPrompts.length || editPromptHash)" class="prompt-refs">
+              <label>{{ $t('sched.prompt.id') }} <input v-model="editPromptId" inputmode="numeric" @change="applyPromptById" @keyup.enter="applyPromptById" /></label>
+              <label>{{ $t('sched.prompt.hash') }} <input v-model="editPromptHash" @change="applyPromptByHash" @keyup.enter="applyPromptByHash" /></label>
+              <div class="dim">{{ $t('sched.prompt.ref_hint') }}</div>
+            </div>
+          </template>
           <div v-else class="dim">{{ $t('sched.source.file_hint') }}</div>
         </template>
         <label>{{ $t('sched.field.mode') }}
@@ -667,7 +761,7 @@ onBeforeUnmount(() => {
           <span v-if="chatStatusLabel" class="chat-status" :class="'s' + chatStatus">{{ chatStatusLabel }}</span>
           <button @click="closeChat">{{ $t('sched.chat.close') }}</button>
         </header>
-        <div ref="chatBodyRef" class="chat-body" :class="{ resizing: chatResizing }">
+        <div ref="chatBodyRef" class="chat-body" :class="{ resizing: chatResizing, 'hide-left': chatHideLeft }">
           <section class="chat-left" :style="{ width: chatLeftW + '%' }">
             <div class="chat-schedule">
               <span class="cs-label">{{ $t('sched.chat.schedule') }}</span>
@@ -722,6 +816,8 @@ onBeforeUnmount(() => {
               <div v-if="chatStatus != null" class="chat-result-state" :class="chatStatus === 1 ? 'ok' : chatStatus === 2 ? 'bad' : 'run'">
                 {{ chatStatus === 1 ? $t('sched.chat.success') : chatStatus === 2 ? $t('sched.chat.failure') : chatStatusLabel }}
               </div>
+              <div v-if="chatResultData.reportId" class="chat-result-meta">{{ $t('sched.report.id') }}: {{ chatResultData.reportId }}</div>
+              <div v-if="chatResultData.reportArchivePath" class="chat-result-meta" :title="chatResultData.reportArchivePath">{{ $t('sched.report.archive') }}: {{ chatResultData.reportArchivePath }}</div>
               <div v-if="chatResultData.reportUrl" class="chat-report-link">
                 <a :href="chatResultData.reportUrl" target="_blank" rel="noopener">{{ chatResultData.reportUrl }}</a>
               </div>
@@ -845,6 +941,7 @@ onBeforeUnmount(() => {
 .modal input.time { width: auto; flex: none; }
 .modal input.fileinp { flex: 1; min-width: 0; }
 .modal input, .modal select, .modal textarea { background: var(--bg4, var(--bg5)); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 6px; font-family: inherit; }
+.prompt-refs { display: flex; flex-direction: column; gap: 6px; }
 .sched-edit { --cm-min: 72px; }
 .cmdpreview { background: var(--bg6, var(--bg1)); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
 .wd { color: var(--tx3); font-size: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -876,6 +973,7 @@ onBeforeUnmount(() => {
 .chat-status.s3, .chat-status.s0, .chat-status.s4 { color: var(--ac2); }
 .chat-body { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .chat-body.resizing { user-select: none; cursor: col-resize; }
+.chat-body.hide-left .chat-left, .chat-body.hide-left .chat-divider { display: none; }
 .chat-left { flex: 0 0 auto; max-width: 72%; min-width: 240px; display: flex; flex-direction: column; border-right: 1px solid var(--bd); background: var(--bg1); overflow: hidden; }
 .chat-divider { width: 6px; flex: 0 0 6px; cursor: col-resize; background: transparent; z-index: 2; }
 .chat-divider:hover { background: var(--ac2); opacity: .45; }
@@ -910,4 +1008,5 @@ onBeforeUnmount(() => {
 .chat-result-state.run { color: var(--ac2); }
 .chat-report-link { padding: 6px 14px; border-bottom: 1px solid var(--bd); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-report-link a { color: var(--ac2); }
+.chat-result-meta { padding: 2px 14px; font-size: 12px; color: var(--tx5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

@@ -7,6 +7,7 @@ interface TreeNode {
   name: string;
   type: 'dir' | 'file';
   path: string;
+  abs?: string;
   children?: TreeNode[];
 }
 
@@ -15,6 +16,8 @@ const tree = ref<TreeNode[]>([]);
 const selected = ref<TreeNode | null>(null);
 const content = ref('');
 const error = ref('');
+const revealMsg = ref('');
+const workflowNode = computed<TreeNode | null>(() => tree.value[0] || null);
 
 const rows = computed(() => {
   const out: Array<{ node: TreeNode; depth: number }> = [];
@@ -33,6 +36,7 @@ async function loadTree() {
   selected.value = null;
   content.value = '';
   error.value = '';
+  revealMsg.value = '';
   if (!props.workflowId) { tree.value = []; return; }
   try {
     const res = await fetch(`/api/workflows-tree?workflowId=${encodeURIComponent(props.workflowId)}`);
@@ -41,6 +45,24 @@ async function loadTree() {
   } catch (e: any) {
     tree.value = [];
     error.value = t('wfe.files.load_failed', { msg: String(e?.message || e) });
+  }
+}
+
+async function reveal(node: TreeNode | null) {
+  if (!node) return;
+  revealMsg.value = '';
+  try {
+    const res = await fetch('/api/workflows-reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: node.path }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error || `HTTP ${res.status}`);
+    }
+  } catch (e: any) {
+    revealMsg.value = t('wfe.files.reveal_failed', { msg: String(e?.message || e) });
   }
 }
 
@@ -61,34 +83,54 @@ watch(() => props.workflowId, loadTree, { immediate: true });
 </script>
 
 <template>
-  <div class="wfiles">
-    <div class="wf-tree">
-      <div class="wf-head">{{ $t('wfe.files.title') }}</div>
-      <div
-        v-for="row in rows"
-        :key="row.node.path"
-        class="wf-row"
-        :class="row.node.type"
-        :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
-        @click="row.node.type === 'file' && openFile(row.node)"
-      >
-        <span class="ico">{{ row.node.type === 'dir' ? '📁' : '📄' }}</span>
-        <span class="nm">{{ row.node.name }}</span>
+  <div class="wfiles-wrap">
+    <div class="wf-paths">
+      <div v-if="workflowNode" class="wf-path">
+        <span class="wf-path-label">{{ $t('wfe.files.workflow_dir') }}</span>
+        <button class="wf-path-link" :title="workflowNode.abs || workflowNode.path" @click="reveal(workflowNode)">{{ workflowNode.abs || workflowNode.path }}</button>
       </div>
-      <div v-if="!rows.length" class="wf-empty">{{ $t('wfe.files.empty') }}</div>
+      <div v-if="selected && selected.type === 'file'" class="wf-path">
+        <span class="wf-path-label">{{ $t('wfe.files.prompt_file') }}</span>
+        <button class="wf-path-link" :title="selected.abs || selected.path" @click="reveal(selected)">{{ selected.abs || selected.path }}</button>
+      </div>
+      <div v-if="revealMsg" class="wf-path-error">{{ revealMsg }}</div>
     </div>
-    <div class="wf-view">
-      <template v-if="selected">
-        <div class="wf-name">{{ selected.name }}</div>
-        <div v-if="error" class="wf-empty">{{ error }}</div>
-        <div v-else class="md-body" v-html="html" />
-      </template>
-      <div v-else class="wf-empty">{{ $t('wfe.files.select') }}</div>
+    <div class="wfiles">
+      <div class="wf-tree">
+        <div class="wf-head">{{ $t('wfe.files.title') }}</div>
+        <div
+          v-for="row in rows"
+          :key="row.node.path"
+          class="wf-row"
+          :class="row.node.type"
+          :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
+          @click="row.node.type === 'file' && openFile(row.node)"
+        >
+          <span class="ico">{{ row.node.type === 'dir' ? '📁' : '📄' }}</span>
+          <span class="nm">{{ row.node.name }}</span>
+        </div>
+        <div v-if="!rows.length" class="wf-empty">{{ $t('wfe.files.empty') }}</div>
+      </div>
+      <div class="wf-view">
+        <template v-if="selected">
+          <div class="wf-name">{{ selected.name }}</div>
+          <div v-if="error" class="wf-empty">{{ error }}</div>
+          <div v-else class="md-body" v-html="html" />
+        </template>
+        <div v-else class="wf-empty">{{ $t('wfe.files.select') }}</div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.wfiles-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.wf-paths { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--bd); border-radius: 6px; padding: 6px 10px; background: var(--bg2); }
+.wf-path { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; }
+.wf-path-label { flex: none; color: var(--tx5); }
+.wf-path-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: none; padding: 0; color: var(--ac2); font-family: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+.wf-path-link:hover { text-decoration: underline; }
+.wf-path-error { color: var(--err); font-size: 12px; }
 .wfiles { flex: 1; min-height: 0; display: flex; gap: 12px; }
 .wf-tree { width: 300px; flex: none; overflow: auto; border: 1px solid var(--bd); border-radius: 6px; padding: 6px; }
 .wf-head { color: var(--tx5); font-size: 11px; padding: 3px 6px 6px; }

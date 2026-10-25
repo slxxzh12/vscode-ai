@@ -129,8 +129,12 @@ test('tree/readFile 返回四层文件夹树和技能内容', () => {
   const stage = group.children[0];
   const file = stage.children[0];
   assert.match(file.name, /\.md$/);
+  assert.equal(tree[0].abs, path.join(dir, out.id));
+  assert.equal(file.abs, path.join(dir, file.path));
+  assert.equal(store.absPath(file.path), file.abs);
   assert.equal(store.readFile(file.path).trim(), '第一段');
   assert.throws(() => store.readFile('../x.md'));
+  assert.throws(() => store.absPath('../x'));
   assert.throws(() => store.readFile(file.path.replace(/\.md$/, '.js')));
 });
 
@@ -144,13 +148,25 @@ test('目录已有文件夹时不迁移配置 XML', () => {
   assert.deepEqual(store.readAll().map((w) => w.label), ['K']);
 });
 
-test('seedDir：数据目录为空时复制种子，已有工作流不覆盖', () => {
+test('seedDir：同名工作流只解压一次，新增工作流会补入', () => {
   const seed = tmp();
-  createWorkflowStore({ dir: seed }).writeAll([wf('seed', '种子')]);
+  const seedStore = createWorkflowStore({ dir: seed });
+  seedStore.writeAll([wf('a', 'A', [{ id: 's', label: 'S', group: 'G', prompts: ['原始'] }])]);
+
   const dir = tmp();
-  const store = createWorkflowStore({ dir, seedDir: seed });
-  assert.deepEqual(store.readAll().map((w) => w.label), ['种子']);
-  store.writeAll([wf('mine', '我的')]);
+  const first = createWorkflowStore({ dir, seedDir: seed });
+  assert.deepEqual(first.readAll().map((w) => w.label), ['A']);
+
+  first.writeAll([wf('a', 'A', [{ id: 's', label: 'S', group: 'G', prompts: ['已改'] }])]);
+  seedStore.writeAll([
+    wf('a', 'A', [{ id: 's', label: 'S', group: 'G', prompts: ['原始'] }]),
+    wf('b', 'B', [{ id: 's', label: 'S', group: 'G', prompts: ['新增'] }]),
+  ]);
+
   const again = createWorkflowStore({ dir, seedDir: seed });
-  assert.deepEqual(again.readAll().map((w) => w.label), ['我的']);
+  const out = again.readAll();
+  assert.deepEqual(out.map((w) => w.label).sort(), ['A', 'B']);
+  assert.equal(out.filter((w) => w.label === 'A').length, 1);
+  assert.equal(out.find((w) => w.label === 'A').stages[0].prompts[0], '已改');
+  assert.equal(out.find((w) => w.label === 'B').stages[0].prompts[0], '新增');
 });

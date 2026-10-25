@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { buildSpawnSpec } from '../runner.js';
-import { writeRunContext, ensureReport, writeRunResult, stripAnsi } from '../report.js';
+import { writeRunContext, ensureReport, writeRunResult, stripAnsi, archiveReport } from '../report.js';
 import { SchedulerJobStatus as S, SCHED_REPORT_MAX_BYTES } from '@devflow/shared/scheduler';
 import { t } from '../../i18n.js';
 
@@ -302,12 +302,19 @@ export function createConsumer({
     const reportUrl = info?.reportFile
       ? `${shareBase}/api/scheduler/jobs/${encodeURIComponent(job.jobId)}/report`
       : null;
+    const archive = archiveReport({
+      store, task, jobId: job.jobId, reportFile: info?.reportFile || null,
+      result: { status: statusText, error: result.error || null }, now: now(),
+    });
     const final = {
       ...result,
       ...reported,
       ...aiResult,
       status: statusText,
       statusCode: status,
+      reportId: archive.reportId,
+      reportArchivePath: archive.reportArchivePath || null,
+      reportArchiveFile: archive.reportArchiveFile || null,
       reportFile: info?.reportFile || reported.reportFile || null,
       reportPath,
       reportUrl,
@@ -327,9 +334,12 @@ export function createConsumer({
           exitCode: final.exitCode ?? null,
           error: final.error || null,
           reason: final.reason || null,
+          reportId: final.reportId,
           reportFile: final.reportFile,
           reportPath,
           reportUrl,
+          reportArchivePath: final.reportArchivePath,
+          reportArchiveFile: final.reportArchiveFile,
           ngaSessionId: final.ngaSessionId || null,
           logPath,
         },

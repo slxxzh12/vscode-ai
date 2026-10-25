@@ -183,3 +183,33 @@ test('deleteTask 连带删除报告目录', () => {
   store.deleteTask(task.id);
   assert.equal(fs.existsSync(path.join(dir, 'tasks', task.id)), false);
 });
+
+test('AI 提示词变化时回调新记录，未变化不回调；删除任务回调清理', () => {
+  const calls = [];
+  const deletes = [];
+  const dir = tmpDir();
+  const store = new SchedulerStore({
+    dir,
+    onPromptChange: (task, prompt, meta) => calls.push({ taskId: task.id, prompt, meta }),
+    onPromptDelete: (taskId) => deletes.push(taskId),
+  });
+  const schedule = { mode: 'interval', interval: { every: 1, unit: 'day' } };
+  const { task } = store.createTask({
+    name: 'ai', type: 'ai', ai: { source: 'prompt', prompt: 'hello' }, schedule,
+  }, { createIP: '1.2.3.4', employeeId: 'E1' });
+  assert.deepEqual(calls, [{ taskId: task.id, prompt: 'hello', meta: { createIP: '1.2.3.4', employeeId: 'E1' } }]);
+
+  store.updateTask(task.id, { name: 'renamed' });
+  assert.equal(calls.length, 1);
+  assert.match(store.promptHashOf(task), /^[0-9a-f]{64}$/);
+
+  store.updateTask(task.id, { ai: { source: 'prompt', prompt: 'changed' } }, { createIP: '5.6.7.8', employeeId: 'E2' });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].prompt, 'changed');
+
+  store.updateTask(task.id, { ai: { source: 'prompt', prompt: 'changed' } });
+  assert.equal(calls.length, 2);
+
+  store.deleteTask(task.id);
+  assert.deepEqual(deletes, [task.id]);
+});

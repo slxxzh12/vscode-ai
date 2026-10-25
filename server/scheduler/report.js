@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { t } from '../i18n.js';
 
 const ANSI_RE = /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
@@ -163,6 +164,46 @@ export function reportDirOf(store, run, task) {
   if (run.reportDir) return run.reportDir;
   const t = task || { id: run.taskId };
   return runPaths(store, t, run.id).reportDir;
+}
+
+function archiveSegment(id) {
+  const raw = String(id || '').trim();
+  const safe = raw.replace(/[^\p{L}\p{N}._-]+/gu, '_').replace(/^[._-]+/, '').slice(0, 80) || 'report';
+  if (safe === raw) return safe;
+  const suffix = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 8);
+  return `${safe}-${suffix}`;
+}
+
+// 报告唯一 ID 由任务的 uniqueKey 指定；未设置时只保留临时运行目录。
+// 设置后把本次报告复制到 scheduler/reports/<uniqueKey>/report.md，供后续 RAG 使用。
+export function archiveReport({ store, task, jobId, reportFile, result = {}, now = Date.now() }) {
+  const reportId = task.uniqueKey ? String(task.uniqueKey) : jobId;
+  const base = { reportId };
+  if (!task.uniqueKey || !reportFile) return base;
+  try {
+    const dir = path.join(store.dir, 'reports', archiveSegment(task.uniqueKey));
+    fs.mkdirSync(dir, { recursive: true });
+    const dest = path.join(dir, 'report.md');
+    const tmp = dest + '.tmp';
+    fs.copyFileSync(store.reportPath(reportFile), tmp);
+    fs.renameSync(tmp, dest);
+    const meta = {
+      reportId,
+      uniqueKey: task.uniqueKey,
+      taskId: task.id,
+      taskName: task.name,
+      jobId,
+      status: result.status || null,
+      error: result.error || null,
+      sourceReportFile: reportFile,
+      reportFile: 'report.md',
+      createdAt: now,
+    };
+    fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2), 'utf8');
+    return { reportId, reportArchivePath: dir, reportArchiveFile: dest };
+  } catch {
+    return base;
+  }
 }
 
 export function legacyReport({ store, run, task }) {

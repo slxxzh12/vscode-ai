@@ -117,16 +117,26 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
     return hints;
   }
 
-  // 首次启动从包内 config/workflows 复制默认工作流到本端口数据目录（已有数据不覆盖）。
+  // 从包内 config/workflows 补齐默认工作流：同名工作流只解压一次（不覆盖、不重复），
+  // 数据目录里没有的新工作流才复制进来。
   function seedFromDir() {
-    if (!seedDir || !fs.existsSync(seedDir) || listDirs(dir).length) return false;
-    try {
-      copyTree(seedDir, dir);
-      return true;
-    } catch (e) {
-      logger?.warn?.('workflow seed copy failed', (e && e.message) || e);
-      return false;
+    if (!seedDir || !fs.existsSync(seedDir)) return false;
+    const existing = new Set(listDirs(dir).map(stripPrefix));
+    let copied = false;
+    for (const name of listDirs(seedDir)) {
+      const label = stripPrefix(name);
+      if (existing.has(label)) continue;
+      const to = path.join(dir, name);
+      if (fs.existsSync(to)) continue;
+      try {
+        copyTree(path.join(seedDir, name), to);
+        existing.add(label);
+        copied = true;
+      } catch (e) {
+        logger?.warn?.('workflow seed copy failed', name, (e && e.message) || e);
+      }
     }
+    return copied;
   }
 
   // 旧的三层目录（工作流/阶段/技能）迁移为四层（工作流/小组/阶段/技能）。
@@ -259,6 +269,13 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
     return readAll();
   }
 
+  function absPath(rel) {
+    const root = path.resolve(dir);
+    const abs = path.resolve(root, String(rel || ''));
+    if (abs !== root && !abs.startsWith(root + path.sep)) throw new Error('bad-path');
+    return abs;
+  }
+
   function tree(workflowId = '') {
     const all = listDirs(dir);
     const names = workflowId ? all.filter((n) => n === workflowId) : all;
@@ -266,18 +283,22 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
       name: wfName,
       type: 'dir',
       path: wfName,
+      abs: absPath(wfName),
       children: listDirs(path.join(dir, wfName)).map((groupName) => ({
         name: groupName,
         type: 'dir',
         path: `${wfName}/${groupName}`,
+        abs: absPath(`${wfName}/${groupName}`),
         children: listDirs(path.join(dir, wfName, groupName)).map((stageName) => ({
           name: stageName,
           type: 'dir',
           path: `${wfName}/${groupName}/${stageName}`,
+          abs: absPath(`${wfName}/${groupName}/${stageName}`),
           children: listMd(path.join(dir, wfName, groupName, stageName)).map((fileName) => ({
             name: fileName,
             type: 'file',
             path: `${wfName}/${groupName}/${stageName}/${fileName}`,
+            abs: absPath(`${wfName}/${groupName}/${stageName}/${fileName}`),
           })),
         })),
       })),
@@ -285,9 +306,7 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
   }
 
   function readFile(rel) {
-    const root = path.resolve(dir);
-    const abs = path.resolve(root, String(rel || ''));
-    if (abs !== root && !abs.startsWith(root + path.sep)) throw new Error('bad-path');
+    const abs = absPath(rel);
     if (!abs.toLowerCase().endsWith(MD_EXT)) throw new Error('bad-file');
     return fs.readFileSync(abs, 'utf8');
   }
@@ -327,5 +346,5 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
   migrateXmlFiles();
   migrateOldLayout();
 
-  return { readAll, writeAll, tree, readFile, migrateFromConfigXml, dir };
+  return { readAll, writeAll, tree, readFile, absPath, migrateFromConfigXml, dir };
 }

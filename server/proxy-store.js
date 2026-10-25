@@ -37,9 +37,18 @@ export function normalizeRule(input) {
   const protocol = String(t.protocol || 'http');
   if (!['http', 'https'].includes(protocol)) throw err('bad-request', 'bad protocol');
   const host = String(t.host || '').trim();
-  if (!host) throw err('bad-request', 'target host required');
   const port = Number(t.port);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw err('bad-request', 'bad target port');
+  let staticDir = String(input?.staticDir || '').trim();
+  if (staticDir) {
+    staticDir = path.resolve(staticDir);
+    let st = null;
+    try { st = fs.statSync(staticDir); } catch { /* missing */ }
+    if (!st || !st.isDirectory()) throw err('bad-static-dir', 'static dir missing');
+  } else {
+    staticDir = '';
+    if (!host) throw err('bad-request', 'target host required');
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw err('bad-request', 'bad target port');
+  }
 
   const headers = Array.isArray(input?.headers)
     ? input.headers.map((h) => ({ name: String(h?.name || '').trim(), value: String(h?.value ?? '') })).filter((h) => h.name)
@@ -95,7 +104,12 @@ export function normalizeRule(input) {
   const directContentType = String(input?.directContentType || '').trim() || 'application/json; charset=utf-8';
   const base = {
     name, mode, listenHost,
-    target: { protocol, host, port },
+    staticDir,
+    target: {
+      protocol,
+      host,
+      port: Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 0,
+    },
     tlsInsecure: input?.tlsInsecure !== false,
     preserveHost: input?.preserveHost !== false,
     headers,

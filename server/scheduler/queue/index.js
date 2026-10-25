@@ -35,7 +35,8 @@ export function createQueue({ dir, dbFile = null, logger = console, now = () => 
   };
   for (const name of ['partitionCount', 'enqueueTask', 'approve', 'reject', 'cancel', 'claim', 'complete', 'retry',
     'cleanupFinished', 'deleteTaskJobs', 'purgeTaskJobs', 'failRunningByWorker', 'recoverRunning', 'setPartitionCount', 'rehash', 'applyCallback',
-    'getJob', 'listJobs', 'summary', 'partitionStats', 'parseParam']) {
+    'getJob', 'listJobs', 'summary', 'partitionStats', 'parseParam',
+    'recordPrompt', 'getLatestPrompt', 'getPromptByHash', 'listPrompts', 'deleteTaskPrompts']) {
     proxy[name] = async (...args) => (await init())[name](...args);
   }
   proxy.close = async () => { if (driver) await driver.close(); service = null; driver = null; };

@@ -52,10 +52,12 @@ test('普通命令：输出作为 prompt 再执行 AI，并写回成功与报告
   assert.equal(completed.result.shellExitCode, 0);
   assert.equal(completed.result.aiExitCode, 0);
   assert.equal(completed.result.ngaSessionId, 'ses_test_1');
+  assert.equal(completed.result.reportId, 'j1');
   assert.ok(completed.result.reportMarkdown.includes('结果'));
   const resultJson = JSON.parse(fs.readFileSync(store.reportPath(path.join(task.id, 'j1', 'result.json')), 'utf8'));
   assert.equal(resultJson.status, 'success');
   assert.equal(resultJson.statusCode, 1);
+  assert.equal(resultJson.reportId, 'j1');
   assert.equal(resultJson.ngaSessionId, 'ses_test_1');
 });
 

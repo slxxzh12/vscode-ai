@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { t } from '../i18n';
 import { useJobs, type Job } from './useJobs';
-import { jobStatusLabel, jobStatusClass } from './format';
+import { jobStatusLabel } from './format';
 import { renderRemoteMarkdown } from '../markdown';
 
 const jobs = useJobs();
@@ -10,7 +10,6 @@ let timer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => { void jobs.refresh(); void loadWorkers(); void loadConfig(); timer = setInterval(() => { void jobs.refresh(); void loadWorkers(); }, 2000); });
 onUnmounted(() => { if (timer) clearInterval(timer); });
 const detail = ref<Job | null>(null);
-const partitionInput = ref('');
 const sortedJobs = computed(() => [...jobs.state.jobs].sort((a, b) =>
   (b.createTime || 0) - (a.createTime || 0) || String(b.jobId).localeCompare(String(a.jobId))));
 const workers = ref<any[]>([]);
@@ -36,15 +35,16 @@ async function cleanup() {
   await jobs.refresh();
 }
 function applyFilters() {
-  const v = partitionInput.value.trim();
-  const p = v === '' ? null : Number(v);
-  jobs.state.partition = p !== null && Number.isFinite(p) ? p : null;
+  jobs.state.partition = null;
   void jobs.refresh();
 }
 async function savePartitions() {
   await jobs.setPartitions(config.value.partitionCount);
   configOpen.value = false;
   alert(t('jobs.config.restart_required'));
+}
+function jobTagType(s: number): 'success' | 'danger' | 'primary' | 'warning' | 'info' {
+  return s === 1 ? 'success' : s === 2 ? 'danger' : s === 3 ? 'primary' : s === 4 ? 'warning' : 'info';
 }
 function taskNameOf(job: Job): string {
   try { return JSON.parse(job.paramStr || '{}').task?.name || '—'; } catch { return '—'; }
@@ -69,6 +69,14 @@ function ngaSessionOf(job: Job | null): string {
 const detailReport = computed(() => (detail.value ? reportOf(detail.value) : ''));
 const detailReportHtml = computed(() => (detailReport.value ? renderRemoteMarkdown(detailReport.value) : ''));
 const detailNgaSession = computed(() => ngaSessionOf(detail.value));
+const detailReportId = computed(() => {
+  if (!detail.value) return '';
+  try { return String(JSON.parse(detail.value.result || '{}').reportId || ''); } catch { return ''; }
+});
+const detailReportArchive = computed(() => {
+  if (!detail.value) return '';
+  try { return String(JSON.parse(detail.value.result || '{}').reportArchivePath || ''); } catch { return ''; }
+});
 const detailReportUrl = computed(() => {
   if (!detail.value) return '';
   try { return String(JSON.parse(detail.value.result || '{}').reportUrl || ''); } catch { return ''; }
@@ -79,7 +87,7 @@ const detailReportUrl = computed(() => {
   <div class="jobs-view">
     <header class="jobs-head">
       <span class="title">{{ $t('jobs.title') }}</span>
-      <span class="dim">{{ jobs.state.topic }} · {{ jobs.state.partitionCount }} partitions</span>
+      <span class="dim">{{ jobs.state.topic }}</span>
       <button @click="jobs.refresh()">{{ $t('sched.refresh') }}</button>
       <select v-model="jobs.state.status" @change="applyFilters()">
         <option :value="null">{{ $t('jobs.filter.all') }}</option>
@@ -90,7 +98,6 @@ const detailReportUrl = computed(() => {
         <option :value="2">{{ $t('jobs.status.failed') }}</option>
       </select>
       <input v-model="jobs.state.taskId" :placeholder="$t('jobs.filter.task')" @keyup.enter="applyFilters()" />
-      <input v-model="partitionInput" type="number" min="0" :placeholder="$t('jobs.filter.partition')" @keyup.enter="applyFilters()" />
       <button v-if="isMaster" @click="cleanup()">{{ $t('jobs.action.cleanup') }}</button>
       <button v-if="isMaster" @click="configOpen = true; loadConfig()">{{ $t('jobs.config.title') }}</button>
     </header>
@@ -107,16 +114,38 @@ const detailReportUrl = computed(() => {
       </span>
     </section>
     <div class="job-list">
-      <article v-for="job in sortedJobs" :key="job.jobId" class="job-row" @click="detail = job">
-        <span class="st" :class="jobStatusClass(job.status)">{{ jobStatusLabel(job.status) }}</span>
-        <span class="name">{{ taskNameOf(job) }}</span>
-        <span class="tag">P{{ job.partitionId }}</span>
-        <span class="ip">{{ job.workIP || job.createIP || '—' }}</span>
-        <span class="time">{{ formatTime(job.createTime) }}</span>
-        <span class="runtime">{{ job.runtime != null ? `${job.runtime} ms` : '—' }}</span>
-        <span class="jid">{{ job.jobId }}</span>
-      </article>
-      <p v-if="!sortedJobs.length" class="empty">{{ $t('sched.jobs.empty') }}</p>
+      <el-table
+        :data="sortedJobs"
+        size="small"
+        stripe
+        class="jobs-table"
+        :empty-text="$t('sched.jobs.empty')"
+        @row-click="(row: Job) => (detail = row)"
+      >
+        <el-table-column :label="$t('sched.col.status')" width="96">
+          <template #default="{ row }">
+            <el-tag size="small" :type="jobTagType(row.status)">{{ jobStatusLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="$t('sched.col.name')" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ taskNameOf(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.partition')" width="80">
+          <template #default="{ row }">P{{ row.partitionId }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.ip')" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.workIP || row.createIP || '—' }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.time')" width="180">
+          <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.runtime')" width="100" align="right">
+          <template #default="{ row }">{{ row.runtime != null ? `${row.runtime} ms` : '—' }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.job')" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }"><span class="jid">{{ row.jobId }}</span></template>
+        </el-table-column>
+      </el-table>
     </div>
     <aside v-if="detail" class="job-drawer">
       <button class="close" @click="detail = null">×</button>
@@ -129,6 +158,8 @@ const detailReportUrl = computed(() => {
       <div>workIP: {{ detail.workIP || '—' }}</div>
       <div>runtime: {{ detail.runtime ?? '—' }} ms</div>
       <div v-if="detailNgaSession" class="dim">nga session: {{ detailNgaSession }}</div>
+      <div v-if="detailReportId" class="dim">{{ $t('sched.report.id') }}: {{ detailReportId }}</div>
+      <div v-if="detailReportArchive" class="dim" :title="detailReportArchive">{{ $t('sched.report.archive') }}: {{ detailReportArchive }}</div>
       <div v-if="detailReportUrl" class="dim report-url"><a :href="detailReportUrl" target="_blank" rel="noopener">{{ detailReportUrl }}</a></div>
       <div v-if="detailReport" class="report md-body" v-html="detailReportHtml" />
       <pre v-else class="report">{{ $t('sched.report.empty') }}</pre>
@@ -166,17 +197,9 @@ const detailReportUrl = computed(() => {
 .sum-card .num { font-size: 20px; font-weight: 600; }
 .workers { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; opacity: .8; }
 .worker.off { opacity: .45; }
-.job-list { display: flex; flex-direction: column; border: 1px solid var(--border-color, #333); border-radius: 6px; overflow: hidden; }
-.job-row { display: grid; grid-template-columns: 64px minmax(120px, 1.4fr) 44px minmax(100px, 1fr) 170px 90px minmax(120px, 1.2fr); gap: 8px; align-items: center; padding: 6px 8px; font-size: 12px; cursor: pointer; border-bottom: 1px solid var(--border-color, #333); }
-.job-row:last-child { border-bottom: none; }
-.job-row:hover { background: var(--hover-bg, rgba(128,128,128,.12)); }
-.job-row .st { font-size: 11px; font-weight: 600; }
-.job-row .name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.job-row .tag { opacity: .75; }
-.job-row .ip, .job-row .time, .job-row .runtime { opacity: .7; }
-.job-row .jid { opacity: .5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.empty { padding: 12px; text-align: center; opacity: .6; font-size: 12px; margin: 0; }
-.st.ok { color: #2ea043; } .st.bad { color: #f85149; } .st.run { color: #58a6ff; } .st.wait { color: #d29922; } .st.queue { opacity: .75; }
+.job-list { border: 1px solid var(--border-color, #333); border-radius: 6px; overflow: hidden; }
+.jobs-table { width: 100%; cursor: pointer; }
+.jid { opacity: .55; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .job-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 360px; overflow: auto; padding: 14px; background: var(--panel-bg, #1e1e1e); border-left: 1px solid var(--border-color, #333); z-index: 20; }
 .job-drawer .close { float: right; }
 .job-drawer .report { white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 50vh; overflow: auto; }

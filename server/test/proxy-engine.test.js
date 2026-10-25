@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { buildForwardPath, forwardHeaders, matchPrefix, createProxyEngine } from '../proxy-engine.js';
 
 const RULE = {
@@ -502,4 +505,35 @@ test('端口被占 → 状态 error（不崩）', async () => {
   await engine.start(rule);
   assert.equal(engine.status()[rule.id].status, 'error');
   up.srv.close();
+});
+
+test('静态目录规则：直接返回本地文件与目录列表', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-static-'));
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'hello');
+  fs.mkdirSync(path.join(dir, 'sub'));
+  fs.writeFileSync(path.join(dir, 'sub', 'index.html'), '<h1>sub</h1>');
+  const rule = {
+    id: 'static', name: 'static', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const base = `http://127.0.0.1:${port}`;
+  const file = await fetch(`${base}/a.txt`);
+  assert.equal(file.status, 200);
+  assert.match(file.headers.get('content-type'), /text\/plain/);
+  assert.equal(await file.text(), 'hello');
+  const index = await fetch(`${base}/sub/`);
+  assert.equal(await index.text(), '<h1>sub</h1>');
+  const list = await fetch(`${base}/`);
+  assert.match(await list.text(), /a\.txt/);
+  const miss = await fetch(`${base}/nope.txt`);
+  assert.equal(miss.status, 404);
+  const traversal = await fetch(`${base}/%2e%2e/%2e%2e/secret.txt`);
+  assert.ok([403, 404].includes(traversal.status));
+  engine.stop(rule.id);
 });

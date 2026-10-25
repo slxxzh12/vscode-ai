@@ -159,9 +159,42 @@ export function createRepository(driver) {
     }
   }
 
+  async function getLatestPrompt(taskId) {
+    const rows = await driver.query('SELECT * FROM t_sched_prompt WHERE taskId=? ORDER BY id DESC LIMIT 1', [taskId]);
+    return rows[0] || null;
+  }
+
+  async function listPrompts(taskId, limit = 50) {
+    return driver.query('SELECT * FROM t_sched_prompt WHERE taskId=? ORDER BY id DESC LIMIT ?', [taskId, Math.max(1, Math.min(500, Number(limit) || 50))]);
+  }
+
+  async function insertPrompt({ taskId, prompt, hash, createIP, employeeId, createdAt }) {
+    try {
+      const r = await driver.run(
+        'INSERT INTO t_sched_prompt (taskId,prompt,hash,createIP,employeeId,createdAt) VALUES (?,?,?,?,?,?)',
+        [taskId, prompt, hash, createIP || '', employeeId || '', createdAt],
+      );
+      return { id: r.insertId };
+    } catch (e) {
+      if (driver.isDuplicate(e)) return { duplicate: true };
+      throw e;
+    }
+  }
+
+  async function getPromptByHash(taskId, hash) {
+    const rows = await driver.query('SELECT * FROM t_sched_prompt WHERE taskId=? AND hash=? ORDER BY id DESC LIMIT 1', [taskId, hash]);
+    return rows[0] || null;
+  }
+
+  async function deleteTaskPrompts(taskId) {
+    const r = await driver.run('DELETE FROM t_sched_prompt WHERE taskId=?', [taskId]);
+    return r.changes;
+  }
+
   return {
     insertJob, updateJob, getJob, listJobs, claim, summary, partitionStats,
     deleteFinished, purgeTaskJobs, rehash, upsertWorker, listWorkers, setWorkerPartitions,
-    markStaleWorkers, getConfig, setConfig, driver,
+    markStaleWorkers, getConfig, setConfig,
+    getLatestPrompt, listPrompts, insertPrompt, getPromptByHash, deleteTaskPrompts, driver,
   };
 }

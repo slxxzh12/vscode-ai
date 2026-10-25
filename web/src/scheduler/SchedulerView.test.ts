@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
+import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
 import SchedulerView from './SchedulerView.vue';
+import { requestSchedulerPrompt, clearSchedulerPrompt } from './schedulerIntent';
 
 function ok(data: unknown) { return { ok: true, text: async () => JSON.stringify(data) } as any; }
 
@@ -17,7 +19,7 @@ beforeEach(() => {
 
 describe('SchedulerView', () => {
   it('顶部显示总成功/总失败，点任务进入详情', async () => {
-    const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
+    const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } }, global: { plugins: [ElementPlus] } });
     await flushPromises();
     expect(w.find('.sum-success .num').text()).toBe('2');
     expect(w.find('.sum-failed .num').text()).toBe('1');
@@ -89,8 +91,45 @@ describe('SchedulerView', () => {
     w.unmount();
   });
 
-  it('可在定时任务与任务队列两个页签之间切换', async () => {
+  it('编辑 AI 任务可按提示词 ID 或 Hash 加载对应版本', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/scheduler/tasks') return ok({ tasks: [{ id: 't1', name: 'ai', enabled: true, type: 'ai', ai: { source: 'prompt', prompt: 'current' }, promptHash: 'h2', schedule: { mode: 'interval', interval: { every: 1, unit: 'day' } } }] });
+      if (url === '/api/scheduler/summary') return ok({ total: 0, success: 0, failed: 0, running: 0, queued: 0, pending: 0 });
+      if (String(url).startsWith('/api/scheduler/tasks/t1/prompts')) return ok({
+        prompts: [
+          { id: 2, taskId: 't1', prompt: 'current', hash: 'h2', createdAt: 200 },
+          { id: 1, taskId: 't1', prompt: 'original', hash: 'h1', createdAt: 100 },
+        ],
+        activeId: 2,
+      });
+      return ok({});
+    }));
     const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
+    await flushPromises();
+    await w.findAll('.row .acts button')[3].trigger('click');
+    await flushPromises();
+    const inputs = w.findAll('.prompt-refs input');
+    expect(inputs.length).toBe(2);
+    expect((inputs[0].element as HTMLInputElement).value).toBe('2');
+    await inputs[0].setValue('1');
+    await inputs[0].trigger('change');
+    await flushPromises();
+    expect(w.find('.modal .cm-content').text()).toContain('original');
+    expect((inputs[0].element as HTMLInputElement).value).toBe('1');
+  });
+
+  it('URL 意图带 hideInput 时隐藏聊天左侧输入区', async () => {
+    requestSchedulerPrompt('hello', false, true);
+    const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
+    await flushPromises();
+    expect(w.find('.chat-body').classes()).toContain('hide-left');
+    expect(w.find('.chat-left').exists()).toBe(true);
+    clearSchedulerPrompt();
+    w.unmount();
+  });
+
+  it('可在定时任务与任务队列两个页签之间切换', async () => {
+    const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } }, global: { plugins: [ElementPlus] } });
     await flushPromises();
     expect(w.find('.body').exists()).toBe(true);
     await w.findAll('.main-tabs button')[1].trigger('click');

@@ -1,7 +1,7 @@
 import type { CenterTab } from './useCenter';
 
 // 窗口状态（服务端 <端口数据目录>/window-state.json，一个端口一份，多端共享一份）。
-export type Rail = 'explorer' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile';
+export type Rail = 'explorer' | 'stat' | 'scheduler' | 'proxy' | 'mobile';
 export type HistoryTab = 'files' | 'messages' | 'tree';
 export type AllStyle = 'flat' | 'tree';
 

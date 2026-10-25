@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { listAiCommands } from './ai-commands.js';
 import { pickFile, pickFolder as defaultPickFolder } from '../native-dialog.js';
 
-export function createSchedulerMount({ engine, store, queue, logger = console, pickFolder = defaultPickFolder }) {
+export function createSchedulerMount({ engine, store, queue, logger = console, pickFolder = defaultPickFolder, operatorOf = () => ({}) }) {
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(obj));
@@ -22,9 +22,15 @@ export function createSchedulerMount({ engine, store, queue, logger = console, p
   });
   const withNext = async (task) => ({
     ...task,
+    promptHash: store.promptHashOf ? store.promptHashOf(task) : '',
     nextRunAt: engine.nextRunAtOf(task.id),
     recentJobs: await queue.listJobs({ taskIds: [task.id], limit: 10 }),
   });
+  const savePrompt = async (task, meta) => {
+    if (!task || task.type !== 'ai' || task.ai?.source !== 'prompt') return;
+    const prompt = store.promptTextOf ? store.promptTextOf(task) : String(task.ai.prompt || '');
+    try { await queue.recordPrompt(task.id, prompt, meta); } catch { /* 提示词历史写入失败不阻断任务保存 */ }
+  };
 
   return async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -34,8 +40,10 @@ export function createSchedulerMount({ engine, store, queue, logger = console, p
         return sendJson(res, 200, { tasks: await Promise.all(store.listTasks().map(withNext)), serverTime: Date.now() });
       }
       if (p === '/api/scheduler/tasks' && req.method === 'POST') {
-        const r = store.createTask(await readBody(req));
+        const meta = operatorOf(req);
+        const r = store.createTask(await readBody(req), meta);
         if (r.error) return sendJson(res, 400, { error: r.error });
+        await savePrompt(r.task, meta);
         engine.reschedule(r.task);
         engine.notifyTasksChanged();
         return sendJson(res, 200, { task: await withNext(r.task) });
@@ -52,6 +60,7 @@ export function createSchedulerMount({ engine, store, queue, logger = console, p
         const body = await readBody(req, 8 * 1024 * 1024);
         const tasks = Array.isArray(body?.tasks) ? body.tasks : (Array.isArray(body) ? body : []);
         const result = { imported: 0, updated: 0, failed: [] };
+        const meta = operatorOf(req);
         for (const raw of tasks) {
           const input = { ...(raw || {}) };
           const id = typeof input.id === 'string' ? input.id : '';
@@ -60,13 +69,13 @@ export function createSchedulerMount({ engine, store, queue, logger = console, p
           delete input.updatedAt;
           try {
             if (id && store.getTask(id)) {
-              let r = store.replaceTask(id, input);
-              if (r.error === 'dir-taken') r = store.replaceTask(id, { ...input, cwd: null });
+              let r = store.replaceTask(id, input, meta);
+              if (r.error === 'dir-taken') r = store.replaceTask(id, { ...input, cwd: null }, meta);
               if (r.error) result.failed.push({ name: input.name || id, error: r.error });
               else result.updated += 1;
             } else {
-              let r = store.createTask(input);
-              if (r.error === 'dir-taken') r = store.createTask({ ...input, cwd: null });
+              let r = store.createTask(input, meta);
+              if (r.error === 'dir-taken') r = store.createTask({ ...input, cwd: null }, meta);
               if (r.error) result.failed.push({ name: input.name || id, error: r.error });
               else result.imported += 1;
             }
@@ -78,10 +87,19 @@ export function createSchedulerMount({ engine, store, queue, logger = console, p
         engine.notifyTasksChanged();
         return sendJson(res, 200, result);
       }
-      const m = p.match(/^\/api\/scheduler\/tasks\/([^/]+)(?:\/(run|stop))?$/);
+      const m = p.match(/^\/api\/scheduler\/tasks\/([^/]+)(?:\/(run|stop|prompts))?$/);
       if (m) {
         const id = decodeURIComponent(m[1]);
         const action = m[2];
+        if (action === 'prompts' && req.method === 'GET') {
+          if (!store.getTask(id)) return sendJson(res, 404, { error: 'not-found' });
+          const hash = String(url.searchParams.get('hash') || '');
+          const prompts = await queue.listPrompts(id, 100);
+          const matched = hash ? (prompts.find((x) => x.hash === hash) || await queue.getPromptByHash(id, hash)) : null;
+          return sendJson(res, 200, {
+            prompts, hash, activeId: matched?.id ?? prompts[0]?.id ?? null,
+          });
+        }
         if (action === 'run' && req.method === 'POST') {
           const r = await engine.manualRun(id);
           if (r.error === 'not-found') return sendJson(res, 404, { error: 'not-found' });
@@ -92,9 +110,11 @@ export function createSchedulerMount({ engine, store, queue, logger = console, p
           return sendJson(res, 200, { ok: await engine.stop(id) });
         }
         if (!action && req.method === 'PUT') {
-          const r = store.updateTask(id, await readBody(req));
+          const meta = operatorOf(req);
+          const r = store.updateTask(id, await readBody(req), meta);
           if (r.error === 'not-found') return sendJson(res, 404, { error: 'not-found' });
           if (r.error) return sendJson(res, 400, { error: r.error });
+          await savePrompt(r.task, meta);
           engine.reschedule(r.task);
           store.syncManifest(r.task.id);
           engine.notifyTasksChanged();
@@ -138,7 +158,7 @@ export function createSchedulerMount({ engine, store, queue, logger = console, p
         if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
           return sendJson(res, 400, { error: 'bad-dir' });
         }
-        const summary = store.importManifestDir(dir);
+        const summary = store.importManifestDir(dir, operatorOf(req));
         engine.refreshAll();
         for (const t of store.listTasks()) store.syncManifest(t.id);
         engine.notifyTasksChanged();

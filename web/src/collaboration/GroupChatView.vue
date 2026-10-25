@@ -3,35 +3,16 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import { filterMentions, parseComposer, splitAtCommand, highlightMentions } from './chat-parser';
-import { distCardOf, showAccept, type DistCard } from './distTasks';
 import type { CollabChatMessage } from './types';
-import SkillDistributor from './SkillDistributor.vue';
 import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi; groupId: string }>();
 const snap = computed(() => props.collab.state.value ?? EMPTY_SNAPSHOT);
 const group = computed(() => (snap.value.groups || []).find((g) => g.id === props.groupId) || null);
 const chat = computed(() => props.collab.chatState.value[props.groupId] || { messages: [] });
-// 分发通知：预先算好每条的卡片模型，模板里索引取用（避免重复调用与空值断言）
-const distCards = computed<Record<string, DistCard>>(() => {
-  const out: Record<string, DistCard> = {};
-  for (const m of chat.value.messages) { const c = distCardOf(m); if (c) out[m.id] = c; }
-  return out;
-});
-function cardTypeKey(type: string): string {
-  return type === 'workflow' ? 'collab.task.workflow' : type === 'mixed' ? 'collab.dist.msg.mixed_short' : 'collab.task.skills';
-}
-function openTasks() { window.location.hash = '#contacts/tasks'; }
 const me = computed(() => snap.value.identity.machineId);
 const hubId = computed(() => group.value?.hubId || '');
 const myPending = computed(() => props.collab.pendingCmdState.value.filter((p) => p.groupId === props.groupId));
-const skillOpen = ref(false);
-const skillFocus = ref<'skills' | 'workflow'>('skills');
-function openDist(kind: 'skills' | 'workflow') {
-  if (skillOpen.value && skillFocus.value === kind) { skillOpen.value = false; return; }
-  skillFocus.value = kind;
-  skillOpen.value = true;
-}
 const nameById = computed(() => {
   const map: Record<string, string> = {};
   for (const m of group.value?.members ?? []) map[m.machineId] = m.username;
@@ -128,14 +109,7 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
 
 <template>
   <div class="gcv">
-    <!-- 群聊工具条 -->
-    <div class="tools">
-      <button class="tool" :class="{ on: skillOpen && skillFocus === 'skills' }" :title="$t('collab.chat.distribute_title')" @click="openDist('skills')">{{ $t('collab.chat.distribute') }}</button>
-      <button class="tool" :class="{ on: skillOpen && skillFocus === 'workflow' }" :title="$t('collab.dist.workflow_title')" @click="openDist('workflow')">{{ $t('collab.chat.distribute_workflow') }}</button>
-    </div>
-    <SkillDistributor v-if="skillOpen" :open="skillOpen" :collab="collab" :group-id="props.groupId" :focus="skillFocus" @close="skillOpen = false" />
-
-    <!-- 本机待确认执行卡片（按当前群过滤） -->
+    <!-- 本机待确认执行卡片（按当前群过滤）-->
     <div v-for="p in myPending" :key="p.id" class="pend">
       <div class="pend-txt">{{ $t('collab.chat.cmd_request', { name: nameOf(p.fromId) }) }}<code>{{ p.text }}</code></div>
       <button @click="decide(p, true)">{{ $t('common.allow') }}</button>
@@ -155,13 +129,6 @@ watch(() => snap.value.heartbeats, () => { pullFromHub(); });
           <div class="res-head">{{ $t('collab.chat.result') }}<template v-if="m.meta"> · {{ $t('collab.chat.exit_code', { code: m.meta.exitCode ?? '-' }) }}</template></div>
           <pre class="res-body">{{ resultText(m) }}</pre>
         </template>
-        <div v-else-if="distCards[m.id]" class="dcard">
-          <div class="dhead">📦 {{ $t(cardTypeKey(distCards[m.id].type)) }}</div>
-          <div class="dname">{{ distCards[m.id].name }}</div>
-          <div class="dmeta">{{ $t('collab.task.items', { count: distCards[m.id].count }) }}</div>
-          <a v-if="distCards[m.id].url" class="dlink" :href="distCards[m.id].url" target="_blank" rel="noopener">{{ $t('collab.task.download_addr') }}: {{ distCards[m.id].url }}</a>
-          <button v-if="showAccept(m, me)" class="dtasks" @click="openTasks">{{ $t('collab.task.goto_tasks') }}</button>
-        </div>
         <div v-else-if="m.kind === 'image'" class="imsg">
           <img :src="imageSrc(m)" :alt="m.meta?.name || ''" class="ithumb" :title="$t('collab.chat.image_hint')" @click="lightbox = m" />
           <div class="iname">{{ m.meta?.name || '' }}</div>

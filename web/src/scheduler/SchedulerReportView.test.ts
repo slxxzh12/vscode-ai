@@ -53,4 +53,27 @@ describe('SchedulerReportView', () => {
     await w.find('.rv-session').trigger('click');
     expect(onOpenSession).toHaveBeenCalledWith('s1');
   });
+
+  it('点击 AI 任务按 sha256 选中并展示原始提示词与版本', async () => {
+    const aiTask = {
+      ...task,
+      type: 'ai',
+      ai: { source: 'prompt', prompt: 'new prompt' },
+      promptHash: 'h2',
+    } as any;
+    const loadPrompts = vi.fn(async () => ({
+      prompts: [
+        { id: 2, taskId: 't1', prompt: 'new prompt', hash: 'h2', employeeId: 'E2', createIP: '10.0.0.2', createdAt: 200 },
+        { id: 1, taskId: 't1', prompt: 'old prompt', hash: 'h1', employeeId: 'E1', createIP: '10.0.0.1', createdAt: 100 },
+      ],
+      activeId: 2,
+    }));
+    const w = mountView({ task: aiTask, loadPrompts });
+    await flushPromises();
+    expect(loadPrompts).toHaveBeenCalledWith('t1', 'h2');
+    expect(w.find('.prompt-text').text()).toBe('new prompt');
+    expect(w.find('.prompt-hash').text()).toContain('h2');
+    expect(w.find('.prompt-meta').text()).toContain('E2');
+    expect(w.findAll('.prompt-ver option').length).toBe(2);
+  });
 });

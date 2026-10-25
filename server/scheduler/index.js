@@ -13,9 +13,18 @@ export function createScheduler({
   opencodeDataDir = null, manifestRoot = null,
   machineId = 'local', hostport = '127.0.0.1:22222', publicBaseUrl = null, role = 'master', version = '',
   dbFile = null, pullQueueConfig = null, onJobEvent = () => {},
+  operatorOf = () => ({}), defaultOperator = null,
 }) {
-  const store = new SchedulerStore({ dir, logger, ...(manifestRoot ? { manifestRoot } : {}) });
   const queue = createQueue({ dir, dbFile, logger });
+  const store = new SchedulerStore({
+    dir, logger, ...(manifestRoot ? { manifestRoot } : {}),
+    onPromptChange: (task, prompt, meta) => {
+      void queue.recordPrompt(task.id, prompt, meta).catch((e) => logger?.warn?.('scheduler prompt save failed', (e && e.message) || e));
+    },
+    onPromptDelete: (taskId) => {
+      void queue.deleteTaskPrompts(taskId).catch((e) => logger?.warn?.('scheduler prompt delete failed', (e && e.message) || e));
+    },
+  });
   let registry = null;
   let consumer = null;
   let started = false;
@@ -60,6 +69,11 @@ export function createScheduler({
     }
     await queue.ready();
     await cleanupExpiredOnce();
+    for (const task of store.listTasks()) {
+      const prompt = store.promptTextOf(task);
+      if (!prompt.trim()) continue;
+      await queue.recordPrompt(task.id, prompt, defaultOperator || {}).catch(() => {});
+    }
     if (!cleanupTimer) {
       cleanupTimer = setInterval(() => { void cleanupExpiredOnce(); }, 6 * 60 * 60 * 1000);
       cleanupTimer.unref?.();
@@ -97,7 +111,7 @@ export function createScheduler({
     return c;
   }
 
-  const mount = createSchedulerMount({ engine, store, queue, logger });
+  const mount = createSchedulerMount({ engine, store, queue, logger, operatorOf });
   const jobsMount = createJobsMount({
     queue, store, registry: () => registry, role, hostport, machineId, logger,
     stopJob: (jobId) => consumer?.stopJob(jobId),

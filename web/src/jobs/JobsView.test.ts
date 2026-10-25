@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
+import ElementPlus from 'element-plus';
 import { mountC } from '../test-utils';
 import JobsView from './JobsView.vue';
 
@@ -20,14 +21,15 @@ beforeEach(() => {
 });
 
 describe('JobsView', () => {
-  it('平铺渲染作业并按时间倒序', async () => {
-    const w = mountC(JobsView);
+  it('用 Element Plus 表格平铺渲染作业并按时间倒序', async () => {
+    const w = mountC(JobsView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
     expect(w.findAll('.partition-col').length).toBe(0);
-    const rows = w.findAll('.job-row');
+    const rows = w.findAll('.el-table__row');
     expect(rows.length).toBe(2);
     expect(rows[0].text()).toContain('report');
     expect(rows[1].text()).toContain('scan');
+    expect(rows[0].text()).toContain('P3');
     expect(w.find('.sum-queued .num').text()).toBe('1');
   });
 });

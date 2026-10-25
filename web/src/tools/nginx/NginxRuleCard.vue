@@ -159,7 +159,7 @@ async function doSave() {
   if (!form.value.name.trim()) { msg.value = t('nginx.required_name'); return; }
   busy.value = true; msg.value = '';
   try {
-    // 新建规则默认启用：服务重启后 startEnabled() 会自动把端口拉起来
+    // 新建规则默认启用：服务重启后 startEnabled() 会自动把端口拉起
     const payload = { ...form.value };
     if (!payload.id) payload.enabled = true;
     const saved = await props.api.save(payload);
@@ -168,6 +168,16 @@ async function doSave() {
     msg.value = t('nginx.saved_ok');
     emit('saved', saved);
   } catch (e) { msg.value = nginxErrText(e); } finally { busy.value = false; }
+}
+
+async function pickStaticDir() {
+  msg.value = '';
+  try {
+    const r = await props.api.pickFolder();
+    if (r.error) { msg.value = r.error === 'unsupported' ? t('nginx.pick_unsupported') : t('nginx.pick_failed', { msg: r.message || r.error }); return; }
+    if (r.cancelled || !r.path) return;
+    form.value = { ...form.value, staticDir: r.path };
+  } catch (e) { msg.value = String((e as Error)?.message || e); }
 }
 
 async function doDelete() {
@@ -301,20 +311,30 @@ function statusText() {
       </div>
       <label v-if="form.mode === 'path'" class="ngchk"><input v-model="form.stripPrefix" type="checkbox" />{{ $t('nginx.strip_prefix') }}</label>
 
-      <div class="nghint">{{ $t('nginx.forward_hint') }}</div>
-      <div class="ngrow">
-        <label>{{ $t('nginx.protocol') }}
-          <select v-model="form.target.protocol" class="ngin" data-field="target-protocol">
-            <option value="http">http</option>
-            <option value="https">https</option>
-          </select>
-        </label>
-        <label>{{ $t('nginx.host') }}<input v-model="form.target.host" class="ngin" data-field="target-host" /></label>
-        <label>{{ $t('nginx.port') }}<input v-model.number="form.target.port" type="number" class="ngin" data-field="target-port" /></label>
+      <div class="ngrow ngstatic">
+        <label>{{ $t('nginx.static_dir') }}<input v-model="form.staticDir" class="ngin" data-field="static-dir" :placeholder="$t('nginx.static_dir_ph')" /></label>
+        <button class="ngbtn" @click="pickStaticDir">{{ $t('nginx.pick_dir') }}</button>
+        <button v-if="form.staticDir" class="ngbtn" @click="form.staticDir = ''">{{ $t('nginx.clear_dir') }}</button>
       </div>
+      <div v-if="form.staticDir" class="nghint">{{ $t('nginx.static_hint') }}</div>
+      <template v-else>
+        <div class="nghint">{{ $t('nginx.forward_hint') }}</div>
+        <div class="ngrow">
+          <label>{{ $t('nginx.protocol') }}
+            <select v-model="form.target.protocol" class="ngin" data-field="target-protocol">
+              <option value="http">http</option>
+              <option value="https">https</option>
+            </select>
+          </label>
+          <label>{{ $t('nginx.host') }}<input v-model="form.target.host" class="ngin" data-field="target-host" /></label>
+          <label>{{ $t('nginx.port') }}<input v-model.number="form.target.port" type="number" class="ngin" data-field="target-port" /></label>
+        </div>
+        <div class="ngrow ngchks">
+          <label class="ngchk"><input v-model="form.tlsInsecure" type="checkbox" />{{ $t('nginx.tls_insecure') }}</label>
+          <label class="ngchk"><input v-model="form.preserveHost" type="checkbox" />{{ $t('nginx.preserve_host') }}</label>
+        </div>
+      </template>
       <div class="ngrow ngchks">
-        <label class="ngchk"><input v-model="form.tlsInsecure" type="checkbox" />{{ $t('nginx.tls_insecure') }}</label>
-        <label class="ngchk"><input v-model="form.preserveHost" type="checkbox" />{{ $t('nginx.preserve_host') }}</label>
         <label class="ngchk"><input v-model="form.corsPreflight" type="checkbox" />{{ $t('nginx.cors_preflight') }}</label>
         <label class="ngchk" :title="$t('nginx.log_requests_hint')"><input v-model="form.logRequests" type="checkbox" />{{ $t('nginx.log_requests') }}</label>
         <label class="ngchk"><input v-model="form.capture" type="checkbox" />{{ $t('nginx.capture') }}</label>

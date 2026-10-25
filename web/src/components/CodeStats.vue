@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount, computed } from 'vue';
+import { CollabS2C } from '@devflow/shared/collab';
 import { nodeFp } from '../nodeKey';
 import { useProjects } from '../useProjects';
 import { useCodePrefs } from '../codePrefs';
@@ -8,14 +9,31 @@ import { t } from '../i18n';
 import GitStat from './GitStat.vue';
 import RealCodeStat from './RealCodeStat.vue';
 import GroupManager from './GroupManager.vue';
+import MemberUsageTable from '../collaboration/MemberUsageTable.vue';
+import UsageTrendChart from '../collaboration/UsageTrendChart.vue';
+import GroupView from '../collaboration/GroupView.vue';
+import TokenStatsView from '../collaboration/TokenStatsView.vue';
+import { useCollab } from '../collaboration/useCollab';
+import type { CollabUsage } from '../collaboration/types';
+import type { useTerminal } from '../useTerminal';
 
-const props = defineProps<{ projectRoot?: string }>();
+type StatTab = 'git' | 'real' | 'usage' | 'group' | 'token';
+const props = defineProps<{ projectRoot?: string; tab?: StatTab; terminal?: ReturnType<typeof useTerminal> }>();
+const emit = defineEmits<{ (e: 'update:tab', v: StatTab): void }>();
 const projectsApi = useProjects();
 
 const { prefs, load: loadPrefs } = useCodePrefs();
 const { load: loadGroups } = useCodeGroups();
+const collab = useCollab();
+const usagePeers = ref<Record<string, CollabUsage>>({});
+const usageStale = ref(false);
 
-const tab = ref<'git' | 'real'>('git');
+const innerTab = ref<StatTab>(props.tab || 'git');
+const tab = computed<StatTab>({
+  get: () => props.tab ?? innerTab.value,
+  set: (v) => { innerTab.value = v; emit('update:tab', v); },
+});
+watch(() => props.tab, (v) => { if (v) innerTab.value = v; });
 const dirs = ref<string[]>(['']);
 const recents = ref<string[]>([]);
 const pickIndex = ref(-1);
@@ -26,6 +44,7 @@ const groupOpen = ref(false);
 let recentKey = 'devflow-codestat-recent';
 let dirsKey = 'devflow-codestat-dirs';
 let autoSaveTimer: ReturnType<typeof setTimeout> | undefined;
+const unsubs: Array<() => void> = [];
 
 onMounted(async () => {
   const fp = await nodeFp();
@@ -45,6 +64,28 @@ onMounted(async () => {
   else if (recents.value.length) dirs.value = [recents.value[0]];
   void loadPrefs();
   void loadGroups();
+  void collab.refresh().catch(() => {});
+  if (props.terminal) {
+    unsubs.push(
+      props.terminal.on(CollabS2C.COLLAB_SYNCED, () => { collab.refresh().catch(() => {}); }),
+      props.terminal.on(CollabS2C.COLLAB_INBOX, () => { collab.refresh().catch(() => {}); }),
+      props.terminal.on(CollabS2C.COLLAB_CHAT, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CHAT, payload)),
+      props.terminal.on(CollabS2C.COLLAB_CMD_PENDING, (payload: any) => collab.handleS2C(CollabS2C.COLLAB_CMD_PENDING, payload)),
+      props.terminal.on(CollabS2C.COLLAB_HEARTBEAT, () => { collab.refresh().catch(() => {}); }),
+    );
+  }
+});
+
+async function loadUsage() {
+  try {
+    const r = await fetch('/api/usage/peers?fresh=1').then((x) => x.json());
+    usagePeers.value = r.peers || {};
+    usageStale.value = !!r.stale;
+  } catch { /* ignore */ }
+}
+watch(tab, (v) => {
+  if (v === 'usage') void loadUsage();
+  if (v === 'group') void collab.refresh().catch(() => {});
 });
 
 function persistDirs() {
@@ -57,7 +98,7 @@ watch(dirs, () => {
   autoSaveTimer = setTimeout(persistDirs, 400);
 }, { deep: true });
 
-onBeforeUnmount(() => { clearTimeout(autoSaveTimer); });
+onBeforeUnmount(() => { clearTimeout(autoSaveTimer); unsubs.forEach((u) => u()); });
 
 function addDir() { pickIndex.value = -1; pickPath.value = ''; pickError.value = ''; pickOpen.value = true; }
 function removeDir(i: number) {
@@ -111,7 +152,7 @@ function remember(p: string) {
   <div class="cs">
     <header class="bar"><span class="ttl">{{ $t('codestat.title') }}</span></header>
 
-    <div class="form">
+    <div v-if="tab === 'git' || tab === 'real'" class="form">
       <div class="dirs">
         <span class="flabel">{{ $t('gitstat.repo_label') }}</span>
         <div v-for="(d, i) in dirs" :key="i" class="dirrow">
@@ -149,6 +190,19 @@ function remember(p: string) {
       <el-tab-pane :label="$t('codestat.tab.real')" name="real">
         <RealCodeStat :dirs="dirs" :exts-text="prefs.exts" :exclude-dirs-text="prefs.excludeDirs"
           :exclude-test-files="prefs.excludeTestFiles" @ran="remember" />
+      </el-tab-pane>
+      <el-tab-pane :label="$t('codestat.tab.usage')" name="usage">
+        <div class="usage-pane">
+          <div v-if="usageStale" class="cfghint">{{ $t('usage.pull_failed') }}</div>
+          <MemberUsageTable class="usage-table" :collab="collab" :peers="usagePeers" />
+          <UsageTrendChart class="usage-trend" :collab="collab" :peers="usagePeers" />
+        </div>
+      </el-tab-pane>
+      <el-tab-pane :label="$t('codestat.tab.group')" name="group">
+        <GroupView :collab="collab" />
+      </el-tab-pane>
+      <el-tab-pane :label="$t('codestat.tab.token')" name="token">
+        <TokenStatsView />
       </el-tab-pane>
     </el-tabs>
 
@@ -199,6 +253,9 @@ function remember(p: string) {
 .tabs :deep(.el-tabs__header) { flex: none; margin-bottom: 8px; }
 .tabs :deep(.el-tabs__content) { flex: 1; min-height: 0; overflow: hidden; }
 .tabs :deep(.el-tab-pane) { height: 100%; }
+.usage-pane { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.usage-table { flex: 0 0 auto; }
+.usage-trend { flex: 1; min-height: 280px; }
 .mask { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .dlg { width: min(520px, 92vw); background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; padding: 16px; box-shadow: 0 8px 30px rgba(0, 0, 0, .4); }
 .dlgttl { color: var(--tx1); font-size: 14px; font-weight: 700; margin-bottom: 12px; }

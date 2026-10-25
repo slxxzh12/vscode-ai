@@ -5,6 +5,16 @@ import type { SchedulerTask, SchedulerJob, SchedulerSummary } from '@devflow/sha
 export interface TaskView extends SchedulerTask {
   nextRunAt: number | null;
   recentJobs?: SchedulerJob[];
+  promptHash?: string;
+}
+export interface TaskPrompt {
+  id: number;
+  taskId: string;
+  prompt: string;
+  hash: string;
+  createIP?: string;
+  employeeId?: string;
+  createdAt: number;
 }
 export interface AiCommandInfo { name: string; preview: string; }
 
@@ -69,6 +79,11 @@ export function useScheduler(terminal?: TerminalLike) {
     const res = await fetch(`/api/scheduler/jobs/${encodeURIComponent(jobId)}/log`);
     return res.ok ? res.text() : '';
   }
+  async function loadTaskPrompts(taskId: string, hash = ''): Promise<{ prompts: TaskPrompt[]; activeId: number | null }> {
+    const q = hash ? `?hash=${encodeURIComponent(hash)}` : '';
+    const d = await api('GET', `/api/scheduler/tasks/${encodeURIComponent(taskId)}/prompts${q}`);
+    return { prompts: d.prompts || [], activeId: d.activeId ?? null };
+  }
   async function loadSummary() {
     try {
       const d = await api('GET', '/api/scheduler/summary');
@@ -104,5 +119,5 @@ export function useScheduler(terminal?: TerminalLike) {
     unsubs.push(terminal.on(SchedulerS2C.SCHED_RUN_END, onAny));
   }
 
-  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadJobs, loadJobLog, loadSummary, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
+  return { state, refresh, createTask, updateTask, removeTask, runNow, stopTask, loadJobs, loadJobLog, loadTaskPrompts, loadSummary, loadAiCommands, pickFile, pickFolder, importManifests, dispose: () => unsubs.forEach((u) => u()) };
 }

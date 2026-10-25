@@ -77,6 +77,15 @@ test('normalizeRule：非法 mode / 端口 / 保留前缀报错', () => {
   assert.throws(() => normalizeRule({ ...PATH_RULE, pathPrefix: 'app' }), (e) => e.code === 'bad-request');
 });
 
+test('normalizeRule：静态目录规则不要求上游，目录必须存在', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-static-'));
+  const r = normalizeRule({ name: 'static', mode: 'port', listenHost: '127.0.0.1', listenPort: 18081, staticDir: dir, enabled: true });
+  assert.equal(r.staticDir, dir);
+  assert.equal(r.target.host, '');
+  assert.equal(r.target.port, 0);
+  assert.throws(() => normalizeRule({ ...r, staticDir: path.join(dir, 'missing') }), (e) => e.code === 'bad-static-dir');
+});
+
 test('normalizeRule：路径改写允许根路径 / 到 /', () => {
   const r = normalizeRule({ ...PORT_RULE, rewrites: [{ from: '/', to: '/' }] });
   assert.deepEqual(r.rewrites, [{ from: '/', to: '' }]);

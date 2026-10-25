@@ -4,6 +4,7 @@ const ERROR_KEY: Record<string, string> = {
   'port-in-use': 'nginx.err_port_in_use',
   'bad-request': 'nginx.err_bad_prefix',
   'bad-rewrite': 'nginx.err_bad_rewrite',
+  'bad-static-dir': 'nginx.err_bad_static_dir',
   'not-found': 'nginx.err_not_found',
 };
 

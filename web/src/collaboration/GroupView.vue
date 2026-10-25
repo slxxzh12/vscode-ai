@@ -4,12 +4,8 @@ import { ElMessageBox } from 'element-plus';
 import { EMPTY_SNAPSHOT } from './types';
 import type { CollabApi } from './useCollab';
 import GroupChatView from './GroupChatView.vue';
-import MemberUsageTable from './MemberUsageTable.vue';
-import UsageTrendChart from './UsageTrendChart.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import CodeEditor from '../components/CodeEditor.vue';
-import SyncSeedDialog from './SyncSeedDialog.vue';
-import { fmtTime } from '../marketApps';
 import { t } from '../i18n';
 
 const props = defineProps<{ collab: CollabApi }>();
@@ -70,7 +66,6 @@ async function genRemote() {
     remoteLink.value = r.link || '';
     remotePassword.value = r.password || '';
     remoteState.value = { ...remoteState.value, enabled: !!r.enabled, expiresAt: r.expiresAt || null, address: r.address, needRestart: !!r.needRestart };
-    await loadDir();
     try { await props.collab.refresh(); } catch { /* ignore */ }
     if (r.needRestart) {
       ElMessageBox.alert(t('remote.need_restart'), t('remote.restart_title'), { type: 'warning', confirmButtonText: t('common.ok') }).catch(() => { /* ignore */ });
@@ -110,40 +105,7 @@ async function join() {
 }
 
 // —— downloads 目录（默认开放的共享目录，实时列出）——
-const dirFiles = ref<{ name: string; size: number; updatedAt: number }[]>([]);
-async function loadDir() {
-  try { const r = await fetch('/api/collab/downloads/dir').then((x) => x.json()); dirFiles.value = r.files || []; } catch { /* ignore */ }
-}
-function fmtSize(n: number) {
-  if (n == null) return '';
-  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
-  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
-  return n + ' B';
-}
-
-// —— master 同步种子 / slave 主动同步 ——
-const isMaster = computed(() => !!group.value && group.value.hubId === me.value);
-const mtab = ref<'members' | 'trend'>('members');
-// —— 用量上报快照（成员表与趋势图共用）——
-const peers = ref<Record<string, import('./types').CollabUsage>>({});
-const peersStale = ref(false);
-async function loadPeers() {
-  const mid = group.value?.hubId || '';
-  const q = mid ? `?fresh=1&masterId=${encodeURIComponent(mid)}` : '?fresh=1';
-  try {
-    const r = await fetch(`/api/usage/peers${q}`).then((x) => x.json());
-    peers.value = r.peers || {};
-    peersStale.value = !!r.stale;
-  } catch { /* ignore */ }
-}
-onMounted(loadPeers);
-watch(() => group.value?.id, loadPeers);
-watch(mtab, loadPeers);
-// —— 群公告：仅群主可编辑，改后随 member-sync 下发给成员 ——
-const editAnnounce = ref(false);
-const announceText = ref('');
-const announceMsg = ref('');
-// —— 切换 master 后需要重启服务才能换绑定地址（127.0.0.1 ↔ 0.0.0.0）——
+// 用量统计：成员表与趋势图共用
 const restarting = ref(false);
 async function restartBackend() {
   restarting.value = true;
@@ -159,11 +121,14 @@ async function restartBackend() {
       await new Promise((r) => setTimeout(r, 500));
       try {
         if ((await fetch('/api/version', { cache: 'no-store' })).ok) { location.reload(); return; }
-      } catch { /* 重启中，继续等 */ }
+      } catch { /* ignore */ }
     }
   } catch (e) { remoteMsg.value = t('term.port_restart_failed', { msg: (e as Error).message || String(e) }); }
   finally { restarting.value = false; }
 }
+const editAnnounce = ref(false);
+const announceText = ref('');
+const announceMsg = ref('');
 watch(() => group.value?.announcement, (v) => { announceText.value = v || ''; }, { immediate: true });
 async function saveAnnounce() {
   announceMsg.value = '';
@@ -174,60 +139,10 @@ async function saveAnnounce() {
     setTimeout(() => { announceMsg.value = ''; }, 1500);
   } catch (e) { announceMsg.value = String((e as Error).message || e); }
 }
-const downloads = ref<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] } }>({ manifest: { files: [] } });
-const seed = ref<{ version: string; files: { name: string }[] }>({ version: '', files: [] });
-const seedOpen = ref(false);
-const seedMsg = ref('');
-async function loadDownloads() {
-  try { downloads.value = await props.collab.listDownloads() as typeof downloads.value; } catch { /* ignore */ }
-}
-async function loadSeed() {
-  try { const r = await props.collab.getUpdate(); seed.value = r.update; } catch { /* ignore */ }
-}
-async function onSaveSeed(names: string[]) {
-  seedOpen.value = false;
-  seedMsg.value = '';
-  try { const r = await props.collab.publishUpdate(names); seed.value = r.update; seedMsg.value = t('collab.update.saved', { version: r.update.version }); }
-  catch (e) { seedMsg.value = String((e as Error).message || e); }
-}
-// slave：从 master 列文件并拉取
-const remote = ref<{ manifest: { files: { name: string; kind: string; size: number; updatedAt: number }[] }; update: { version: string; files: { name: string }[] } | null } | null>(null);
-const remoteSel = ref<Record<string, boolean>>({});
-const pullMsg = ref('');
-const remoteVer = computed(() => remote.value?.update?.version || '');
-function isSeedFile(name: string) { return !!remote.value?.update?.files?.some((f) => f.name === name); }
-async function loadRemoteFiles() {
-  pullMsg.value = '';
-  const mid = group.value?.hubId;
-  try { const r = await props.collab.listRemoteFiles(mid); remote.value = { manifest: r.manifest, update: r.update }; }
-  catch (e) { pullMsg.value = String((e as Error).message || e); }
-}
-function setAllRemote(v: boolean) { for (const f of remote.value?.manifest.files || []) remoteSel.value[f.name] = v; }
-async function pullSelected() {
-  pullMsg.value = '';
-  const names = Object.keys(remoteSel.value).filter((k) => remoteSel.value[k]);
-  if (!names.length) return;
-  try {
-    const r = await props.collab.pullDownloads(names, group.value?.hubId);
-    pullMsg.value = t('collab.update.pulled', { count: (r.files || names).length });
-    await loadDir();
-  } catch (e) { pullMsg.value = String((e as Error).message || e); }
-}
-const installMsg = ref('');
-async function install(name: string) {
-  installMsg.value = '';
-  try {
-    const r = await props.collab.installDownload(name);
-    installMsg.value = r.code === 'ok' ? t('collab.downloads.installed') : t('common.send_failed', { msg: r.code });
-  } catch (e) { installMsg.value = String((e as Error).message || e); }
-}
 
+const isMaster = computed(() => !!group.value && group.value.hubId === me.value);
 onMounted(async () => {
   await loadRemote();
-  await loadDownloads();
-  await loadSeed();
-  await loadDir();
-  if (!isMaster.value) { try { await loadRemoteFiles(); } catch { /* ignore */ } }
 });
 </script>
 
@@ -245,14 +160,6 @@ onMounted(async () => {
         <div v-if="idMsg" class="cfghint">{{ idMsg }}</div>
       </div>
 
-      <details class="sec fold">
-        <summary>{{ $t('collab.downloads.dir_title') }} <span class="tag">{{ $t('collab.downloads.dir_open') }}</span></summary>
-        <div class="cfghint">{{ $t('collab.downloads.dir_hint') }}</div>
-        <div v-if="dirFiles.length === 0" class="empty">{{ $t('collab.downloads.dir_empty') }}</div>
-        <div v-for="f in dirFiles" :key="f.name" class="rowline">
-          <a class="txt fname" :href="`/api/collab/downloads/file/${encodeURIComponent(f.name)}`" download>{{ f.name }}<span class="sub">{{ fmtSize(f.size) }}</span><span class="sub">{{ fmtTime(f.updatedAt) }}</span></a>
-        </div>
-      </details>
 
       <div class="sec boxed">
         <h4>{{ $t('collab.remote.title') }}</h4>
@@ -329,27 +236,17 @@ onMounted(async () => {
           <div v-else class="abody">{{ (group?.announcement || '').trim() || $t('collab.announce.empty') }}</div>
         </section>
 
-        <nav class="mtabs">
-          <button :class="{ on: mtab === 'members' }" @click="mtab = 'members'">{{ $t('collab.member.title', { count: (group?.members || []).length }) }}</button>
-          <button :class="{ on: mtab === 'trend' }" @click="mtab = 'trend'">{{ $t('usage.trend') }}</button>
-        </nav>
-        <div class="mbody">
-          <div v-if="peersStale" class="cfghint">{{ $t('usage.pull_failed') }}</div>
-          <MemberUsageTable v-if="mtab === 'members'" class="mtable" :collab="collab" :peers="peers" :group="group" @removed="loadPeers" />
-          <UsageTrendChart v-else :collab="collab" :peers="peers" />
+        <div class="members-head">{{ $t('collab.member.title', { count: (group?.members || []).length }) }}</div>
+        <div class="members-list">
+          <div v-for="m in group?.members || []" :key="m.machineId" class="member-row">
+            <span class="mname">{{ m.employeeId || m.username }}</span>
+            <span class="maddr">{{ m.host }}:{{ m.port }}</span>
+          </div>
         </div>
       </aside>
     </section>
   </div>
 
-  <SyncSeedDialog
-    :open="seedOpen"
-    :files="downloads.manifest.files"
-    :version="seed.version"
-    @confirm="onSaveSeed"
-    @cancel="seedOpen = false"
-    @install="install"
-  />
 
   <ConfirmDialog
     :open="closeConfirmOpen"
@@ -414,6 +311,10 @@ input, select { background: var(--bg4); border: 1px solid var(--bd); color: var(
 .gitem .sub { color: var(--tx6); margin-left: 6px; }
 .cw-members { width: 32%; min-width: 380px; max-width: 440px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--bd); background: var(--bg1); }
 .mtabs { flex: none; display: flex; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--bd); }
+.members-head { padding: 8px 10px; font-size: 12px; font-weight: 600; color: var(--tx2); border-top: 1px solid var(--bd); }
+.members-list { flex: 1; min-height: 0; overflow: auto; padding: 0 10px 10px; }
+.member-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 12px; border-bottom: 1px solid var(--bd); }
+.member-row .maddr { color: var(--tx5); }
 .mtabs button { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .mtabs button.on { background: var(--ac); border-color: var(--ac); color: var(--onac); }
 .mbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }

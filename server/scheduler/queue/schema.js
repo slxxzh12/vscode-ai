@@ -54,6 +54,17 @@ const MYSQL = [
     k VARCHAR(64) NOT NULL PRIMARY KEY,
     v TEXT NULL
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS t_sched_prompt (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    taskId VARCHAR(64) NOT NULL,
+    prompt LONGTEXT NOT NULL,
+    hash VARCHAR(64) NOT NULL,
+    createIP VARCHAR(64) NULL,
+    employeeId VARCHAR(64) NULL,
+    createdAt BIGINT NOT NULL,
+    UNIQUE KEY uk_prompt_task_hash (taskId, hash),
+    KEY idx_prompt_task (taskId, id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 ];
 
 const SQLITE = [
@@ -77,6 +88,17 @@ const SQLITE = [
   )`,
   'CREATE INDEX IF NOT EXISTS idx_topic_status ON t_work_status(topic, status, lastUpdateTime)',
   `CREATE TABLE IF NOT EXISTS t_sched_config (k TEXT PRIMARY KEY, v TEXT)`,
+  `CREATE TABLE IF NOT EXISTS t_sched_prompt (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    taskId TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    createIP TEXT,
+    employeeId TEXT,
+    createdAt INTEGER NOT NULL
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_prompt_task ON t_sched_prompt(taskId, id)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS uk_prompt_task_hash ON t_sched_prompt(taskId, hash)',
 ];
 
 export function ddl(dialect) { return dialect === 'mysql' ? MYSQL : SQLITE; }

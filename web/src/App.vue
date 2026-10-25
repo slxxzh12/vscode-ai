@@ -4,8 +4,6 @@ import { useTerminal } from './useTerminal';
 import { useProjects } from './useProjects';
 import { useCenter } from './useCenter';
 import { useMessageHistory } from './useMessageHistory';
-import CollaborationView from './collaboration/CollaborationView.vue';
-import DistTaskNotifier from './collaboration/DistTaskNotifier.vue';
 import SchedulerView from './scheduler/SchedulerView.vue';
 import TerminalView from './components/TerminalView.vue';
 import HistoryList from './components/HistoryList.vue';
@@ -36,7 +34,7 @@ import { useLedgerSessions } from './ledgerSessions';
 import type { SessionExtra } from './sessionTree';
 import { allowedRestoreIds, loadRecentTabs, loadRestoreTabs, pushRecentTab, saveRecentTabs } from './restorePrefs';
 import { pendingToolTab, clearPendingToolTab, pendingProxyTab, requestProxyTab } from './uiIntents';
-import { parseSchedulerPromptFromSearch, requestSchedulerPrompt, SCHEDULER_PROMPT_PARAMS } from './scheduler/schedulerIntent';
+import { parseSchedulerPromptFromSearch, requestSchedulerPrompt, SCHEDULER_PROMPT_PARAMS, parseSchedulerEditFromSearch, requestSchedulerEdit, SCHEDULER_EDIT_PARAMS } from './scheduler/schedulerIntent';
 import { useNavicatWorkbench } from './tools/navicat/useNavicatWorkbench';
 import { shouldOpenInNavicat } from './tools/navicat/sqliteFile';
 
@@ -45,15 +43,6 @@ const termViewRef = ref<InstanceType<typeof TerminalView> | null>(null);
 
 // 顶栏手机按钮：新标签页打开手机页（带上当前 access 参数，远端/手机可直接访问）
 let stopRemoteCoder: (() => void) | null = null;
-function onPhone() {
-  const url = new URL(location.href);
-  url.search = '';
-  url.hash = '';
-  const access = new URLSearchParams(location.search).get('access');
-  if (access) url.searchParams.set('access', access);
-  url.searchParams.set('phone', '1');
-  window.open(url.toString(), '_blank', 'noopener');
-}
 
 const terminal = useTerminal({});
 const center = useCenter();
@@ -103,88 +92,85 @@ function maybeUpgradePopup() {
 const { theme, toggle } = useTheme();
 const { locale, setLocale, t } = useI18n();
 function toggleLang() { setLocale(locale.value === 'en' ? 'zh-CN' : 'en'); }
-// 窗口颜色（顶栏背景，用于区分多个窗口）；localStorage 持久化
-const COLOR_STORE = 'devflow-window-color';
-const COLOR_REGISTRY = 'devflow-window-color-registry';
-const COLOR_VALUE: Record<string, string> = { none: '', red: '#7f1d1d', yellow: '#6b4e0f', blue: '#1e3a8a', green: '#14532d', purple: '#4c1d95' };
-const colorOptions = [
-  { id: 'none', key: 'top.color.none' },
-  { id: 'auto', key: 'top.color.auto' },
-  { id: 'red', key: 'top.color.red' },
-  { id: 'yellow', key: 'top.color.yellow' },
-  { id: 'blue', key: 'top.color.blue' },
-  { id: 'green', key: 'top.color.green' },
-  { id: 'purple', key: 'top.color.purple' },
-  { id: 'random', key: 'top.color.random' },
-];
-const COLOR_IDS = ['red', 'yellow', 'blue', 'green', 'purple'];
-// 当前窗口唯一标识（同标签页会话内稳定），用于在其它窗口的注册表里区分「谁在用哪个颜色」
-function windowUid(): string {
-  try {
-    let id = sessionStorage.getItem('devflow-window-uid');
-    if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('devflow-window-uid', id); }
-    return id;
-  } catch { return 'win-' + Math.random().toString(36).slice(2); }
+// 目录颜色：按项目根目录自动分配并持久化；不同目录优先用不同颜色，用户可改
+const DIR_COLORS_STORE = 'devflow-dir-colors';
+const COLOR_VALUE: Record<string, string> = {
+  red: '#7f1d1d', yellow: '#6b4e0f', blue: '#1e3a8a', green: '#14532d', purple: '#4c1d95',
+  teal: '#134e4a', orange: '#7c2d12', pink: '#831843', cyan: '#164e63', lime: '#365314', brown: '#451a03', slate: '#334155',
+};
+const COLOR_IDS = Object.keys(COLOR_VALUE);
+const colorOptions = COLOR_IDS.map((id) => ({ id, key: `top.color.${id}` }));
+function hexRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
-const WIN_UID = windowUid();
-const REGISTRY_TTL = 10000;   // 10 秒无心跳视为该窗口已关闭
-type ColorReg = Record<string, { colorId: string; ts: number }>;
-function readRegistry(): ColorReg {
+// 加权 RGB 色差（redmean），用于挑与已有目录颜色差异最大的颜色
+function colorDistance(a: string, b: string): number {
+  const [r1, g1, b1] = hexRgb(a);
+  const [r2, g2, b2] = hexRgb(b);
+  const rm = (r1 + r2) / 2;
+  const dr = r1 - r2;
+  const dg = g1 - g2;
+  const db = b1 - b2;
+  return Math.sqrt((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db);
+}
+function dirColorKey(root: string): string {
+  const s = String(root || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  return /^[a-zA-Z]:/.test(s) ? s.toLowerCase() : s;
+}
+function loadDirColors(): Record<string, string> {
   try {
-    const raw = localStorage.getItem(COLOR_REGISTRY);
+    const raw = localStorage.getItem(DIR_COLORS_STORE);
     const o: unknown = raw ? JSON.parse(raw) : {};
     if (!o || typeof o !== 'object' || Array.isArray(o)) return {};
-    const now = Date.now();
-    const clean: ColorReg = {};
-    let changed = false;
-    for (const [id, v] of Object.entries(o as Record<string, unknown>)) {
-      const rec = v as { colorId?: string; ts?: number };
-      if (rec && typeof rec === 'object' && typeof rec.ts === 'number' && now - rec.ts < REGISTRY_TTL) {
-        clean[id] = { colorId: typeof rec.colorId === 'string' ? rec.colorId : 'none', ts: rec.ts };
-      } else {
-        changed = true;
-      }
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+      if (typeof v === 'string' && v in COLOR_VALUE) out[k] = v;
     }
-    if (changed) try { localStorage.setItem(COLOR_REGISTRY, JSON.stringify(clean)); } catch { /* ignore */ }
-    return clean;
+    return out;
   } catch { return {}; }
 }
-function writeRegistry(colorId: string) {
-  try {
-    const reg = readRegistry();
-    reg[WIN_UID] = { colorId, ts: Date.now() };
-    localStorage.setItem(COLOR_REGISTRY, JSON.stringify(reg));
-  } catch { /* ignore */ }
+const dirColors = ref<Record<string, string>>(loadDirColors());
+function saveDirColors() {
+  try { localStorage.setItem(DIR_COLORS_STORE, JSON.stringify(dirColors.value)); } catch { /* ignore */ }
 }
-function usedColors(): Set<string> {
-  const s = new Set<string>();
-  for (const v of Object.values(readRegistry())) if (v && v.colorId && v.colorId !== 'none' && v.colorId !== 'auto') s.add(v.colorId);
-  return s;
+function assignDirColor(root: string): string {
+  const key = dirColorKey(root);
+  if (!key) return '';
+  const existing = dirColors.value[key];
+  if (existing && existing in COLOR_VALUE) return existing;
+  const used = new Set(Object.values(dirColors.value));
+  // 前三个目录固定先用红、黄、绿，之后在空闲颜色里挑与已用颜色差异最大的
+  const firstFree = ['red', 'yellow', 'green'].find((id) => !used.has(id));
+  let id = firstFree || '';
+  if (!id) {
+    const free = COLOR_IDS.filter((c) => !used.has(c));
+    const pool = free.length ? free : COLOR_IDS;
+    let best = -1;
+    for (const cand of pool) {
+      const minDist = used.size
+        ? Math.min(...[...used].map((u) => colorDistance(COLOR_VALUE[cand], COLOR_VALUE[u])))
+        : 0;
+      if (minDist > best) { best = minDist; id = cand; }
+    }
+  }
+  dirColors.value = { ...dirColors.value, [key]: id };
+  saveDirColors();
+  return id;
 }
-function randomColorId(): string {
-  const free = COLOR_IDS.filter((c) => !usedColors().has(c));
-  const pool = free.length ? free : COLOR_IDS;
-  return pool[Math.floor(Math.random() * pool.length)];
+const currentDirColorId = ref('');
+const currentDirColor = computed(() => COLOR_VALUE[currentDirColorId.value] || '');
+function onDirColorChange(e: Event) {
+  const id = (e.target as HTMLSelectElement).value;
+  const root = currentProjectInfo.value?.root || '';
+  if (!root || !(id in COLOR_VALUE)) return;
+  dirColors.value = { ...dirColors.value, [dirColorKey(root)]: id };
+  saveDirColors();
+  currentDirColorId.value = id;
 }
-function loadWindowColor(): string {
-  try {
-    const v = localStorage.getItem(COLOR_STORE);
-    if (v === 'random') return randomColorId();
-    if (v === 'auto') return 'auto';
-    if (v && v in COLOR_VALUE) return v;
-  } catch { /* ignore */ }
-  return 'none';
-}
-const windowColorId = ref(loadWindowColor());
-function onColorChange() {
-  if (windowColorId.value === 'random') windowColorId.value = randomColorId();
-  try { localStorage.setItem(COLOR_STORE, windowColorId.value); } catch { /* ignore */ }
-  writeRegistry(windowColorId.value);
-}
-let colorHeartbeat: ReturnType<typeof setInterval> | null = null;
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
-const rail = ref<'explorer' | 'contacts' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
+const rail = ref<'explorer' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
 // 工具页签意图：切到 explorer 并打开对应工具页签（磁贴 / 活动栏图标触发）
 watch(pendingToolTab, (id) => {
   if (!id) return;
@@ -207,10 +193,12 @@ const NEW_WINDOW = (() => {
   } catch { return false; }
 })();
 const historyTab = ref<HistoryTab>(NEW_WINDOW ? 'messages' : 'tree');
-const collabTab = ref<'group' | 'tasks' | 'master'>('group');
+type StatTab = 'git' | 'real' | 'usage' | 'group' | 'token';
+const statTab = ref<StatTab>('git');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
-const RAILS = ['explorer', 'contacts', 'stat', 'scheduler', 'proxy', 'mobile'];
+const RAILS = ['explorer', 'stat', 'scheduler', 'proxy', 'mobile'];
+const STAT_TABS: StatTab[] = ['git', 'real', 'usage', 'group', 'token'];
 const TOOL_IDS = MINI_TOOLS.map((m) => m.id);
 const SIDE_TABS = ['messages', 'files', 'tree'];
 function parseHashSegs(): string[] {
@@ -233,6 +221,9 @@ function hashToolOf(): ToolId | null {
   const [r, sub] = parseHashSegs();
   return r === 'tools' && sub && (TOOL_IDS as string[]).includes(sub) ? (sub as ToolId) : null;
 }
+function isStatTab(v: string | undefined): v is StatTab {
+  return !!v && (STAT_TABS as string[]).includes(v);
+}
 function applyHash() {
   const [r, sub] = parseHashSegs();
   const historyAlias = r === 'history';
@@ -248,10 +239,16 @@ function applyHash() {
     if (sub === 'nginx' || sub === 'llm') requestProxyTab(sub);
     return;
   }
+  // 兼容旧协作深链：#contacts/group → #stat/group，#contacts/master → #stat/token
+  if (r === 'contacts') {
+    rail.value = 'stat';
+    statTab.value = sub === 'master' ? 'token' : 'group';
+    return;
+  }
   if (!r || (!RAILS.includes(r) && !historyAlias)) return;
   rail.value = (historyAlias ? 'explorer' : r) as typeof rail.value;
   if ((r === 'explorer' || historyAlias) && isSideTab(sub)) historyTab.value = sub;
-  if (r === 'contacts' && (sub === 'group' || sub === 'tasks' || sub === 'master')) collabTab.value = sub;
+  if (r === 'stat' && isStatTab(sub)) statTab.value = sub;
 }
 function currentHash() {
   if (rail.value === 'explorer') {
@@ -259,7 +256,7 @@ function currentHash() {
     if (a?.kind === 'tool' && a.tool) return `#tools/${a.tool}`;
     return `#explorer/${historyTab.value}`;
   }
-  if (rail.value === 'contacts') return `#contacts/${collabTab.value}`;
+  if (rail.value === 'stat') return `#stat/${statTab.value}`;
   return `#${rail.value}`;
 }
 function syncHash() {
@@ -268,7 +265,7 @@ function syncHash() {
     window.history.replaceState({}, '', window.location.pathname + window.location.search + next);
   }
 }
-watch([rail, historyTab, collabTab, () => center.activeId.value], syncHash);
+watch([rail, historyTab, statTab, () => center.activeId.value], syncHash);
 const msgHistory = useMessageHistory();
 
 // —— 窗口状态：上次页签/激活页签/左侧栏位/消息筛选 ——
@@ -515,6 +512,7 @@ const currentProjectInfo = computed(() => projects.value.find((p) => p.id === cu
 // 把当前选中项目根通知服务端：用量 stats 采集从该目录向上找 .git 执行，找不到回退用户主目录
 watch(currentProjectInfo, (info) => {
   const root = info?.root || '';
+  currentDirColorId.value = root ? assignDirColor(root) : '';
   try { void fetch('/api/usage/cwd', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root }) }); } catch { /* ignore */ }
 }, { immediate: true });
 // 顶栏展示：优先「选中文件的绝对路径」，无选中文件则显示项目根绝对路径
@@ -534,17 +532,8 @@ async function revealDisplayPath() {
   const rel = a && a.kind === 'file' && a.projectId === pid ? (a.path || '') : '';
   try { await projectsApi.reveal(pid, rel); } catch { /* ignore */ }
 }
-// 路径→颜色：把顶栏显示的路径散列到已有窗口色（同一路径颜色固定，不同路径尽量区分）
-function hashColorId(key: string): string {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return COLOR_IDS[h % COLOR_IDS.length];
-}
-const autoPathColorId = computed(() => (displayPath.value ? hashColorId(displayPath.value) : 'none'));
-const resolvedColorId = computed(() => (windowColorId.value === 'auto' ? autoPathColorId.value : windowColorId.value));
-const windowColorValue = computed(() => COLOR_VALUE[resolvedColorId.value] || '');
-// 发送按钮等强调色跟随窗口颜色（无窗口色时回退到主题主色）
-watch(windowColorValue, (v) => {
+// 发送按钮等强调色跟随当前目录颜色（无颜色时回退到主题主色）
+watch(currentDirColor, (v) => {
   try {
     if (v) document.documentElement.style.setProperty('--window-ac', v);
     else document.documentElement.style.removeProperty('--window-ac');
@@ -728,29 +717,24 @@ function openAgentSettings(firstRun = false) {
   if (rail.value !== 'explorer') { rail.value = 'explorer'; }
   setTimeout(() => window.dispatchEvent(new CustomEvent('df-open-agent-settings', { detail: { firstRun } })), 120);
 }
-function releaseWindowColor() {
-  try {
-    const reg = readRegistry();
-    if (WIN_UID in reg) { delete reg[WIN_UID]; localStorage.setItem(COLOR_REGISTRY, JSON.stringify(reg)); }
-  } catch { /* ignore */ }
-}
 onMounted(async () => {
   loadVersion();
   void loadUpgrade().finally(maybeUpgradePopup);
-  writeRegistry(windowColorId.value);
-  colorHeartbeat = setInterval(() => { try { writeRegistry(windowColorId.value); } catch { /* ignore */ } }, 4000);
   try {
     const landing = readMobileLanding(window.localStorage, Date.now());
     writeMobileLanding(window.localStorage, landing);
     if (landing.openMobile) rail.value = 'mobile';
   } catch { /* ignore */ }
   applyHash();
-  const promptIntent = parseSchedulerPromptFromSearch(window.location.search);
-  if (promptIntent) {
+  const editIntent = parseSchedulerEditFromSearch(window.location.search);
+  const promptIntent = editIntent ? null : parseSchedulerPromptFromSearch(window.location.search);
+  if (editIntent || promptIntent) {
     rail.value = 'scheduler';
-    requestSchedulerPrompt(promptIntent.prompt, promptIntent.run);
+    if (editIntent) requestSchedulerEdit(editIntent);
+    else if (promptIntent) requestSchedulerPrompt(promptIntent.prompt, promptIntent.run, promptIntent.hideInput);
     syncHash();
     const u = new URL(window.location.href);
+    for (const k of SCHEDULER_EDIT_PARAMS) u.searchParams.delete(k);
     for (const k of SCHEDULER_PROMPT_PARAMS) u.searchParams.delete(k);
     window.history.replaceState({}, '', u.pathname + u.search + u.hash);
   }
@@ -775,29 +759,25 @@ onMounted(async () => {
   window.addEventListener('df-settings-closed', onSettingsClosed);
   window.addEventListener('df-add-folder', openAddFolder);
   window.addEventListener('beforeunload', persistFileHistory);
-  window.addEventListener('beforeunload', releaseWindowColor);
   window.addEventListener('beforeunload', persistWindowState);
   terminal.connect();
   stopRemoteCoder = startDesktopRemoteCoder();
 });
 onBeforeUnmount(() => {
-  if (colorHeartbeat) { clearInterval(colorHeartbeat); colorHeartbeat = null; }
   stopRemoteCoder?.();
   stopRemoteCoder = null;
-  releaseWindowColor();
   window.removeEventListener('hashchange', applyHash);
   window.removeEventListener('df-open-history', onOpenHistory);
   window.removeEventListener('df-settings-closed', onSettingsClosed);
   window.removeEventListener('df-add-folder', openAddFolder);
   window.removeEventListener('beforeunload', persistFileHistory);
-  window.removeEventListener('beforeunload', releaseWindowColor);
   window.removeEventListener('beforeunload', persistWindowState);
 });
 </script>
 
 <template>
   <div class="app" ref="appRef">
-    <header class="top" :class="{ colored: !!windowColorValue }" :style="windowColorValue ? { background: windowColorValue } : undefined">
+    <header class="top" :class="{ colored: !!currentDirColor }" :style="currentDirColor ? { background: currentDirColor } : undefined">
       <span class="logo">◈ {{ $t('brand.title') }}</span>
       <span v-if="appVersion" class="app-ver">{{ appVersion }}</span>
       <button v-if="upgradeInfo?.hasUpdate" class="upg-badge" :title="$t('upgrade.new')" @click="openUpgrade">↑ {{ $t('upgrade.new') }}</button>
@@ -810,11 +790,10 @@ onBeforeUnmount(() => {
       <span v-if="displayPath" class="projpath" :title="displayPath + '\n' + $t('top.path_open_dir')" @dblclick="revealDisplayPath">{{ displayPath }}</span>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
-      <select v-model="windowColorId" class="color-sel" :title="$t('top.color.title')" @change="onColorChange">
+      <select v-if="currentProjectInfo" :value="currentDirColorId" class="color-sel" :title="$t('top.color.title')" @change="onDirColorChange">
         <option v-for="c in colorOptions" :key="c.id" :value="c.id">{{ $t(c.key) }}</option>
       </select>
       <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
-      <button class="snap-btn" :title="$t('top.remote')" @click="onPhone">📱</button>
       <button class="theme-btn" :title="theme === 'dark' ? $t('app.theme.to_light') : $t('app.theme.to_dark')" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
     </header>
 
@@ -822,20 +801,14 @@ onBeforeUnmount(() => {
       <aside class="activity">
         <button class="a-btn" :class="{ on: rail === 'explorer' }" :title="$t('nav.explorer')" @click="rail = 'explorer'">▤</button>
         <button class="a-btn" :class="{ on: rail === 'scheduler' }" :title="$t('nav.scheduler')" @click="rail = 'scheduler'">📅</button>
-        <button class="a-btn" :class="{ on: rail === 'contacts' }" :title="$t('nav.contacts')" @click="rail = 'contacts'">👥</button>
-        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🧰</button>
         <button class="a-btn" :class="{ on: rail === 'proxy' }" :title="$t('nav.proxy')" @click="rail = 'proxy'">🔀</button>
+        <button class="a-btn" :class="{ on: rail === 'mobile' }" :title="$t('nav.mobile')" @click="rail = 'mobile'">🧰</button>
         <button class="a-btn" :class="{ on: rail === 'stat' }" :title="$t('nav.stat')" @click="rail = 'stat'">📊</button>
         <button class="a-btn gearbot" :title="$t('nav.settings')" @click="openAgentSettings()">⚙</button>
       </aside>
-      <template v-if="rail === 'contacts'">
+      <template v-if="rail === 'stat'">
         <section class="center">
-          <CollaborationView :terminal="terminal" v-model:tab="collabTab" />
-        </section>
-      </template>
-      <template v-else-if="rail === 'stat'">
-        <section class="center">
-          <CodeStats :project-root="currentProjectInfo?.root || ''" />
+          <CodeStats :project-root="currentProjectInfo?.root || ''" :terminal="terminal" v-model:tab="statTab" />
         </section>
       </template>
       <template v-else-if="rail === 'scheduler'">
@@ -886,7 +859,6 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <LocalDropOverlay v-if="localDragging" />
-    <DistTaskNotifier :terminal="terminal" />
     <UpgradeDialog :open="showUpgrade" :current="appVersion" :latest="upgradeInfo?.latest || ''" :download-url="upgradeInfo?.downloadUrl || ''" @go="upgradeGo" @close="upgradeClose" @skip="upgradeSkip" />
   </div>
 </template>
@@ -906,13 +878,11 @@ onBeforeUnmount(() => {
 .spacer { flex: 1; }
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .theme-btn:hover { border-color: var(--ac2); }
-.snap-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
-.snap-btn:hover { border-color: var(--ac2); }
 .lang-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
 .lang-btn:hover { border-color: var(--ac2); }
 .color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
 .top.colored .logo, .top.colored .projpath, .top.colored .net, .top.colored .app-ver { color: #fff; }
-.top.colored .lang-btn, .top.colored .theme-btn, .top.colored .snap-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
+.top.colored .lang-btn, .top.colored .theme-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel, .top.colored .proj-sel { background: var(--bg1); color: var(--tx); border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel option, .top.colored .proj-sel option { color: #111; background: #fff; }
 .net { color: var(--warn); font-size: 12px; }

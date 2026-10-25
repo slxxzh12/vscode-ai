@@ -1,6 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import { WsFrameParser } from './proxy-ws-frames.js';
+import { serveStatic } from './proxy-static.js';
 
 const LOG_LIMIT = 500;
 const REPLACE_MAX_BODY = 20 * 1024 * 1024;
@@ -173,6 +174,16 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {}, logger = n
     return;
   }
   const cap = rule.capture && capture ? capture.begin(rule.id, { method: req.method, url: req.url, headers: req.headers, kind: 'http' }) : null;
+
+  if (rule.staticDir) {
+    const staticPath = buildForwardPath(rule, req.url);
+    serveStatic({
+      root: rule.staticDir, req, res, urlPath: staticPath,
+      extraHeaders: rule.responseHeaders, logger, tag,
+      onEvent: (e) => { if (cap) cap.finish({ status: e.status, durationMs: e.durationMs }); emit(e); },
+    });
+    return;
+  }
 
   const headers = forwardHeaders(rule, req);
   if (!headers.host) headers.host = rule.preserveHost !== false && req.headers.host ? req.headers.host : `${target.host}:${target.port}`;
@@ -387,12 +398,24 @@ export function createProxyEngine({ store, capture = null, logger = console, htt
     const rule = findPathRule(pathname);
     if (!rule) return;
     socket.__proxied = true;
+    if (rule.staticDir) {
+      socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+      socket.destroy();
+      return;
+    }
     proxyWs({ rule, req, socket, head, capture, logger });
   }
 
   function listen(rule) {
     const srv = http.createServer((req, res) => proxyHttp({ rule, req, res, capture, logger, emit: (e) => pushLog(rule.id, e) }));
-    srv.on('upgrade', (req, socket, head) => proxyWs({ rule, req, socket, head, capture, logger }));
+    srv.on('upgrade', (req, socket, head) => {
+      if (rule.staticDir) {
+        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      proxyWs({ rule, req, socket, head, capture, logger });
+    });
     return new Promise((resolve, reject) => {
       srv.once('error', reject);
       srv.listen(rule.listenPort, rule.listenHost, () => { srv.off('error', reject); resolve(srv); });
