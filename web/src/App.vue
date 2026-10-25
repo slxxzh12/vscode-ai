@@ -28,7 +28,7 @@ import UpgradeDialog from './components/UpgradeDialog.vue';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
 import { useSessionProjects } from './sessionProjects';
 import { fetchWindowState, planRestore, saveWindowState, flushWindowState, toSavedTabs, type HistoryTab, type Rail, type AllStyle } from './windowState';
-import { filterMessages, sessionOfActiveTab } from './msgFilter';
+import { filterMessages, filterSessionsByProject, sessionOfActiveTab } from './msgFilter';
 import { openRestoredSession } from './sessionRestore';
 import { useLedgerSessions } from './ledgerSessions';
 import type { SessionExtra } from './sessionTree';
@@ -193,12 +193,11 @@ const NEW_WINDOW = (() => {
   } catch { return false; }
 })();
 const historyTab = ref<HistoryTab>(NEW_WINDOW ? 'messages' : 'tree');
-type StatTab = 'git' | 'real' | 'usage' | 'group' | 'token';
-const statTab = ref<StatTab>('git');
+type StatTab = 'code' | 'group' | 'token';
+const statTab = ref<StatTab>('code');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
 const RAILS = ['explorer', 'stat', 'scheduler', 'proxy', 'mobile'];
-const STAT_TABS: StatTab[] = ['git', 'real', 'usage', 'group', 'token'];
 const TOOL_IDS = MINI_TOOLS.map((m) => m.id);
 const SIDE_TABS = ['messages', 'files', 'tree'];
 function parseHashSegs(): string[] {
@@ -220,9 +219,6 @@ function hashHistoryTabOf(): HistoryTab | null {
 function hashToolOf(): ToolId | null {
   const [r, sub] = parseHashSegs();
   return r === 'tools' && sub && (TOOL_IDS as string[]).includes(sub) ? (sub as ToolId) : null;
-}
-function isStatTab(v: string | undefined): v is StatTab {
-  return !!v && (STAT_TABS as string[]).includes(v);
 }
 function applyHash() {
   const [r, sub] = parseHashSegs();
@@ -248,7 +244,8 @@ function applyHash() {
   if (!r || (!RAILS.includes(r) && !historyAlias)) return;
   rail.value = (historyAlias ? 'explorer' : r) as typeof rail.value;
   if ((r === 'explorer' || historyAlias) && isSideTab(sub)) historyTab.value = sub;
-  if (r === 'stat' && isStatTab(sub)) statTab.value = sub;
+  // 代码统计内部子页（git/real/usage）统一落到顶层「代码统计」；群组/Token 是平级页签
+  if (r === 'stat') statTab.value = sub === 'group' || sub === 'token' ? sub : 'code';
 }
 function currentHash() {
   if (rail.value === 'explorer') {
@@ -297,6 +294,10 @@ const liveProjectBySession = computed(() => {
   return out;
 });
 const liveSessionIds = computed(() => terminal.state.sessions.filter((s) => s.state === 'running').map((s) => s.id));
+// 左侧「全部会话」树只展示当前目录的会话（含已关闭的账本会话）
+const scopedSessionExtras = computed(() => filterSessionsByProject(
+  sessionExtras.value, currentProject.value, liveProjectBySession.value, sessionProjectMap.value,
+));
 async function openHistorySession(sid: string, name?: string): Promise<{ id: string } | null> {
   // 会话已作为中心页签打开：只选中该页签，不再向服务端 RESTORE（避免重复重建/回放终端）。
   if (center.hasSession(sid)) {
@@ -831,7 +832,7 @@ onBeforeUnmount(() => {
           <ToolSidebar v-if="activeTool" :tool="activeTool" />
           <LocalSidebar v-else-if="activeLocalRoot" />
           <HistoryList v-else :items="historyItems" :tab="historyTab" :messages="visibleMessages" :filter="msgFilter" :all-style="msgAllStyle"
-            :live-session-ids="liveSessionIds" :sessions="sessionExtras" :session-names="sessionNames" :project-id="currentProject" :active-path="activeFilePath"
+            :live-session-ids="liveSessionIds" :sessions="scopedSessionExtras" :session-names="sessionNames" :project-id="currentProject" :active-path="activeFilePath"
             @update:tab="historyTab = $event" @open="openFromHistory" @remove="(pid, p) => removeFileHistory(pid, p)"
             @clear="clearFileHistory" @open-message="onOpenMessage" @remove-message="(m) => msgHistory.remove(m)"
             @update:filter="msgFilter = $event" @update:all-style="msgAllStyle = $event" @open-session="openHistorySession" @edit-session="editHistorySession"

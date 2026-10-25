@@ -35,6 +35,18 @@ test('readActiveConfig 读 .jsonc 去注释，坏文件 config=null', () => {
   assert.equal(readActiveConfig({ dir: bad }).config, null);
 });
 
+test('readActiveConfig 兼容 UTF-8 BOM（json/jsonc）', () => {
+  const jsoncDir = tmpDir();
+  fs.writeFileSync(path.join(jsoncDir, 'opencode.jsonc'), '\uFEFF{ // note\n "provider": { "a": {} } }');
+  const jsonc = readActiveConfig({ dir: jsoncDir });
+  assert.equal(jsonc.format, 'jsonc');
+  assert.deepEqual(Object.keys(jsonc.config.provider), ['a']);
+
+  const jsonDir = tmpDir();
+  fs.writeFileSync(path.join(jsonDir, 'opencode.json'), '\uFEFF{ "provider": { "b": {} } }');
+  assert.deepEqual(Object.keys(readActiveConfig({ dir: jsonDir }).config.provider), ['b']);
+});
+
 test('normalizeProviderKeys：0 删、1 apiKey、N apiKeys 去重', () => {
   assert.deepEqual(normalizeProviderKeys({ options: { baseURL: 'x', apiKey: '' } }).options, { baseURL: 'x' });
   assert.deepEqual(normalizeProviderKeys({ options: { baseURL: 'x', apiKey: 'K' } }).options, { baseURL: 'x', apiKey: 'K' });

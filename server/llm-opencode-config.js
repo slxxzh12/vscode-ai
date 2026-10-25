@@ -26,12 +26,13 @@ export function readActiveConfig({ dir = opencodeConfigDir() } = {}) {
   const hit = readFile(dir);
   if (!hit) return { path: path.join(dir, 'opencode.json'), format: null, exists: false, raw: '', config: {} };
   const format = hit.name.endsWith('.jsonc') ? 'jsonc' : 'json';
+  const text = hit.raw.replace(/^\uFEFF/, '');
   let config = null;
   try {
-    config = JSON.parse(hit.raw);
+    config = JSON.parse(text);
   } catch {
     if (format === 'jsonc') {
-      try { config = JSON.parse(stripJsonc(hit.raw)); } catch { config = null; }
+      try { config = JSON.parse(stripJsonc(text)); } catch { config = null; }
     }
   }
   return { path: hit.file, format, exists: true, raw: hit.raw, config };

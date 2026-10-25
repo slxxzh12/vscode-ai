@@ -7,7 +7,7 @@ export function opencodeConfigDir() {
 }
 
 export function stripJsonc(text) {
-  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  return String(text).replace(/^\uFEFF/, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
 // 常见 provider 的上游 baseURL 兜底：配置里未写 options.baseURL 时使用（显式配置优先）

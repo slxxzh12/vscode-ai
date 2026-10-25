@@ -17,7 +17,8 @@ import { useCollab } from '../collaboration/useCollab';
 import type { CollabUsage } from '../collaboration/types';
 import type { useTerminal } from '../useTerminal';
 
-type StatTab = 'git' | 'real' | 'usage' | 'group' | 'token';
+type StatTab = 'code' | 'group' | 'token';
+type CodeTab = 'git' | 'real' | 'usage';
 const props = defineProps<{ projectRoot?: string; tab?: StatTab; terminal?: ReturnType<typeof useTerminal> }>();
 const emit = defineEmits<{ (e: 'update:tab', v: StatTab): void }>();
 const projectsApi = useProjects();
@@ -28,12 +29,14 @@ const collab = useCollab();
 const usagePeers = ref<Record<string, CollabUsage>>({});
 const usageStale = ref(false);
 
-const innerTab = ref<StatTab>(props.tab || 'git');
+const innerTab = ref<StatTab>(props.tab || 'code');
 const tab = computed<StatTab>({
   get: () => props.tab ?? innerTab.value,
   set: (v) => { innerTab.value = v; emit('update:tab', v); },
 });
 watch(() => props.tab, (v) => { if (v) innerTab.value = v; });
+const codeTab = ref<CodeTab>('git');
+const topTabs: StatTab[] = ['group', 'token', 'code'];
 const dirs = ref<string[]>(['']);
 const recents = ref<string[]>([]);
 const pickIndex = ref(-1);
@@ -83,8 +86,9 @@ async function loadUsage() {
     usageStale.value = !!r.stale;
   } catch { /* ignore */ }
 }
+watch(codeTab, (v) => { if (v === 'usage') void loadUsage(); });
 watch(tab, (v) => {
-  if (v === 'usage') void loadUsage();
+  if (v === 'code' && codeTab.value === 'usage') void loadUsage();
   if (v === 'group') void collab.refresh().catch(() => {});
 });
 
@@ -150,9 +154,15 @@ function remember(p: string) {
 
 <template>
   <div class="cs">
-    <header class="bar"><span class="ttl">{{ $t('codestat.title') }}</span></header>
+    <header class="bar">
+      <span class="ttl">{{ $t('codestat.title') }}</span>
+      <nav class="topnav">
+        <button v-for="k in topTabs" :key="k" class="topbtn" :class="{ on: tab === k }" @click="tab = k">{{ $t('codestat.tab.' + k) }}</button>
+      </nav>
+    </header>
 
-    <div v-if="tab === 'git' || tab === 'real'" class="form">
+    <div v-if="tab === 'code'" class="code-pane">
+    <div v-if="codeTab === 'git' || codeTab === 'real'" class="form">
       <div class="dirs">
         <span class="flabel">{{ $t('gitstat.repo_label') }}</span>
         <div v-for="(d, i) in dirs" :key="i" class="dirrow">
@@ -182,7 +192,7 @@ function remember(p: string) {
       </div>
     </div>
 
-    <el-tabs v-model="tab" class="tabs">
+    <el-tabs v-model="codeTab" class="tabs">
       <el-tab-pane :label="$t('codestat.tab.git')" name="git">
         <GitStat :dirs="dirs" :exts-text="prefs.exts" :exclude-dirs-text="prefs.excludeDirs"
           :exclude-test-files="prefs.excludeTestFiles" @ran="remember" />
@@ -198,13 +208,11 @@ function remember(p: string) {
           <UsageTrendChart class="usage-trend" :collab="collab" :peers="usagePeers" />
         </div>
       </el-tab-pane>
-      <el-tab-pane :label="$t('codestat.tab.group')" name="group">
-        <GroupView :collab="collab" />
-      </el-tab-pane>
-      <el-tab-pane :label="$t('codestat.tab.token')" name="token">
-        <TokenStatsView />
-      </el-tab-pane>
     </el-tabs>
+    </div>
+
+    <section v-else-if="tab === 'group'" class="pane"><GroupView :collab="collab" /></section>
+    <section v-else class="pane scroll"><TokenStatsView /></section>
 
     <GroupManager :open="groupOpen" @close="groupOpen = false" />
 
@@ -227,8 +235,15 @@ function remember(p: string) {
 
 <style scoped>
 .cs { display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: hidden; }
-.bar { flex: none; display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--bd2); }
+.bar { flex: none; display: flex; align-items: center; gap: 14px; padding: 8px 12px; border-bottom: 1px solid var(--bd2); }
 .ttl { color: var(--tx1); font-weight: 700; font-size: 13px; }
+.topnav { display: flex; gap: 4px; }
+.topbtn { background: none; border: 1px solid transparent; color: var(--tx3); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.topbtn:hover { color: var(--tx1); }
+.topbtn.on { background: var(--bg1); border-color: var(--bd); color: var(--ac2); }
+.code-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pane { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.pane.scroll { overflow: auto; }
 .form { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px; }
 .dirs { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .flabel { font-size: 11px; color: var(--tx3); }

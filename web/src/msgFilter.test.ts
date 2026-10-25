@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sessionOfActiveTab, resolveProject, filterMessages } from './msgFilter';
+import { sessionOfActiveTab, resolveProject, filterMessages, filterSessionsByProject } from './msgFilter';
 import type { HistoryMessage } from './useMessageHistory';
 import type { CenterTab } from './useCenter';
 
@@ -39,20 +39,7 @@ describe('filterMessages', () => {
     expect(out.map((m) => m.text)).toEqual(['cur', 'legacy-same-tab']);
   });
 
-  it('无当前会话时退化为项目过滤', () => {
-    const messages = [
-      msg({ text: 'p1', sessionId: 's_1' }),
-      msg({ text: 'p2', sessionId: 's_2' }),
-      msg({ text: 'unknown' }),
-    ];
-    const out = filterMessages({
-      ...base, messages, filterOn: true, sessionId: null, tabName: null, projectId: 'p1',
-      liveProjectBySession: { s_1: 'p1' }, map: { s_2: 'p2' },
-    });
-    expect(out.map((m) => m.text)).toEqual(['p1', 'unknown']);
-  });
-
-  it('全部会话：不过滤，跨项目全量返回', () => {
+  it('选中目录后只保留该目录消息，无法归属的消息也隐藏', () => {
     const messages = [
       msg({ text: 'p1', sessionId: 's_1' }),
       msg({ text: 'p2', sessionId: 's_2' }),
@@ -60,9 +47,49 @@ describe('filterMessages', () => {
       msg({ text: 'no-sid' }),
     ];
     const out = filterMessages({
-      ...base, messages, filterOn: false, projectId: 'p1',
-      liveProjectBySession: {}, map: { s_1: 'p1', s_2: 'p2' },
+      ...base, messages, filterOn: true, sessionId: null, tabName: null, projectId: 'p1',
+      liveProjectBySession: { s_1: 'p1' }, map: { s_2: 'p2' },
     });
-    expect(out.map((m) => m.text)).toEqual(['p1', 'p2', 'unknown', 'no-sid']);
+    expect(out.map((m) => m.text)).toEqual(['p1']);
+  });
+
+  it('全部会话：只在当前目录内展示全部会话，不再跨项目', () => {
+    const messages = [
+      msg({ text: 'p1', sessionId: 's_1' }),
+      msg({ text: 'p1b', sessionId: 's_3' }),
+      msg({ text: 'p2', sessionId: 's_2' }),
+      msg({ text: 'unknown', sessionId: 's_dead' }),
+      msg({ text: 'no-sid' }),
+    ];
+    const out = filterMessages({
+      ...base, messages, filterOn: false, projectId: 'p1',
+      liveProjectBySession: {}, map: { s_1: 'p1', s_2: 'p2', s_3: 'p1' },
+    });
+    expect(out.map((m) => m.text)).toEqual(['p1', 'p1b']);
+  });
+
+  it('活跃会话属于其它目录时退回当前目录全部消息', () => {
+    const messages = [
+      msg({ text: 'p1', sessionId: 's_1' }),
+      msg({ text: 'p2', sessionId: 's_2' }),
+    ];
+    const out = filterMessages({
+      ...base, messages, filterOn: true, sessionId: 's_2', tabName: 'agent', projectId: 'p1',
+      liveProjectBySession: { s_2: 'p2' }, map: { s_1: 'p1' },
+    });
+    expect(out.map((m) => m.text)).toEqual(['p1']);
+  });
+
+  it('未选目录时保持原行为：全部会话全量返回', () => {
+    const messages = [msg({ text: 'a', sessionId: 's_1' }), msg({ text: 'b' })];
+    expect(filterMessages({ ...base, messages, filterOn: false, projectId: null }).map((m) => m.text)).toEqual(['a', 'b']);
+  });
+});
+
+describe('filterSessionsByProject', () => {
+  it('只保留归属当前目录的会话；未选目录时全量', () => {
+    const sessions = [{ id: 's_1' }, { id: 's_2' }, { id: 's_3' }];
+    expect(filterSessionsByProject(sessions, 'p1', { s_1: 'p1' }, { s_2: 'p2' }).map((s) => s.id)).toEqual(['s_1']);
+    expect(filterSessionsByProject(sessions, null, {}, {}).map((s) => s.id)).toEqual(['s_1', 's_2', 's_3']);
   });
 });
