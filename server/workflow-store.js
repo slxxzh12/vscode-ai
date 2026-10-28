@@ -139,6 +139,51 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
     return copied;
   }
 
+  // 用包内默认目录覆盖指定的本地工作流（按去掉数字前缀后的名称匹配）。
+  // 只覆盖该工作流，保留本地文件夹名/排序；其他工作流不受影响。
+  function restoreFromSeed(workflowId) {
+    if (!seedDir || !fs.existsSync(seedDir)) throw new Error('no-seed');
+    const localName = listDirs(dir).find((name) => name === workflowId || stripPrefix(name) === stripPrefix(workflowId));
+    if (!localName) throw new Error('not-found');
+    const label = stripPrefix(localName);
+    const seedName = listDirs(seedDir).find((name) => stripPrefix(name) === label);
+    if (!seedName) throw new Error('no-default');
+    const from = path.join(seedDir, seedName);
+    const to = path.join(dir, localName);
+    fs.rmSync(to, { recursive: true, force: true });
+    copyTree(from, to);
+    seedStore?.update?.(readAll());
+    return { workflowId: localName, label };
+  }
+
+  // 用包内默认目录强制覆盖全部同名本地工作流，并补齐包内新增工作流；
+  // 不在包内的本地额外工作流保留，避免误删用户自建内容。
+  function overwriteAllFromSeed() {
+    if (!seedDir || !fs.existsSync(seedDir)) throw new Error('no-seed');
+    const localNames = listDirs(dir);
+    const seedNames = listDirs(seedDir);
+    let overwritten = 0;
+    let added = 0;
+    for (const seedName of seedNames) {
+      const label = stripPrefix(seedName);
+      const localName = localNames.find((name) => stripPrefix(name) === label);
+      if (localName) {
+        const to = path.join(dir, localName);
+        fs.rmSync(to, { recursive: true, force: true });
+        copyTree(path.join(seedDir, seedName), to);
+        overwritten += 1;
+      } else {
+        const to = path.join(dir, seedName);
+        if (!fs.existsSync(to)) {
+          copyTree(path.join(seedDir, seedName), to);
+          added += 1;
+        }
+      }
+    }
+    seedStore?.update?.(readAll());
+    return { overwritten, added };
+  }
+
   // 旧的三层目录（工作流/阶段/技能）迁移为四层（工作流/小组/阶段/技能）。
   function migrateOldLayout() {
     const hints = groupHints();
@@ -346,5 +391,5 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
   migrateXmlFiles();
   migrateOldLayout();
 
-  return { readAll, writeAll, tree, readFile, absPath, migrateFromConfigXml, dir };
+  return { readAll, writeAll, tree, readFile, absPath, restoreFromSeed, overwriteAllFromSeed, migrateFromConfigXml, dir };
 }

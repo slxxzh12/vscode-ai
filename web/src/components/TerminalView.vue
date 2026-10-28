@@ -366,6 +366,25 @@ const assocPrompted = ref(true);
 const assocExts = ref<{ ext: string; isDefault: boolean; enabled: boolean }[]>([]);
 const assocMsg = ref('');
 const assocLoadedSel = ref('');   // 已保存的逐扩展勾选（用于判断脏值）
+const voidBusy = ref(false);
+const voidMsg = ref('');
+async function registerVoid() {
+  if (voidBusy.value) return;
+  voidBusy.value = true;
+  voidMsg.value = '';
+  try {
+    const res = await fetch('/api/void/install', { method: 'POST' });
+    const j: any = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+    voidMsg.value = j.unsupported
+      ? t('term.void_unsupported')
+      : t(j.added ? 'term.void_registered' : 'term.void_already', { path: j.binDir || '' });
+  } catch (e: any) {
+    voidMsg.value = t('term.void_failed', { msg: String(e?.message || e) });
+  } finally {
+    voidBusy.value = false;
+  }
+}
 async function loadFileAssoc() {
   const r = await getFileAssoc();
   if (!r) { assocAvailable.value = false; return; }
@@ -585,7 +604,7 @@ function agentActive() {
   return !!agentSid.value && props.terminal.state.sessions.some((s) => s.id === agentSid.value);
 }
 async function startAgent() {
-  if (agentSid.value && agentActive()) {
+  if (agentSid.value && agentActive() && (agentProjectId.value ?? null) === (props.projectId ?? null)) {
     props.terminal.switchTo(agentSid.value);
     return;
   }
@@ -1316,6 +1335,14 @@ onBeforeUnmount(() => {
             <div v-if="portMsg" class="cfghint warn">{{ portMsg }}</div>
             <div v-if="restartMsg" class="cfghint warn">{{ restartMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
+          </div>
+          <div class="setsec">
+            <div class="settitle">{{ $t('term.void_title') }}</div>
+            <div class="cfgrow">
+              <button class="ghostcfg" :disabled="voidBusy" @click="registerVoid">{{ $t('term.void_register') }}</button>
+              <span v-if="voidMsg" class="cfghint">{{ voidMsg }}</span>
+            </div>
+            <div class="cfghint">{{ $t('term.void_hint') }}</div>
           </div>
           <div v-if="assocAvailable" class="setsec">
             <div class="settitle">{{ $t('term.file_assoc') }}</div>

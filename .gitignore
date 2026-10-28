@@ -6,6 +6,7 @@ env/
 .superpowers/
 *.log
 logs/
+bin/
 .DS_Store
 # IDE / 编辑器临时文件（禁止入库）
 .idea/

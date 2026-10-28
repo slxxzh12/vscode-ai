@@ -54,6 +54,7 @@ import { createScheduler } from './scheduler/index.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, setDefaultAgent } from './devflow-config.js';
 import { createWorkflowSeedStore } from './workflow-seed.js';
 import { createWorkflowStore } from './workflow-store.js';
+import { installVoid } from './void-install.js';
 import { fallbackWorkflows } from './workflow-xml.js';
 import { setLocale, t } from './i18n.js';
 import { isPeerRequest, resolveInviteDaysAllowForever, resolveBindHost, hostRestartNeeded } from './remote-gate.js';
@@ -926,6 +927,17 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (url.pathname === '/api/void/install' && req.method === 'POST') {
+    try {
+      const r = installVoid({ appDir: APP_DIR });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, ...r }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'void-install-failed', message: String((e && e.message) || e) }));
+    }
+    return;
+  }
   if (url.pathname === '/api/version' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ version: VERSION }));
@@ -1182,6 +1194,31 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/workflows-seed' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(ws?.workflowSeedStore?.read() || { version: 0, updatedAt: 0, workflows: [] }));
+    return;
+  }
+  if (url.pathname === '/api/workflows-restore' && req.method === 'POST') {
+    if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const workflowId = typeof body.workflowId === 'string' ? body.workflowId : '';
+      const all = body.all === true;
+      if (!all && !workflowId) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'workflowId required' })); return; }
+      let restored;
+      try { restored = all ? ws?.workflowStore?.overwriteAllFromSeed() : ws?.workflowStore?.restoreFromSeed(workflowId); }
+      catch (e) {
+        const code = String((e && e.message) || 'restore-failed');
+        res.writeHead(code === 'not-found' ? 404 : (code === 'no-default' || code === 'no-seed') ? 409 : 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: code }));
+        return;
+      }
+      for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
+      const workflows = ws?.workflowStore?.readAll() || [];
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, restored, workflows }));
+    });
     return;
   }
   if (url.pathname === '/api/workflows' && req.method === 'POST') {

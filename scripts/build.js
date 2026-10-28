@@ -112,8 +112,22 @@ rm(APP);
 fs.mkdirSync(path.join(APP, "runtime"), { recursive: true });
 fs.mkdirSync(path.join(APP, "server"), { recursive: true });
 fs.mkdirSync(path.join(APP, "web"), { recursive: true });
+fs.mkdirSync(path.join(APP, "bin"), { recursive: true });
 fs.copyFileSync(ENV_NODE, path.join(APP, "runtime", "node.exe"));
 fs.writeFileSync(path.join(APP, "version.txt"), VERSION + "\n", "utf8");
+fs.writeFileSync(
+  path.join(APP, "bin", "void.cmd"),
+  [
+    "@echo off",
+    'if exist "%~dp0..\\runtime\\node.exe" (',
+    '  "%~dp0..\\runtime\\node.exe" "%~dp0..\\server\\cli\\void.js" %*',
+    ") else (",
+    '  node "%~dp0..\\server\\cli\\void.js" %*',
+    ")",
+    "",
+  ].join("\r\n"),
+  "utf8",
+);
 
 // server 整树 .js/.json（跳过 test/、node_modules/ 与协作运行时 JSON）
 function copyServerTree(from, to, rel = "") {
@@ -256,6 +270,7 @@ const entries = [
   ["config", "config/devflow.xml"],
   ["icon", "script/icon.ico"],
   ["launcher", "script/launch.ps1"],
+  ["void", "bin/void.cmd"],
 ];
 for (const [label, rel] of entries) {
   const p = path.join(APP, rel);

@@ -106,7 +106,7 @@ describe('SchedulerView', () => {
     }));
     const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
     await flushPromises();
-    await w.findAll('.row .acts button')[3].trigger('click');
+    await w.findAll('.row .acts button')[4].trigger('click');
     await flushPromises();
     const inputs = w.findAll('.prompt-refs input');
     expect(inputs.length).toBe(2);

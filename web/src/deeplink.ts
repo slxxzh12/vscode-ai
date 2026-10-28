@@ -4,3 +4,9 @@ export function parseOpenParam(search: string): string | null {
   const v = new URLSearchParams(s).get('open');
   return v ? v : null;
 }
+
+export function parseVoidProject(search: string): string | null {
+  const s = search.startsWith('?') ? search.slice(1) : search;
+  const v = new URLSearchParams(s).get('voidProject');
+  return v ? v : null;
+}

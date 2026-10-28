@@ -13,7 +13,7 @@ import CodeStats from './components/CodeStats.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
 import { useI18n } from './i18n';
-import { parseOpenParam } from './deeplink';
+import { parseOpenParam, parseVoidProject } from './deeplink';
 import ProxyHubView from './components/ProxyHubView.vue';
 import AppMarketView from './components/AppMarketView.vue';
 import { useLocalSources } from './local/useLocalSources';
@@ -33,7 +33,7 @@ import { openRestoredSession } from './sessionRestore';
 import { useLedgerSessions } from './ledgerSessions';
 import type { SessionExtra } from './sessionTree';
 import { allowedRestoreIds, loadRecentTabs, loadRestoreTabs, pushRecentTab, saveRecentTabs } from './restorePrefs';
-import { pendingToolTab, clearPendingToolTab, pendingProxyTab, requestProxyTab } from './uiIntents';
+import { pendingToolTab, clearPendingToolTab, pendingProxyTab, requestProxyTab, requestStartAgent } from './uiIntents';
 import { parseSchedulerPromptFromSearch, requestSchedulerPrompt, SCHEDULER_PROMPT_PARAMS, parseSchedulerEditFromSearch, requestSchedulerEdit, SCHEDULER_EDIT_PARAMS } from './scheduler/schedulerIntent';
 import { useNavicatWorkbench } from './tools/navicat/useNavicatWorkbench';
 import { shouldOpenInNavicat } from './tools/navicat/sqliteFile';
@@ -713,6 +713,20 @@ async function processOpenParam() {
     alert(t('open.failed', { msg: (e as Error)?.message || String(e) }));
   }
 }
+async function processVoidProject() {
+  const id = parseVoidProject(window.location.search);
+  if (!id) return;
+  const u = new URL(window.location.href);
+  u.searchParams.delete('voidProject');
+  window.history.replaceState({}, '', u.pathname + u.search + u.hash);
+  if (!projects.value.some((p) => p.id === id)) await loadProjects();
+  if (!projects.value.some((p) => p.id === id)) return;
+  selectProject(id);
+  rail.value = 'explorer';
+  window.location.hash = '#explorer/tree';
+  await nextTick();
+  requestStartAgent();
+}
 function openAgentSettings(firstRun = false) {
   // 设置弹窗在 TerminalView 内，仅在「目录/历史」视图挂载；其他页（通讯录/统计/定时任务）需先切回目录
   if (rail.value !== 'explorer') { rail.value = 'explorer'; }
@@ -743,6 +757,7 @@ onMounted(async () => {
   const projectsReady = (async () => { await checkFirstRunAgentChoice(); await checkFirstRunFileAssoc(); await loadProjects(); })();
   // 首启设置框只自动弹一次（本地记住），之后不再自动弹；用户仍可点 ⚙ 手动打开
   void restoreWindowState(projectsReady).finally(() => {
+    void processVoidProject();
     let shown = false;
     try { shown = localStorage.getItem(SETTINGS_AUTO_KEY) === '1'; } catch { /* ignore */ }
     if (!shown && (pendingAgentChoice.value || pendingFileAssoc.value)) {

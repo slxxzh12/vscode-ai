@@ -629,6 +629,7 @@ onBeforeUnmount(() => {
             <button v-else @click.stop="toggle(t)">{{ $t('sched.start') }}</button>
             <button v-if="!isRunning(t)" @click.stop="runNow(t)">{{ $t('sched.run') }}</button>
             <button v-else @click.stop="stop(t)">{{ $t('sched.stop') }}</button>
+            <button @click.stop="openDetail(t)">{{ $t('sched.open_report') }}</button>
             <button @click.stop="openDetail(t)">{{ $t('sched.history') }}</button>
             <button @click.stop="openEdit(t)">{{ $t('sched.edit') }}</button>
             <button @click.stop="exportTask(t)">{{ $t('sched.export') }}</button>
