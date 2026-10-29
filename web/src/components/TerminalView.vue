@@ -9,6 +9,7 @@ import type { useTerminal, SessionSummary } from '../useTerminal';
 import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
 import DocViewer from './DocViewer.vue';
+import { ElMessageBox } from 'element-plus';
 import ToolDocPane from '../tools/doc/ToolDocPane.vue';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
 import NavicatTool from '../tools/navicat/NavicatTool.vue';
@@ -94,6 +95,35 @@ const localFileSource = computed<DocSource | null>(() => {
   const e = localFileEntry.value;
   return e ? localFileDocSource(e.key) : null;
 });
+
+// Markdown 相对链接：项目文件开新页签；本地根目录切当前文件；单文件需先选所在文件夹
+function onProjectLink(rel: string) {
+  const f = activeFile.value;
+  if (!f?.projectId) return;
+  props.center.openFile(f.projectId, rel, rel.split('/').pop() || rel);
+}
+async function onLocalLink(rel: string) {
+  if (!activeLocal.value) return;
+  if (localIsRoot.value) { local.activePath.value = rel; return; }
+  const pick = (window as unknown as { showDirectoryPicker?: (o?: { mode?: string }) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+  if (typeof pick !== 'function') { alert(t('local.drag_folder_for_links')); return; }
+  try {
+    await ElMessageBox.confirm(t('local.link_folder_reason'), t('local.link_folder_title'), {
+      type: 'info',
+      confirmButtonText: t('local.pick_folder'),
+      cancelButtonText: t('common.cancel'),
+    });
+  } catch { return; }
+  try {
+    const handle = await pick.call(window, { mode: 'read' });
+    local.mountFolder(handle);
+    props.center.openLocalRoot(handle.name);
+    local.activePath.value = rel;
+  } catch (e: any) {
+    if (e?.name === 'AbortError') return; // 用户取消
+    alert(t('local.pick_folder_failed', { msg: e?.message || e }));
+  }
+}
 // 文档型工具（notepad/yaml/markdown）在主区用 DocViewer 展示
 const activeDocTool = computed(() => {
   const x = activeTool.value?.tool;
@@ -1460,7 +1490,8 @@ onBeforeUnmount(() => {
         :key="activeFile.id" :project-id="activeFile.projectId" :path="activeFile.path" :name="activeFile.label"
         :detail-token="detailToken" :detail-path="detailPath"
         :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine"
-        :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive" />
+        :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive"
+        @open-link="onProjectLink" />
     </div>
     <div v-show="!!activeTool" class="tool-layer">
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
@@ -1477,6 +1508,8 @@ onBeforeUnmount(() => {
           :source="localRootSource"
           :path="local.activePath.value"
           :name="localLeafName"
+          intercept-links
+          @open-link="onLocalLink"
         />
         <div v-else class="local-empty">{{ $t('local.empty') }}</div>
       </template>
@@ -1486,6 +1519,8 @@ onBeforeUnmount(() => {
         :source="localFileSource"
         :path="localFileEntry.name"
         :name="localFileEntry.name"
+        intercept-links
+        @open-link="onLocalLink"
       />
     </div>
 

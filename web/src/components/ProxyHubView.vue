@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import NginxTool from '../tools/nginx/NginxTool.vue';
+import StaticSitesView from '../tools/nginx/StaticSitesView.vue';
 import LlmProxyView from './ProxyView.vue';
 import { pendingProxyTab, clearPendingProxyTab, type ProxyTab } from '../uiIntents';
 
@@ -8,7 +9,7 @@ const KEY = 'devflow-proxy-tab';
 function loadTab(): ProxyTab {
   try {
     const v = sessionStorage.getItem(KEY);
-    if (v === 'nginx' || v === 'llm') return v;
+    if (v === 'nginx' || v === 'static' || v === 'llm') return v;
   } catch { /* ignore */ }
   return 'nginx';
 }
@@ -29,10 +30,12 @@ watch(pendingProxyTab, (v) => {
 <template>
   <div class="hub">
     <header class="hubbar">
+      <button class="hubtab" :class="{ on: tab === 'static' }" @click="setTab('static')">{{ $t('proxy.tabs.static') }}</button>
       <button class="hubtab" :class="{ on: tab === 'nginx' }" @click="setTab('nginx')">{{ $t('proxy.tabs.nginx') }}</button>
       <button class="hubtab" :class="{ on: tab === 'llm' }" @click="setTab('llm')">{{ $t('proxy.tabs.llm') }}</button>
     </header>
     <div class="hubbody">
+      <StaticSitesView v-show="tab === 'static'" />
       <NginxTool v-show="tab === 'nginx'" />
       <LlmProxyView v-show="tab === 'llm'" />
     </div>

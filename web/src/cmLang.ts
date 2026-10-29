@@ -22,11 +22,12 @@ import { swift } from '@codemirror/legacy-modes/mode/swift';
 import { ruby } from '@codemirror/legacy-modes/mode/ruby';
 import { perl } from '@codemirror/legacy-modes/mode/perl';
 import type { Extension } from '@codemirror/state';
+import { looksLikeJson } from './formatText';
 
 const L = (m: any) => StreamLanguage.define(m);
 
-// 按文件名/扩展名解析 CodeMirror 语言；未知类型返回 null（纯文本）。
-export function cmLangFor(name: string): Extension | null {
+// 按文件名/扩展名选 CodeMirror 语言；未知扩展名但内容是合法 JSON 时也按 JSON 高亮
+export function cmLangFor(name: string, content = ''): Extension | null {
   const base = (name || '').replace(/\\/g, '/').split('/').pop() || '';
   const lower = base.toLowerCase();
   const dot = lower.lastIndexOf('.');
@@ -55,6 +56,6 @@ export function cmLangFor(name: string): Extension | null {
     case 'swift': return L(swift);
     case 'rb': case 'ruby': return L(ruby);
     case 'pl': case 'pm': return L(perl);
-    default: return null;
+    default: return looksLikeJson(content) ? json() : null;
   }
 }

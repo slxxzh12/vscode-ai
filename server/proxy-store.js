@@ -25,6 +25,16 @@ export function splitCookieHeader(text) {
 function err(code, message) { const e = new Error(message || code); e.code = code; return e; }
 function nowIso() { return new Date().toISOString(); }
 
+// 静态网站前缀：index/、/compute/ → /index、/compute；留空表示直接挂在根路径
+function normalizeSitePrefix(input) {
+  let s = String(input || '').trim().replace(/\\/g, '/');
+  if (!s) return '';
+  if (/[?#]/.test(s)) throw err('bad-request', 'bad site prefix');
+  const segs = s.split('/').filter(Boolean);
+  if (segs.some((seg) => seg === '.' || seg === '..')) throw err('bad-request', 'bad site prefix');
+  return segs.length ? `/${segs.join('/')}` : '';
+}
+
 export function normalizeRule(input) {
   const mode = String(input?.mode || 'port');
   if (!PROXY_MODES.includes(mode)) throw err('bad-request', 'bad mode');
@@ -105,6 +115,9 @@ export function normalizeRule(input) {
   const base = {
     name, mode, listenHost,
     staticDir,
+    sitePrefix: staticDir ? normalizeSitePrefix(input?.sitePrefix) : '',
+    spaFallback: input?.spaFallback === undefined ? !!staticDir : !!input.spaFallback,
+    showTree: !!input?.showTree,
     target: {
       protocol,
       host,

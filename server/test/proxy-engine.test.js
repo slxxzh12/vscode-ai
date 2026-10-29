@@ -537,3 +537,220 @@ test('静态目录规则：直接返回本地文件与目录列表', async () =>
   assert.ok([403, 404].includes(traversal.status));
   engine.stop(rule.id);
 });
+
+test('静态目录 SPA 回退：未知前端路由返回 index.html，缺失资源仍 404', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-spa-'));
+  fs.writeFileSync(path.join(dir, 'index.html'), '<h1>spa</h1>');
+  const rule = {
+    id: 'spa', name: 'spa', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir, spaFallback: true,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const base = `http://127.0.0.1:${port}`;
+  const route = await fetch(`${base}/dashboard/settings`);
+  assert.equal(route.status, 200);
+  assert.equal(await route.text(), '<h1>spa</h1>');
+  const asset = await fetch(`${base}/missing.js`);
+  assert.equal(asset.status, 404);
+  const htmlAsset = await fetch(`${base}/missing.js`, { headers: { accept: 'text/html' } });
+  assert.equal(htmlAsset.status, 200);
+  assert.equal(await htmlAsset.text(), '<h1>spa</h1>');
+  engine.stop(rule.id);
+});
+
+test('静态目录关闭 SPA 回退时未知路由仍 404', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-nospa-'));
+  fs.writeFileSync(path.join(dir, 'index.html'), '<h1>spa</h1>');
+  const rule = {
+    id: 'nospa', name: 'nospa', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir, spaFallback: false,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const miss = await fetch(`http://127.0.0.1:${port}/dashboard`);
+  assert.equal(miss.status, 404);
+  engine.stop(rule.id);
+});
+
+test('静态目录中的 Markdown 渲染为 HTML 页面', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-md-'));
+  fs.writeFileSync(path.join(dir, 'guide.md'), '# Title\n\n**bold**\n\n```js\nconst x = 1;\n```\n');
+  const rule = {
+    id: 'md', name: 'md', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir, spaFallback: true,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const res = await fetch(`http://127.0.0.1:${port}/guide.md`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/html/);
+  const html = await res.text();
+  assert.match(html, /<article class="md-body md-page">/);
+  assert.match(html, /<h1>Title<\/h1>/);
+  assert.match(html, /<strong>bold<\/strong>/);
+  assert.match(html, /class="hljs/);
+  assert.doesNotMatch(html, /^# Title/);
+  assert.doesNotMatch(html, /__devflow_mermaid__/);
+  engine.stop(rule.id);
+});
+
+test('Markdown 图表页加载 Mermaid 脚本（相对路径直出）', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-mm-'));
+  fs.mkdirSync(path.join(dir, 'doc'));
+  fs.writeFileSync(path.join(dir, 'doc', 'chart.md'), '# Chart\n\n```mermaid\npie title X\n  "a" : 1\n```\n');
+  const rule = {
+    id: 'mm', name: 'mm', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir, spaFallback: true,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const res = await fetch(`http://127.0.0.1:${port}/doc/chart.md`);
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /class="mermaid"/);
+  assert.match(html, /src="__devflow_mermaid__\.js"/);
+  const asset = await fetch(`http://127.0.0.1:${port}/doc/__devflow_mermaid__.js`);
+  assert.equal(asset.status, 200);
+  assert.match(asset.headers.get('content-type'), /javascript/);
+  assert.match(await asset.text(), /globalThis\["mermaid"\]/);
+  engine.stop(rule.id);
+});
+
+test('静态目录以 index.md 作为首页渲染', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-mdindex-'));
+  fs.writeFileSync(path.join(dir, 'index.md'), '# Home\n');
+  const rule = {
+    id: 'mdhome', name: 'mdhome', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir, spaFallback: true,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const res = await fetch(`http://127.0.0.1:${port}/`);
+  assert.equal(res.status, 200);
+  assert.match(await res.text(), /<h1>Home<\/h1>/);
+  engine.stop(rule.id);
+});
+
+test('静态目录 showTree：HTML / Markdown / 目录页注入左侧文件树，资源不注入', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-tree-'));
+  fs.writeFileSync(path.join(dir, 'index.html'), '<!doctype html><body><h1>home</h1></body>');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'hello');
+  fs.writeFileSync(path.join(dir, 'readme.md'), '# Readme\n');
+  fs.mkdirSync(path.join(dir, 'sub'));
+  fs.writeFileSync(path.join(dir, 'sub', 'b.txt'), 'b');
+  const rule = {
+    id: 'tree', name: 'tree', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir, spaFallback: true, showTree: true,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const base = `http://127.0.0.1:${port}`;
+
+  const home = await fetch(`${base}/`);
+  const homeHtml = await home.text();
+  assert.match(homeHtml, /id="df-tree"/);
+  assert.match(homeHtml, /href="\/a\.txt"/);
+  assert.match(homeHtml, /href="\/sub\/b\.txt"/);
+  assert.match(homeHtml, /📁/);
+  assert.match(homeHtml, /📄/);
+  assert.match(homeHtml, /<h1>home<\/h1>/);
+
+  const md = await fetch(`${base}/readme.md`);
+  assert.match(await md.text(), /id="df-tree"/);
+
+  const missing = await fetch(`${base}/nope`);
+  assert.match(await missing.text(), /id="df-tree"/);
+
+  const asset = await fetch(`${base}/a.txt`);
+  const assetText = await asset.text();
+  assert.equal(assetText, 'hello');
+  engine.stop(rule.id);
+});
+
+test('静态目录网站前缀：根路径跳转、前缀内可访问、前缀外 404', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-prefix-'));
+  fs.writeFileSync(path.join(dir, 'index.html'), '<h1>home</h1>');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'hello');
+  const rule = {
+    id: 'prefix', name: 'prefix', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir, sitePrefix: '/compute', showTree: true,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const base = `http://127.0.0.1:${port}`;
+
+  const root = await fetch(`${base}/`, { redirect: 'manual' });
+  assert.equal(root.status, 302);
+  assert.equal(root.headers.get('location'), '/compute/');
+
+  const noSlash = await fetch(`${base}/compute`, { redirect: 'manual' });
+  assert.equal(noSlash.status, 302);
+  assert.equal(noSlash.headers.get('location'), '/compute/');
+
+  const home = await fetch(`${base}/compute/`);
+  const homeHtml = await home.text();
+  assert.equal(home.status, 200);
+  assert.match(homeHtml, /<h1>home<\/h1>/);
+  assert.match(homeHtml, /href="\/compute\/a\.txt"/);
+
+  const file = await fetch(`${base}/compute/a.txt`);
+  assert.equal(await file.text(), 'hello');
+
+  const outside = await fetch(`${base}/other`);
+  assert.equal(outside.status, 404);
+  engine.stop(rule.id);
+});
+
+test('静态目录中的 CSV 渲染为表格页', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-csv-'));
+  fs.writeFileSync(path.join(dir, 'data.csv'), 'name,age\r\nAlice,28\r\nBob,34\r\n');
+  const rule = {
+    id: 'csv', name: 'csv', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const res = await fetch(`http://127.0.0.1:${port}/data.csv`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/html/);
+  const html = await res.text();
+  assert.match(html, /<table class="csv-table">/);
+  assert.match(html, /<th>name<\/th>/);
+  assert.match(html, /<td>Alice<\/td>/);
+  assert.match(html, /<td>34<\/td>/);
+  assert.doesNotMatch(html, /^name,age/);
+  engine.stop(rule.id);
+});

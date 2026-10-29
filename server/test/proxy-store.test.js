@@ -86,6 +86,18 @@ test('normalizeRule：静态目录规则不要求上游，目录必须存在', (
   assert.throws(() => normalizeRule({ ...r, staticDir: path.join(dir, 'missing') }), (e) => e.code === 'bad-static-dir');
 });
 
+test('normalizeRule：静态网站前缀归一化，非静态规则忽略', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-static-prefix-'));
+  const base = { name: 'static', mode: 'port', listenHost: '127.0.0.1', listenPort: 18082, staticDir: dir, enabled: true };
+  assert.equal(normalizeRule({ ...base, sitePrefix: 'index/' }).sitePrefix, '/index');
+  assert.equal(normalizeRule({ ...base, sitePrefix: '/compute/' }).sitePrefix, '/compute');
+  assert.equal(normalizeRule({ ...base, sitePrefix: ' a/b ' }).sitePrefix, '/a/b');
+  assert.equal(normalizeRule({ ...base, sitePrefix: '' }).sitePrefix, '');
+  assert.equal(normalizeRule({ ...PORT_RULE, sitePrefix: '/index' }).sitePrefix, '');
+  assert.throws(() => normalizeRule({ ...base, sitePrefix: '../x' }), (e) => e.code === 'bad-request');
+  assert.throws(() => normalizeRule({ ...base, sitePrefix: 'x?y' }), (e) => e.code === 'bad-request');
+});
+
 test('normalizeRule：路径改写允许根路径 / 到 /', () => {
   const r = normalizeRule({ ...PORT_RULE, rewrites: [{ from: '/', to: '/' }] });
   assert.deepEqual(r.rewrites, [{ from: '/', to: '' }]);

@@ -1,18 +1,10 @@
-import MarkdownIt from 'markdown-it';
-import hljs from 'highlight.js/lib/common';
+import { createMarkdown, escapeHtml as escHtml, isMarkdownFile } from '@devflow/shared/markdown';
 import { t } from './i18n';
 
 export interface MarkdownOptions {
   projectId: string;
   fileDir: string;
   assetMap?: Map<string, string>;
-}
-
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-function escLang(s: string): string {
-  return s.replace(/[^a-zA-Z0-9-_+.#]/g, '');
 }
 
 function buildRaw(projectId: string, rel: string, suffix: string): string {
@@ -43,29 +35,7 @@ function resolveTarget(raw: string, dir: string): { rel: string; suffix: string 
   return { rel: segs.join('/'), suffix };
 }
 
-const md = new MarkdownIt({
-  html: false,
-  linkify: true,
-  highlight(code: string, lang: string): string {
-    if (!lang) return '';
-    try {
-      if (!hljs.getLanguage(lang)) return '';
-      return `<pre class="hljs"><code class="hljs language-${escLang(lang)}">${hljs.highlight(code, { language: lang }).value}</code></pre>`;
-    } catch {
-      return '';
-    }
-  },
-});
-
-const defaultFence = md.renderer.rules.fence!;
-md.renderer.rules.fence = (tokens, idx, options, env, self) => {
-  const token = tokens[idx];
-  const info = (token.info || '').trim().split(/\s+/)[0].toLowerCase();
-  if (info === 'mermaid') {
-    return `<pre class="mermaid" data-processed="false">${escHtml(token.content)}</pre>\n`;
-  }
-  return defaultFence(tokens, idx, options, env, self);
-};
+const md = createMarkdown();
 
 function rewriteTokenAttrs(tokens: unknown[], opt: MarkdownOptions): void {
   for (const t of tokens as Array<{ type: string; children?: unknown[]; attrGet(n: string): string | null; attrSet(n: string, v: string): void }>) {
@@ -82,6 +52,7 @@ function rewriteTokenAttrs(tokens: unknown[], opt: MarkdownOptions): void {
       const href = t.attrGet('href') || '';
       const r = resolveTarget(href, opt.fileDir);
       if (r) {
+        t.attrSet('data-md-link', r.rel);
         const mapped = opt.assetMap?.get(r.rel);
         if (mapped) {
           t.attrSet('href', mapped);
@@ -127,12 +98,7 @@ export function renderRemoteMarkdown(mdText: string): string {
   return md.render(mdText).replace(/<a href="(https?:[^"]+)"/g, '<a href="$1" target="_blank" rel="noopener"');
 }
 
-export function isMarkdownFile(name: string): boolean {
-  const i = name.lastIndexOf('.');
-  if (i <= 0) return false;
-  const ext = name.slice(i + 1).toLowerCase();
-  return ext === 'md' || ext === 'markdown';
-}
+export { isMarkdownFile };
 
 const PRINT_CSS = `
 @page { size: A4; margin: 18mm 16mm; }

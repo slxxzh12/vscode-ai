@@ -23,6 +23,11 @@ const RULE_C = {
   pathPrefix: '', stripPrefix: true, target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
   tlsInsecure: false, headers: [], rewrites: [{ from: '/rest/v1', to: '/v1' }], capture: false,
 };
+const RULE_S = {
+  id: 's', name: 'site', mode: 'port', enabled: true, listenHost: '127.0.0.1', listenPort: 8090,
+  pathPrefix: '', stripPrefix: true, staticDir: 'C:/www', target: { protocol: 'http', host: '', port: 0 },
+  tlsInsecure: true, headers: [], rewrites: [], capture: false,
+};
 
 afterEach(() => clearPendingToolTab());
 
@@ -30,7 +35,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.stubGlobal('fetch', vi.fn((u: string) => {
     const s = String(u);
-    if (s === '/api/nginx/rules') return okJson({ items: [RULE_A, RULE_B, RULE_C], status: { a: { status: 'running', error: null }, c: { status: 'running', error: null } } });
+    if (s === '/api/nginx/rules') return okJson({ items: [RULE_A, RULE_B, RULE_C, RULE_S], status: { a: { status: 'running', error: null }, c: { status: 'running', error: null } } });
     if (s.startsWith('/api/nginx/log')) return okJson({ items: [] });
     if (s.startsWith('/api/nginx/captures')) return okJson({ items: [] });
     return okJson({});
@@ -38,6 +43,15 @@ beforeEach(() => {
 });
 
 describe('NginxTool', () => {
+  it('静态网站规则不出现在反向代理列表', async () => {
+    const w = mountC(NginxTool);
+    await flushPromises();
+    const cards = w.findAll('.ngcard');
+    expect(cards).toHaveLength(3);
+    expect(w.text()).not.toContain('C:/www');
+    w.unmount();
+  });
+
   it('进入时所有规则各自展开，表单互不填充', async () => {
     const w = mountC(NginxTool);
     await flushPromises();

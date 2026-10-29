@@ -16,6 +16,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { createRequire } = require("module");
+const { copyRuntimeDeps } = require("./runtime-deps");
 
 const ROOT = path.resolve(__dirname, "..");
 const ENV_NODE = path.join(ROOT, "env", "node.exe");
@@ -49,9 +50,22 @@ function check(cond, msg) {
   }
 }
 
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Windows 杀软/资源管理器会短暂锁住刚生成的目录，删除要退避重试
 function rm(target) {
-  if (fs.existsSync(target))
-    fs.rmSync(target, { recursive: true, force: true });
+  if (!fs.existsSync(target)) return;
+  for (let i = 1; i <= 15; i++) {
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      if (i === 15 || (e.code !== "EPERM" && e.code !== "EBUSY" && e.code !== "ENOTEMPTY")) throw e;
+      sleepSync(400 * i);
+    }
+  }
 }
 
 function cpDir(from, to, filter) {
@@ -147,6 +161,12 @@ function copyServerTree(from, to, rel = "") {
   }
 }
 copyServerTree(path.join(ROOT, "server"), path.join(APP, "server"));
+// Mermaid：静态站点 Markdown 页直出的独立脚本（UMD 自包含），运行时不依赖 web 依赖树
+fs.mkdirSync(path.join(APP, "server", "vendor"), { recursive: true });
+fs.copyFileSync(
+  require.resolve("mermaid/dist/mermaid.min.js"),
+  path.join(APP, "server", "vendor", "mermaid.min.js"),
+);
 cpDir(path.join(ROOT, "web", "dist"), path.join(APP, "web", "dist"));
 cpDir(
   path.join(ROOT, "config"),
@@ -168,6 +188,13 @@ cpDir(
   path.join(ROOT, "shared"),
   path.join(APP, "node_modules", "@devflow", "shared"),
 );
+// 运行时依赖：按 server/package.json 的真实解析结果整包拷贝（含传递依赖）
+copyRuntimeDeps({
+  root: ROOT,
+  appDir: APP,
+  deps: Object.keys(require(path.join(ROOT, "server", "package.json")).dependencies || {}),
+  skip: ["node-pty", "ws", "esbuild", "@devflow/shared"],
+});
 
 // esbuild：server 的运行时依赖（server/http-api.js 顶层 import，用于「压缩一行」）；
 // npm workspaces 下可能提升到根也可能留在 server/ 内，按 server 的真实解析结果拷贝，

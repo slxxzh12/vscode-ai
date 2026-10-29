@@ -27,6 +27,12 @@ async function load() {
   currentId.value = model.value[0]?.id || '';
 }
 
+async function refreshModel() {
+  const keep = currentId.value;
+  await load();
+  if (model.value.some((w) => w.id === keep)) currentId.value = keep;
+}
+
 async function restoreDefault() {
   if (!current.value) return;
   const name = current.value.label || current.value.id;
@@ -105,14 +111,14 @@ onMounted(load);
           </div>
         </aside>
         <div class="wemain">
-          <WorkflowFilesTab v-if="tab === 'files'" :key="currentId + ':' + reloadToken" :workflow-id="currentId" />
+          <WorkflowFilesTab v-if="tab === 'files'" :key="currentId + ':' + reloadToken" :workflow-id="currentId" @deleted="refreshModel" />
           <WorkflowPreviewTab v-else :model="model" />
         </div>
       </div>
       <footer class="wef">
         <span class="wemsg">{{ msg }}</span>
-        <button class="webtn" :disabled="busy || !model.length" @click="forceOverwriteAll">{{ $t('wfe.force_overwrite') }}</button>
-        <button class="webtn" :disabled="busy || !current" @click="restoreDefault">{{ $t('wfe.restore_default') }}</button>
+        <button class="webtn" :disabled="busy || !model.length" :title="$t('wfe.force_hint')" @click="forceOverwriteAll">{{ $t('wfe.force_overwrite') }}</button>
+        <button class="webtn" :disabled="busy || !current" :title="$t('wfe.restore_hint')" @click="restoreDefault">{{ $t('wfe.restore_default') }}</button>
       </footer>
     </div>
   </div>

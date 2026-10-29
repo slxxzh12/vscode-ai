@@ -48,8 +48,18 @@ function check(cond, msg) {
   }
 }
 
+// Windows 杀软/资源管理器会短暂锁住刚生成的 zip/目录，删除同样需要退避重试
 function rm(target) {
-  if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+  if (!fs.existsSync(target)) return;
+  for (let i = 1; i <= 10; i++) {
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      if (i === 10 || (e.code !== "EPERM" && e.code !== "EBUSY" && e.code !== "ENOTEMPTY")) throw e;
+      sleepSync(300 * i);
+    }
+  }
 }
 
 function sleepSync(ms) {

@@ -7,6 +7,8 @@ import type { DocSource, DocReadResult } from '../tools/doc/docSource';
 // 项目文件页签：给通用 DocViewer 注入「项目来源」。
 // 项目专有能力（定位资源管理器、运行脚本、外部文件选择、diff 选文件、详情/哈希、markdown 图片解析）都在这里提供。
 const props = defineProps<{ projectId: string; path: string; name: string; detailToken?: number; detailPath?: string; locateToken?: number; locatePath?: string; locateLine?: number; locateQuery?: string; locateCaseSensitive?: boolean }>();
+const emit = defineEmits<{ (e: 'open-link', rel: string): void }>();
+function onOpenLink(rel: string) { emit('open-link', rel); }
 const api = useProjects();
 
 const source = computed<DocSource>(() => ({
@@ -30,5 +32,6 @@ const source = computed<DocSource>(() => ({
 <template>
   <DocViewer :source="source" :path="path" :name="name" :detail-token="detailToken" :detail-path="detailPath"
     :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine"
-    :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive" />
+    :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive"
+    intercept-links @open-link="onOpenLink" />
 </template>

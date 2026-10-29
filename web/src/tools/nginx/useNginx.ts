@@ -23,6 +23,9 @@ export interface NginxRule {
   pathPrefix: string;
   stripPrefix: boolean;
   staticDir: string;
+  sitePrefix: string;
+  spaFallback: boolean;
+  showTree: boolean;
   target: { protocol: 'http' | 'https'; host: string; port: number };
   tlsInsecure: boolean;
   preserveHost: boolean;
@@ -68,7 +71,7 @@ async function jfetch(url: string, opt: RequestInit = {}): Promise<any> {
 export function emptyRule(): NginxRule {
   return {
     name: '', mode: 'port', enabled: true, listenHost: '0.0.0.0', listenPort: NGINX_DEFAULT_PORT,
-    pathPrefix: '', stripPrefix: true, staticDir: '', target: { protocol: 'http', host: '127.0.0.1', port: 5173 },
+    pathPrefix: '', stripPrefix: true, staticDir: '', sitePrefix: '', spaFallback: false, showTree: false, target: { protocol: 'http', host: '127.0.0.1', port: 5173 },
     tlsInsecure: true, preserveHost: true, headers: [], responseHeaders: [], rewrites: [], responseReplace: [], directResponse: false, directStatus: 200, directContentType: 'application/json; charset=utf-8', directBody: '', locationReplace: [], corsPreflight: false, logRequests: false, capture: false,
   };
 }
@@ -78,7 +81,7 @@ export function deepseekFlashRule(): NginxRule {
   return {
     name: 'deepseek-flash', mode: 'port', enabled: true, listenHost: '0.0.0.0', listenPort: NGINX_DEFAULT_PORT,
     pathPrefix: '', stripPrefix: true,
-    staticDir: '',
+    staticDir: '', sitePrefix: '', spaFallback: false, showTree: false,
     target: { protocol: 'https', host: 'api.deepseek.com', port: 443 },
     tlsInsecure: true, preserveHost: true,
     headers: [{ name: 'Authorization', value: 'Bearer ak-123456' }], responseHeaders: [],

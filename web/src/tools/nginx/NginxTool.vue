@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { t } from '../../i18n';
 import { useNginx, emptyRule, deepseekFlashRule, type NginxRule } from './useNginx';
@@ -12,10 +12,12 @@ const highlightId = ref('');
 const msg = ref('');
 let timer: ReturnType<typeof setInterval> | null = null;
 
+const proxyRules = computed(() => api.rules.value.filter((r) => !r.staticDir));
+
 onMounted(async () => {
   const wanted = new URLSearchParams(location.search).get('rule') || '';
   await api.load();
-  if (wanted && api.rules.value.some((r) => r.id === wanted)) highlightId.value = wanted;
+  if (wanted && proxyRules.value.some((r) => r.id === wanted)) highlightId.value = wanted;
   timer = setInterval(() => { void api.load(); }, 2000);
 });
 onUnmounted(() => { if (timer) clearInterval(timer); });
@@ -62,7 +64,7 @@ async function deepseekNew() {
     />
 
     <NginxRuleCard
-      v-for="r in api.rules.value"
+      v-for="r in proxyRules"
       :key="r.id"
       :rule="r"
       :api="api"
@@ -70,7 +72,7 @@ async function deepseekNew() {
       :highlight="highlightId === r.id"
     />
 
-    <div v-if="!api.rules.value.length && !draft" class="ngempty">{{ $t('nginx.empty') }}</div>
+    <div v-if="!proxyRules.length && !draft" class="ngempty">{{ $t('nginx.empty') }}</div>
   </div>
 </template>
 

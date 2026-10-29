@@ -356,6 +356,14 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
     return fs.readFileSync(abs, 'utf8');
   }
 
+  function deleteFile(rel) {
+    const abs = absPath(rel);
+    if (!abs.toLowerCase().endsWith(MD_EXT)) throw new Error('bad-file');
+    fs.rmSync(abs);
+    seedStore?.update?.(readAll());
+    return { path: rel };
+  }
+
   function migrateXmlFiles() {
     if (listDirs(dir).length) return false;
     const files = listXml(dir);
@@ -391,5 +399,5 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
   migrateXmlFiles();
   migrateOldLayout();
 
-  return { readAll, writeAll, tree, readFile, absPath, restoreFromSeed, overwriteAllFromSeed, migrateFromConfigXml, dir };
+  return { readAll, writeAll, tree, readFile, deleteFile, absPath, restoreFromSeed, overwriteAllFromSeed, migrateFromConfigXml, dir };
 }

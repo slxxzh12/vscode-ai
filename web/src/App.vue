@@ -232,7 +232,7 @@ function applyHash() {
   }
   if (r === 'proxy') {
     rail.value = 'proxy';
-    if (sub === 'nginx' || sub === 'llm') requestProxyTab(sub);
+    if (sub === 'nginx' || sub === 'static' || sub === 'llm') requestProxyTab(sub);
     return;
   }
   // 兼容旧协作深链：#contacts/group → #stat/group，#contacts/master → #stat/token

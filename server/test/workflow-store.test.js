@@ -138,6 +138,22 @@ test('tree/readFile 返回四层文件夹树和技能内容', () => {
   assert.throws(() => store.readFile(file.path.replace(/\.md$/, '.js')));
 });
 
+test('deleteFile 直接删除技能文件，拒绝非 md/穿越/不存在', () => {
+  const dir = tmp();
+  const store = createWorkflowStore({ dir });
+  const out = store.writeAll([wf('a', 'A', [{ id: 's', label: 'S', group: 'G', prompts: ['p1', 'p2'] }])])[0];
+  const tree = store.tree(out.id);
+  const file = tree[0].children[0].children[0].children[0];
+  const abs = path.join(dir, file.path);
+  assert.ok(fs.existsSync(abs));
+  store.deleteFile(file.path);
+  assert.equal(fs.existsSync(abs), false);
+  assert.equal(store.readAll()[0].stages[0].prompts.length, 1);
+  assert.throws(() => store.deleteFile('../x.md'));
+  assert.throws(() => store.deleteFile(file.path.replace(/\.md$/, '.js')));
+  assert.throws(() => store.deleteFile(file.path));
+});
+
 test('目录已有文件夹时不迁移配置 XML', () => {
   const dir = tmp();
   const cfg = path.join(tmp(), 'devflow.xml');

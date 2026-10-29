@@ -15,6 +15,10 @@ export function toCsv(header: CsvValue[], rows: CsvValue[][]): string {
   return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
 
+// CSV 解析与静态网站 / 文件预览共用
+export { parseCsv } from '@devflow/shared/csv';
+export type { ParsedCsv } from '@devflow/shared/csv';
+
 function pad(n: number): string { return String(n).padStart(2, '0'); }
 
 export function zipStamp(d: Date = new Date()): string {

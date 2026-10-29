@@ -66,6 +66,7 @@ describe('renderMarkdown', () => {
     const h = renderMarkdown('[doc](./other.md)', { projectId: 'p', fileDir: 'docs' });
     expect(h).toContain('href="/api/raw?project=p&amp;path=docs%2Fother.md"');
     expect(h).toContain('target="_blank"');
+    expect(h).toContain('data-md-link="docs/other.md"');
   });
 
   it('非法百分号转义不崩（safeDecode 回退原串）', () => {

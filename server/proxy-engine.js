@@ -177,8 +177,14 @@ export function proxyHttp({ rule, req, res, capture, emit = () => {}, logger = n
 
   if (rule.staticDir) {
     const staticPath = buildForwardPath(rule, req.url);
+    const publicBase = (rule.mode === 'path' ? rule.pathPrefix : '') + (rule.sitePrefix || '');
     serveStatic({
       root: rule.staticDir, req, res, urlPath: staticPath,
+      spaFallback: rule.spaFallback !== false,
+      showTree: !!rule.showTree,
+      sitePrefix: rule.sitePrefix || '',
+      publicBase,
+      treeBase: publicBase,
       extraHeaders: rule.responseHeaders, logger, tag,
       onEvent: (e) => { if (cap) cap.finish({ status: e.status, durationMs: e.durationMs }); emit(e); },
     });

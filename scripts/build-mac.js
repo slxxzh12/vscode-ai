@@ -18,6 +18,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { createRequire } = require("module");
+const { copyRuntimeDeps } = require("./runtime-deps");
 
 if (process.platform !== "darwin") {
   console.error("[build-mac] this script must run on macOS (darwin).");
@@ -227,6 +228,12 @@ function buildArch(arch, nodeBin) {
   fs.writeFileSync(path.join(APP, "version.txt"), VERSION + "\n", "utf8");
 
   copyServerTree(path.join(ROOT, "server"), path.join(APP, "server"));
+  // Mermaid：静态站点 Markdown 页直出的独立脚本（UMD 自包含）
+  fs.mkdirSync(path.join(APP, "server", "vendor"), { recursive: true });
+  fs.copyFileSync(
+    require.resolve("mermaid/dist/mermaid.min.js"),
+    path.join(APP, "server", "vendor", "mermaid.min.js"),
+  );
   cpDir(path.join(ROOT, "web", "dist"), path.join(APP, "web", "dist"));
   cpDir(
     path.join(ROOT, "config"),
@@ -249,6 +256,12 @@ function buildArch(arch, nodeBin) {
     path.join(ROOT, "shared"),
     path.join(APP, "node_modules", "@devflow", "shared"),
   );
+  copyRuntimeDeps({
+    root: ROOT,
+    appDir: APP,
+    deps: ["markdown-it", "highlight.js"],
+    skip: ["node-pty", "ws", "esbuild", "@devflow/shared"],
+  });
 
   // esbuild + 目标架构的平台二进制（缺一不可，否则运行时 ERR_MODULE_NOT_FOUND / 找不到二进制）
   const esbuild = resolveEsbuild();
