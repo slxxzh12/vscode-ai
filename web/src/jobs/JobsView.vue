@@ -4,6 +4,7 @@ import { t } from '../i18n';
 import { useJobs, type Job } from './useJobs';
 import { jobStatusLabel } from './format';
 import { renderRemoteMarkdown } from '../markdown';
+import { useMarkdownEnhance } from '../markdown-enhance/useEnhance';
 
 const jobs = useJobs();
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -68,6 +69,8 @@ function ngaSessionOf(job: Job | null): string {
 }
 const detailReport = computed(() => (detail.value ? reportOf(detail.value) : ''));
 const detailReportHtml = computed(() => (detailReport.value ? renderRemoteMarkdown(detailReport.value) : ''));
+const detailReportBody = ref<HTMLElement | null>(null);
+useMarkdownEnhance(detailReportHtml, detailReportBody);
 const detailNgaSession = computed(() => ngaSessionOf(detail.value));
 const detailReportId = computed(() => {
   if (!detail.value) return '';
@@ -161,7 +164,7 @@ const detailReportUrl = computed(() => {
       <div v-if="detailReportId" class="dim">{{ $t('sched.report.id') }}: {{ detailReportId }}</div>
       <div v-if="detailReportArchive" class="dim" :title="detailReportArchive">{{ $t('sched.report.archive') }}: {{ detailReportArchive }}</div>
       <div v-if="detailReportUrl" class="dim report-url"><a :href="detailReportUrl" target="_blank" rel="noopener">{{ detailReportUrl }}</a></div>
-      <div v-if="detailReport" class="report md-body" v-html="detailReportHtml" />
+      <div v-if="detailReport" ref="detailReportBody" class="report md-body" v-html="detailReportHtml" />
       <pre v-else class="report">{{ $t('sched.report.empty') }}</pre>
       <div class="acts">
         <button v-if="detail.status === 4" @click="jobs.approve(detail.jobId)">{{ $t('jobs.action.approve') }}</button>

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { locale, t } from '../i18n';
 import { renderRemoteMarkdown } from '../markdown';
+import { useMarkdownEnhance } from '../markdown-enhance/useEnhance';
 import MiniTools from './MiniTools.vue';
 import { requestStartAgent } from '../uiIntents';
 import { useCollab } from '../collaboration/useCollab';
@@ -19,7 +20,9 @@ const collab = useCollab();
 const { version, loadVersion } = useVersion();
 
 const noticeHtml = ref('');
+const noticeBody = ref<HTMLElement | null>(null);
 const noticeEmpty = ref('');
+useMarkdownEnhance(noticeHtml, noticeBody);
 async function loadNotice() {
   try {
     const r = await fetch(`/api/notice?lang=${encodeURIComponent(locale.value)}`).then((x) => x.json());
@@ -84,7 +87,7 @@ watch(locale, loadNotice);
     <div class="col col-side">
       <section class="notice">
         <h3 class="ntitle">📢 {{ $t('market.notice') }}</h3>
-        <div v-if="noticeHtml" class="nbody" v-html="noticeHtml"></div>
+        <div v-if="noticeHtml" ref="noticeBody" class="nbody" v-html="noticeHtml"></div>
         <div v-else class="hint">{{ noticeEmpty || $t('market.notice_empty') }}</div>
       </section>
 

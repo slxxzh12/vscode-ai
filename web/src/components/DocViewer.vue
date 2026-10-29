@@ -6,23 +6,37 @@ import { StateEffect, StateField } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { useTheme } from '../theme';
 import { cmLangFor } from '../cmLang';
-import '../styles/markdown.css';
+import '@devflow/shared/markdown.css';
 import { useProjects, type FileMeta } from '../useProjects';
 import type { DocSource, DocReadResult } from '../tools/doc/docSource';
 import { t, locale } from '../i18n';
-import { isMarkdownFile, renderMarkdown, renderMermaid, printMarkdown, collectAssetRefs } from '../markdown';
+import { isMarkdownFile, renderMarkdown, printMarkdown, collectAssetRefs } from '../markdown';
+import { enhanceMarkdown } from '../markdown-enhance';
 import { parseCurlCommands } from '../curl';
 import CurlView from './CurlView.vue';
 import CodeEditor from './CodeEditor.vue';
 import YamlView from './YamlView.vue';
 import Base64Panel from './Base64Panel.vue';
+import CsvTable from './CsvTable.vue';
 import { diffText, type DiffRow } from '../diff';
 import { sortText, dedupText, type SortMode } from '../textTools';
-import { formatExtFor, formatText } from '../formatText';
+import { formatExtFor, formatText, looksLikeJson } from '../formatText';
 import { copyText } from '../clipboard';
 import type { TreeItem } from '@devflow/shared';
 
-const props = defineProps<{ source: DocSource; path: string; name: string; detailToken?: number; detailPath?: string; locateToken?: number; locatePath?: string; locateLine?: number; locateQuery?: string; locateCaseSensitive?: boolean }>();
+const props = defineProps<{ source: DocSource; path: string; name: string; detailToken?: number; detailPath?: string; locateToken?: number; locatePath?: string; locateLine?: number; locateQuery?: string; locateCaseSensitive?: boolean; interceptLinks?: boolean }>();
+const emit = defineEmits<{ (e: 'open-link', rel: string): void }>();
+
+// Markdown 里的相对链接交给上层（项目/本地目录）在应用内打开，而不是跳到 /api/raw 或 404
+function onMdBodyClick(ev: MouseEvent) {
+  if (!props.interceptLinks) return;
+  if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+  const a = (ev.target as HTMLElement | null)?.closest?.('a[data-md-link]') as HTMLAnchorElement | null;
+  const rel = a?.getAttribute('data-md-link') || '';
+  if (!rel) return;
+  ev.preventDefault();
+  emit('open-link', rel);
+}
 
 // 搜索命中高亮：黄色背景标出文件中所有命中关键词（由点击搜索结果触发）。
 const setLocateHighlight = StateEffect.define<{ from: number; to: number }[]>();
@@ -65,16 +79,19 @@ const kind = computed<'image' | 'pdf' | 'text'>(() => {
 const isMd = computed(() => isMarkdownFile(props.name));
 const isHtmlFile = computed(() => ['html', 'htm'].includes(ext.value));
 const hasPreviewToggle = computed(() => isMd.value || isHtmlFile.value);
-const canMinify = computed(() => ['js', 'mjs', 'cjs', 'jsx', 'json'].includes(ext.value) && kind.value === 'text');
-const canSort = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value && !isBinary.value);
+const canMinify = computed(() => kind.value === 'text'
+  && (['js', 'mjs', 'cjs', 'jsx', 'json'].includes(ext.value) || looksLikeJson(raw.value)));
+const canSort = computed(() => kind.value === 'text' && status.value === 'ok' && !isBinary.value);
 const canB64 = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value && !isBinary.value);
 const RUN_EXT = new Set(['bat', 'cmd', 'ps1', 'sh']);
 const canRun = computed(() => RUN_EXT.has(ext.value) && kind.value === 'text' && status.value === 'ok' && !!props.source.run);
 const canCurl = computed(() => kind.value === 'text' && status.value === 'ok' && /\bcurl\b/.test(raw.value || ''));
 const isYaml = computed(() => ['yml', 'yaml'].includes(ext.value));
 const isCurlFile = computed(() => ['http', 'rest', 'curl'].includes(ext.value));
-type ViewMode = 'preview' | 'code' | 'visual' | 'curl';
+const isCsv = computed(() => ext.value === 'csv');
+type ViewMode = 'preview' | 'code' | 'visual' | 'curl' | 'table';
 function defaultMode(): ViewMode {
+  if (isCsv.value) return 'table';
   if (isMarkdownFile(props.name) || isHtmlFile.value) return 'preview';
   if (isCurlFile.value) return 'curl';
   return 'code';
@@ -212,7 +229,7 @@ function docChanged() {
 }
 function mountEditor(doc: string) {
   if (!editorHost.value || view) return;
-  const lang = cmLangFor(props.name);
+  const lang = cmLangFor(props.name, doc);
   view = new EditorView({
     doc,
     extensions: [
@@ -308,7 +325,7 @@ async function applyPreview() {
   const body = mdBodyRef.value;
   if (!body) return;
   try {
-    await renderMermaid(body);
+    await enhanceMarkdown(body);
   } catch (e: any) {
     mdErr.value = String(e?.message || e);
   }
@@ -369,13 +386,12 @@ function onRetrySave() { dirty.value = true; flush(); }
 // —— 压缩成一行（js/json）——
 const minifying = ref(false);
 async function minifyOneLine() {
-  if (!view || minifying.value) return;
-  const src = view.state.doc.toString();
+  if (minifying.value) return;
+  const src = docText();
   minifying.value = true;
   try {
-    const r = await format(props.name, src);
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: r.content } });
-    requestMeasure();
+    const out = looksLikeJson(src) ? JSON.stringify(JSON.parse(src)) : (await format(props.name, src)).content;
+    commitDocText(out);
     flashFmt(t('fp.minified'));
     setToolMsg(t('fp.minified'));
   } catch (e: any) {
@@ -398,31 +414,39 @@ const SORT_KEY: Record<SortMode, string> = {
   asc: 'fp.sort.short.asc', desc: 'fp.sort.short.desc',
   'num-asc': 'fp.sort.short.num_asc', 'num-desc': 'fp.sort.short.num_desc',
 };
+// 文本类工具在预览态（如 Markdown）也要可用：没有 CodeMirror 时直接改 raw 并刷新预览/自动保存
+function docText(): string {
+  return view ? view.state.doc.toString() : raw.value;
+}
+function commitDocText(out: string) {
+  if (view) {
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
+    requestMeasure();
+    return;
+  }
+  raw.value = out;
+  scheduleSave();
+  if (viewMode.value === 'preview' && isMd.value) void applyPreview();
+}
 function sortLines(mode: SortMode): string {
-  if (!view) return '';
-  return sortText(view.state.doc.toString(), mode);
+  return sortText(docText(), mode);
 }
 function applySort(mode: SortMode) {
-  if (!view) return;
   const out = sortLines(mode);
-  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
+  commitDocText(out);
   toolsOpen.value = false;
-  requestMeasure();
   flashFmt(t('fp.sorted', { label: t(SORT_KEY[mode]) }));
   setToolMsg(t('fp.sorted', { label: t(SORT_KEY[mode]) }));
 }
 
 // —— 文本去重（忽略首尾空白，去重后升序排列）——
 function dedupLines(): string {
-  if (!view) return '';
-  return dedupText(view.state.doc.toString());
+  return dedupText(docText());
 }
 function applyDedup() {
-  if (!view) return;
   const out = dedupLines();
-  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: out } });
+  commitDocText(out);
   toolsOpen.value = false;
-  requestMeasure();
   flashFmt(t('fp.deduped'));
   setToolMsg(t('fp.deduped'));
 }
@@ -557,8 +581,8 @@ const toolsOpen = ref(false);
 let toolsOpenedAt = 0;
 let unbindTools: (() => void) | null = null;
 const anyTool = computed(() =>
-  !!(canFormat.value && showEditor.value)
-  || !!(canMinify.value && showEditor.value && status.value === 'ok')
+  !!canFormat.value
+  || !!(canMinify.value && status.value === 'ok')
   || !!canSort.value || !!canB64.value || !!canDiff.value || !!canRun.value || !!canCurl.value);
 watch(toolsOpen, (o) => {
   if (o) {
@@ -683,12 +707,12 @@ async function runFile() {
 const formatExt = computed(() => (kind.value === 'text' ? formatExtFor(raw.value, ext.value) : ''));
 const canFormat = computed(() => kind.value === 'text' && !!formatExt.value);
 async function formatDoc() {
-  if (!view || !canFormat.value) return;
-  const doc = view.state.doc.toString();
+  if (!canFormat.value) return;
+  const doc = docText();
   try {
     const out = await formatText(doc, formatExt.value);
     if (out !== doc) {
-      view.dispatch({ changes: { from: 0, to: doc.length, insert: out } });
+      commitDocText(out);
       flashFmt(t('fp.formatted'));
       setToolMsg(t('fp.formatted'));
     } else {
@@ -752,6 +776,10 @@ onBeforeUnmount(() => {
             <button type="button" :class="{ on: viewMode === 'curl' }" @click="viewMode = 'curl'">{{ $t('fp.view.curl') }}</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ $t('fp.code') }}</button>
           </div>
+          <div v-else-if="isCsv" class="seg">
+            <button type="button" :class="{ on: viewMode === 'table' }" @click="viewMode = 'table'">{{ $t('fp.table') }}</button>
+            <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ $t('fp.code') }}</button>
+          </div>
           <button v-if="isMd && status === 'ok' && viewMode === 'preview'" class="fmt-btn" :title="$t('fp.pdf.tip')" @click="printPdf">{{ $t('fp.pdf') }}</button>
           <span v-if="saveState === 'saving'" class="save saveing">{{ $t('fp.saving') }}</span>
           <span v-else-if="saveState === 'saved'" class="save saveok">✓ {{ $t('fp.saved', { msg: saveMsg }) }}</span>
@@ -760,8 +788,8 @@ onBeforeUnmount(() => {
           <span class="twrap">
             <button class="fmt-btn" :class="{ on: toolsOpen }" :title="$t('fp.tools')" @click.stop="toolsOpen = !toolsOpen">{{ $t('fp.tools') }}</button>
             <div v-if="toolsOpen" class="toolsmenu" @click.stop>
-              <button v-if="canFormat && showEditor" class="mi" @click="runTools('format')">{{ $t('fp.format') }}</button>
-              <button v-if="canMinify && showEditor && status === 'ok'" class="mi" :disabled="minifying" @click="runTools('minify')">{{ minifying ? $t('fp.minifying') : $t('fp.minify') }}</button>
+              <button v-if="canFormat" class="mi" @click="runTools('format')">{{ $t('fp.format') }}</button>
+              <button v-if="canMinify && status === 'ok'" class="mi" :disabled="minifying" @click="runTools('minify')">{{ minifying ? $t('fp.minifying') : $t('fp.minify') }}</button>
               <div v-if="canSort" class="mi has-sub">{{ $t('fp.sort') }}<span class="caret">▸</span>
                 <div class="submenu">
                   <button v-for="s in SORT_ITEMS" :key="s.mode" @click="applySort(s.mode)">{{ s.label }}</button>
@@ -793,9 +821,12 @@ onBeforeUnmount(() => {
         <div v-show="viewMode === 'preview'" class="pane">
           <div v-if="isMd" class="scroll">
             <div v-if="mdErr" class="note err">{{ mdErr }}</div>
-            <div v-show="!mdErr" ref="mdBodyRef" class="md-body" v-html="mdHtml" />
+            <div v-show="!mdErr" ref="mdBodyRef" class="md-body" v-html="mdHtml" @click="onMdBodyClick" />
           </div>
           <iframe v-else-if="isHtmlFile" class="html-frame" :srcdoc="raw" sandbox="allow-scripts allow-modals" />
+        </div>
+        <div v-if="isCsv && viewMode === 'table' && status === 'ok' && !isBinary" class="csv-pane">
+          <CsvTable :text="raw" />
         </div>
         <div v-show="showEditor" ref="editorHost" class="editor" />
         <CurlView v-if="viewMode === 'curl' && status === 'ok' && !isBinary" project-id="" :path="path" :text="raw" @update:text="applyExternalText" />
@@ -977,6 +1008,7 @@ onBeforeUnmount(() => {
 .seg button { background: transparent; border: none; color: var(--tx3); font-size: 11px; padding: 2px 10px; cursor: pointer; border-radius: 3px; }
 .seg button.on { background: var(--ac); color: var(--onac); }
 .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.csv-pane { flex: 1; min-height: 0; display: flex; }
 .scroll { flex: 1; overflow: auto; min-height: 0; padding: 14px 20px 40px; }
 .html-frame { display: block; width: 100%; height: 100%; border: none; background: #fff; }
 .editor { flex: 1; min-height: 0; overflow: auto; }

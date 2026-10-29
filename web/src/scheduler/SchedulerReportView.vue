@@ -4,6 +4,7 @@ import type { SchedulerJob } from '@devflow/shared/scheduler';
 import type { TaskView, TaskPrompt } from './useScheduler';
 import { formatTime, runStatusLabel, jobStatusClass } from './format';
 import { renderRemoteMarkdown } from '../markdown';
+import { useMarkdownEnhance } from '../markdown-enhance/useEnhance';
 
 const props = defineProps<{
   task: TaskView;
@@ -31,6 +32,8 @@ const report = computed(() => {
   return '';
 });
 const reportHtml = computed(() => (report.value ? renderRemoteMarkdown(report.value) : ''));
+const reportBody = ref<HTMLElement | null>(null);
+useMarkdownEnhance(reportHtml, reportBody);
 const fallbackPrompt = computed(() => {
   const ai = props.task.ai;
   if (props.task.type !== 'ai' || !ai) return '';
@@ -115,7 +118,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); });
         <div v-if="activeJob?.workIP" class="rv-meta rv-worker">workIP: {{ activeJob.workIP }}</div>
         <div v-if="activeResult.reportId" class="rv-meta rv-report-meta">{{ $t('sched.report.id') }}: {{ activeResult.reportId }}</div>
         <div v-if="activeResult.reportArchivePath" class="rv-meta rv-report-meta" :title="activeResult.reportArchivePath">{{ $t('sched.report.archive') }}: {{ activeResult.reportArchivePath }}</div>
-        <div v-if="report" class="md-body" v-html="reportHtml" />
+        <div v-if="report" ref="reportBody" class="md-body" v-html="reportHtml" />
         <div v-else class="rv-empty">{{ $t('sched.report.empty') }}</div>
       </div>
     </div>

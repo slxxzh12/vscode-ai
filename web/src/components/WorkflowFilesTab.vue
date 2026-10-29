@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { t } from '../i18n';
 import { renderRemoteMarkdown } from '../markdown';
+import { useMarkdownEnhance } from '../markdown-enhance/useEnhance';
 
 interface TreeNode {
   name: string;
@@ -12,6 +13,7 @@ interface TreeNode {
 }
 
 const props = defineProps<{ workflowId: string }>();
+const emit = defineEmits<{ (e: 'deleted'): void }>();
 const tree = ref<TreeNode[]>([]);
 const selected = ref<TreeNode | null>(null);
 const content = ref('');
@@ -31,6 +33,8 @@ const rows = computed(() => {
   return out;
 });
 const html = computed(() => (content.value ? renderRemoteMarkdown(content.value) : ''));
+const mdBody = ref<HTMLElement | null>(null);
+useMarkdownEnhance(html, mdBody);
 
 async function loadTree() {
   selected.value = null;
@@ -79,6 +83,28 @@ async function openFile(node: TreeNode) {
   }
 }
 
+async function removeFile(node: TreeNode) {
+  if (node.type !== 'file') return;
+  if (!window.confirm(t('wfe.files.delete_confirm', { name: node.name }))) return;
+  revealMsg.value = '';
+  try {
+    const res = await fetch('/api/workflows-file-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: node.path }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data && data.error) || `HTTP ${res.status}`);
+    }
+    if (selected.value?.path === node.path) { selected.value = null; content.value = ''; }
+    await loadTree();
+    emit('deleted');
+  } catch (e: any) {
+    revealMsg.value = t('wfe.files.delete_failed', { msg: String(e?.message || e) });
+  }
+}
+
 watch(() => props.workflowId, loadTree, { immediate: true });
 </script>
 
@@ -108,6 +134,7 @@ watch(() => props.workflowId, loadTree, { immediate: true });
         >
           <span class="ico">{{ row.node.type === 'dir' ? '📁' : '📄' }}</span>
           <span class="nm">{{ row.node.name }}</span>
+          <button v-if="row.node.type === 'file'" class="wf-del" :title="$t('wfe.files.delete')" @click.stop="removeFile(row.node)">×</button>
         </div>
         <div v-if="!rows.length" class="wf-empty">{{ $t('wfe.files.empty') }}</div>
       </div>
@@ -115,7 +142,7 @@ watch(() => props.workflowId, loadTree, { immediate: true });
         <template v-if="selected">
           <div class="wf-name">{{ selected.name }}</div>
           <div v-if="error" class="wf-empty">{{ error }}</div>
-          <div v-else class="md-body" v-html="html" />
+          <div v-else ref="mdBody" class="md-body" v-html="html" />
         </template>
         <div v-else class="wf-empty">{{ $t('wfe.files.select') }}</div>
       </div>
@@ -139,6 +166,9 @@ watch(() => props.workflowId, loadTree, { immediate: true });
 .wf-row.file { cursor: pointer; }
 .wf-row.file:hover { background: var(--bg5, var(--bg4)); color: var(--tx1); }
 .wf-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-del { flex: none; margin-left: auto; background: none; border: none; color: var(--tx5); cursor: pointer; font-size: 14px; line-height: 1; opacity: 0; padding: 0 2px; }
+.wf-row:hover .wf-del { opacity: 1; }
+.wf-del:hover { color: var(--err); }
 .wf-view { flex: 1; min-width: 0; overflow: auto; border: 1px solid var(--bd); border-radius: 6px; }
 .wf-name { padding: 8px 12px; border-bottom: 1px solid var(--bd); color: var(--tx1); font-weight: 600; font-size: 12px; }
 .md-body { padding: 12px 16px; color: var(--tx); }

@@ -10,6 +10,7 @@ import { scheduleSummary, formatTime, runStatusLabel, recentJobsOf, typeLabel } 
 import { t } from '../i18n';
 import CodeEditor from '../components/CodeEditor.vue';
 import { renderRemoteMarkdown } from '../markdown';
+import { useMarkdownEnhance } from '../markdown-enhance/useEnhance';
 
 const props = defineProps<{ terminal: any; onOpenSession?: (sessionId: string) => void; projectRoot?: string; projectId?: string | null }>();
 const sched = useScheduler(props.terminal);
@@ -339,6 +340,8 @@ function resetChatWidth() {
 let chatTimer: ReturnType<typeof setInterval> | null = null;
 
 const chatReportHtml = computed(() => (chatReport.value ? renderRemoteMarkdown(chatReport.value) : ''));
+const chatReportBody = ref<HTMLElement | null>(null);
+useMarkdownEnhance(chatReportHtml, chatReportBody);
 const chatStatusLabel = computed(() => (chatStatus.value == null ? '' : runStatusLabel(chatStatus.value)));
 const chatProcess = computed(() => formatNgaEvents(chatLog.value));
 const DEFAULT_SCHEDULE = { mode: 'interval' as const, interval: { every: 1, unit: 'day' as const }, daily: { at: '09:30', weekdays: [] as number[] } };
@@ -822,7 +825,7 @@ onBeforeUnmount(() => {
               <div v-if="chatResultData.reportUrl" class="chat-report-link">
                 <a :href="chatResultData.reportUrl" target="_blank" rel="noopener">{{ chatResultData.reportUrl }}</a>
               </div>
-              <div v-if="chatReport" class="chat-report md-body" v-html="chatReportHtml" />
+              <div v-if="chatReport" ref="chatReportBody" class="chat-report md-body" v-html="chatReportHtml" />
               <div v-else class="chat-empty">{{ $t('sched.chat.empty_result') }}</div>
             </template>
           </section>
