@@ -16,7 +16,7 @@ const MARKDOWN_CSS = fs.readFileSync(path.join(SHARED_DIR, 'markdown.css'), 'utf
 export const PAGE_THEME_CSS = `
 :root {
   color-scheme: dark;
-  --bg0: #1e2227; --bg2: #141920; --bg3: #0e1116; --bg4: #222932;
+  --bg0: #1e2227; --bg2: #141920; --bg3: #0e1116; --bg4: #222932; --bg5: #262c34;
   --bd: #2a323e; --tx: #d5dae1; --tx1: #e6e9ef; --tx2: #9aa4b2;
   --ac: #2f6feb; --ac2: #4c9aff; --errtx: #fca5a5;
   --hlk: #ff7b72; --hls: #a5d6ff; --hlc: #8b949e; --hln: #79c0ff;
@@ -25,7 +25,7 @@ export const PAGE_THEME_CSS = `
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg0: #eef1f5; --bg2: #eef1f5; --bg3: #fafbfc; --bg4: #f0f2f5;
+    --bg0: #eef1f5; --bg2: #eef1f5; --bg3: #fafbfc; --bg4: #f0f2f5; --bg5: #e3e7ec;
     --bd: #d7dce3; --tx: #1f2937; --tx1: #111827; --tx2: #4b5563;
     --ac: #2563eb; --ac2: #2563eb; --errtx: #b91c1c;
     --hlk: #cf222e; --hls: #0a3069; --hlc: #6e7781; --hln: #0550ae;

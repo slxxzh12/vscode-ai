@@ -175,7 +175,26 @@ export function printMarkdown(html: string, title: string): void {
   setTimeout(fire, 8000);
 }
 
+// ```mermaid row 标记的连续图块自动并排（外层 flex 容器）
+export function groupMermaidSides(container: HTMLElement): void {
+  for (const pre of Array.from(container.querySelectorAll<HTMLElement>('pre.mermaid.mermaid-side'))) {
+    if (pre.closest('.mermaid-row')) continue;
+    const group: HTMLElement[] = [pre];
+    let next = pre.nextElementSibling;
+    while (next && next.matches('pre.mermaid.mermaid-side')) {
+      group.push(next as HTMLElement);
+      next = next.nextElementSibling;
+    }
+    if (group.length < 2) continue;
+    const wrap = document.createElement('div');
+    wrap.className = 'mermaid-row';
+    pre.before(wrap);
+    for (const item of group) wrap.appendChild(item);
+  }
+}
+
 export async function renderMermaid(container: HTMLElement): Promise<void> {
+  groupMermaidSides(container);
   const nodes = Array.from(container.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed="true"])'));
   if (nodes.length === 0) return;
   const mod = await import('mermaid');

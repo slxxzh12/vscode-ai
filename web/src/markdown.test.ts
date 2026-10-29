@@ -21,6 +21,11 @@ describe('renderMarkdown', () => {
     expect(h).toContain('data-processed="false"');
   });
 
+  it('mermaid row → 输出并排标记', () => {
+    const h = renderMarkdown('```mermaid row\ngraph LR\nA-->B\n```', P);
+    expect(h).toContain('class="mermaid mermaid-side"');
+  });
+
   it('js 代码块 → hljs 高亮', () => {
     const h = renderMarkdown('```js\nconst a = 1\n```', P);
     expect(h).toContain('hljs');

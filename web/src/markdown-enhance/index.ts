@@ -1,4 +1,4 @@
-import { renderMermaid } from '../markdown';
+import { groupMermaidSides, renderMermaid } from '../markdown';
 import { parseMermaidChart, renderChart, type ChartHandle } from './charts';
 import { extractTable, mountTable } from './table';
 
@@ -25,6 +25,9 @@ export async function enhanceMarkdown(container: HTMLElement): Promise<void> {
   disposeMarkdown(container);
   const state: State = { items: [] };
   states.set(container, state);
+
+  // 先按 ```mermaid row 分组，再转换 xychart/pie，保证并排容器里的图表也留在同一行
+  groupMermaidSides(container);
 
   for (const table of Array.from(container.querySelectorAll<HTMLTableElement>('table'))) {
     const data = extractTable(table);

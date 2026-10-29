@@ -16,7 +16,7 @@
 .md-body hr { margin: 1.4em 0; border: none; border-top: 1px solid var(--bd); }
 .md-body table { border-collapse: collapse; margin: 0.9em 0; display: block; max-width: 100%; overflow: auto; }
 .md-body th, .md-body td { border: 1px solid var(--bd); padding: 6px 12px; }
-.md-body th { background: var(--bg4); font-weight: 600; }
+.md-body th { background: linear-gradient(180deg, var(--bg5), var(--bg4)); font-weight: 600; border-bottom-color: var(--ac2); }
 .md-body tr:nth-child(2n) td { background: var(--bg2); }
 .md-body code { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; background: var(--bg4); padding: 0.15em 0.4em; border-radius: 4px; color: var(--hls); }
 .md-body pre { background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; overflow: auto; margin: 0.9em 0; }
@@ -27,10 +27,58 @@
 .md-body .mermaid { display: flex; justify-content: center; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; padding: 10px; margin: 0.9em 0; }
 .md-body .mermaid svg { max-width: 100%; }
 .md-body .mermaid-err { color: var(--errtx); font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; padding: 8px 12px; }
+/* ```mermaid row``` 连续图块：一行并排，窄屏自动换行 */
+.md-body .mermaid-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; margin: 0.9em 0; }
+.md-body .mermaid-row > svg,
+.md-body .mermaid-row > pre.mermaid,
+.md-body .mermaid-row > .md-echart { flex: 1 1 320px; min-width: 0; max-width: calc(50% - 8px); margin: 0; }
+.md-body .mermaid-row > svg { height: auto; }
+@media (max-width: 640px) {
+  .md-body .mermaid-row { flex-direction: column; }
+  .md-body .mermaid-row > svg,
+  .md-body .mermaid-row > pre.mermaid,
+  .md-body .mermaid-row > .md-echart { max-width: 100%; }
+}
 .md-body .md-el-table { margin: 0.9em 0; }
 .md-body .md-echart { width: 100%; height: 320px; margin: 0.9em 0; }
 
 /* 代码块内 hljs token 颜色（主题变量驱动） */
+/* Markdown 表格增强为 Element Plus 后的默认外观：彩色表头 + 斑马纹 + 悬浮高亮 */
+.md-el-table {
+  margin: 0.9em 0;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg1);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
+}
+.md-el-table .el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--bg4);
+  --el-table-header-text-color: var(--tx1);
+  --el-table-text-color: var(--tx);
+  --el-table-border-color: var(--bd);
+  --el-table-row-hover-bg-color: var(--bg5);
+  color: var(--tx);
+}
+.md-el-table .el-table th.el-table__cell {
+  background: linear-gradient(180deg, var(--bg5), var(--bg4));
+  color: var(--tx1);
+  font-weight: 600;
+  border-bottom: 2px solid var(--ac2) !important;
+}
+.md-el-table .el-table .el-table__row--striped td.el-table__cell { background: var(--bg2); }
+.md-el-table .el-table__body tr:hover > td.el-table__cell { background: var(--bg5) !important; }
+.md-el-table .el-table td.el-table__cell,
+.md-el-table .el-table th.el-table__cell { border-color: var(--bd); }
+.md-el-table .el-table__inner-wrapper::before { display: none; }
+.md-el-table .caret-wrapper i,
+.md-el-table .el-table__column-filter-trigger i { color: var(--ac2); }
+
+/* 静态页面里未增强的普通 Markdown 表格也给一点颜色 */
+.md-body tbody tr:hover td { background: var(--bg5); }
+
 .hljs { background: transparent; color: inherit; }
 .md-body .hljs-keyword, .md-body .hljs-selector-tag, .md-body .hljs-name { color: var(--hlk); }
 .md-body .hljs-string, .md-body .hljs-regexp, .md-body .hljs-addition { color: var(--hls); }

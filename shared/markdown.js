@@ -24,9 +24,10 @@ export function createMarkdown() {
   const defaultFence = md.renderer.rules.fence;
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
-    const info = (token.info || '').trim().split(/\s+/)[0].toLowerCase();
-    if (info === 'mermaid') {
-      return `<pre class="mermaid" data-processed="false">${escapeHtml(token.content)}</pre>\n`;
+    const parts = (token.info || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (parts[0] === 'mermaid') {
+      const side = parts.includes('row') ? ' mermaid-side' : '';
+      return `<pre class="mermaid${side}" data-processed="false">${escapeHtml(token.content)}</pre>\n`;
     }
     return defaultFence(tokens, idx, options, env, self);
   };
