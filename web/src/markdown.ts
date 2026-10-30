@@ -1,4 +1,5 @@
 import { createMarkdown, escapeHtml as escHtml, isMarkdownFile } from '@devflow/shared/markdown';
+import { groupMermaidSides, renderMermaidBlocks, type MermaidLike } from '@devflow/shared/markdown-client';
 import { t } from './i18n';
 
 export interface MarkdownOptions {
@@ -175,42 +176,13 @@ export function printMarkdown(html: string, title: string): void {
   setTimeout(fire, 8000);
 }
 
-// ```mermaid row 标记的连续图块自动并排（外层 flex 容器）
-export function groupMermaidSides(container: HTMLElement): void {
-  for (const pre of Array.from(container.querySelectorAll<HTMLElement>('pre.mermaid.mermaid-side'))) {
-    if (pre.closest('.mermaid-row')) continue;
-    const group: HTMLElement[] = [pre];
-    let next = pre.nextElementSibling;
-    while (next && next.matches('pre.mermaid.mermaid-side')) {
-      group.push(next as HTMLElement);
-      next = next.nextElementSibling;
-    }
-    if (group.length < 2) continue;
-    const wrap = document.createElement('div');
-    wrap.className = 'mermaid-row';
-    pre.before(wrap);
-    for (const item of group) wrap.appendChild(item);
-  }
-}
+export { groupMermaidSides };
 
 export async function renderMermaid(container: HTMLElement): Promise<void> {
-  groupMermaidSides(container);
-  const nodes = Array.from(container.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed="true"])'));
-  if (nodes.length === 0) return;
+  if (!container.querySelector('pre.mermaid:not([data-processed="true"])')) return;
   const mod = await import('mermaid');
-  const mm = mod.default;
-  mm.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'dark' });
-  let seq = 0;
-  await Promise.all(nodes.map(async (pre) => {
-    const code = pre.textContent || '';
-    const id = `df-mm-${Date.now().toString(36)}-${seq++}`;
-    try {
-      const { svg } = await mm.render(id, code);
-      const holder = document.getElementById(id);
-      if (holder) holder.remove();
-      pre.outerHTML = svg;
-    } catch (e) {
-      pre.innerHTML = `<div class="mermaid-err">${escHtml(t('markdown.mermaid_error', { msg: String((e as Error)?.message || e) }))}</div>`;
-    }
-  }));
+  await renderMermaidBlocks(container, mod.default as unknown as MermaidLike, {
+    theme: 'dark',
+    errorText: (msg) => t('markdown.mermaid_error', { msg }),
+  });
 }

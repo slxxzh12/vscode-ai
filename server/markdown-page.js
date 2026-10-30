@@ -3,14 +3,17 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { escapeHtml, isMarkdownFile, renderMarkdownHtml } from '@devflow/shared/markdown';
 import { t } from './i18n.js';
-import { MERMAID_SCRIPT_NAME } from './mermaid-asset.js';
+import { MARKDOWN_CLIENT_SCRIPT_NAME, MERMAID_SCRIPT_NAME } from './mermaid-asset.js';
 
 export { isMarkdownFile };
 
 // 用包目录拼接 CSS 路径，避免把 .css 当作 ESM 说明符（打包自检会 import 代码里的 @devflow/* 字符串）
 const require = createRequire(import.meta.url);
 const SHARED_DIR = path.dirname(require.resolve('@devflow/shared'));
-const MARKDOWN_CSS = fs.readFileSync(path.join(SHARED_DIR, 'markdown.css'), 'utf8');
+// 每次渲染都读一次（文件很小），避免开发时改完 shared/markdown.css 后静态页仍用进程启动时的旧样式
+function markdownCss() {
+  return fs.readFileSync(path.join(SHARED_DIR, 'markdown.css'), 'utf8');
+}
 
 // 独立页面的主题变量来自 web/src/styles.css；浅色跟随系统偏好
 export const PAGE_THEME_CSS = `
@@ -43,14 +46,14 @@ function jsString(s) {
   return JSON.stringify(String(s)).replace(/</g, '\\u003c');
 }
 
-// 独立页面不经过 web 打包，这里直接引用 serveStatic 拦截后直出的 Mermaid 脚本
+// 独立页面不经过 web 打包，但复用同一份 @devflow/shared/markdown-client 增强代码
 function mermaidHtml() {
-  const errTpl = t('markdown.mermaid_error', { msg: '@@MSG@@' });
-  return `<script src="${MERMAID_SCRIPT_NAME}"></script><script>(function(){var mm=window.mermaid;if(!mm)return;var nodes=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid'));if(!nodes.length)return;var light=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches;mm.initialize({startOnLoad:false,securityLevel:'strict',theme:light?'default':'dark'});var errTpl=${jsString(errTpl)};var seq=0;nodes.forEach(function(pre){var id='df-mm-'+Date.now().toString(36)+'-'+(seq++);mm.render(id,pre.textContent||'').then(function(r){var holder=document.getElementById(id);if(holder)holder.remove();pre.outerHTML=r.svg;}).catch(function(e){var holder=document.getElementById(id);if(holder)holder.remove();var box=document.createElement('div');box.className='mermaid-err';box.textContent=errTpl.replace('@@MSG@@',String((e&&e.message)||e));pre.textContent='';pre.appendChild(box);});});})();</script>`;
+  const errTpl = jsString(t('markdown.mermaid_error', { msg: '@@MSG@@' }));
+  return `<script src="${MERMAID_SCRIPT_NAME}"></script><script type="module">import { renderMermaidBlocks } from './${MARKDOWN_CLIENT_SCRIPT_NAME}';const mm=window.mermaid;if(mm){const light=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches;const errTpl=${errTpl};renderMermaidBlocks(document,mm,{theme:light?'default':'dark',errorText:(msg)=>errTpl.replace('@@MSG@@',String(msg||''))});}</script>`;
 }
 
 export function renderMarkdownDocument(text, title, extraHtml = '') {
   const body = renderMarkdownHtml(text);
   const scripts = body.includes('class="mermaid"') ? mermaidHtml() : '';
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${THEME_CSS}${MARKDOWN_CSS}</style></head><body><article class="md-body md-page">${body}</article>${scripts}${extraHtml}</body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${THEME_CSS}${markdownCss()}</style></head><body><article class="md-body md-page">${body}</article>${scripts}${extraHtml}</body></html>`;
 }

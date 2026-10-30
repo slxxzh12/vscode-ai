@@ -26,6 +26,24 @@ describe('parseMermaidChart', () => {
     });
   });
 
+  it('解析多条带名称的折线与柱状系列', () => {
+    const spec = parseMermaidChart([
+      'xychart-beta',
+      '  x-axis [Q1, Q2]',
+      '  line "华东" [1, 2]',
+      '  line "华南" [3, 4]',
+      '  bar "线上" [5, 6]',
+    ].join('\n'));
+    expect(spec).toMatchObject({
+      kind: 'xychart',
+      series: [
+        { type: 'line', name: '华东', data: [1, 2] },
+        { type: 'line', name: '华南', data: [3, 4] },
+        { type: 'bar', name: '线上', data: [5, 6] },
+      ],
+    });
+  });
+
   it('解析只有 line、没有轴标题的 xychart', () => {
     const spec = parseMermaidChart([
       'xychart-beta',

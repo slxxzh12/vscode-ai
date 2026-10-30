@@ -118,16 +118,6 @@ function onSortChange(e: { prop: string; order: SortOrder | null }) {
 .csv { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; box-sizing: border-box; }
 .csv-bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .csv-sum { color: var(--tx3); font-size: 12px; }
-.csv-table { flex: 1; min-height: 0; border-radius: 8px; overflow: hidden; }
-.csv-table :deep(.el-table__header th.el-table__cell) {
-  background: linear-gradient(180deg, var(--bg5), var(--bg4));
-  color: var(--tx1);
-  font-weight: 600;
-  border-bottom: 2px solid var(--ac2) !important;
-}
-.csv-table :deep(.el-table__row--striped td.el-table__cell) { background: var(--bg2); }
-.csv-table :deep(.el-table__body tr:hover > td.el-table__cell) { background: var(--bg5) !important; }
-.csv-table :deep(.caret-wrapper i),
-.csv-table :deep(.el-table__column-filter-trigger i) { color: var(--ac2); }
+.csv-table { flex: 1; min-height: 0; }
 .csv-empty { color: var(--tx5); font-size: 12px; padding: 20px; text-align: center; }
 </style>

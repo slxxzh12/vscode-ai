@@ -626,10 +626,15 @@ test('Markdown 图表页加载 Mermaid 脚本（相对路径直出）', async ()
   const html = await res.text();
   assert.match(html, /class="mermaid"/);
   assert.match(html, /src="__devflow_mermaid__\.js"/);
+  assert.match(html, /\.\/__devflow_markdown__\.js/);
   const asset = await fetch(`http://127.0.0.1:${port}/doc/__devflow_mermaid__.js`);
   assert.equal(asset.status, 200);
   assert.match(asset.headers.get('content-type'), /javascript/);
   assert.match(await asset.text(), /globalThis\["mermaid"\]/);
+  const client = await fetch(`http://127.0.0.1:${port}/doc/__devflow_markdown__.js`);
+  assert.equal(client.status, 200);
+  assert.match(client.headers.get('content-type'), /javascript/);
+  assert.match(await client.text(), /renderMermaidBlocks/);
   engine.stop(rule.id);
 });
 

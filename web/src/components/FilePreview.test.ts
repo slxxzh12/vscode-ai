@@ -19,6 +19,21 @@ describe('FilePreview（项目来源回归）', () => {
     w.unmount();
   });
 
+  it('Markdown 表格只渲染一个 Element Plus 表头', async () => {
+    const md = '| A | B |\n| --- | --- |\n| 1 | 2 |\n';
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => {
+      if (String(u).startsWith('/api/file?')) return okJson({ name: 'a.md', path: 'a.md', size: md.length, content: md });
+      return okJson({});
+    }));
+    const w = mountC(FilePreview, { props: { projectId: 'p', path: 'a.md', name: 'a.md' } });
+    await flushPromises();
+    await new Promise((r) => setTimeout(r, 30));
+    await flushPromises();
+    expect(w.findAll('.md-el-table').length).toBe(1);
+    expect(w.findAll('.el-table').length).toBe(1);
+    w.unmount();
+  });
+
   it('加载失败显示错误', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500, json: async () => ({ error: 'boom' }) })));
     const w = mountC(FilePreview, { props: { projectId: 'p', path: 'a.txt', name: 'a.txt' } });

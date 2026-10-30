@@ -37,6 +37,8 @@ function compareCells(a: string, b: string): number {
 }
 
 export function extractTable(table: HTMLTableElement): TableData | null {
+  // Element Plus 表格内部也是 <table>，不能再次提取，否则会生成第二个表头
+  if (table.closest('.el-table')) return null;
   if (table.querySelector('table')) return null;
   const headRow = table.querySelector('thead tr');
   if (!headRow) return null;

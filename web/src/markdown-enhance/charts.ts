@@ -1,4 +1,4 @@
-export type ChartSeries = { type: 'line' | 'bar'; data: number[] };
+export type ChartSeries = { type: 'line' | 'bar'; name?: string; data: number[] };
 
 export type ChartSpec =
   | {
@@ -82,9 +82,11 @@ function parseXyChart(lines: string[]): ChartSpec | null {
       continue;
     }
     if (low.startsWith('line ') || low.startsWith('bar ')) {
-      const data = parseNumberList(line.slice(line.indexOf(' ')));
       const type = low.startsWith('line') ? 'line' : 'bar';
-      if (data) series.push({ type, data });
+      const rest = line.slice(line.indexOf(' '));
+      const label = rest.match(/^\s*"([^"]*)"/) || rest.match(/^\s*'([^']*)'/);
+      const data = parseNumberList(rest);
+      if (data) series.push(label ? { type, name: label[1], data } : { type, data });
     }
   }
 
@@ -169,8 +171,8 @@ export async function renderChart(el: HTMLElement, spec: ChartSpec): Promise<Cha
     const multiple = spec.series.length > 1;
     chart.setOption({
       ...base,
-      tooltip: { trigger: 'axis' },
-      legend: multiple ? { bottom: 0, textStyle: { color: th.text } } : undefined,
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+      legend: multiple ? { bottom: 0, type: 'scroll', textStyle: { color: th.text } } : undefined,
       grid: {
         left: 12,
         right: 18,
@@ -198,11 +200,15 @@ export async function renderChart(el: HTMLElement, spec: ChartSpec): Promise<Cha
         splitLine: { lineStyle: { color: th.split } },
       },
       series: spec.series.map((s, i) => ({
-        name: `${s.type} ${i + 1}`,
+        name: s.name || `${s.type} ${i + 1}`,
         type: s.type,
         data: s.data,
         smooth: s.type === 'line',
-        symbolSize: 6,
+        symbol: 'circle',
+        symbolSize: 5,
+        showSymbol: s.type === 'line' && spec.series.filter((x) => x.type === 'line').length <= 2,
+        barMaxWidth: 26,
+        emphasis: { focus: 'series' },
       })),
     });
   } else {

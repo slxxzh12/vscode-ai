@@ -9,14 +9,101 @@
 .md-body p { margin: 0.7em 0; }
 .md-body a { color: var(--ac2); text-decoration: none; }
 .md-body a:hover { text-decoration: underline; }
-.md-body ul, .md-body ol { margin: 0.7em 0; padding-left: 1.8em; }
-.md-body li { margin: 0.25em 0; }
-.md-body li > input[type="checkbox"] { margin-right: 0.4em; }
+.md-body ul, .md-body ol { margin: 0.8em 0; padding-left: 0; }
+.md-body ul { list-style: none; }
+.md-body li { position: relative; margin: 0.3em 0; padding-left: 1.4em; }
+.md-body ul > li::before {
+  content: "";
+  position: absolute;
+  left: 0.3em;
+  top: 0.68em;
+  width: 0.42em;
+  height: 0.42em;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+  box-shadow: 0 0 0 3px rgba(76, 154, 255, 0.16);
+}
+.md-body ul ul > li::before {
+  width: 0.34em;
+  height: 0.34em;
+  border-radius: 2px;
+  background: var(--ac2);
+  box-shadow: none;
+  transform: rotate(45deg);
+}
+/* 有序列表做成 PPT 式的编号卡片 */
+.md-body ol { list-style: none; counter-reset: md-ol; }
+.md-body ol > li {
+  counter-increment: md-ol;
+  margin: 0.5em 0;
+  padding: 0.5em 0.9em 0.5em 3em;
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac2);
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--bg2), transparent 75%);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.md-body ol > li:hover {
+  border-color: var(--ac2);
+  transform: translateX(2px);
+}
+.md-body ol > li::before {
+  content: counter(md-ol);
+  position: absolute;
+  left: 9px;
+  top: 7px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+  color: #fff;
+  font-size: 0.8em;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(47, 111, 235, 0.35);
+}
+/* 嵌套的有序列表保持轻量，不再套卡片 */
+.md-body ol ol { counter-reset: md-ol; margin: 0.4em 0; }
+.md-body ol ol > li,
+.md-body ul ol > li {
+  margin: 0.25em 0;
+  padding: 0.15em 0 0.15em 2em;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.md-body ol ol > li:hover,
+.md-body ul ol > li:hover { transform: none; border-color: transparent; }
+.md-body ol ol > li::before,
+.md-body ul ol > li::before {
+  top: 3px;
+  left: 1px;
+  width: 19px;
+  height: 19px;
+  background: var(--bg4);
+  color: var(--ac2);
+  box-shadow: none;
+}
+.md-body li > p { margin: 0.3em 0; }
+.md-body li > input[type="checkbox"] { margin-right: 0.4em; accent-color: var(--ac2); }
+.md-body li:has(> input[type="checkbox"])::before { display: none; }
+/* 嵌套列表加一条很淡的引导线，层次更清楚 */
+.md-body ul ul, .md-body ul ol, .md-body ol ul, .md-body ol ol {
+  margin: 0.3em 0;
+  padding-left: 1.1em;
+  border-left: 1px solid var(--bd);
+}
 .md-body blockquote { margin: 0.8em 0; padding: 0.1em 1em; color: var(--tx2); border-left: 3px solid var(--ac); background: var(--bg2); border-radius: 0 6px 6px 0; }
 .md-body hr { margin: 1.4em 0; border: none; border-top: 1px solid var(--bd); }
 .md-body table { border-collapse: collapse; margin: 0.9em 0; display: block; max-width: 100%; overflow: auto; }
 .md-body th, .md-body td { border: 1px solid var(--bd); padding: 6px 12px; }
-.md-body th { background: linear-gradient(180deg, var(--bg5), var(--bg4)); font-weight: 600; border-bottom-color: var(--ac2); }
+.md-body th { background: var(--bg4); font-weight: 600; }
 .md-body tr:nth-child(2n) td { background: var(--bg2); }
 .md-body code { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; background: var(--bg4); padding: 0.15em 0.4em; border-radius: 4px; color: var(--hls); }
 .md-body pre { background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; overflow: auto; margin: 0.9em 0; }
@@ -43,42 +130,6 @@
 .md-body .md-echart { width: 100%; height: 320px; margin: 0.9em 0; }
 
 /* 代码块内 hljs token 颜色（主题变量驱动） */
-/* Markdown 表格增强为 Element Plus 后的默认外观：彩色表头 + 斑马纹 + 悬浮高亮 */
-.md-el-table {
-  margin: 0.9em 0;
-  border: 1px solid var(--bd);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--bg1);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
-}
-.md-el-table .el-table {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: var(--bg4);
-  --el-table-header-text-color: var(--tx1);
-  --el-table-text-color: var(--tx);
-  --el-table-border-color: var(--bd);
-  --el-table-row-hover-bg-color: var(--bg5);
-  color: var(--tx);
-}
-.md-el-table .el-table th.el-table__cell {
-  background: linear-gradient(180deg, var(--bg5), var(--bg4));
-  color: var(--tx1);
-  font-weight: 600;
-  border-bottom: 2px solid var(--ac2) !important;
-}
-.md-el-table .el-table .el-table__row--striped td.el-table__cell { background: var(--bg2); }
-.md-el-table .el-table__body tr:hover > td.el-table__cell { background: var(--bg5) !important; }
-.md-el-table .el-table td.el-table__cell,
-.md-el-table .el-table th.el-table__cell { border-color: var(--bd); }
-.md-el-table .el-table__inner-wrapper::before { display: none; }
-.md-el-table .caret-wrapper i,
-.md-el-table .el-table__column-filter-trigger i { color: var(--ac2); }
-
-/* 静态页面里未增强的普通 Markdown 表格也给一点颜色 */
-.md-body tbody tr:hover td { background: var(--bg5); }
-
 .hljs { background: transparent; color: inherit; }
 .md-body .hljs-keyword, .md-body .hljs-selector-tag, .md-body .hljs-name { color: var(--hlk); }
 .md-body .hljs-string, .md-body .hljs-regexp, .md-body .hljs-addition { color: var(--hls); }

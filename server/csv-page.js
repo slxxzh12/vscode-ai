@@ -9,9 +9,8 @@ const CSV_CSS = `
 .csv-wrap { overflow: auto; border: 1px solid var(--bd); border-radius: 6px; max-height: calc(100vh - 130px); }
 .csv-table { width: 100%; border-collapse: collapse; font: 13px/1.5 ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--tx); }
 .csv-table th, .csv-table td { border-bottom: 1px solid var(--bd); border-right: 1px solid var(--bd); padding: 6px 10px; text-align: left; vertical-align: top; white-space: nowrap; }
-.csv-table th { position: sticky; top: 0; z-index: 1; background: linear-gradient(180deg, var(--bg5), var(--bg4)); color: var(--tx1); font-weight: 600; border-bottom: 2px solid var(--ac2); }
+.csv-table th { position: sticky; top: 0; z-index: 1; background: var(--bg4); color: var(--tx1); font-weight: 600; }
 .csv-table tr:nth-child(2n) td { background: var(--bg2); }
-.csv-table tbody tr:hover td { background: var(--bg3); }
 .csv-table tr:last-child td { border-bottom: none; }
 .csv-table th:last-child, .csv-table td:last-child { border-right: none; }
 .csv-empty { color: var(--tx2); padding: 24px; text-align: center; }
