@@ -1,5 +1,6 @@
 import { computed, createApp, defineComponent, h, type PropType } from 'vue';
-import { ElTable, ElTableColumn } from 'element-plus';
+import { ElConfigProvider, ElTable, ElTableColumn } from 'element-plus';
+import { elementLocale } from '../element-locale';
 
 export type TableData = { headers: string[]; rows: string[][] };
 
@@ -74,34 +75,36 @@ const TableHost = defineComponent({
     );
     const filters = computed(() => props.headers.map((_, i) => filterOptions(props.rows, i)));
     return () =>
-      h(
-        ElTable,
-        { data: data.value, border: true, stripe: true, size: 'small', maxHeight: 420 },
-        () =>
-          props.headers.map((label, i) => {
-            const opts = filters.value[i];
-            return h(
-              ElTableColumn,
-              {
-                key: i,
-                prop: `c${i}`,
-                showOverflowTooltip: true,
-                sortable: true,
-                sortMethod: (a: Record<string, string>, b: Record<string, string>) =>
-                  compareCells(a[`c${i}`] ?? '', b[`c${i}`] ?? ''),
-                filters: opts.length ? opts : undefined,
-                filterMethod: opts.length
-                  ? (value: string, row: Record<string, string>) => row[`c${i}`] === value
-                  : undefined,
-                filterPlacement: 'bottom-end',
-              },
-              {
-                header: () => h('span', { innerHTML: label }),
-                default: ({ row }: { row: Record<string, string> }) =>
-                  h('span', { innerHTML: row[`c${i}`] ?? '' }),
-              },
-            );
-          }),
+      h(ElConfigProvider, { locale: elementLocale.value }, () =>
+        h(
+          ElTable,
+          { data: data.value, border: true, stripe: true, size: 'small', maxHeight: 420 },
+          () =>
+            props.headers.map((label, i) => {
+              const opts = filters.value[i];
+              return h(
+                ElTableColumn,
+                {
+                  key: i,
+                  prop: `c${i}`,
+                  showOverflowTooltip: true,
+                  sortable: true,
+                  sortMethod: (a: Record<string, string>, b: Record<string, string>) =>
+                    compareCells(a[`c${i}`] ?? '', b[`c${i}`] ?? ''),
+                  filters: opts.length ? opts : undefined,
+                  filterMethod: opts.length
+                    ? (value: string, row: Record<string, string>) => row[`c${i}`] === value
+                    : undefined,
+                  filterPlacement: 'bottom-end',
+                },
+                {
+                  header: () => h('span', { innerHTML: label }),
+                  default: ({ row }: { row: Record<string, string> }) =>
+                    h('span', { innerHTML: row[`c${i}`] ?? '' }),
+                },
+              );
+            }),
+        ),
       );
   },
 });

@@ -21,6 +21,12 @@ function highlightCode(code, lang) {
 
 export function createMarkdown() {
   const md = new MarkdownIt({ html: false, linkify: true, highlight: highlightCode });
+  // 原始表格单独打标记：样式只作用于 Markdown 表格，不影响 Element Plus 表格内部的 <table>
+  const defaultTableOpen = md.renderer.rules.table_open || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options));
+  md.renderer.rules.table_open = (tokens, idx, options, env, self) => {
+    tokens[idx].attrJoin('class', 'md-table');
+    return defaultTableOpen(tokens, idx, options, env, self);
+  };
   const defaultFence = md.renderer.rules.fence;
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];

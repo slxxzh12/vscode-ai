@@ -23,7 +23,7 @@ export interface ToolWorkbench {
 const cache = new Map<FileTool, ToolWorkbench>();
 
 // 各工具新建文件的默认扩展名：缺省则新建时用空文件名（用户手输）
-const DEFAULT_EXT: Partial<Record<FileTool, string>> = { notepad: '.txt', yaml: '.yaml', markdown: '.md' };
+const DEFAULT_EXT: Partial<Record<FileTool, string>> = { notepad: '.txt', yaml: '.yaml', markdown: '.md', js: '.js' };
 
 export function useToolWorkbench(tool: FileTool): ToolWorkbench {
   const hit = cache.get(tool);

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { flushPromises } from '@vue/test-utils';
 import { mountC } from '../../test-utils';
 
 const h = vi.hoisted(() => ({
@@ -37,5 +38,21 @@ describe('ToolDocPane', () => {
     const w = mountC(ToolDocPane, { props: { tool: 'notepad' } });
     expect(w.find('.tdp-empty').exists()).toBe(false);
     expect(w.find('.dv').exists()).toBe(true);
+  });
+
+  it('markdown / js 打开且无活动文件时自动新建并打开', async () => {
+    mountC(ToolDocPane, { props: { tool: 'markdown' } });
+    await flushPromises();
+    expect(h.newFile).toHaveBeenCalledTimes(1);
+    h.newFile.mockReset();
+    mountC(ToolDocPane, { props: { tool: 'js' } });
+    await flushPromises();
+    expect(h.newFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('notepad 打开时不会自动新建', async () => {
+    mountC(ToolDocPane, { props: { tool: 'notepad' } });
+    await flushPromises();
+    expect(h.newFile).not.toHaveBeenCalled();
   });
 });

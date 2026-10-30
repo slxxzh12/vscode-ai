@@ -566,7 +566,8 @@ onBeforeUnmount(() => {
         <option value="recurring">{{ $t('sched.filter.recurring') }}</option>
       </select>
       <button @click="sched.refresh()">{{ $t('sched.refresh') }}</button>
-      <button class="primary" @click="openCreate">{{ $t('sched.create') }}</button>
+      <button class="primary create-scheduled" @click="openCreate">{{ $t('sched.create_scheduled') }}</button>
+      <button class="primary create-ai" @click="openChatCreate">{{ $t('sched.create_ai') }}</button>
       <button @click="showImport = true">{{ $t('sched.import') }}</button>
       <button @click="exportAllTasks">{{ $t('sched.export_all') }}</button>
       <button @click="pickImportAll">{{ $t('sched.import_all') }}</button>
@@ -588,11 +589,6 @@ onBeforeUnmount(() => {
         <div class="sum-card sum-total"><span class="num">{{ sched.state.summary.total }}</span><span>{{ $t('sched.summary.total') }}</span></div>
       </div>
       <div class="list">
-        <button class="new-task-entry" @click="openChatCreate">
-          <span class="plus">＋</span>
-          <span class="nt-main">{{ $t('sched.chat.new') }}</span>
-          <span class="nt-hint">{{ $t('sched.chat.hint') }}</span>
-        </button>
         <div v-if="filteredTasks.length" class="listhead">
           <span class="lh-main">{{ $t('sched.col.name') }}</span>
           <span class="lh-status">{{ $t('sched.col.status') }}</span>
@@ -958,11 +954,6 @@ onBeforeUnmount(() => {
 .histitem { padding: 5px 6px; cursor: pointer; border-radius: 4px; font-size: 12px; color: var(--tx2); }
 .histitem.on { background: var(--bg5, var(--bg4)); }
 .logview { flex: 1; margin: 0; overflow: auto; background: var(--bg6, var(--bg1)); color: var(--tx2); font-family: ui-monospace, Consolas, monospace; font-size: 12px; padding: 8px; white-space: pre-wrap; }
-.new-task-entry { display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 8px; padding: 9px 12px; background: var(--bg1); color: var(--tx2); border: 1px dashed var(--bd); border-radius: 6px; cursor: pointer; text-align: left; font-family: inherit; }
-.new-task-entry:hover { border-color: var(--ac2); color: var(--tx1); }
-.new-task-entry .plus { color: var(--ac2); font-size: 16px; font-weight: 700; }
-.new-task-entry .nt-main { color: var(--tx1); font-weight: 600; }
-.new-task-entry .nt-hint { color: var(--tx5); font-size: 12px; }
 .chat-overlay { position: fixed; inset: 0; z-index: 80; background: var(--bg0, var(--bg1)); display: flex; }
 .chat-page { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .chat-head { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--bd); }

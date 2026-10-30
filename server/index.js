@@ -700,13 +700,13 @@ function buildWorkspace({ paths, port }) {
 
   const postmanHistory = createPostmanHistory({ dir: paths.postmanDir });
   const notepadStore = createNotepadStore({ dir: paths.notepadDir });
-  // 左侧文件树：每个小工具各用一份独立目录，复用同一套 store/路由逻辑
+  // 左侧文件树：yaml/translate 各用独立目录；文本、Markdown、JS 共用 tools/notepad，方便互相打开
   const fileStores = {
     notepad: notepadStore,
     yaml: createNotepadStore({ dir: paths.yamlDir }),
-    js: createNotepadStore({ dir: paths.jsDir }),
+    js: notepadStore,
     translate: createNotepadStore({ dir: paths.translateDir }),
-    markdown: createNotepadStore({ dir: paths.markdownDir }),
+    markdown: notepadStore,
   };
   const navicatCrypto = createNavicatCrypto({ keyFile: path.join(paths.navicatDir, '.key') });
   const navicatStore = createNavicatStore({ file: path.join(paths.navicatDir, 'profiles.json'), crypto: navicatCrypto });

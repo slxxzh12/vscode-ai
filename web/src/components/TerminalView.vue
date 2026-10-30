@@ -32,6 +32,7 @@ import WorkflowEditor from './WorkflowEditor.vue';
 import { usePromptCollect } from '../prompts/usePromptCollect';
 import PromptCollectAddon from '../prompts/PromptCollectAddon.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
+import { getComposerDraft, setComposerDraft } from '../composerDrafts';
 import { captureToPngDataUrl } from '../snapshot';
 import { pickRestoredAgent, restoredAgentIds } from '../sessionRestore';
 import { copyText } from '../clipboard';
@@ -127,7 +128,7 @@ async function onLocalLink(rel: string) {
 // 文档型工具（notepad/yaml/markdown）在主区用 DocViewer 展示
 const activeDocTool = computed(() => {
   const x = activeTool.value?.tool;
-  return x === 'notepad' || x === 'yaml' || x === 'markdown' ? x : null;
+  return x === 'notepad' || x === 'yaml' || x === 'markdown' || x === 'js' ? x : null;
 });
 const activeToolName = computed(() => activeTool.value?.tool ?? '');
 const isSessionView = computed(() => props.center.activeKind.value === 'session');
@@ -719,7 +720,7 @@ function onWelcomeNewAgent() {
 }
 function onWelcomeOpenTool(id: ToolId) {
   if (id === 'nginx') { requestProxyTab('nginx'); return; }
-  if (id === 'notepad' || id === 'yaml' || id === 'translate' || id === 'markdown' || id === 'base64') { requestToolTab(id); return; }
+  if (id === 'notepad' || id === 'yaml' || id === 'translate' || id === 'markdown' || id === 'js' || id === 'base64') { requestToolTab(id); return; }
   requestTool(id);
   window.location.hash = '#mobile';
 }
@@ -794,6 +795,16 @@ const {
   recordHistory: (text, sid) => { void msgHistory.push(text, sid ? { sessionId: sid, tabName: tabLabel(sid) } : {}); },
   onSent: () => notePromptSent(),
 });
+// 提示词草稿按会话恢复：切换页签/会话、切换活动栏再回来都不丢
+let draftSid: string | null = props.terminal.state.activeSessionId;
+composerText.value = getComposerDraft(draftSid);
+watch(composerText, (v) => { setComposerDraft(draftSid, v); });
+watch(() => props.terminal.state.activeSessionId, (id, oldId) => {
+  setComposerDraft(oldId ?? null, composerText.value);
+  draftSid = id;
+  composerText.value = getComposerDraft(id);
+});
+
 function fillPrompt(text: string) { composerText.value = text; }
 
 // —— 输入历史：点击工具栏「历史」→ 打开左侧历史面板的「消息」页签 ——
@@ -1293,6 +1304,7 @@ onMounted(async () => {
   loadComposerH();
 });
 onBeforeUnmount(() => {
+  setComposerDraft(draftSid, composerText.value);
   window.removeEventListener('resize', onResize);
   resizeObserver?.disconnect();
   resizeObserver = null;

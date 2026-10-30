@@ -1,7 +1,7 @@
 import { parseCsv } from '@devflow/shared/csv';
 import { escapeHtml } from '@devflow/shared/markdown';
 import { t } from './i18n.js';
-import { PAGE_THEME_CSS } from './markdown-page.js';
+import { PAGE_THEME_CSS, THEME_INIT_SCRIPT } from './markdown-page.js';
 
 const CSV_CSS = `
 .csv-page { max-width: 100%; margin: 0 auto; padding: 18px 22px 60px; box-sizing: border-box; }
@@ -36,5 +36,5 @@ export function renderCsvDocument(text, title, extraHtml = '') {
   } else {
     table = `<div class="csv-empty">${escapeHtml(t('fp.csv.empty'))}</div>`;
   }
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${PAGE_THEME_CSS}${CSV_CSS}</style></head><body><main class="csv-page"><div class="csv-summary">${escapeHtml(summary)}</div>${table}</main>${extraHtml}</body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><script>${THEME_INIT_SCRIPT}</script><style>${PAGE_THEME_CSS}${CSV_CSS}</style></head><body><main class="csv-page"><div class="csv-summary">${escapeHtml(summary)}</div>${table}</main>${extraHtml}</body></html>`;
 }

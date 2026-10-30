@@ -215,7 +215,7 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
       </el-tabs>
     </header>
     <TreeView v-if="tab === 'tree'" class="hltree" :key="projectId || 'none'" :source="treeSource"
-      :active-key="activePath || ''" :title="$t('tree.title')" />
+      :active-key="activePath || ''" />
     <template v-else>
     <div v-if="tab === 'messages'" class="filterbar" :title="$t('hist.filter.title')">
       <button class="filterbtn" :class="{ on: filter }" @click="emit('update:filter', true)">{{ $t('hist.filter.on') }}</button>

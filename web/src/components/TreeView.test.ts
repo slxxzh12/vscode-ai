@@ -93,6 +93,14 @@ describe('TreeView', () => {
     w.unmount();
   });
 
+  it('未传 title 时不显示标题文字，但能力按钮仍渲染', async () => {
+    const w = mountC(TreeView, { props: { source: fakeSource({ search: vi.fn() }) } });
+    await flushPromises();
+    expect(w.find('.fthead').exists()).toBe(true);
+    expect(w.find('.fttitle').exists()).toBe(false);
+    expect(w.find('.ftsearch').exists()).toBe(true);
+  });
+
   it('source.search 存在时显示搜索按钮，缺失时不显示', async () => {
     const withSearch = mountC(TreeView, {
       props: { source: fakeSource({ search: vi.fn() }), title: 'X' },

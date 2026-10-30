@@ -55,6 +55,16 @@ test('openFile 新开并激活文件页签；closeFile 回退到会话页签', (
   expect(c.activeId.value).toBe('s:a');
 });
 
+test('openFile activate=false 只加页签，不抢占当前激活项', () => {
+  const c = useCenter();
+  c.activateSession('a');
+  c.openFile('p', 'a.ts', 'a.ts', false);
+  expect(c.tabs.value.some((t) => t.id === 'f:p|a.ts')).toBe(true);
+  expect(c.activeId.value).toBe('s:a');
+  c.openFile('p', 'a.ts', 'a.ts', false);
+  expect(c.tabs.value.filter((t) => t.id === 'f:p|a.ts')).toHaveLength(1);
+});
+
 test('openFile 已存在只更新 label，不新增页签', () => {
   const c = useCenter();
   c.openFile('p', 'a.ts', 'a.ts');

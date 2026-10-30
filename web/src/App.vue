@@ -13,6 +13,8 @@ import CodeStats from './components/CodeStats.vue';
 import type { ProjectInfo } from '@devflow/shared';
 import { useTheme } from './theme';
 import { useI18n } from './i18n';
+import { elementLocale } from './element-locale';
+import { ElConfigProvider } from 'element-plus';
 import { parseOpenParam, parseVoidProject } from './deeplink';
 import ProxyHubView from './components/ProxyHubView.vue';
 import AppMarketView from './components/AppMarketView.vue';
@@ -364,13 +366,14 @@ async function restoreWindowState(projectsReady: Promise<void>) {
   if (plan.msgAllStyle) msgAllStyle.value = plan.msgAllStyle;
   const tabs = bootAllowed ? plan.tabs.filter((t) => bootAllowed.has(`f:${t.projectId}|${t.path}`)) : plan.tabs;
   const opened = tabs.map((t) => `f:${t.projectId}|${t.path}`);
-  for (const t of tabs) center.openFile(t.projectId, t.path, t.label);
-  if (deepLinkOpened) {
-    // 深链优先：不动激活项
+  // 恢复出来的文件页签只挂到页签栏，不抢占激活（否则会把深链/用户已打开的文件顶掉）
+  for (const t of tabs) center.openFile(t.projectId, t.path, t.label, false);
+  if (center.activeId.value) {
+    // 深链或用户在恢复期间已经打开了页面：保留当前激活项
   } else if (plan.activeFileTab && opened.includes(plan.activeFileTab)) {
     center.setActive(plan.activeFileTab);
-  } else if (opened.includes(center.activeId.value ?? '')) {
-    // 恢复出的文件页签不抢占激活：回到当前会话页签；会话列表未到时置空，交给会话激活逻辑
+  } else {
+    // 没有更优先的激活项：回到当前会话页签；会话列表未到时置空，交给会话激活逻辑
     const sid = terminal.state.activeSessionId;
     const tab = sid
       ? center.tabs.value.find((t) => t.id === `s:${sid}`)
@@ -792,6 +795,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <ElConfigProvider :locale="elementLocale">
   <div class="app" ref="appRef">
     <header class="top" :class="{ colored: !!currentDirColor }" :style="currentDirColor ? { background: currentDirColor } : undefined">
       <span class="logo">◈ {{ $t('brand.title') }}</span>
@@ -877,6 +881,7 @@ onBeforeUnmount(() => {
     <LocalDropOverlay v-if="localDragging" />
     <UpgradeDialog :open="showUpgrade" :current="appVersion" :latest="upgradeInfo?.latest || ''" :download-url="upgradeInfo?.downloadUrl || ''" @go="upgradeGo" @close="upgradeClose" @skip="upgradeSkip" />
   </div>
+  </ElConfigProvider>
 </template>
 
 <style scoped>

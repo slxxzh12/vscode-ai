@@ -6,6 +6,7 @@ import { mountC } from '../test-utils';
 import AppMarketView from './AppMarketView.vue';
 import { locale } from '../i18n';
 import { MARKET_CLIENTS } from '../marketApps';
+import { MINI_TOOLS } from '../tools/catalog';
 
 function mount() {
   return mountC(AppMarketView, { global: { plugins: [ElementPlus], stubs: { teleport: true } } });
@@ -47,7 +48,7 @@ describe('AppMarketView', () => {
     expect(w.findAll('.card')).toHaveLength(MARKET_CLIENTS.length);
     expect(w.findAll('.dl')).toHaveLength(1);
     expect(w.findAll('.card.soon')).toHaveLength(MARKET_CLIENTS.length - 1);
-    expect(w.findAll('.mticon')).toHaveLength(8);
+    expect(w.findAll('.mticon')).toHaveLength(MINI_TOOLS.length);
   });
 
   it('无扩展时显示空态', async () => {

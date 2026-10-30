@@ -11,7 +11,7 @@ function loadTab(): ProxyTab {
     const v = sessionStorage.getItem(KEY);
     if (v === 'nginx' || v === 'static' || v === 'llm') return v;
   } catch { /* ignore */ }
-  return 'nginx';
+  return 'static';
 }
 const tab = ref<ProxyTab>(loadTab());
 

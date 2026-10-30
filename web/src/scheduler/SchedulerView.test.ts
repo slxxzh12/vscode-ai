@@ -78,7 +78,7 @@ describe('SchedulerView', () => {
     }));
     const w = mountC(SchedulerView, { props: { terminal: { on: () => () => {} } } });
     await flushPromises();
-    await w.find('.new-task-entry').trigger('click');
+    await w.find('.create-ai').trigger('click');
     expect(w.find('.chat-overlay').exists()).toBe(true);
     await w.find('.chat-input textarea').setValue('hello');
     await w.find('.chat-input button').trigger('click');

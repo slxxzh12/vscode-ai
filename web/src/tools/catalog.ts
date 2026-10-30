@@ -1,4 +1,4 @@
-export type ToolId = 'translate' | 'yaml' | 'notepad' | 'postman' | 'navicat' | 'nginx' | 'markdown' | 'base64';
+export type ToolId = 'translate' | 'yaml' | 'notepad' | 'postman' | 'navicat' | 'nginx' | 'markdown' | 'js' | 'base64';
 
 export interface MiniToolMeta {
   id: ToolId;
@@ -17,5 +17,6 @@ export const MINI_TOOLS: MiniToolMeta[] = [
   { id: 'translate', icon: '🌐', labelKey: 'tools.translate', descKey: 'tools.desc.translate' },
   { id: 'yaml', icon: '🧾', labelKey: 'tools.yaml', descKey: 'tools.desc.yaml' },
   { id: 'markdown', icon: '📘', labelKey: 'tools.markdown', descKey: 'tools.desc.markdown' },
+  { id: 'js', icon: '🟨', labelKey: 'tools.js', descKey: 'tools.desc.js' },
   { id: 'base64', icon: '🔤', labelKey: 'tools.base64', descKey: 'tools.desc.base64' },
 ];

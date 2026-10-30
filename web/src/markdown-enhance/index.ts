@@ -1,5 +1,6 @@
-import { groupMermaidSides, renderMermaid } from '../markdown';
-import { parseMermaidChart, renderChart, type ChartHandle } from './charts';
+import { enhanceMarkdown as enhanceShared, type MermaidLike } from '@devflow/shared/markdown-client';
+import { t } from '../i18n';
+import { loadEcharts } from './charts';
 import { extractTable, mountTable } from './table';
 
 type Item = { host: HTMLElement; dispose(): void };
@@ -33,34 +34,25 @@ export async function enhanceMarkdown(container: HTMLElement): Promise<void> {
   const state: State = { items: [] };
   states.set(container, state);
 
-  // 先按 ```mermaid row 分组，再转换 xychart/pie，保证并排容器里的图表也留在同一行
-  groupMermaidSides(container);
-
-  for (const table of Array.from(container.querySelectorAll<HTMLTableElement>('table'))) {
-    // 已经增强过的 Element Plus 表格内部也有 <table>，重复 enhance 时不能再包一层（会出现两个表头）
-    if (table.closest('.md-el-table, .el-table')) continue;
-    const data = extractTable(table);
-    if (!data) continue;
-    const host = document.createElement('div');
-    host.className = 'md-el-table';
-    table.replaceWith(host);
-    state.items.push({ host, ...mountTable(host, data) });
-  }
-
-  for (const pre of Array.from(container.querySelectorAll<HTMLElement>('pre.mermaid'))) {
-    const spec = parseMermaidChart(pre.textContent || '');
-    if (!spec) continue;
-    const host = document.createElement('div');
-    host.className = 'md-echart';
-    pre.before(host);
-    try {
-      const chart: ChartHandle = await renderChart(host, spec);
-      pre.remove();
-      state.items.push({ host, ...chart });
-    } catch {
-      host.remove();
-    }
-  }
-
-  await renderMermaid(container);
+  const items = await enhanceShared(container, {
+    loadEcharts,
+    loadMermaid: async () => (await import('mermaid')).default as unknown as MermaidLike,
+    theme: document.documentElement.dataset.theme === 'light' ? 'default' : 'dark',
+    errorText: (msg) => t('markdown.mermaid_error', { msg }),
+    enhanceTables: (root) => {
+      const out: Item[] = [];
+      for (const table of Array.from(root.querySelectorAll<HTMLTableElement>('table'))) {
+        // 已经增强过的 Element Plus 表格内部也有 <table>，重复 enhance 时不能再包一层（会出现两个表头）
+        if (table.closest('.md-el-table, .el-table')) continue;
+        const data = extractTable(table);
+        if (!data) continue;
+        const host = document.createElement('div');
+        host.className = 'md-el-table';
+        table.replaceWith(host);
+        out.push({ host, ...mountTable(host, data) });
+      }
+      return out;
+    },
+  });
+  state.items.push(...items);
 }

@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { escapeHtml, isMarkdownFile, renderMarkdownHtml } from '@devflow/shared/markdown';
+import { splitMarkdownSlides } from '@devflow/shared/markdown-slides';
 import { t } from './i18n.js';
-import { MARKDOWN_CLIENT_SCRIPT_NAME, MERMAID_SCRIPT_NAME } from './mermaid-asset.js';
+import { ECHARTS_SCRIPT_NAME, MARKDOWN_CLIENT_SCRIPT_NAME, MERMAID_SCRIPT_NAME } from './mermaid-asset.js';
 
 export { isMarkdownFile };
 
@@ -14,26 +15,39 @@ const SHARED_DIR = path.dirname(require.resolve('@devflow/shared'));
 function markdownCss() {
   return fs.readFileSync(path.join(SHARED_DIR, 'markdown.css'), 'utf8');
 }
+// PPT 浮层样式与 Web 端共用同一份文件（web 直接 import，静态页这里内联）
+function pptCss() {
+  return fs.readFileSync(path.join(SHARED_DIR, 'markdown-ppt.css'), 'utf8');
+}
 
 // 独立页面的主题变量来自 web/src/styles.css；浅色跟随系统偏好
 export const PAGE_THEME_CSS = `
 :root {
   color-scheme: dark;
-  --bg0: #1e2227; --bg2: #141920; --bg3: #0e1116; --bg4: #222932; --bg5: #262c34;
+  --bg0: #1e2227; --bg1: #181d24; --bg2: #141920; --bg3: #0e1116; --bg4: #222932; --bg5: #262c34;
   --bd: #2a323e; --tx: #d5dae1; --tx1: #e6e9ef; --tx2: #9aa4b2;
   --ac: #2f6feb; --ac2: #4c9aff; --errtx: #fca5a5;
   --hlk: #ff7b72; --hls: #a5d6ff; --hlc: #8b949e; --hln: #79c0ff;
   --hlt: #d2a8ff; --hla: #79c0ff; --hlb: #ffa657;
 }
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --bg0: #eef1f5; --bg2: #eef1f5; --bg3: #fafbfc; --bg4: #f0f2f5; --bg5: #e3e7ec;
+    --bg0: #eef1f5; --bg1: #f4f6f9; --bg2: #eef1f5; --bg3: #fafbfc; --bg4: #f0f2f5; --bg5: #e3e7ec;
     --bd: #d7dce3; --tx: #1f2937; --tx1: #111827; --tx2: #4b5563;
     --ac: #2563eb; --ac2: #2563eb; --errtx: #b91c1c;
     --hlk: #cf222e; --hls: #0a3069; --hlc: #6e7781; --hln: #0550ae;
     --hlt: #8250df; --hla: #953800; --hlb: #0550ae;
   }
+}
+/* 与 Web 端主题开关保持一致：同源静态页优先读 localStorage 的 devflow-theme */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg0: #eef1f5; --bg1: #f4f6f9; --bg2: #eef1f5; --bg3: #fafbfc; --bg4: #f0f2f5; --bg5: #e3e7ec;
+  --bd: #d7dce3; --tx: #1f2937; --tx1: #111827; --tx2: #4b5563;
+  --ac: #2563eb; --ac2: #2563eb; --errtx: #b91c1c;
+  --hlk: #cf222e; --hls: #0a3069; --hlc: #6e7781; --hln: #0550ae;
+  --hlt: #8250df; --hla: #953800; --hlb: #0550ae;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg0); color: var(--tx); }
@@ -42,18 +56,74 @@ body { margin: 0; background: var(--bg0); color: var(--tx); }
 
 const THEME_CSS = PAGE_THEME_CSS;
 
+// 同源时沿用 Web 端主题开关（localStorage.devflow-theme）；否则交给 prefers-color-scheme。
+// 放在 <head> 里先于样式执行，避免先闪一下系统主题再切换。
+export const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('devflow-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;}catch(e){}})();`;
+
 function jsString(s) {
   return JSON.stringify(String(s)).replace(/</g, '\\u003c');
 }
 
 // 独立页面不经过 web 打包，但复用同一份 @devflow/shared/markdown-client 增强代码
-function mermaidHtml() {
+function hasChartSyntax(text) {
+  return /(^|\n)\s*(xychart-beta|pie|gantt|timeline|flowchart|graph)\b/i.test(text);
+}
+
+function scriptsHtml(text, body, title, slides) {
+  // 注意不能写成 body.includes('class="mermaid"')：```mermaid row``` 渲染出的
+  // class 是 "mermaid mermaid-side"，严格子串匹配会漏掉，导致 Mermaid 本体脚本不加载。
+  const hasMermaid = /<pre class="[^"]*\bmermaid\b/.test(body);
+  const hasCharts = hasChartSyntax(text);
+  const dynamic = hasMermaid || hasCharts;
   const errTpl = jsString(t('markdown.mermaid_error', { msg: '@@MSG@@' }));
-  return `<script src="${MERMAID_SCRIPT_NAME}"></script><script type="module">import { renderMermaidBlocks } from './${MARKDOWN_CLIENT_SCRIPT_NAME}';const mm=window.mermaid;if(mm){const light=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches;const errTpl=${errTpl};renderMermaidBlocks(document,mm,{theme:light?'default':'dark',errorText:(msg)=>errTpl.replace('@@MSG@@',String(msg||''))});}</script>`;
+  const slidesJson = JSON.stringify(slides).replace(/</g, '\\u003c');
+  const tags = [];
+  if (hasMermaid) tags.push(`<script src="${MERMAID_SCRIPT_NAME}"></script>`);
+  if (hasCharts) tags.push(`<script src="${ECHARTS_SCRIPT_NAME}"></script>`);
+  tags.push(
+    `<script type="module">import { createPptPresenter, enhanceMarkdown, enhanceSimpleTables } from './${MARKDOWN_CLIENT_SCRIPT_NAME}';(async()=>{`
+      + 'const waitGlobal=async(n,ms)=>{const s=Date.now();while(!window[n]&&Date.now()-s<ms){await new Promise(r=>setTimeout(r,50));}return window[n]||null;};'
+      + 'const dt=document.documentElement.dataset.theme;'
+      + 'const light=dt?dt===\'light\':(window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: light)\').matches);'
+      + (hasCharts ? 'const echarts=await waitGlobal(\'echarts\',8000);' : 'const echarts=window.echarts||null;')
+      + (hasMermaid ? 'const mermaid=await waitGlobal(\'mermaid\',8000);' : 'const mermaid=window.mermaid||null;')
+      + `const errTpl=${errTpl};`
+      + 'const opts={echarts:echarts,mermaid:mermaid,theme:light?\'default\':\'dark\',dark:!light,'
+      + 'errorText:(msg)=>errTpl.replace(\'@@MSG@@\',String(msg||\'\'))};'
+      + 'const enhance=async(root)=>{const items=await enhanceMarkdown(root,opts);enhanceSimpleTables(root);root.__dfItems=items;return items;};'
+      + 'const dispose=(root)=>{const items=root.__dfItems||[];for(const it of items){try{it.dispose&&it.dispose();}catch(e){}}root.__dfItems=null;};'
+      + 'window.__dfEnhance=enhance;'
+      + 'const article=document.querySelector(\'article.md-page\');'
+      + 'try{if(article)await enhance(article);}finally{if(article)article.removeAttribute(\'data-df-pending\');}'
+      + `const slides=${slidesJson};`
+      + 'const ppt=createPptPresenter({showOpenButton:true,filename:' + jsString(title) + ','
+      + 'slideCount:()=>slides.length,'
+      + 'slideTitle:(i)=>(slides[i]&&slides[i].title)||\'\','
+      + 'renderSlide:(i)=>((slides[i]&&slides[i].html)||\'\'),'
+      + 'enhance:enhance,dispose:dispose,'
+      + 'labels:{open:' + jsString(t('fp.ppt')) + ',close:' + jsString(t('common.close'))
+      + ',prev:' + jsString('← ' + t('fp.ppt.prev')) + ',next:' + jsString(t('fp.ppt.next') + ' →') + '},'
+      + 'renderError:(e)=>\'<p class="note err">\'+String(e&&e.message||e||\'\')+\'</p>\'});'
+      + 'window.__dfPpt=ppt;'
+      + 'try{const q=new URLSearchParams(location.search);if(q.get(\'ppt\')===\'1\')ppt.open(Math.max(0,Number(q.get(\'slide\'))||0));}catch(e){}'
+      + '})();</script>',
+  );
+  // JS 不可用 / 模块加载失败时，别让正文一直隐藏
+  if (dynamic) {
+    tags.push(
+      `<noscript><style>.md-body[data-df-pending]{visibility:visible!important}</style></noscript>`
+        + '<script>setTimeout(function(){var a=document.querySelector(\'article.md-page\');if(a)a.removeAttribute(\'data-df-pending\');},12000);</script>',
+    );
+  }
+  return tags.join('');
 }
 
 export function renderMarkdownDocument(text, title, extraHtml = '') {
   const body = renderMarkdownHtml(text);
-  const scripts = body.includes('class="mermaid"') ? mermaidHtml() : '';
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${THEME_CSS}${markdownCss()}</style></head><body><article class="md-body md-page">${body}</article>${scripts}${extraHtml}</body></html>`;
+  const slides = splitMarkdownSlides(text).map((s) => ({ title: s.title, html: renderMarkdownHtml(s.content) }));
+  const hasMermaid = /<pre class="[^"]*\bmermaid\b/.test(body);
+  const dynamic = hasMermaid || hasChartSyntax(text);
+  const scripts = scriptsHtml(text, body, title, slides);
+  const pending = dynamic ? ' data-df-pending="1"' : '';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><script>${THEME_INIT_SCRIPT}</script><style>${THEME_CSS}${markdownCss()}${pptCss()}</style></head><body><article class="md-body md-page"${pending}>${body}</article>${scripts}${extraHtml}</body></html>`;
 }

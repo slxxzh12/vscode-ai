@@ -30,6 +30,17 @@ describe('toolFileTreeSource', () => {
     expect(fetchMock.mock.calls.some((c) => String(c[0]).startsWith('/api/files/notepad/tree'))).toBe(true);
   });
 
+  it('createFile 新建后直接打开', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      String(url).endsWith('/tree') ? okJson({ folders: [], items: [] }) : okJson({ id: 'sub/new.md' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const files = useToolFiles('markdown');
+    const onOpen = vi.fn();
+    const src = toolFileTreeSource(files, { onOpen }, '.md');
+    await src.createFile!('sub', 'new.md');
+    expect(onOpen).toHaveBeenCalledWith({ key: 'sub/new.md', name: 'new.md', kind: 'item' });
+  });
+
   it('open 回调、rename 按类型分派', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => okJson({ folders: [], items: [] })));
     const files = useToolFiles('yaml');

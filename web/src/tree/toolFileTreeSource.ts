@@ -51,7 +51,12 @@ export function toolFileTreeSource(
       return [...dirs, ...leaves];
     },
     open(node) { hooks.onOpen(node); },
-    async createFile(dirKey, name) { await files.createFile(dirKey, name); changed(); },
+    async createFile(dirKey, name) {
+      const id = await files.createFile(dirKey, name);
+      // 新建后直接打开，Markdown/JS 等工具无需再点一次
+      if (id) hooks.onOpen({ key: id, name: id.slice(id.lastIndexOf('/') + 1), kind: 'item' });
+      changed();
+    },
     async createFolder(dirKey, name) { await files.createFolder(dirKey, name); changed(); },
     defaultName,
     async rename(node, name) {

@@ -88,8 +88,108 @@ describe('parseMermaidChart', () => {
     expect(parseMermaidChart('pie title Empty')).toBeNull();
   });
 
-  it('非目标类型返回 null', () => {
-    expect(parseMermaidChart('graph LR\nA-->B')).toBeNull();
+  it('解析 gantt 的任务、依赖与状态', () => {
+    const spec = parseMermaidChart([
+      'gantt',
+      '  title 阶段进度',
+      '  dateFormat YYYY-MM-DD',
+      '  section 开发',
+      '  需求 :done, a1, 2026-10-01, 3d',
+      '  开发 :active, a2, after a1, 5d',
+      '  发布 :milestone, m1, 2026-10-20, 0d',
+    ].join('\n'));
+    expect(spec).toMatchObject({
+      kind: 'gantt',
+      title: '阶段进度',
+      tasks: [
+        { name: '需求', section: '开发', tag: 'done' },
+        { name: '开发', section: '开发', tag: 'active' },
+        { name: '发布', section: '开发', tag: 'milestone' },
+      ],
+    });
+    const tasks = (spec as any).tasks;
+    expect(tasks[1].start).toBe(tasks[0].end);
+    expect(tasks[1].end - tasks[1].start).toBe(5 * 86400000);
+    expect(tasks[2].start).toBe(tasks[2].end);
+  });
+
+  it('解析 timeline 的 period / section / 续行事件', () => {
+    const spec = parseMermaidChart([
+      'timeline',
+      '  title 发布进度',
+      '  section 开发',
+      '  2026-10-01 : 需求评审 : 方案设计',
+      '  2026-10-10 : 编码',
+      '       : 联调',
+    ].join('\n'));
+    expect(spec).toMatchObject({
+      kind: 'timeline',
+      title: '发布进度',
+      periods: [
+        { period: '2026-10-01', section: '开发', events: ['需求评审', '方案设计'] },
+        { period: '2026-10-10', section: '开发', events: ['编码', '联调'] },
+      ],
+    });
+  });
+
+  it('解析线性阶段流程图的节点、连线和状态样式', () => {
+    const spec = parseMermaidChart([
+      'flowchart LR',
+      '  S1["✅ 需求"] --> S2["✅ 设计"] --> S3["🔄 开发"] --> S4["⏳ 发布"]',
+      '  classDef done fill:#2ea043,stroke:#1a7f37,color:#fff;',
+      '  classDef doing fill:#f5a524,stroke:#b45309,color:#111;',
+      '  class S1,S2 done;',
+      '  class S3 doing;',
+    ].join('\n'));
+    expect(spec).toMatchObject({
+      kind: 'flowchart',
+      direction: 'LR',
+      edges: [
+        { source: 'S1', target: 'S2', label: '' },
+        { source: 'S2', target: 'S3', label: '' },
+        { source: 'S3', target: 'S4', label: '' },
+      ],
+    });
+    const nodes = (spec as any).nodes;
+    expect(nodes.map((n: any) => n.label)).toEqual(['✅ 需求', '✅ 设计', '🔄 开发', '⏳ 发布']);
+    expect(nodes[0].fill).toBe('#2ea043');
+    expect(nodes[2].fill).toBe('#f5a524');
+  });
+
+  it('gantt chevron 按持续时间生成箭头时间轴段', () => {
+    const spec = parseMermaidChart([
+      'gantt chevron',
+      '  title 阶段耗时',
+      '  需求 :done, a1, 2026-10-01, 2d',
+      '  开发 :active, a2, after a1, 8d',
+      '  发布 :milestone, m1, after a2, 0d',
+    ].join('\n'));
+    expect(spec).toMatchObject({ kind: 'chevron', title: '阶段耗时' });
+    const segments = (spec as any).segments;
+    expect(segments).toHaveLength(3);
+    expect(segments[0]).toMatchObject({ label: '需求', weight: 2 });
+    expect(segments[1]).toMatchObject({ label: '开发', weight: 8 });
+    expect(segments[2]).toMatchObject({ label: '发布', weight: 2.5 });
+  });
+
+  it('timeline chevron 生成等宽箭头时间轴段', () => {
+    const spec = parseMermaidChart([
+      'timeline chevron',
+      '  2026 Q1 : 立项',
+      '  2026 Q2 : 公测',
+    ].join('\n'));
+    expect(spec).toMatchObject({
+      kind: 'chevron',
+      segments: [
+        { label: '2026 Q1', weight: 1 },
+        { label: '2026 Q2', weight: 1 },
+      ],
+    });
+  });
+
+  it('非线性流程图与不支持的 Mermaid 返回 null', () => {
+    expect(parseMermaidChart('graph LR\nA-->B\nA-->C')).toBeNull();
+    expect(parseMermaidChart('graph LR\nsubgraph X\nA-->B\nend')).toBeNull();
     expect(parseMermaidChart('sequenceDiagram\nA->>B: hi')).toBeNull();
     expect(parseMermaidChart('')).toBeNull();
   });

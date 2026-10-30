@@ -6,6 +6,8 @@ import TerminalView from '../components/TerminalView.vue';
 import JsoncPanel from './JsoncPanel.vue';
 import { fetchScreenRev, requestShot, waitForNewScreen } from './useRemoteCoder';
 import { t } from '../i18n';
+import { elementLocale } from '../element-locale';
+import { ElConfigProvider } from 'element-plus';
 
 const terminal = useTerminal({});
 const center = useCenter();
@@ -58,6 +60,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <ElConfigProvider :locale="elementLocale">
   <div class="phone">
     <header class="ph">
       <span class="ttl">{{ $t('remote.title') }}</span>
@@ -70,6 +73,7 @@ onBeforeUnmount(() => {
     </div>
     <JsoncPanel v-if="showJsonc" @close="showJsonc = false" />
   </div>
+  </ElConfigProvider>
 </template>
 
 <style scoped>

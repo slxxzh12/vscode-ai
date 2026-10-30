@@ -237,8 +237,8 @@ defineExpose({ refresh });
   <div class="ftv" @click.self="selectRoot">
     <FileSearchPanel v-if="searchOpen" :source="source" @close="searchOpen = false" />
     <template v-else>
-    <div v-if="title" class="fthead">
-      <span class="fttitle">{{ title }}</span>
+    <div v-if="title || source.createFile || source.createFolder || source.search" class="fthead" :class="{ 'fthead-acts-only': !title }">
+      <span v-if="title" class="fttitle">{{ title }}</span>
       <div class="ftacts">
         <button class="ftic" :title="$t('tree.refresh')" @click="refresh">⟳</button>
         <button v-if="source.createFile" class="ftic" :title="$t('tree.new_file')" @click.stop="promptCreate('file')">📄＋</button>
@@ -291,6 +291,7 @@ defineExpose({ refresh });
 <style scoped>
 .ftv { display: flex; flex-direction: column; height: 100%; overflow: hidden; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; user-select: none; }
 .fthead { display: flex; align-items: center; justify-content: space-between; padding: 0 6px 6px; flex: none; }
+.fthead-acts-only { justify-content: flex-end; }
 .fttitle { color: var(--tx3); text-transform: uppercase; font-size: 11px; }
 .ftacts { display: flex; gap: 4px; }
 .ftic { background: none; border: 1px solid transparent; color: var(--tx3); font-size: 12px; cursor: pointer; padding: 1px 5px; border-radius: 4px; }

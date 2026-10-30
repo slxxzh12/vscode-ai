@@ -47,10 +47,10 @@ export function useCenter() {
     tabs.value = tabs.value.filter((t) => t.id !== id);
     if (activeId.value === id) setActive(activeSessionTab.value?.id ?? null);
   }
-  function openFile(projectId: string, path: string, label: string) {
+  function openFile(projectId: string, path: string, label: string, activate = true) {
     const id = fid(projectId, path);
     upsert({ id, kind: 'file', label, projectId, path });
-    setActive(id);
+    if (activate) setActive(id);
   }
   function closeFile(projectId: string, path: string) {
     const id = fid(projectId, path);

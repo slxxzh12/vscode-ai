@@ -167,6 +167,11 @@ fs.copyFileSync(
   require.resolve("mermaid/dist/mermaid.min.js"),
   path.join(APP, "server", "vendor", "mermaid.min.js"),
 );
+// ECharts 供静态站点 Markdown 的 xychart/pie 渲染，和 Web 端保持同一套图表实现
+fs.copyFileSync(
+  require.resolve("echarts/dist/echarts.min.js"),
+  path.join(APP, "server", "vendor", "echarts.min.js"),
+);
 cpDir(path.join(ROOT, "web", "dist"), path.join(APP, "web", "dist"));
 cpDir(
   path.join(ROOT, "config"),

@@ -604,6 +604,10 @@ test('静态目录中的 Markdown 渲染为 HTML 页面', async () => {
   assert.match(html, /class="hljs/);
   assert.doesNotMatch(html, /^# Title/);
   assert.doesNotMatch(html, /__devflow_mermaid__/);
+  assert.doesNotMatch(html, /<article class="md-body md-page" data-df-pending/);
+  assert.match(html, /createPptPresenter/);
+  assert.match(html, /const slides=/);
+  assert.match(html, /showOpenButton:true/);
   engine.stop(rule.id);
 });
 
@@ -626,15 +630,52 @@ test('Markdown 图表页加载 Mermaid 脚本（相对路径直出）', async ()
   const html = await res.text();
   assert.match(html, /class="mermaid"/);
   assert.match(html, /src="__devflow_mermaid__\.js"/);
+  assert.match(html, /src="__devflow_echarts__\.js"/);
   assert.match(html, /\.\/__devflow_markdown__\.js/);
+  assert.match(html, /enhanceMarkdown/);
+  assert.match(html, /waitGlobal/);
+  assert.match(html, /__dfEnhance/);
+  assert.match(html, /data-df-pending="1"/);
+  assert.match(html, /createPptPresenter/);
   const asset = await fetch(`http://127.0.0.1:${port}/doc/__devflow_mermaid__.js`);
   assert.equal(asset.status, 200);
   assert.match(asset.headers.get('content-type'), /javascript/);
   assert.match(await asset.text(), /globalThis\["mermaid"\]/);
+  const echarts = await fetch(`http://127.0.0.1:${port}/doc/__devflow_echarts__.js`);
+  assert.equal(echarts.status, 200);
+  assert.match(echarts.headers.get('content-type'), /javascript/);
+  assert.match(await echarts.text(), /echarts/);
   const client = await fetch(`http://127.0.0.1:${port}/doc/__devflow_markdown__.js`);
   assert.equal(client.status, 200);
   assert.match(client.headers.get('content-type'), /javascript/);
-  assert.match(await client.text(), /renderMermaidBlocks/);
+  const clientText = await client.text();
+  assert.match(clientText, /renderMermaidBlocks/);
+  assert.match(clientText, /enhanceCharts/);
+  assert.match(clientText, /parseMermaidChart/);
+  assert.match(clientText, /parseFlowchart/);
+  assert.match(clientText, /chevronOption/);
+  assert.match(clientText, /createPptPresenter/);
+  engine.stop(rule.id);
+});
+
+test('Mermaid row 图块也会加载 Mermaid 本体脚本', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-proxy-mm-row-'));
+  fs.writeFileSync(path.join(dir, 'row.md'), '# Row\n\n```mermaid row\ngraph LR\n  A-->B\n```\n\n```mermaid row\nsequenceDiagram\n  A->>B: hi\n```\n');
+  const rule = {
+    id: 'mmrow', name: 'mmrow', mode: 'port', listenHost: '127.0.0.1', listenPort: 0,
+    pathPrefix: '', stripPrefix: true, staticDir: dir, spaFallback: true,
+    target: { protocol: 'http', host: '', port: 0 },
+    tlsInsecure: true, headers: [], responseHeaders: [], capture: false, enabled: true,
+  };
+  const store = { list: () => [rule], get: () => rule };
+  const engine = createProxyEngine({ store, capture: null, logger: console });
+  await engine.start(rule);
+  const port = engine._instanceServer(rule.id).address().port;
+  const res = await fetch(`http://127.0.0.1:${port}/row.md`);
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /class="mermaid mermaid-side"/);
+  assert.match(html, /src="__devflow_mermaid__\.js"/);
   engine.stop(rule.id);
 });
 

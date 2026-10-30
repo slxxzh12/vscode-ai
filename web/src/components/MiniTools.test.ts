@@ -7,7 +7,7 @@ import { pendingTool, clearPendingTool, pendingToolTab, clearPendingToolTab, pen
 
 afterEach(() => { clearPendingTool(); clearPendingToolTab(); clearPendingProxyTab(); });
 
-const IDS = ['notepad', 'postman', 'navicat', 'nginx', 'translate', 'yaml', 'markdown', 'base64'];
+const IDS = ['notepad', 'postman', 'navicat', 'nginx', 'translate', 'yaml', 'markdown', 'js', 'base64'];
 
 describe('MiniTools', () => {
   it('渲染全部工具磁贴', () => {
