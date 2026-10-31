@@ -19,6 +19,8 @@ const selected = ref<TreeNode | null>(null);
 const content = ref('');
 const error = ref('');
 const revealMsg = ref('');
+const dragging = ref<TreeNode | null>(null);
+const dragOverPath = ref('');
 const workflowNode = computed<TreeNode | null>(() => tree.value[0] || null);
 
 const rows = computed(() => {
@@ -142,6 +144,66 @@ async function removeFile(node: TreeNode) {
   }
 }
 
+function onDragStart(e: DragEvent, node: TreeNode) {
+  dragging.value = node;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', node.path);
+  }
+}
+function onDragEnd() {
+  dragging.value = null;
+  dragOverPath.value = '';
+}
+function onDragOver(e: DragEvent, node: TreeNode) {
+  if (dragging.value?.type !== 'file' || node.type !== 'dir') return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  dragOverPath.value = node.path;
+}
+function onDragLeave(node: TreeNode) {
+  if (dragOverPath.value === node.path) dragOverPath.value = '';
+}
+async function onDrop(e: DragEvent, node: TreeNode) {
+  e.preventDefault();
+  const src = dragging.value;
+  dragging.value = null;
+  dragOverPath.value = '';
+  if (!src || src.type !== 'file' || node.type !== 'dir') return;
+  const fromDir = src.path.slice(0, src.path.lastIndexOf('/'));
+  if (fromDir === node.path) return;
+  const to = `${node.path}/${src.name}`;
+  const wasSelected = selected.value?.path === src.path;
+  revealMsg.value = '';
+  try {
+    const res = await fetch('/api/workflows-file-move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: src.path, to }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data && data.error) || `HTTP ${res.status}`);
+    }
+    await loadTree(true);
+    if (wasSelected) {
+      const moved = findNode(tree.value, to);
+      if (moved) { selected.value = moved; await openFile(moved); }
+    }
+  } catch (e: any) {
+    revealMsg.value = t('wfe.files.move_failed', { msg: String(e?.message || e) });
+  }
+}
+
+async function reload() {
+  error.value = '';
+  revealMsg.value = '';
+  await loadTree(true);
+  const node = selected.value;
+  if (node && node.type === 'file') await openFile(node);
+}
+defineExpose({ reload });
+
 watch(() => props.workflowId, () => { void loadTree(); }, { immediate: true });
 </script>
 
@@ -165,9 +227,16 @@ watch(() => props.workflowId, () => { void loadTree(); }, { immediate: true });
           v-for="row in rows"
           :key="row.node.path"
           class="wf-row"
-          :class="row.node.type"
+          :class="[row.node.type, { dragover: dragOverPath === row.node.path }]"
           :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
+          :draggable="row.node.type === 'file'"
+          :title="row.node.type === 'file' ? $t('wfe.files.drag_hint') : undefined"
           @click="row.node.type === 'file' && openFile(row.node)"
+          @dragstart="row.node.type === 'file' && onDragStart($event, row.node)"
+          @dragend="onDragEnd"
+          @dragover="onDragOver($event, row.node)"
+          @dragleave="onDragLeave(row.node)"
+          @drop="onDrop($event, row.node)"
         >
           <span class="ico">{{ row.node.type === 'dir' ? '📁' : '📄' }}</span>
           <span class="nm">{{ row.node.name }}</span>
@@ -202,6 +271,7 @@ watch(() => props.workflowId, () => { void loadTree(); }, { immediate: true });
 .wf-row.dir { color: var(--tx3); }
 .wf-row.file { cursor: pointer; }
 .wf-row.file:hover { background: var(--bg5, var(--bg4)); color: var(--tx1); }
+.wf-row.dir.dragover { outline: 1px dashed var(--ac2); background: var(--bg4); color: var(--tx1); }
 .wf-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wf-del { flex: none; margin-left: auto; background: none; border: none; color: var(--tx5); cursor: pointer; font-size: 14px; line-height: 1; opacity: 0; padding: 0 2px; }
 .wf-row:hover .wf-del { opacity: 1; }

@@ -33,6 +33,39 @@ export function appendPromptToWorkflow(
   return { status: 'ok', list: next };
 }
 
+export type UpdatePromptResult =
+  | { status: 'ok'; list: Workflow[] }
+  | { status: 'empty' }
+  | { status: 'no-workflow' }
+  | { status: 'no-stage' }
+  | { status: 'out-of-range' };
+
+// 用 text 覆盖 workflowId.stages[stageId].prompts[index]。
+// - 目标不存在 → no-workflow / no-stage / out-of-range；
+// - text 为空白 → empty（不改动）；
+// - 成功 → ok，返回逐层浅拷贝的新列表（入参不被修改）。
+export function updatePromptText(
+  list: Workflow[],
+  workflowId: string,
+  stageId: string,
+  index: number,
+  text: string,
+): UpdatePromptResult {
+  const wfs = Array.isArray(list) ? list : [];
+  const plain = String(text == null ? '' : text);
+  if (!plain.trim()) return { status: 'empty' };
+  const wi = wfs.findIndex((w) => w && w.id === workflowId);
+  if (wi < 0) return { status: 'no-workflow' };
+  const stages = wfs[wi].stages || [];
+  const si = stages.findIndex((s) => s && s.id === stageId);
+  if (si < 0) return { status: 'no-stage' };
+  const prompts = stages[si].prompts || [];
+  if (!Number.isInteger(index) || index < 0 || index >= prompts.length) return { status: 'out-of-range' };
+  const nextStages = stages.map((s, i) => (i === si ? { ...s, prompts: prompts.map((p, pi) => (pi === index ? plain : p)) } : s));
+  const next = wfs.map((w, i) => (i === wi ? { ...w, stages: nextStages } : w));
+  return { status: 'ok', list: next };
+}
+
 export const MY_WF_ID = 'my-prompts';
 export const MY_STAGE_ID = 'my-prompts-stage';
 

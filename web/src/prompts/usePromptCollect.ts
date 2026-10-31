@@ -1,7 +1,7 @@
 import { ref, type Ref } from 'vue';
 import type { Workflow } from '../workflowModel';
 import { t } from '../i18n';
-import { appendPromptToWorkflow, collectToMyWorkflow, MY_WF_ID, MY_STAGE_ID } from './promptCollect';
+import { appendPromptToWorkflow, collectToMyWorkflow, updatePromptText, MY_WF_ID, MY_STAGE_ID } from './promptCollect';
 
 export interface CollectTarget { workflowId: string; stageId: string; }
 export type CollectStatus = 'ok' | 'exists' | 'no-stage' | 'error';
@@ -54,6 +54,7 @@ export function usePromptCollect(): {
   setCurrent(workflowId: string, stageId: string): void;
   loadWorkflows(): Promise<void>;
   collect(text: string, target?: CollectTarget): Promise<CollectStatus>;
+  updatePrompt(target: CollectTarget, index: number, text: string): Promise<CollectStatus>;
 } {
   function setCurrent(workflowId: string, stageId: string) {
     current.value = { workflowId, stageId };
@@ -100,7 +101,14 @@ export function usePromptCollect(): {
     writeTarget(tgt);
     return 'ok';
   }
-  return { workflows, current, lastTarget, setCurrent, loadWorkflows, collect };
+  async function updatePrompt(target: CollectTarget, index: number, text: string): Promise<CollectStatus> {
+    await loadWorkflows();
+    const res = updatePromptText(workflows.value, target.workflowId, target.stageId, index, text);
+    if (res.status === 'empty') return 'exists';
+    if (res.status !== 'ok') return 'no-stage';
+    return (await persist(res.list)) ? 'ok' : 'error';
+  }
+  return { workflows, current, lastTarget, setCurrent, loadWorkflows, collect, updatePrompt };
 }
 
 // 仅供测试重置模块级状态；运行时代码不要调用。

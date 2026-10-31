@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EXTENSIONS, prefFile, loadPref, savePref, available, parseDefaults, getState, runAssoc } from '../file-assoc.js';
 
-const ALL = ['.pdf', '.txt', '.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl'];
+const ALL = ['.pdf', '.txt', '.md', '.markdown', '.csv', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl'];
 const DEFAULT_SEL = ALL.filter((e) => e !== '.txt');   // 默认勾选：除 .txt 外全部
 
 function tmpApp({ withBat = false } = {}) {
@@ -16,7 +16,7 @@ function tmpApp({ withBat = false } = {}) {
   return dir;
 }
 
-test('EXTENSIONS：pdf/txt 在最前，共 13 个', () => {
+test('EXTENSIONS：pdf/txt 在最前，共 14 个', () => {
   assert.deepEqual(EXTENSIONS, ALL);
 });
 
@@ -31,6 +31,15 @@ test('loadPref：端口目录缺省时从包内 data/ 迁移旧偏好（selected
   fs.writeFileSync(path.join(app, 'data', 'file-assoc.json'), JSON.stringify({ enabled: true, prompted: true }), 'utf8');
   assert.deepEqual(loadPref(dir, { appDir: app }), { enabled: true, prompted: true, selected: DEFAULT_SEL });
   assert.equal(fs.existsSync(prefFile(dir)), true, '迁移后写入端口数据目录');
+});
+
+test('旧偏好（无 rev）自动补 .csv；rev=2 后尊重用户勾选', () => {
+  const dir = tmpApp();
+  fs.writeFileSync(prefFile(dir), JSON.stringify({ enabled: true, prompted: true, selected: ['.md'] }), 'utf8');
+  assert.deepEqual(loadPref(dir).selected, ['.md', '.csv']);
+  assert.equal(JSON.parse(fs.readFileSync(prefFile(dir), 'utf8')).rev, 2);
+  savePref(dir, { enabled: true, prompted: true, selected: ['.md'] });
+  assert.deepEqual(loadPref(dir).selected, ['.md']);
 });
 
 test('loadPref：端口目录已有偏好时不读旧路径', () => {

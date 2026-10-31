@@ -25,6 +25,7 @@ import CsvTable from './CsvTable.vue';
 import { diffText, type DiffRow } from '../diff';
 import { sortText, dedupText, type SortMode } from '../textTools';
 import { formatExtFor, formatText, looksLikeJson } from '../formatText';
+import { detectTextLang, extForLang } from '../textLang';
 import { copyText } from '../clipboard';
 import type { TreeItem } from '@devflow/shared';
 
@@ -83,8 +84,10 @@ const kind = computed<'image' | 'pdf' | 'text'>(() => {
 const isMd = computed(() => isMarkdownFile(props.name));
 const isHtmlFile = computed(() => ['html', 'htm'].includes(ext.value));
 const hasPreviewToggle = computed(() => isMd.value || isHtmlFile.value);
+const textExt = computed(() => (['txt', 'text'].includes(ext.value) ? extForLang(detectTextLang(raw.value) || 'js') : ''));
+const effectiveExt = computed(() => textExt.value || ext.value);
 const canMinify = computed(() => kind.value === 'text'
-  && (['js', 'mjs', 'cjs', 'jsx', 'json'].includes(ext.value) || looksLikeJson(raw.value)));
+  && (['js', 'mjs', 'cjs', 'jsx', 'json'].includes(effectiveExt.value) || looksLikeJson(raw.value)));
 const canSort = computed(() => kind.value === 'text' && status.value === 'ok' && !isBinary.value);
 const canB64 = computed(() => kind.value === 'text' && status.value === 'ok' && showEditor.value && !isBinary.value);
 const RUN_EXT = new Set(['bat', 'cmd', 'ps1', 'sh']);
@@ -787,7 +790,7 @@ async function runFile() {
 
 // —— 一键格式化（Prettier 按需加载，实现见 formatText.ts）——
 // 内容为 JSON 时（如 .txt 里粘了 JSON）也允许格式化。
-const formatExt = computed(() => (kind.value === 'text' ? formatExtFor(raw.value, ext.value) : ''));
+const formatExt = computed(() => (kind.value === 'text' ? formatExtFor(raw.value, effectiveExt.value) : ''));
 const canFormat = computed(() => kind.value === 'text' && !!formatExt.value);
 async function formatDoc() {
   if (!canFormat.value) return;

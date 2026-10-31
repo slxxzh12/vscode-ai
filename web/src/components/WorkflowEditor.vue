@@ -12,6 +12,8 @@ const tab = ref<'files' | 'preview'>('files');
 const busy = ref(false);
 const msg = ref('');
 const reloadToken = ref(0);
+const refreshing = ref(false);
+const filesRef = ref<InstanceType<typeof WorkflowFilesTab> | null>(null);
 
 const currentId = ref('');
 const current = computed<Workflow | null>(() => model.value.find((w) => w.id === currentId.value) || model.value[0] || null);
@@ -32,6 +34,20 @@ async function refreshModel() {
   const keep = currentId.value;
   await load();
   if (model.value.some((w) => w.id === keep)) currentId.value = keep;
+}
+
+async function refreshFromFiles() {
+  refreshing.value = true;
+  msg.value = '';
+  try {
+    await refreshModel();
+    if (tab.value === 'files') await filesRef.value?.reload();
+    msg.value = t('wfe.refreshed');
+  } catch (e: any) {
+    msg.value = t('wfe.failed', { msg: String(e?.message || e) });
+  } finally {
+    refreshing.value = false;
+  }
 }
 
 async function restoreDefault() {
@@ -120,6 +136,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
           <button v-for="k in tabs" :key="k" class="tab" :class="{ on: tab === k }" @click="tab = k">{{ $t('wfe.tab.' + k) }}</button>
         </nav>
         <button class="weopen" :title="$t('wfe.open_prompts_hint')" @click="openPromptsDir">{{ $t('wfe.open_prompts') }}</button>
+        <button class="weopen wrefresh" :disabled="refreshing" :title="$t('wfe.refresh_from_files_hint')" @click="refreshFromFiles">{{ $t('wfe.refresh_from_files') }}</button>
         <button class="wex" @click="close">×</button>
       </header>
       <div class="web">
@@ -135,7 +152,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
           </div>
         </aside>
         <div class="wemain">
-          <WorkflowFilesTab v-if="tab === 'files'" :key="currentId + ':' + reloadToken" :workflow-id="currentId" @deleted="refreshModel" />
+          <WorkflowFilesTab v-if="tab === 'files'" ref="filesRef" :key="currentId + ':' + reloadToken" :workflow-id="currentId" @deleted="refreshModel" />
           <WorkflowPreviewTab v-else :model="model" />
         </div>
       </div>
@@ -157,7 +174,8 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
 .tab { background: none; border: 1px solid transparent; color: var(--tx3); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .tab.on { background: var(--bg1); border-color: var(--bd); color: var(--tx1); }
 .weopen { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
-.weopen:hover { border-color: var(--ac2); color: var(--ac2); }
+.weopen:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
+.weopen:disabled { opacity: .5; cursor: default; }
 .wex { background: none; border: none; color: var(--tx3); font-size: 18px; cursor: pointer; }
 .web { flex: 1; min-height: 0; display: flex; padding: 12px 14px; gap: 12px; }
 .wenav { flex: none; width: 200px; display: flex; flex-direction: column; border: 1px solid var(--bd); border-radius: 6px; overflow: hidden; background: var(--bg2); }

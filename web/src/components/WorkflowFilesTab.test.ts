@@ -48,6 +48,38 @@ describe('WorkflowFilesTab', () => {
     confirmSpy.mockRestore();
   });
 
+  it('拖动技能文件到另一个阶段目录并调用移动接口', async () => {
+    const tree3 = [{
+      name: '100_A', type: 'dir', path: '100_A', children: [{
+        name: '100_G', type: 'dir', path: '100_A/100_G', children: [
+          { name: '100_S1', type: 'dir', path: '100_A/100_G/100_S1', children: [
+            { name: '100_a.md', type: 'file', path: '100_A/100_G/100_S1/100_a.md' },
+          ] },
+          { name: '200_S2', type: 'dir', path: '100_A/100_G/200_S2', children: [] },
+        ],
+      }],
+    }];
+    const calls: Array<{ url: string; opt?: RequestInit }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opt?: RequestInit) => {
+      calls.push({ url: String(url), opt });
+      if (String(url).startsWith('/api/workflows-tree')) return { ok: true, json: async () => ({ tree: tree3 }) } as any;
+      if (String(url).startsWith('/api/workflows-file-move')) return { ok: true, json: async () => ({ ok: true }) } as any;
+      return { ok: false, json: async () => ({}) } as any;
+    }));
+    const w = mountC(WorkflowFilesTab, { props: { workflowId: '100_A' } });
+    await flushPromises();
+    const rows = w.findAll('.wf-row');
+    await w.find('.wf-row.file').trigger('dragstart');
+    await rows[rows.length - 1].trigger('drop');
+    await flushPromises();
+    const call = calls.find((c) => c.url === '/api/workflows-file-move');
+    expect(call).toBeTruthy();
+    expect(JSON.parse(String(call!.opt!.body))).toEqual({
+      from: '100_A/100_G/100_S1/100_a.md',
+      to: '100_A/100_G/200_S2/100_a.md',
+    });
+  });
+
   it('轮询自动刷新树与已打开文件内容', async () => {
     vi.useFakeTimers();
     let phase = 0;

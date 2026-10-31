@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
 import { mountC } from '../../test-utils';
-import { t } from '../../i18n';
+import { t, locale } from '../../i18n';
 import StaticSitesView from './StaticSitesView.vue';
 
 function okJson(body: unknown) { return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response); }
@@ -41,6 +41,21 @@ describe('StaticSitesView', () => {
     expect(prefix.value).toBe('/index');
     expect(cards[0].text()).toContain('http://127.0.0.1:8080/index/');
     w.unmount();
+  });
+
+  it('默认静态网站名称随界面语言显示为英文', async () => {
+    fetchMock.mockImplementation((u: string) => (String(u) === '/api/nginx/rules'
+      ? okJson({ items: [{ ...STATIC, name: '静态网站' }], status: {} })
+      : okJson({})));
+    locale.value = 'en';
+    try {
+      const w = mountC(StaticSitesView);
+      await flushPromises();
+      expect(w.find('.ssname').text()).toBe('Static site');
+      w.unmount();
+    } finally {
+      locale.value = 'zh-CN';
+    }
   });
 
   it('未选择目录时不提交保存', async () => {

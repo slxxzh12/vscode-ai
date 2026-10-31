@@ -80,6 +80,21 @@ describe('usePromptCollect', () => {
     expect(posted?.body.workflows[0].stages[0].prompts).toContain('second');
   });
 
+  it('updatePrompt：GET 最新 → 覆盖指定下标 → POST', async () => {
+    mockFetch();
+    const st = await pc.updatePrompt({ workflowId: 'w1', stageId: 's1' }, 0, 'a2');
+    expect(st).toBe('ok');
+    expect(calls.map((c) => c.method)).toEqual(['GET', 'POST']);
+    expect(calls[1].body.workflows[0].stages[0].prompts).toEqual(['a2']);
+  });
+
+  it('updatePrompt：空白文本或越界 → 不发 POST', async () => {
+    mockFetch();
+    expect(await pc.updatePrompt({ workflowId: 'w1', stageId: 's1' }, 0, '  ')).toBe('exists');
+    expect(await pc.updatePrompt({ workflowId: 'w1', stageId: 's1' }, 9, 'x')).toBe('no-stage');
+    expect(calls.every((c) => c.method === 'GET')).toBe(true);
+  });
+
   it('无可用目标时回退到第一个工作流的第一阶段', async () => {
     mockFetch();
     const st = await pc.collect('fallback');

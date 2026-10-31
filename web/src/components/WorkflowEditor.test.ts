@@ -33,6 +33,20 @@ describe('WorkflowEditor', () => {
     expect(JSON.parse(String(call!.opt!.body))).toEqual({ path: '' });
   });
 
+  it('点击「从文件刷新」重新加载工作流列表', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push(String(url));
+      return okJson({ workflows: [] });
+    }));
+    const w = mountC(WorkflowEditor);
+    await flushPromises();
+    const before = calls.filter((u) => u === '/api/workflows-xml').length;
+    await w.find('.wrefresh').trigger('click');
+    await flushPromises();
+    expect(calls.filter((u) => u === '/api/workflows-xml').length).toBe(before + 1);
+  });
+
   it('轮询自动刷新工作流列表', async () => {
     vi.useFakeTimers();
     let phase = 0;

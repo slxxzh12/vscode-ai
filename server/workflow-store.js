@@ -364,6 +364,23 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
     return { path: rel };
   }
 
+  function moveFile(fromRel, toRel) {
+    const from = absPath(fromRel);
+    const to = absPath(toRel);
+    if (!from.toLowerCase().endsWith(MD_EXT) || !to.toLowerCase().endsWith(MD_EXT)) throw new Error('bad-file');
+    let st = null;
+    try { st = fs.statSync(from); } catch { throw new Error('not-found'); }
+    if (!st.isFile()) throw new Error('not-found');
+    const parent = path.dirname(to);
+    let pst = null;
+    try { pst = fs.statSync(parent); } catch { throw new Error('bad-target'); }
+    if (!pst.isDirectory()) throw new Error('bad-target');
+    if (fs.existsSync(to)) throw new Error('exists');
+    fs.renameSync(from, to);
+    seedStore?.update?.(readAll());
+    return { from: fromRel, to: toRel };
+  }
+
   function migrateXmlFiles() {
     if (listDirs(dir).length) return false;
     const files = listXml(dir);
@@ -399,5 +416,5 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
   migrateXmlFiles();
   migrateOldLayout();
 
-  return { readAll, writeAll, tree, readFile, deleteFile, absPath, restoreFromSeed, overwriteAllFromSeed, migrateFromConfigXml, dir };
+  return { readAll, writeAll, tree, readFile, deleteFile, moveFile, absPath, restoreFromSeed, overwriteAllFromSeed, migrateFromConfigXml, dir };
 }

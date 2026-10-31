@@ -23,6 +23,7 @@ import { ruby } from '@codemirror/legacy-modes/mode/ruby';
 import { perl } from '@codemirror/legacy-modes/mode/perl';
 import type { Extension } from '@codemirror/state';
 import { looksLikeJson } from './formatText';
+import { detectTextLang, extForLang } from './textLang';
 
 const L = (m: any) => StreamLanguage.define(m);
 
@@ -56,6 +57,10 @@ export function cmLangFor(name: string, content = ''): Extension | null {
     case 'swift': return L(swift);
     case 'rb': case 'ruby': return L(ruby);
     case 'pl': case 'pm': return L(perl);
+    case 'txt': case 'text': {
+      const lang = detectTextLang(content) || 'js';
+      return cmLangFor(`file.${extForLang(lang)}`, '');
+    }
     default: return looksLikeJson(content) ? json() : null;
   }
 }

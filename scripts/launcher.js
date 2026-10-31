@@ -33,7 +33,7 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "}",
     "function Set-VoidAssoc([string]$action) {",
     "  $cu = [Microsoft.Win32.Registry]::CurrentUser",
-    "  $all = @('.pdf', '.txt', '.md', '.markdown', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl')",
+    "  $all = @('.pdf', '.txt', '.md', '.markdown', '.csv', '.yaml', '.yml', '.js', '.mjs', '.cjs', '.json', '.http', '.rest', '.curl')",
     "  $sel = @()",
     "  if ($action -ne 'remove') {",
     "    $sel = $all",

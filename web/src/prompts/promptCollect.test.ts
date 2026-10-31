@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appendPromptToWorkflow, promptAbbr, collectToMyWorkflow, MY_WF_ID, MY_STAGE_ID } from './promptCollect';
+import { appendPromptToWorkflow, promptAbbr, collectToMyWorkflow, updatePromptText, MY_WF_ID, MY_STAGE_ID } from './promptCollect';
 import type { Workflow } from '../workflowModel';
 
 function seed(): Workflow[] {
@@ -63,6 +63,39 @@ describe('appendPromptToWorkflow', () => {
     expect(appendPromptToWorkflow(seed(), 'w1', 'nope', 'x').status).toBe('no-stage');
     expect(appendPromptToWorkflow(seed(), 'w2', 's1', 'x').status).toBe('no-stage');
     expect(appendPromptToWorkflow([], 'w1', 's1', 'x').status).toBe('no-workflow');
+  });
+});
+
+describe('updatePromptText', () => {
+  it('覆盖指定下标文本，返回 ok，入参不被修改', () => {
+    const list = seed();
+    const snapshot = JSON.stringify(list);
+    const r = updatePromptText(list, 'w1', 's1', 1, 'B2');
+    expect(r.status).toBe('ok');
+    if (r.status !== 'ok') return;
+    expect(r.list[0].stages[0].prompts).toEqual(['a', 'B2']);
+    expect(JSON.stringify(list)).toBe(snapshot);
+    expect(r.list).not.toBe(list);
+    expect(r.list[0].stages[0]).not.toBe(list[0].stages[0]);
+  });
+
+  it('保留原始文本（含换行与首尾空白）', () => {
+    const r = updatePromptText(seed(), 'w1', 's1', 0, '  line1\nline2  ');
+    expect(r.status).toBe('ok');
+    if (r.status !== 'ok') return;
+    expect(r.list[0].stages[0].prompts[0]).toBe('  line1\nline2  ');
+  });
+
+  it('空 / 纯空白 → empty，列表不变', () => {
+    expect(updatePromptText(seed(), 'w1', 's1', 0, '').status).toBe('empty');
+    expect(updatePromptText(seed(), 'w1', 's1', 0, '   ').status).toBe('empty');
+  });
+
+  it('工作流 / 阶段 / 下标不存在 → 对应错误', () => {
+    expect(updatePromptText(seed(), 'nope', 's1', 0, 'x').status).toBe('no-workflow');
+    expect(updatePromptText(seed(), 'w1', 'nope', 0, 'x').status).toBe('no-stage');
+    expect(updatePromptText(seed(), 'w1', 's1', 9, 'x').status).toBe('out-of-range');
+    expect(updatePromptText(seed(), 'w1', 's2', 0, 'x').status).toBe('out-of-range');
   });
 });
 

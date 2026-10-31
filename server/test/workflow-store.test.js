@@ -164,6 +164,24 @@ test('目录已有文件夹时不迁移配置 XML', () => {
   assert.deepEqual(store.readAll().map((w) => w.label), ['K']);
 });
 
+test('moveFile：技能文件可移动到其他阶段目录，路径越界被拒绝', () => {
+  const dir = tmp();
+  const store = createWorkflowStore({ dir });
+  const out = store.writeAll([wf('a', 'A', [
+    { id: 's1', label: 'S1', group: 'G', prompts: ['p1'] },
+    { id: 's2', label: 'S2', group: 'G', prompts: ['p2'] },
+  ])]);
+  const wfName = out[0].id;
+  const groupName = dirs(path.join(dir, wfName))[0];
+  const stages = dirs(path.join(dir, wfName, groupName));
+  const srcFile = files(path.join(dir, wfName, groupName, stages[0]))[0];
+  const from = `${wfName}/${groupName}/${stages[0]}/${srcFile}`;
+  const to = `${wfName}/${groupName}/${stages[1]}/moved.md`;
+  store.moveFile(from, to);
+  assert.equal(store.readAll()[0].stages.find((s) => s.label === 'S2').prompts.length, 2);
+  assert.throws(() => store.moveFile(to, '../x.md'), /bad-path/);
+});
+
 test('seedDir：同名工作流只解压一次，新增工作流会补入', () => {
   const seed = tmp();
   const seedStore = createWorkflowStore({ dir: seed });

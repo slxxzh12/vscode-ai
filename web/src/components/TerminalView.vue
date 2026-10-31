@@ -909,6 +909,12 @@ const chips = computed<Chip[]>(() => {
   return buildChips(st?.prompts);
 });
 const stageChips = computed(() => chips.value.filter((c) => !c.append));   // 工作流阶段提示（左侧，可被挤/滚动）
+const activeStageId = computed(() => activeStageDef()?.id || '');
+function chipPromptIndex(c: Chip): number {
+  const st = activeStageDef();
+  if (!st) return -1;
+  return (st.prompts || []).findIndex((p) => String(p).trim() === c.text);
+}
 const extraChips = computed(() => chips.value.filter((c) => c.append));    // 固定附加项 1/2/3/4/5（右侧，固定位置）
 // —— 分组自动执行：run 状态与回退 ——
 interface WfRunStep { id: string; stageId: string; status: string; }
@@ -982,6 +988,28 @@ function pickStage(s: StageDef) {
 function clearPrompt() {
   clear();
   activeStage.value = '';
+}
+const promptsRoot = ref('');
+async function loadPromptsRoot() {
+  try {
+    const r = await fetch('/api/workflows-tree?workflowId=').then((x) => x.json());
+    if (typeof r?.root === 'string') promptsRoot.value = r.root;
+  } catch { /* ignore */ }
+}
+async function openPromptsRoot() {
+  try {
+    await fetch('/api/workflows-reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '' }),
+    });
+  } catch { /* ignore */ }
+}
+const wfRefreshing = ref(false);
+async function reloadWorkflowsFromFiles() {
+  if (wfRefreshing.value) return;
+  wfRefreshing.value = true;
+  try { await loadWorkflows(); } finally { wfRefreshing.value = false; }
 }
 async function loadWorkflows() {
   try {
@@ -1301,6 +1329,7 @@ onMounted(async () => {
   loadCfg();           // 本地已保存配置优先覆盖 API 默认
   cfgLoaded = true;
   loadWorkflows();
+  void loadPromptsRoot();
   loadComposerH();
 });
 onBeforeUnmount(() => {
@@ -1542,6 +1571,8 @@ onBeforeUnmount(() => {
           <button v-for="w in wfDefs" :key="w.id" class="wfbtn" :class="{ on: wfKind === w.id }" @click="selectWf(w.id)">{{ w.label }}</button>
         </div>
         <button v-if="activeIsAgent && wfDefs.length" class="wfbtn edit" :title="$t('wfe.title')" @mousedown.stop @click="editorOpen = true"><svg class="ico" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>{{ $t('wfe.open') }}</button>
+        <button v-if="activeIsAgent && wfDefs.length" class="wfbtn edit wfreload" :class="{ busy: wfRefreshing }" :disabled="wfRefreshing" :title="$t('wfe.refresh_from_files_hint')" @mousedown.stop @click="reloadWorkflowsFromFiles"><svg class="ico" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>{{ $t('wfe.refresh_from_files') }}</button>
+        <button v-if="activeIsAgent && wfDefs.length && promptsRoot" class="wfbtn wfpath" :title="promptsRoot + ' — ' + $t('wfe.open_prompts_hint')" @mousedown.stop @click="openPromptsRoot"><svg class="ico" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg><span class="wfp">{{ promptsRoot }}</span></button>
         <button class="cmin" :title="composerCollapsed ? $t('term.composer_expand') : $t('term.composer_min')" @mousedown.stop @click="composerMin = !composerMin">{{ composerCollapsed ? '❐' : '—' }}</button>
       </div>
       <template v-if="!composerCollapsed">
@@ -1575,7 +1606,14 @@ onBeforeUnmount(() => {
                 @click="onChipClick(c)"
               ><span class="cdot" />{{ chipText(c.text) }}<span v-if="stageIcon(chipStatus(c))" class="stic">{{ stageIcon(chipStatus(c)) }}</span></button>
               <button v-if="chipRetryable(c)" class="rback" :title="$t('wf.step.rollback')" @mousedown.stop @click.stop="rollbackStep(chipStepId(c))">↺</button>
-              <PromptCollectAddon :text="c.text" />
+              <PromptCollectAddon
+                :text="c.text"
+                editable
+                :workflow-id="curWf.id"
+                :stage-id="activeStageId"
+                :prompt-index="chipPromptIndex(c)"
+                @edited="loadWorkflows"
+              />
             </span>
           </div>
           <div class="chipextra">
@@ -1676,6 +1714,15 @@ onBeforeUnmount(() => {
 .wfbtn.edit { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; color: var(--warn2); border: 1px solid color-mix(in srgb, var(--warn2) 60%, transparent); background: color-mix(in srgb, var(--warn2) 12%, transparent); border-radius: 4px; }
 .wfbtn.edit:hover { border-color: var(--warn2); background: color-mix(in srgb, var(--warn2) 22%, transparent); }
 .wfbtn.edit .ico { flex: none; }
+.wfbtn.wfreload { color: var(--ac2); border-color: color-mix(in srgb, var(--ac2) 60%, transparent); background: color-mix(in srgb, var(--ac2) 12%, transparent); }
+.wfbtn.wfreload:hover:not(:disabled) { border-color: var(--ac2); background: color-mix(in srgb, var(--ac2) 22%, transparent); }
+.wfbtn.wfreload:disabled { opacity: .6; cursor: default; }
+.wfbtn.wfreload.busy .ico { animation: wfspin .8s linear infinite; }
+@keyframes wfspin { to { transform: rotate(360deg); } }
+.wfbtn.wfpath { display: inline-flex; align-items: center; gap: 4px; max-width: 300px; padding: 2px 8px; border: 1px solid var(--bd); border-radius: 4px; color: var(--tx3); }
+.wfbtn.wfpath:hover { color: var(--tx1); border-color: var(--ac2); }
+.wfbtn.wfpath .ico { flex: none; }
+.wfbtn.wfpath .wfp { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .flowbar { display: flex; align-items: center; gap: 0; flex: none; flex-wrap: wrap; }
 .fgroup { display: flex; align-items: center; gap: 0; border: 1px dashed color-mix(in srgb, var(--tx1) 45%, transparent); border-radius: 12px; padding: 2px 8px 2px 6px; margin: 2px 0; background: color-mix(in srgb, var(--ac) 3%, transparent); }
 .fglabel { font-size: 10px; color: var(--tx4); margin-right: 6px; padding: 0 4px; border-right: 1px solid color-mix(in srgb, var(--tx1) 40%, transparent); white-space: nowrap; }

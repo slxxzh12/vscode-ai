@@ -4,7 +4,14 @@ import { ElMessage } from 'element-plus';
 import { t } from '../i18n';
 import { usePromptCollect, type CollectTarget } from './usePromptCollect';
 
-const props = defineProps<{ text: string }>();
+const props = defineProps<{
+  text: string;
+  editable?: boolean;
+  workflowId?: string;
+  stageId?: string;
+  promptIndex?: number;
+}>();
+const emit = defineEmits<{ (e: 'edited', text: string): void }>();
 // 根节点是 fragment（触发区 + Teleport），需手动把外部 class 落到触发区上（如 HistoryList 的 .mpc）
 defineOptions({ inheritAttrs: false });
 const pc = usePromptCollect();
@@ -107,6 +114,32 @@ function onDocDown(e: MouseEvent) {
   open.value = false;
 }
 function onKey(e: KeyboardEvent) { if (e.key === 'Escape') open.value = false; }
+
+const editing = ref(false);
+const draft = ref('');
+const saving = ref(false);
+function openEdit() {
+  draft.value = props.text;
+  editing.value = true;
+}
+async function saveEdit() {
+  const text = draft.value;
+  if (!text.trim()) { ElMessage.warning(t('pc.edit_empty')); return; }
+  if (!props.workflowId || !props.stageId || props.promptIndex == null) { editing.value = false; return; }
+  saving.value = true;
+  try {
+    const status = await pc.updatePrompt({ workflowId: props.workflowId, stageId: props.stageId }, props.promptIndex, text);
+    if (status === 'ok') {
+      ElMessage.success(t('pc.edit_saved'));
+      editing.value = false;
+      emit('edited', text);
+    } else {
+      ElMessage.error(t('pc.edit_failed', { msg: t('pc.network') }));
+    }
+  } finally {
+    saving.value = false;
+  }
+}
 onMounted(() => {
   document.addEventListener('mousedown', onDocDown);
   document.addEventListener('keydown', onKey);
@@ -123,7 +156,8 @@ onBeforeUnmount(() => {
 
 <template>
   <span ref="rootEl" v-bind="$attrs" class="pcwrap">
-    <span class="pcadd" :title="quickTitle" @mousedown.stop @click.stop="quickAdd">＋</span>
+    <span v-if="editable" class="pcedit" :title="$t('pc.edit')" @mousedown.stop @click.stop="openEdit">✎</span>
+    <span v-else class="pcadd" :title="quickTitle" @mousedown.stop @click.stop="quickAdd">＋</span>
     <span class="pccaret" :title="$t('pc.choose')" @mousedown.stop @click.stop="toggle">▾</span>
   </span>
   <Teleport to="body">
@@ -147,6 +181,16 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </Teleport>
+  <Teleport to="body">
+    <el-dialog v-model="editing" :title="$t('pc.edit_title')" width="min(720px, 92vw)" append-to-body>
+      <textarea v-model="draft" class="pcedita" rows="12" :placeholder="$t('pc.edit_ph')" @keydown.ctrl.enter.prevent="saveEdit" />
+      <div class="pcedittip">{{ $t('pc.edit_tip') }}</div>
+      <template #footer>
+        <button class="pcbtn" @click="editing = false">{{ $t('common.cancel') }}</button>
+        <button class="pcbtn primary" :disabled="saving" @click="saveEdit">{{ $t('common.save') }}</button>
+      </template>
+    </el-dialog>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -154,6 +198,8 @@ onBeforeUnmount(() => {
 .pcadd, .pccaret { cursor: pointer; color: var(--tx5); user-select: none; line-height: 1; }
 .pcadd { font-size: 13px; padding: 0 2px; }
 .pcadd:hover { color: var(--ac2); }
+.pcedit { cursor: pointer; color: var(--tx5); user-select: none; line-height: 1; font-size: 12px; padding: 0 2px; }
+.pcedit:hover { color: var(--ac2); }
 .pccaret { font-size: 9px; padding: 0 1px; }
 .pccaret:hover { color: var(--ac2); }
 .pcpanel { position: fixed; z-index: 3000; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.35); padding: 6px; font-size: 12px; }
@@ -168,4 +214,11 @@ onBeforeUnmount(() => {
 .pcnone { padding: 4px; }
 .pcaddmine { width: 100%; text-align: left; background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 5px 8px; cursor: pointer; font-family: inherit; font-size: 12px; }
 .pcaddmine:hover { border-color: var(--ac2); color: var(--ac2); }
+.pcedita { width: 100%; box-sizing: border-box; background: var(--bg1); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 8px 10px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.5; resize: vertical; min-height: 180px; }
+.pcedita:focus { outline: none; border-color: var(--ac2); }
+.pcedittip { margin-top: 6px; color: var(--tx5); font-size: 11px; }
+.pcbtn { background: var(--bg5); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 5px 14px; cursor: pointer; font-family: inherit; font-size: 12px; }
+.pcbtn:hover:not(:disabled) { border-color: var(--ac2); }
+.pcbtn.primary { background: var(--ac); color: var(--onac); border-color: var(--ac); }
+.pcbtn:disabled { opacity: .5; cursor: default; }
 </style>

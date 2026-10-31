@@ -910,6 +910,33 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (url.pathname === '/api/workflows-file-move' && req.method === 'POST') {
+    if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const from = typeof body.from === 'string' ? body.from : '';
+      const to = typeof body.to === 'string' ? body.to : '';
+      if (!from || !to) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
+      try {
+        ws.workflowStore.moveFile(from, to);
+      } catch (e) {
+        const code = String((e && e.message) || 'move-failed');
+        const status = code === 'bad-path' || code === 'bad-file' || code === 'bad-target' ? 400
+          : (code === 'not-found' ? 404 : (code === 'exists' ? 409 : 500));
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: code === 'ENOENT' ? 'not-found' : code }));
+        return;
+      }
+      for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
+      const workflows = ws.workflowStore.readAll();
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: true, workflows }));
+    });
+    return;
+  }
   if (url.pathname === '/api/workflows-reveal' && req.method === 'POST') {
     if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
     let raw = '';
