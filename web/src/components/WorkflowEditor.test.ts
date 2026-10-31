@@ -17,4 +17,36 @@ describe('WorkflowEditor', () => {
     await w.find('.wex').trigger('click');
     expect(w.emitted('close')).toBeTruthy();
   });
+
+  it('点击「打开提示词目录」调用 reveal 根目录', async () => {
+    const calls: Array<{ url: string; opt?: RequestInit }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opt?: RequestInit) => {
+      calls.push({ url: String(url), opt });
+      return okJson({ workflows: [] });
+    }));
+    const w = mountC(WorkflowEditor);
+    await flushPromises();
+    await w.find('.weopen').trigger('click');
+    await flushPromises();
+    const call = calls.find((c) => c.url === '/api/workflows-reveal');
+    expect(call).toBeTruthy();
+    expect(JSON.parse(String(call!.opt!.body))).toEqual({ path: '' });
+  });
+
+  it('轮询自动刷新工作流列表', async () => {
+    vi.useFakeTimers();
+    let phase = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => okJson({
+      workflows: phase === 0 ? [] : [{ id: '100_开发交付', label: '开发交付', stages: [] }],
+    })));
+    const w = mountC(WorkflowEditor);
+    await flushPromises();
+    expect(w.findAll('.wnitem').length).toBe(0);
+    phase = 1;
+    await vi.advanceTimersByTimeAsync(2000);
+    await flushPromises();
+    expect(w.findAll('.wnitem').length).toBe(1);
+    w.unmount();
+    vi.useRealTimers();
+  });
 });

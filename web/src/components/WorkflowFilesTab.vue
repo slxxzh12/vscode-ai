@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { t } from '../i18n';
 import { renderRemoteMarkdown } from '../markdown';
 import { useMarkdownEnhance } from '../markdown-enhance/useEnhance';
@@ -36,21 +36,58 @@ const html = computed(() => (content.value ? renderRemoteMarkdown(content.value)
 const mdBody = ref<HTMLElement | null>(null);
 useMarkdownEnhance(html, mdBody);
 
-async function loadTree() {
-  selected.value = null;
-  content.value = '';
-  error.value = '';
-  revealMsg.value = '';
+function findNode(nodes: TreeNode[], path: string): TreeNode | null {
+  for (const node of nodes || []) {
+    if (node.path === path) return node;
+    const hit = node.children ? findNode(node.children, path) : null;
+    if (hit) return hit;
+  }
+  return null;
+}
+
+async function loadTree(keep = false) {
+  if (!keep) {
+    selected.value = null;
+    content.value = '';
+    error.value = '';
+    revealMsg.value = '';
+  }
   if (!props.workflowId) { tree.value = []; return; }
   try {
     const res = await fetch(`/api/workflows-tree?workflowId=${encodeURIComponent(props.workflowId)}`);
     const data = await res.json();
-    tree.value = Array.isArray(data?.tree) ? data.tree : [];
+    const next = Array.isArray(data?.tree) ? data.tree : [];
+    tree.value = next;
+    if (keep && selected.value) {
+      const found = findNode(next, selected.value.path);
+      if (found) selected.value = found;
+      else { selected.value = null; content.value = ''; }
+    }
   } catch (e: any) {
+    if (keep) return;
     tree.value = [];
     error.value = t('wfe.files.load_failed', { msg: String(e?.message || e) });
   }
 }
+
+let timer: ReturnType<typeof setInterval> | null = null;
+let ticking = false;
+async function refresh() {
+  if (ticking) return;
+  ticking = true;
+  try {
+    await loadTree(true);
+    const node = selected.value;
+    if (!node || node.type !== 'file') return;
+    const res = await fetch(`/api/workflows-file?path=${encodeURIComponent(node.path)}`);
+    if (!res.ok) return;
+    const text = await res.text();
+    if (text !== content.value) content.value = text;
+  } catch { /* ignore poll errors */ }
+  finally { ticking = false; }
+}
+onMounted(() => { timer = setInterval(() => { void refresh(); }, 2000); });
+onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
 
 async function reveal(node: TreeNode | null) {
   if (!node) return;
@@ -105,7 +142,7 @@ async function removeFile(node: TreeNode) {
   }
 }
 
-watch(() => props.workflowId, loadTree, { immediate: true });
+watch(() => props.workflowId, () => { void loadTree(); }, { immediate: true });
 </script>
 
 <template>

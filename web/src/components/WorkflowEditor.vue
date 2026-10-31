@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue';
 import { t } from '../i18n';
 import type { Workflow } from '../workflowModel';
 import WorkflowFilesTab from './WorkflowFilesTab.vue';
@@ -19,12 +19,13 @@ watch(model, () => {
   if (!model.value.some((w) => w.id === currentId.value)) currentId.value = model.value[0]?.id || '';
 });
 
-async function load() {
+async function load(keep = false) {
+  const prev = currentId.value;
   try {
     const r = await fetch('/api/workflows-xml').then((x) => x.json());
     model.value = Array.isArray(r?.workflows) ? JSON.parse(JSON.stringify(r.workflows)) : [];
-  } catch { model.value = []; }
-  currentId.value = model.value[0]?.id || '';
+  } catch { if (!keep) model.value = []; return; }
+  currentId.value = keep && model.value.some((w) => w.id === prev) ? prev : model.value[0]?.id || '';
 }
 
 async function refreshModel() {
@@ -84,8 +85,30 @@ async function forceOverwriteAll() {
   }
 }
 
+async function openPromptsDir() {
+  msg.value = '';
+  try {
+    const res = await fetch('/api/workflows-reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '' }),
+    });
+    if (!res.ok) {
+      const j: any = await res.json().catch(() => ({}));
+      throw new Error(j?.error || `HTTP ${res.status}`);
+    }
+  } catch (e: any) {
+    msg.value = t('wfe.files.reveal_failed', { msg: String(e?.message || e) });
+  }
+}
+
 function close() { emit('close'); }
-onMounted(load);
+let timer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  void load();
+  timer = setInterval(() => { if (!busy.value) void load(true); }, 2000);
+});
+onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
 </script>
 
 <template>
@@ -96,6 +119,7 @@ onMounted(load);
         <nav class="tabs">
           <button v-for="k in tabs" :key="k" class="tab" :class="{ on: tab === k }" @click="tab = k">{{ $t('wfe.tab.' + k) }}</button>
         </nav>
+        <button class="weopen" :title="$t('wfe.open_prompts_hint')" @click="openPromptsDir">{{ $t('wfe.open_prompts') }}</button>
         <button class="wex" @click="close">×</button>
       </header>
       <div class="web">
@@ -132,6 +156,8 @@ onMounted(load);
 .tabs { display: flex; gap: 4px; margin-left: auto; }
 .tab { background: none; border: 1px solid transparent; color: var(--tx3); border-radius: 4px; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .tab.on { background: var(--bg1); border-color: var(--bd); color: var(--tx1); }
+.weopen { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.weopen:hover { border-color: var(--ac2); color: var(--ac2); }
 .wex { background: none; border: none; color: var(--tx3); font-size: 18px; cursor: pointer; }
 .web { flex: 1; min-height: 0; display: flex; padding: 12px 14px; gap: 12px; }
 .wenav { flex: none; width: 200px; display: flex; flex-direction: column; border: 1px solid var(--bd); border-radius: 6px; overflow: hidden; background: var(--bg2); }

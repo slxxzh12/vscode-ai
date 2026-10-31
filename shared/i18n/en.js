@@ -935,6 +935,8 @@ export const messages = {
   'wfe.group_label': 'Group (optional)',
   'wfe.prompt': 'Prompt',
   'wfe.open': 'Edit workflows',
+  'wfe.open_prompts': 'Open prompts folder',
+  'wfe.open_prompts_hint': 'Open the prompts (workflows) root folder in the file manager',
   'wfe.tab.form': 'Form',
   'wfe.tab.xml': 'XML',
   'wfe.tab.files': 'Folder',

@@ -935,6 +935,8 @@ export const messages = {
   'wfe.group_label': '分组（可选）',
   'wfe.prompt': '提示语',
   'wfe.open': '编辑工作流',
+  'wfe.open_prompts': '打开提示词目录',
+  'wfe.open_prompts_hint': '在文件管理器中打开提示词（工作流）根目录',
   'wfe.tab.form': '表单',
   'wfe.tab.xml': 'XML',
   'wfe.tab.files': '文件夹',
