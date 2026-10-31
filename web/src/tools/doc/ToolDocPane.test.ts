@@ -27,7 +27,7 @@ describe('ToolDocPane', () => {
   beforeEach(() => { h.newFile.mockReset(); h.activeId.value = ''; });
 
   it('空状态双击 → 调用 newFile', async () => {
-    const w = mountC(ToolDocPane, { props: { tool: 'notepad' } });
+    const w = mountC(ToolDocPane, { props: { tool: 'yaml' } });
     expect(w.find('.tdp-empty').exists()).toBe(true);
     await w.find('.tdp-empty').trigger('dblclick');
     expect(h.newFile).toHaveBeenCalledTimes(1);
@@ -40,7 +40,11 @@ describe('ToolDocPane', () => {
     expect(w.find('.dv').exists()).toBe(true);
   });
 
-  it('markdown / js 打开且无活动文件时自动新建并打开', async () => {
+  it('txt / markdown / js 打开且无活动文件时自动新建并打开', async () => {
+    mountC(ToolDocPane, { props: { tool: 'notepad' } });
+    await flushPromises();
+    expect(h.newFile).toHaveBeenCalledTimes(1);
+    h.newFile.mockReset();
     mountC(ToolDocPane, { props: { tool: 'markdown' } });
     await flushPromises();
     expect(h.newFile).toHaveBeenCalledTimes(1);
@@ -50,8 +54,8 @@ describe('ToolDocPane', () => {
     expect(h.newFile).toHaveBeenCalledTimes(1);
   });
 
-  it('notepad 打开时不会自动新建', async () => {
-    mountC(ToolDocPane, { props: { tool: 'notepad' } });
+  it('yaml 打开时不会自动新建', async () => {
+    mountC(ToolDocPane, { props: { tool: 'yaml' } });
     await flushPromises();
     expect(h.newFile).not.toHaveBeenCalled();
   });

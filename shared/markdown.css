@@ -120,6 +120,16 @@
 /* 增强完成前先隐藏：避免原始 mermaid 代码 / 尺寸变化造成闪烁或跳变 */
 .md-body[data-df-pending] { visibility: hidden; }
 .md-body pre.mermaid[data-processed="false"] { visibility: hidden; }
+.md-body pre.mermaid-data[data-processed="false"] { visibility: hidden; }
+.md-body .mermaid-data-error {
+  color: var(--errtx);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12.5px;
+  padding: 8px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
 .md-body .mermaid { display: flex; justify-content: center; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; padding: 10px; margin: 0.9em 0; }
 .md-body .mermaid svg { max-width: 100%; }
 .md-body .mermaid-err { color: var(--errtx); font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; padding: 8px 12px; }

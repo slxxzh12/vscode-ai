@@ -21,6 +21,14 @@ describe('renderMarkdown', () => {
     expect(h).toContain('data-processed="false"');
   });
 
+  it('mermaid-data 代码块 → pre.mermaid-data 且内容转义', () => {
+    const h = renderMarkdown('```mermaid-data\nreturn `<b>x</b>`\n```', P);
+    expect(h).toContain('class="mermaid-data"');
+    expect(h).toContain('data-processed="false"');
+    expect(h).toContain('&lt;b&gt;x&lt;/b&gt;');
+    expect(h).not.toContain('<b>x</b>');
+  });
+
   it('mermaid row → 输出并排标记', () => {
     const h = renderMarkdown('```mermaid row\ngraph LR\nA-->B\n```', P);
     expect(h).toContain('class="mermaid mermaid-side"');

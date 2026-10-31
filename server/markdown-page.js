@@ -73,13 +73,15 @@ function scriptsHtml(text, body, title, slides) {
   // 注意不能写成 body.includes('class="mermaid"')：```mermaid row``` 渲染出的
   // class 是 "mermaid mermaid-side"，严格子串匹配会漏掉，导致 Mermaid 本体脚本不加载。
   const hasMermaid = /<pre class="[^"]*\bmermaid\b/.test(body);
+  const hasData = /<pre class="[^"]*\bmermaid-data\b/.test(body);
   const hasCharts = hasChartSyntax(text);
-  const dynamic = hasMermaid || hasCharts;
+  const dynamic = hasMermaid || hasCharts || hasData;
   const errTpl = jsString(t('markdown.mermaid_error', { msg: '@@MSG@@' }));
+  const dataErrTpl = jsString(t('markdown.data_error', { msg: '@@MSG@@' }));
   const slidesJson = JSON.stringify(slides).replace(/</g, '\\u003c');
   const tags = [];
-  if (hasMermaid) tags.push(`<script src="${MERMAID_SCRIPT_NAME}"></script>`);
-  if (hasCharts) tags.push(`<script src="${ECHARTS_SCRIPT_NAME}"></script>`);
+  if (hasMermaid || hasData) tags.push(`<script src="${MERMAID_SCRIPT_NAME}"></script>`);
+  if (hasCharts || hasData) tags.push(`<script src="${ECHARTS_SCRIPT_NAME}"></script>`);
   tags.push(
     `<script type="module">import { createPptPresenter, enhanceMarkdown, enhanceSimpleTables } from './${MARKDOWN_CLIENT_SCRIPT_NAME}';(async()=>{`
       + 'const waitGlobal=async(n,ms)=>{const s=Date.now();while(!window[n]&&Date.now()-s<ms){await new Promise(r=>setTimeout(r,50));}return window[n]||null;};'
@@ -88,8 +90,10 @@ function scriptsHtml(text, body, title, slides) {
       + (hasCharts ? 'const echarts=await waitGlobal(\'echarts\',8000);' : 'const echarts=window.echarts||null;')
       + (hasMermaid ? 'const mermaid=await waitGlobal(\'mermaid\',8000);' : 'const mermaid=window.mermaid||null;')
       + `const errTpl=${errTpl};`
+      + `const dataErrTpl=${dataErrTpl};`
       + 'const opts={echarts:echarts,mermaid:mermaid,theme:light?\'default\':\'dark\',dark:!light,'
-      + 'errorText:(msg)=>errTpl.replace(\'@@MSG@@\',String(msg||\'\'))};'
+      + 'errorText:(msg)=>errTpl.replace(\'@@MSG@@\',String(msg||\'\')),'
+      + 'dataErrorText:(msg)=>dataErrTpl.replace(\'@@MSG@@\',String(msg||\'\'))};'
       + 'const enhance=async(root)=>{const items=await enhanceMarkdown(root,opts);enhanceSimpleTables(root);root.__dfItems=items;return items;};'
       + 'const dispose=(root)=>{const items=root.__dfItems||[];for(const it of items){try{it.dispose&&it.dispose();}catch(e){}}root.__dfItems=null;};'
       + 'window.__dfEnhance=enhance;'
@@ -122,7 +126,8 @@ export function renderMarkdownDocument(text, title, extraHtml = '') {
   const body = renderMarkdownHtml(text);
   const slides = splitMarkdownSlides(text).map((s) => ({ title: s.title, html: renderMarkdownHtml(s.content) }));
   const hasMermaid = /<pre class="[^"]*\bmermaid\b/.test(body);
-  const dynamic = hasMermaid || hasChartSyntax(text);
+  const hasData = /<pre class="[^"]*\bmermaid-data\b/.test(body);
+  const dynamic = hasMermaid || hasChartSyntax(text) || hasData;
   const scripts = scriptsHtml(text, body, title, slides);
   const pending = dynamic ? ' data-df-pending="1"' : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><script>${THEME_INIT_SCRIPT}</script><style>${THEME_CSS}${markdownCss()}${pptCss()}</style></head><body><article class="md-body md-page"${pending}>${body}</article>${scripts}${extraHtml}</body></html>`;

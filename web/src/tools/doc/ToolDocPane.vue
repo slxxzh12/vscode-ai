@@ -5,11 +5,11 @@ import { useToolWorkbench } from '../useToolWorkbench';
 import type { FileTool } from '../files/useToolFiles';
 
 // 主区内容：文档型工具（notepad/yaml/markdown/js）用 DocViewer 展示当前活动文件。
-const AUTO_NEW: FileTool[] = ['markdown', 'js'];
+const AUTO_NEW: FileTool[] = ['notepad', 'markdown', 'js'];
 const props = defineProps<{ tool: FileTool }>();
 const wb = useToolWorkbench(props.tool);
 
-// Markdown / JS 工具打开时若没有活动文件，直接按默认后缀新建并打开
+// TXT / Markdown / JS 工具打开时若没有活动文件，直接按默认后缀新建并打开
 onMounted(() => {
   if (!wb.activeId.value && AUTO_NEW.includes(props.tool)) void wb.newFile();
 });

@@ -268,7 +268,7 @@ watch(isDark, async () => { await nextTick(); draw(); });
 </template>
 
 <style scoped>
-.mv { display: flex; flex-direction: column; gap: 12px; height: 100%; overflow: auto; padding: 14px; box-sizing: border-box; }
+.mv { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; height: 100%; overflow: auto; padding: 14px; box-sizing: border-box; }
 .mvhead { display: flex; align-items: center; gap: 10px; }
 .mvhead h3 { margin: 0; font-size: 16px; color: var(--tx1); }
 .mvhint { color: var(--tx4); font-size: 12px; flex: 1; }

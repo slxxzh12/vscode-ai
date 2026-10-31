@@ -22,7 +22,10 @@ export function disposeMarkdown(container: HTMLElement): void {
   states.delete(container);
 }
 
-export async function enhanceMarkdown(container: HTMLElement): Promise<void> {
+export async function enhanceMarkdown(
+  container: HTMLElement,
+  opts: { readAsset?: (rel: string) => Promise<string> } = {},
+): Promise<void> {
   // 同一份 DOM 重复调用时直接跳过，避免把已增强的 Element Plus 表格再处理一次（多表头/表格消失）
   const prev = states.get(container);
   const rawTables = Array.from(container.querySelectorAll('table'))
@@ -39,6 +42,8 @@ export async function enhanceMarkdown(container: HTMLElement): Promise<void> {
     loadMermaid: async () => (await import('mermaid')).default as unknown as MermaidLike,
     theme: document.documentElement.dataset.theme === 'light' ? 'default' : 'dark',
     errorText: (msg) => t('markdown.mermaid_error', { msg }),
+    dataErrorText: (msg) => t('markdown.data_error', { msg }),
+    readAsset: opts.readAsset,
     enhanceTables: (root) => {
       const out: Item[] = [];
       for (const table of Array.from(root.querySelectorAll<HTMLTableElement>('table'))) {

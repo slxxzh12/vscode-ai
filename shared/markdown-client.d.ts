@@ -8,6 +8,10 @@ export type { ChartSpec, ChartHandle, EChartsLike } from './markdown-charts';
 export { enhanceSimpleTables } from './markdown-table-sort';
 
 export function groupMermaidSides(container: HTMLElement): void;
+export function enhanceDataCharts(
+  container: HTMLElement,
+  options?: { readAsset?: (rel: string) => Promise<string>; dataErrorText?: (msg: string) => string },
+): Promise<void>;
 export function renderMermaidBlocks(
   container: HTMLElement,
   mermaid: MermaidLike | null | undefined,
@@ -27,6 +31,8 @@ export interface EnhanceMarkdownOptions {
   theme?: string;
   dark?: boolean;
   errorText?: (msg: string) => string;
+  dataErrorText?: (msg: string) => string;
+  readAsset?: (rel: string) => Promise<string>;
   enhanceTables?: (container: HTMLElement) => EnhanceItem[] | Promise<EnhanceItem[] | void> | void;
 }
 

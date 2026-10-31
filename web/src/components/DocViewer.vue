@@ -12,6 +12,7 @@ import type { DocSource, DocReadResult } from '../tools/doc/docSource';
 import { t, locale } from '../i18n';
 import { isMarkdownFile, renderMarkdown, printMarkdown, collectAssetRefs } from '../markdown';
 import { enhanceMarkdown, disposeMarkdown } from '../markdown-enhance';
+import { makeReadAsset } from '../markdownAssets';
 import { splitMarkdownSlides } from '../markdownSlides';
 import { createPptPresenter, type PptPresenter } from '@devflow/shared/markdown-ppt';
 import '@devflow/shared/markdown-ppt.css';
@@ -367,7 +368,7 @@ async function applyPreview() {
   const body = mdBodyRef.value;
   if (!body) { previewPending.value = false; return; }
   try {
-    await enhanceMarkdown(body);
+    await enhanceMarkdown(body, { readAsset: makeReadAsset(props.source, props.path) });
   } catch (e: any) {
     mdErr.value = String(e?.message || e);
   } finally {
@@ -386,7 +387,7 @@ function ensurePpt(): PptPresenter {
       const slide = splitMarkdownSlides(raw.value)[i];
       return slide ? renderMdContent(slide.content) : '';
     },
-    enhance: (body) => enhanceMarkdown(body),
+    enhance: (body) => enhanceMarkdown(body, { readAsset: makeReadAsset(props.source, props.path) }),
     dispose: (body) => disposeMarkdown(body),
     renderError: (e: any) => `<p class="note err">${String(e?.message || e || '')}</p>`,
     labels: {

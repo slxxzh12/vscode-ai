@@ -9,6 +9,56 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+function defaultReadAsset(rel) {
+  const url = new URL(String(rel), document.baseURI).toString();
+  return fetch(url).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  });
+}
+
+function relativePath(path) {
+  const rel = String(path || '').trim();
+  if (!rel || /^[a-z][a-z0-9+.-]*:/i.test(rel) || rel.startsWith('/') || rel.startsWith('\\')) {
+    throw new Error('only relative paths are allowed');
+  }
+  return rel;
+}
+
+function runDataScript(code, readAsset) {
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const safeFetch = async (path) => {
+    const text = await readAsset(relativePath(path));
+    return new Response(String(text), { status: 200, headers: { 'Content-Type': 'text/plain' } });
+  };
+  const readFile = (path) => Promise.resolve(readAsset(relativePath(path)));
+  const fn = new AsyncFunction('fetch', 'readFile', code);
+  return fn(safeFetch, readFile);
+}
+
+export async function enhanceDataCharts(container, options = {}) {
+  const nodes = Array.from(container.querySelectorAll('pre.mermaid-data:not([data-processed="true"])'));
+  if (!nodes.length) return;
+  const readAsset = options.readAsset || defaultReadAsset;
+  for (const pre of nodes) {
+    try {
+      const out = await runDataScript(pre.textContent || '', readAsset);
+      if (typeof out !== 'string' || !out.trim()) throw new Error('empty mermaid source');
+      const next = document.createElement('pre');
+      next.className = 'mermaid';
+      next.dataset.processed = 'false';
+      next.textContent = out;
+      pre.replaceWith(next);
+    } catch (e) {
+      const msg = String((e && e.message) || e || '');
+      pre.dataset.processed = 'error';
+      pre.classList.remove('mermaid-data');
+      pre.classList.add('mermaid-data-error');
+      pre.textContent = options.dataErrorText ? options.dataErrorText(msg) : msg;
+    }
+  }
+}
+
 // ```mermaid row 标记的连续图块自动并排（外层 flex 容器）
 export function groupMermaidSides(container) {
   for (const pre of Array.from(container.querySelectorAll('pre.mermaid.mermaid-side'))) {
@@ -58,6 +108,7 @@ export async function renderMermaidBlocks(container, mermaid, options = {}) {
 // echarts/mermaid 可由调用方直接传入，也可传 loadEcharts/loadMermaid 延迟加载。
 export async function enhanceMarkdown(container, options = {}) {
   const items = [];
+  await enhanceDataCharts(container, options);
   groupMermaidSides(container);
 
   if (typeof options.enhanceTables === 'function') {
