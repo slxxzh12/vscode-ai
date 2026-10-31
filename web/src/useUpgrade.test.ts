@@ -29,8 +29,8 @@ describe('useUpgrade', () => {
     expect(shouldPopup(info, 1000, {})).toBe(true);
     expect(shouldPopup(info, 1000, { skip: 'v2' })).toBe(false);
     expect(shouldPopup(info, 1000, { popupAt: 1000 })).toBe(false);
-    expect(shouldPopup(info, 1000, { popupAt: 1000 - 10 * DAY })).toBe(true);
-    expect(shouldPopup(info, 1000, { popupAt: 1000 - 10 * DAY + 1 })).toBe(false);
+    expect(shouldPopup(info, 1000, { popupAt: 1000 - 15 * DAY })).toBe(true);
+    expect(shouldPopup(info, 1000, { popupAt: 1000 - 15 * DAY + 1 })).toBe(false);
     expect(shouldPopup(null, 1000, {})).toBe(false);
     expect(shouldPopup({ ...info, hasUpdate: false }, 1000, {})).toBe(false);
   });

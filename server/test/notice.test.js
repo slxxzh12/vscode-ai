@@ -5,10 +5,10 @@ import { createNotice, noticeUrl, NOTICE_BASE_URL } from '../notice.js';
 const okRes = (body) => ({ ok: true, status: 200, text: async () => body });
 const badRes = (status) => ({ ok: false, status, text: async () => '' });
 
-test('noticeUrl 按语言拼接 <lang>/main.md，非法回落 zh-CN', () => {
+test('noticeUrl 按语言拼接 <lang>/main.md，非法回落 en', () => {
   assert.equal(noticeUrl('zh-CN'), NOTICE_BASE_URL + '/zh-CN/main.md');
   assert.equal(noticeUrl('en'), NOTICE_BASE_URL + '/en/main.md');
-  assert.equal(noticeUrl('fr'), NOTICE_BASE_URL + '/zh-CN/main.md');
+  assert.equal(noticeUrl('fr'), NOTICE_BASE_URL + '/en/main.md');
 });
 
 test('按语言分别抓取并各自缓存', async () => {
@@ -24,12 +24,12 @@ test('按语言分别抓取并各自缓存', async () => {
   assert.equal(urls.length, 2);
 });
 
-test('非法语言回落 zh-CN 并复用其缓存', async () => {
+test('非法语言回落 en 并复用其缓存', async () => {
   const urls = [];
   const notice = createNotice({ fetchImpl: async (u) => { urls.push(u); return okRes('x'); } });
-  await notice.get('zh-CN');
+  await notice.get('en');
   const r = await notice.get('xx');
-  assert.equal(r.lang, 'zh-CN');
+  assert.equal(r.lang, 'en');
   assert.equal(r.cached, true);
   assert.equal(urls.length, 1);
 });

@@ -1,14 +1,14 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-# DevFlow / opencode for the Web (devflow-web-terminal)
+# vscode-ai (Void) / opencode for the Web
 
-Manage local terminals and opencode sessions from the browser: multi-session terminals, multiple projects, prompt workflows, Markdown preview, static sites / reverse proxy / LLM relay, phone remote control, and portable packages — all in one web UI.
+Run and manage CLI coding agents from the browser: opencode, Claude Code, pi, and more; multi-window / multi-tab terminals, multiple projects, prompt workflows, Markdown preview, static sites / reverse proxy / LLM relay, phone remote control, and portable packages — all in one web UI.
 
-> **Keywords (for search)**: opencode web UI, browser terminal, web terminal, online terminal, multi-session terminal, multi-project file tree, workflow orchestration, prompt workflow, Markdown preview, complex tables, Mermaid line chart, pie chart, ECharts, PPT presentation, static site hosting, reverse proxy, Nginx rules, LLM relay, OpenAI-compatible API, API gateway, Postman, Navicat, YAML, Base64, remote access, phone remote control, portable package, Windows, macOS, Vue 3, Vite, TypeScript, Node.js, node-pty, WebSocket.
+> **Keywords (for search)**: opencode web UI, Claude Code web UI, pi agent, browser terminal, web terminal, online terminal, multi-window terminal, multi-session terminal, multi-project file tree, workflow orchestration, prompt workflow, Markdown preview, complex tables, Mermaid line chart, pie chart, ECharts, PPT presentation, static site hosting, reverse proxy, Nginx rules, LLM relay, OpenAI-compatible API, API gateway, Postman, Navicat, YAML, Base64, remote access, phone remote control, portable package, Windows, macOS, Vue 3, Vite, TypeScript, Node.js, node-pty, WebSocket.
 
 ## What problems does it solve?
 
-- **opencode is CLI-only and switching projects/sessions is tedious**: a multi-tab terminal in the browser; sessions live on the server, so closing the page or losing network does not kill them.
+- **CLI coding agents (opencode, Claude Code, pi) lack a web workspace and switching projects/sessions is tedious**: a multi-window / multi-tab terminal in the browser; sessions live on the server, so closing the page or losing network does not kill them.
 - **Prompts are scattered and hard to reuse**: organize them into workflows / groups / stages, then fill the input or run a whole group with one click.
 - **Docs, charts, and presentations live in different tools**: Markdown preview ships with complex tables, line/bar/pie charts, and a PPT presentation mode.
 - **Local static sites, API forwarding, and LLM key management are fiddly**: built-in static site hosting, reverse proxy, and LLM relay with visual configuration.
@@ -18,6 +18,7 @@ Manage local terminals and opencode sessions from the browser: multi-session ter
 
 ## Features
 
+- **Agents and web multi-window management**: run opencode, Claude Code, pi, and other CLI coding agents in the same web terminal; manage multiple sessions/windows as tabs, with reconnect and buffer replay.
 - **Terminals and sessions**: multi-session tabs, reconnect with buffer replay, session notes/descriptions, message history, and prompt collection.
 - **Projects and files**: multi-project file tree, file preview/edit, code search, Git statistics, and code line counting.
 - **Workflows**: workflows → groups → stages → skills (Markdown files) stored as folders; stage prompt chips; reload from files and edit prompts in place.

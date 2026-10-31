@@ -29,6 +29,7 @@ import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from '
 import { getFileAssoc, setFileAssoc } from '../fileAssoc';
 import { buildChips, appendText, type Chip } from '../phaseChips';
 import WorkflowEditor from './WorkflowEditor.vue';
+import UpdateCheckDialog from './UpdateCheckDialog.vue';
 import { usePromptCollect } from '../prompts/usePromptCollect';
 import PromptCollectAddon from '../prompts/PromptCollectAddon.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
@@ -374,6 +375,9 @@ const agentCliReady = ref(false);   // agent CLI 是否已在固定会话里启�
 let agentLaunching = false;         // 启动命令注入中，避免重复注入
 let agentGen = 0;                   // 启动代际：切换项目重建会话后，作废旧会话遗留的延时注入
 const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent id
+// 关于页只给发布目录，不指向具体版本的压缩包
+const RELEASES_URL = 'https://gitee.com/slxxzh12/vscode-ai/releases';
+const MOBILE_RELEASES_URL = 'https://gitee.com/slxxzh12/vscode-ai-mobile/releases';
 const settingsOpen = ref(false);
 const editorOpen = ref(false);
 const settingsTab = ref<'general' | 'about'>('general');
@@ -384,6 +388,25 @@ const restoreTabsCount = ref(restoreTabs.value);
 function saveRestoreTabsCount() { restoreTabsCount.value = setRestoreTabs(restoreTabsCount.value); }
 const { version: appVersion } = useVersion();
 const { upgrade: upgradeInfo, loading: upgradeLoading, checkNow } = useUpgrade();
+const checkOpen = ref(false);
+const checkResult = ref<typeof upgradeInfo.value>(null);
+const checkErr = ref('');
+// 手动检查：无论是否有新版本都弹窗展示结果与发布目录，便于确认当前是否最新。
+async function runCheckNow() {
+  checkOpen.value = true;
+  checkErr.value = '';
+  checkResult.value = null;
+  try {
+    await checkNow();
+    checkResult.value = upgradeInfo.value;
+    if (!upgradeInfo.value?.ok) checkErr.value = upgradeInfo.value?.error || t('upgrade.failed');
+  } catch (e: any) {
+    checkErr.value = String(e?.message || e);
+  }
+}
+function openReleases() {
+  window.open(checkResult.value?.url || RELEASES_URL, '_blank', 'noopener');
+}
 const serverPort = ref<number | null>(null);
 const loadedPort = ref<number | null>(null);
 const portMsg = ref('');
@@ -1453,19 +1476,18 @@ onBeforeUnmount(() => {
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.version') }}</span><span class="aboutv">{{ appVersion || '-' }}</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.author') }}</span><span class="aboutval">Samuel Tsang</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.software') }}</span><span class="aboutv">{{ $t('term.about.name_value') }}</span></div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.download') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai/releases" target="_blank" rel="noopener">{{ $t('term.about.download_desktop') }}</a></div>
-              <div class="aboutrow"><span class="aboutk"></span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai-mobile/releases" target="_blank" rel="noopener">{{ $t('term.about.download_mobile') }}</a></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.download') }}</span><a class="aboutv link" :href="RELEASES_URL" target="_blank" rel="noopener">{{ $t('term.about.download_desktop') }}</a></div>
+              <div class="aboutrow"><span class="aboutk"></span><a class="aboutv link" :href="MOBILE_RELEASES_URL" target="_blank" rel="noopener">{{ $t('term.about.download_mobile') }}</a></div>
             </div>
             <div class="setsec">
               <div class="settitle">{{ $t('upgrade.check') }}</div>
               <div class="aboutrow"><span class="aboutk">{{ $t('upgrade.current') }}</span><span class="aboutv">{{ appVersion || '-' }}</span></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('upgrade.latest') }}</span><span class="aboutv">{{ upgradeInfo?.latest || '-' }}</span></div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('upgrade.download_url') }}</span>
-                <a v-if="upgradeInfo?.downloadUrl" class="aboutv link" :href="upgradeInfo.downloadUrl" target="_blank" rel="noopener">{{ upgradeInfo.downloadUrl }}</a>
-                <span v-else class="aboutv">-</span>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.download_url') }}</span>
+                <a class="aboutv link" :href="upgradeInfo?.url || RELEASES_URL" target="_blank" rel="noopener">{{ upgradeInfo?.url || RELEASES_URL }}</a>
               </div>
               <div class="aboutrow"><span class="aboutk"></span>
-                <button class="upgbtn" :disabled="upgradeLoading" @click="checkNow">{{ upgradeLoading ? $t('upgrade.checking') : $t('upgrade.check_now') }}</button>
+                <button class="upgbtn" :disabled="upgradeLoading" @click="runCheckNow">{{ upgradeLoading ? $t('upgrade.checking') : $t('upgrade.check_now') }}</button>
               </div>
             </div>
             <div class="setsec">
@@ -1486,7 +1508,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="setsec">
               <div class="settitle">{{ $t('term.about.license') }}</div>
-              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.download_url') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai/releases" target="_blank" rel="noopener">https://gitee.com/slxxzh12/vscode-ai/releases</a></div>
+              <div class="aboutrow"><span class="aboutk">{{ $t('term.about.download_url') }}</span><a class="aboutv link" :href="RELEASES_URL" target="_blank" rel="noopener">{{ RELEASES_URL }}</a></div>
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.feedback') }}</span><a class="aboutv link" href="https://gitee.com/slxxzh12/vscode-ai/issues" target="_blank" rel="noopener">https://gitee.com/slxxzh12/vscode-ai/issues</a></div>
               <pre class="license">{{ $t('term.about.mit') }}</pre>
               <div class="licnote">{{ $t('term.about.note') }}</div>
@@ -1673,6 +1695,17 @@ onBeforeUnmount(() => {
     </div>
   </div>
   <WorkflowEditor v-if="editorOpen" @close="editorOpen = false" @saved="loadWorkflows" />
+  <UpdateCheckDialog
+    :open="checkOpen"
+    :current="appVersion"
+    :latest="checkResult?.latest || ''"
+    :url="checkResult?.url || RELEASES_URL"
+    :has-update="!!checkResult?.hasUpdate"
+    :checking="upgradeLoading"
+    :error="checkErr"
+    @close="checkOpen = false"
+    @open-releases="openReleases"
+  />
 </template>
 
 <style scoped>
