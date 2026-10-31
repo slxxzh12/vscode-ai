@@ -8,8 +8,8 @@ import { t, setLocale, getLocale } from '../i18n.js';
 
 function tmpFile() { return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-lang-')), 'devflow.xml'); }
 
-test('devflow.xml 默认 language=zh-CN', () => {
-  assert.equal(loadDevflowConfig(tmpFile()).server.language, 'zh-CN');
+test('devflow.xml 缺失时 language 跟随机器语言', () => {
+  assert.ok(['zh-CN', 'en'].includes(loadDevflowConfig(tmpFile()).server.language));
 });
 
 test('updateServerAttrs 持久化 language 且不影响 host', () => {

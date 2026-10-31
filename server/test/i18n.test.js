@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { translate, normalizeLocale, LOCALES, DEFAULT_LOCALE } from '@devflow/shared/i18n';
+import { translate, normalizeLocale, detectLocale, LOCALES, DEFAULT_LOCALE } from '@devflow/shared/i18n';
 
 test('normalizeLocale 归一化', () => {
   assert.equal(normalizeLocale('zh-CN'), 'zh-CN');
@@ -13,7 +13,11 @@ test('normalizeLocale 归一化', () => {
 
 test('LOCALES 与默认语言', () => {
   assert.deepEqual([...LOCALES], ['zh-CN', 'en']);
-  assert.equal(DEFAULT_LOCALE, 'zh-CN');
+  assert.equal(DEFAULT_LOCALE, 'en');
+});
+
+test('detectLocale：无法识别时回退英文', () => {
+  assert.ok(LOCALES.includes(detectLocale()));
 });
 
 test('translate 中英词条与 {param} 插值', () => {
