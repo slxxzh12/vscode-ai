@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
+import { translate } from '@devflow/shared/i18n';
 import { t } from '../../i18n';
 import { copyText } from '../../clipboard';
 import {
@@ -25,6 +26,17 @@ const busy = ref(false);
 const msg = ref('');
 
 const activeStatus = computed(() => props.status ?? null);
+// 默认名（各语言下创建的「静态网站 / Static site」）随界面语言显示，不被历史数据锁死。
+const DEFAULT_NAMES = new Set(['zh-CN', 'en'].map((l) => translate(l, 'static_site.default_name')));
+function isDefaultName(v: string): boolean { return DEFAULT_NAMES.has(String(v || '').trim()); }
+const displayName = computed(() => {
+  const n = String(form.value.name || '').trim();
+  return !n || isDefaultName(n) ? t('static_site.default_name') : form.value.name;
+});
+const nameText = computed({
+  get: () => displayName.value,
+  set: (v: string) => { form.value = { ...form.value, name: v }; },
+});
 const sitePrefixOf = computed(() => {
   const s = String(props.rule.sitePrefix || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
   return s ? `/${s}` : '';
@@ -94,6 +106,7 @@ async function doSave() {
   if (!form.value.staticDir) { msg.value = t('static_site.pick_first'); return; }
   busy.value = true; msg.value = '';
   try {
+    if (isDefaultName(form.value.name)) form.value = { ...form.value, name: t('static_site.default_name') };
     const payload = { ...form.value };
     if (!payload.id) payload.enabled = true;
     const saved = await props.api.save(payload);
@@ -148,7 +161,7 @@ function statusText() {
   <section ref="root" class="sscard" :class="{ hl: highlight }" :data-rule-id="id || undefined">
     <div class="sshead" @click="collapsed = !collapsed">
       <span class="ssdot" :class="activeStatus?.status || 'stopped'" />
-      <span class="ssname">{{ form.name || $t('static_site.default_name') }}</span>
+      <span class="ssname">{{ displayName }}</span>
       <span class="ssmode">{{ form.mode === 'port' ? form.listenHost + ':' + form.listenPort : form.pathPrefix }}</span>
       <span v-if="activeStatus" class="ssstat" :class="activeStatus.status">{{ statusText() }}</span>
       <button v-if="id" class="ssbtn" @click.stop="toggle">{{ activeStatus?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
@@ -157,7 +170,7 @@ function statusText() {
 
     <div v-if="!collapsed" class="sscard-body">
       <div class="ssrow">
-        <label>{{ $t('nginx.name') }}<input v-model="form.name" class="ssin" data-field="name" /></label>
+        <label>{{ $t('nginx.name') }}<input v-model="nameText" class="ssin" data-field="name" /></label>
         <label>{{ $t('nginx.mode') }}
           <select v-model="form.mode" class="ssin" data-field="mode">
             <option value="port">{{ $t('nginx.mode_port') }}</option>
