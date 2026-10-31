@@ -1,0 +1,28 @@
+node_modules/
+dist/
+dist-portable/
+dist-portable-mac/
+env/
+.superpowers/
+*.log
+logs/
+bin/
+.DS_Store
+# IDE / 编辑器临时文件（禁止入库）
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+# OS 临时文件
+Thumbs.db
+desktop.ini
+# 本地环境变量（含密钥，禁止入库）
+.env
+.env.*
+# 协作子系统运行时数据（含本机 Ed25519 私钥，禁止入库）
+server/collaboration/*.json
+server/collaboration/inbox/
+# 运行时端口记录（服务启动时生成；data/ 为宿主端口文件与运行时端口记录目录，禁止入库）
+data/
+config/runtime-port.txt

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DevFlow 统一配置
+  - server：语言与监听地址（设置面板可改语言，服务端就地改写本标签属性）
+  - 监听端口不在这里：存 <应用目录>/data/port.txt（DEVFLOW_PORT 环境变量优先）
+  - agents：默认 Agent 列表（default 为默认选中的 id）
+  - 工作流不在这里：见 config/workflows/（首次启动复制到数据目录）
+-->
+<devflow>
+  <server language="zh-CN" host="0.0.0.0" />
+
+  <!--
+    agents：每个 agent 可选配「续会话」与「用量采集」能力（按当前默认 agent 取用对应配置）：
+    - resume="opencode"：启用内建 opencode 续会话适配器（发现 id 用 `<cmd> session list --format json`，
+      续接用 `<cmd> --session <id>`）。改名的 opencode（如 cmd="nga"）加这一项即可续会话。
+    - resume="claude"：启用内建 Claude 适配器（claudecode/codeagent 等，续接用 `<cmd> --resume <id>`；
+      会话 id 从 ~/.claude/projects/<cwd转义>/<uuid>.jsonl 里取最接近创建时间的那个，无需额外配置）。
+    - resumeDiscover="命令"：在该会话 cwd 下执行，stdout 去空白即 agent 会话 id；缺省仅 opencode 有内建发现。
+    - resumeCmd="命令模板"：恢复时注入终端；含 {id} 用发现的 id 替换，不含则原样执行（如 xxx --continue）。
+    - statsCmd="命令模板"：本机用量采集命令，{days} 替换为天数；缺省回退 <cmd> stats --days {days}。
+    示例（真值按本机 CLI 填写，勿写密钥）：
+      <agent id="claudecode" name="ClaudeCode" cmd="claudecode" statsCmd="claudecode stats --days {days}" resumeCmd="claudecode --resume {id}" resumeDiscover="<列出最近会话 id 的命令>" />
+      <agent id="nga" name="nga" cmd="nga" resume="opencode" />
+    注意：resumeCmd 不含 {id}（如 --continue）时，同目录多会话会都接到「最近一次」，易串台。
+    详见 docs/learn/agent续会话配置.md。
+  -->
+  <agents default="nga">
+    <agent id="opencode" name="OpenCode" cmd="opencode" statsCmd="opencode stats --days {days}" />
+    <agent id="claudecode" name="ClaudeCode" cmd="claudecode" resume="claude" />
+    <agent id="nga" name="nga" cmd="nga" resume="opencode" statsCmd="nga stats --days {days}" />
+    <agent id="codeagent" name="codeagent" cmd="codeagent" resume="claude" />
+  </agents>
+
+</devflow>

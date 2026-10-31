@@ -1,0 +1,30 @@
+{
+  "name": "@devflow/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.js" },
+    "./collab": { "types": "./collab.d.ts", "default": "./collab.js" },
+    "./scheduler": { "types": "./scheduler.d.ts", "default": "./scheduler.js" },
+    "./i18n": { "types": "./i18n/index.d.ts", "default": "./i18n/index.js" },
+    "./csv": { "types": "./csv.d.ts", "default": "./csv.js" },
+    "./file-icon": { "types": "./file-icon.d.ts", "default": "./file-icon.js" },
+    "./markdown": { "types": "./markdown.d.ts", "default": "./markdown.js" },
+    "./markdown-client": { "types": "./markdown-client.d.ts", "default": "./markdown-client.js" },
+    "./markdown-charts": { "types": "./markdown-charts.d.ts", "default": "./markdown-charts.js" },
+    "./markdown-slides": { "types": "./markdown-slides.d.ts", "default": "./markdown-slides.js" },
+    "./markdown-ppt": { "types": "./markdown-ppt.d.ts", "default": "./markdown-ppt.js" },
+    "./markdown-ppt.css": { "default": "./markdown-ppt.css" },
+    "./markdown-table-sort": { "types": "./markdown-table-sort.d.ts", "default": "./markdown-table-sort.js" },
+    "./markdown.css": { "default": "./markdown.css" },
+    "./workflow-xml": { "types": "./workflow-xml.d.ts", "default": "./workflow-xml.js" },
+    "./workflow-group": { "types": "./workflow-group.d.ts", "default": "./workflow-group.js" },
+    "./git-filter": { "types": "./git-filter.d.ts", "default": "./git-filter.js" },
+    "./llm-presets": { "types": "./llm-presets.d.ts", "default": "./llm-presets.js" },
+    "./code-count": { "types": "./code-count.d.ts", "default": "./code-count.js" },
+    "./version.cjs": { "default": "./version.cjs" }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "devflow-web-terminal",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "dev:server": "set DEVFLOW_PORT=33333&& node --watch server/index.js",
+    "dev:web": "set DEVFLOW_PORT=33333&& npm --prefix web run dev",
+    "build:web": "npm --prefix web run build",
+    "build:portable": "node scripts/build.js",
+    "build:portable:opencode": "node scripts/build-opencode.js",
+    "build:portable:all": "node scripts/build-all.js",
+    "build:portable:mac": "node scripts/build-mac.js",
+    "test:server": "node --test \"server/test/*.test.js\"",
+    "test:web": "npm --prefix web run test",
+    "test": "npm run test:server && npm run test:web",
+    "typecheck": "npm --prefix web run typecheck",
+    "check:i18n": "node scripts/check-i18n.js",
+    "count:code": "node scripts/count-code.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.21.5": true
+  }
+}

@@ -1,0 +1,136 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Projects } from '../projects.js';
+
+function makeProjects(roots) {
+  return new Projects({ projects: roots.map((r, i) => ({ id: 'p' + i, name: 'P' + i, root: r })) });
+}
+function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'dftree-')); }
+
+test('listProjects 返回概要', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.equal(p.listProjects()[0].id, 'p0');
+});
+
+test('tree 列出顶层并分类排序（目录优先）', () => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'b.txt'), '');
+  fs.mkdirSync(path.join(dir, 'a-dir'));
+  const p = makeProjects([dir]);
+  const items = p.tree('p0', '');
+  assert.deepEqual(items, [{ name: 'a-dir', type: 'dir' }, { name: 'b.txt', type: 'file' }]);
+});
+
+test('tree 支持相对子目录', () => {
+  const dir = tmpDir();
+  fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'src', 'x.js'), '');
+  const p = makeProjects([dir]);
+  assert.deepEqual(p.tree('p0', 'src'), [{ name: 'x.js', type: 'file' }]);
+});
+
+test('未知项目抛 code=not-found', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.throws(() => p.tree('nope', ''), (e) => e.code === 'not-found');
+});
+
+test('目录不存在抛 code=not-found', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.throws(() => p.tree('p0', 'missing'), (e) => e.code === 'not-found');
+});
+
+test('越界路径 403（.. 逃逸）', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.throws(() => p.tree('p0', '..'), (e) => e.code === 'forbidden');
+});
+
+test('绝对路径攻击 403', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  const outside = path.join(os.tmpdir(), 'other');
+  assert.throws(() => p.tree('p0', outside), (e) => e.code === 'forbidden');
+});
+
+test('符号链接逃逸 403（junction）', (t) => {
+  const dir = tmpDir();
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'dfout-'));
+  try {
+    fs.symlinkSync(outside, path.join(dir, 'escape'), 'junction');
+  } catch {
+    t.skip('无 junction 权限');
+    return;
+  }
+  const p = makeProjects([dir]);
+  assert.throws(() => p.tree('p0', 'escape'), (e) => e.code === 'forbidden');
+});
+
+test('revealTarget �������ڵ��ļ���Ŀ¼', () => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'x');
+  fs.mkdirSync(path.join(dir, 'sub'));
+  const p = makeProjects([dir]);
+  const f = p.revealTarget('p0', 'a.txt');
+  assert.equal(f.isDir, false);
+  assert.equal(f.name, 'a.txt');
+  const d = p.revealTarget('p0', 'sub');
+  assert.equal(d.isDir, true);
+});
+
+test('revealTarget ������/Խ���״�', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.throws(() => p.revealTarget('p0', 'ghost'), (e) => e.code === 'not-found');
+  assert.throws(() => p.revealTarget('p0', '..%2F..'), (e) => e.code === 'forbidden' || e.code === 'not-found');
+});
+
+test('resolveAbsolute 命中已有项目', () => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.md'), '# hi');
+  const p = makeProjects([dir]);
+  const r = p.resolveAbsolute(path.join(dir, 'a.md'));
+  assert.equal(r.projectId, 'p0');
+  assert.equal(r.rel, 'a.md');
+  assert.equal(r.project.temp, false);
+});
+
+test('resolveAbsolute 项目外建临时项目并可复用', () => {
+  const dir = tmpDir();
+  const other = tmpDir();
+  fs.writeFileSync(path.join(other, 'b.yaml'), 'x: 1');
+  const p = makeProjects([dir]);
+  const r1 = p.resolveAbsolute(path.join(other, 'b.yaml'));
+  assert.equal(r1.rel, 'b.yaml');
+  assert.equal(r1.project.temp, true);
+  assert.ok(r1.projectId.startsWith('tmp:'));
+  const r2 = p.resolveAbsolute(path.join(other, 'b.yaml'));
+  assert.equal(r2.projectId, r1.projectId);
+});
+
+test('resolveAbsolute 不存在/目录抛错', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.throws(() => p.resolveAbsolute(path.join(dir, 'ghost.md')), (e) => e.code === 'not-found');
+  assert.throws(() => p.resolveAbsolute(dir), (e) => e.code === 'not-file');
+});
+
+test('rootOf 返回项目根解析路径，未知项目抛 not-found', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.equal(p.rootOf('p0'), fs.realpathSync(dir));
+  assert.throws(() => p.rootOf('nope'), (e) => e.code === 'not-found');
+});
+
+test('addTempProject 不写 XML（projects 数组含 temp 标记）', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  const proj = p.addTempProject({ root: dir, name: 'D' });
+  assert.equal(proj.temp, true);
+  assert.equal(p.rawProjects().some((x) => x.id === proj.id), true);
+});

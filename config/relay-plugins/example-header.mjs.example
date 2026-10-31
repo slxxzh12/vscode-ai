@@ -1,0 +1,9 @@
+// 协议兼容：补上游需要的头、加自定义追踪头。改名去掉 .example 即启用。
+export default {
+  name: 'header-compat',
+  priority: 100,
+  onRequest(ctx) {
+    if (!ctx.headers['anthropic-version']) ctx.headers['anthropic-version'] = '2023-06-01';
+    ctx.headers['x-relay-by'] = 'devflow';
+  },
+};
