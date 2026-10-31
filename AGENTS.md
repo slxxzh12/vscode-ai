@@ -17,6 +17,19 @@
 - **代码、脚本、配置模板、README、以及 `docs/` 下的设计/计划文档中，一律禁止出现任何明文敏感信息**；需要引用时只用占位符（如 `https://<user>:<token>@gitee.com/...`），真实值从 `env/` 读取。提交前用 `git grep -n -I -E "https?://[^/]+:[^/]+@|ghp_|github_pat_|glpat_|-----BEGIN [A-Z ]*PRIVATE KEY-----"` 自查。
 - **代码中一律禁止写死绝对路径**（如 `D:\...`、`C:/...`、`/Users/...`）或本机用户名/主机名；路径只能来自运行时推导（`__dirname`、`process.cwd()`、数据目录、配置项/环境变量）或写成占位符（如 `<数据目录>/void.db`）。本「环境」节记录本机特异路径属例外。
 
+### 敏感信息（强制）
+
+- **敏感信息只能放在 `env/`**：令牌、口令/密码、密钥、私钥、带凭据的 URL、连接串中的密码等，**任何其他位置都不得出现真实值**，包括代码、脚本、配置模板、文档、测试、日志、提交信息、Release 说明；需要引用时只用占位符（如 `https://<user>:<token>@gitee.com/...`），真实值从 `env/` 读取。
+- **每次代码写完后、提交前必须做敏感信息扫描**（未通过不得提交/推送）：
+  ```powershell
+  git grep -n -I -E "https?://[^/]+:[^/]+@|ghp_|github_pat_|glpat_|-----BEGIN [A-Z ]*PRIVATE KEY-----"
+  git grep -n -I -i -E "passwd|password|passphrase|secret|api[_-]?key|token"
+  git ls-files env
+  ```
+  第二条命中需人工确认非真实值；`git ls-files env` 必须为空。
+- 若清理结果为空但历史里曾出现过真实凭据：**必须轮换该凭据**，并按需重写 git 历史；强推（`--force`）前必须获得确认。
+- 提交/推送前仍要执行 `docs/learn/git仓库提交检查和提交事项.md` 的完整清单。
+
 ## 服务启动规范（严格遵守，违规即返工）
 
 - **所有常驻进程必须异步（非阻塞）启动**，严禁前台阻塞式命令。
