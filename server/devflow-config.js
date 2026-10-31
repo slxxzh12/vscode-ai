@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { normalizeLocale, DEFAULT_LOCALE } from '@devflow/shared/i18n';
+import { normalizeLocale, detectLocale } from '@devflow/shared/i18n';
 import { parseWorkflowXml, fallbackWorkflows } from './workflow-xml.js';
 import { serializeWorkflow, decode } from '@devflow/shared/workflow-xml';
 import { downloadsDir } from './data-home.js';
@@ -28,7 +28,7 @@ function escXml(s) {
 
 export function buildDefaultConfig() {
   return {
-    server: { language: DEFAULT_LOCALE, host: '127.0.0.1' },
+    server: { language: detectLocale(), host: '127.0.0.1' },
     agents: { default: DEFAULT_AGENT, list: DEFAULT_AGENTS.map((a) => ({ ...a })), chosen: false },
     workflows: fallbackWorkflows(),
   };
@@ -39,7 +39,11 @@ export function parseDevflowConfig(xml) {
   const text = String(xml || '');
 
   const serverTag = (text.match(/<server\b([^>]*?)\/?>/i) || [])[1] || '';
-  const language = normalizeLocale(decode(attr(serverTag, 'language')) || defaults.server.language);
+  const rawLanguage = decode(attr(serverTag, 'language'));
+  // language="auto"（或缺失）表示跟随当前机器语言；显式值仍以用户设置为准
+  const language = (!rawLanguage || rawLanguage.toLowerCase() === 'auto')
+    ? defaults.server.language
+    : normalizeLocale(rawLanguage);
   const host = decode(attr(serverTag, 'host')) || defaults.server.host;
 
   let list = defaults.agents.list;
@@ -142,9 +146,10 @@ export function updateServerAttrs(file, patch = {}) {
   let xml = fs.readFileSync(file, 'utf8');
   const m = xml.match(/<server\b([^>]*?)\s*\/?>/i);
   const cur = m ? m[1] : '';
+  const curLanguage = decode(attr(cur, 'language'));
   const language = patch.language != null
     ? normalizeLocale(patch.language)
-    : normalizeLocale(decode(attr(cur, 'language')) || DEFAULT_LOCALE);
+    : (!curLanguage || curLanguage.toLowerCase() === 'auto' ? detectLocale() : normalizeLocale(curLanguage));
   const host = patch.host != null
     ? (String(patch.host).trim() || '127.0.0.1')
     : (decode(attr(cur, 'host')) || '127.0.0.1');

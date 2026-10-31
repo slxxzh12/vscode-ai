@@ -18,6 +18,12 @@ describe('web i18n', () => {
     expect(mod.locale.value).toBe('en');
   });
 
+  it('无法识别的语言（非中文）默认英文', async () => {
+    stubEnv('fr-FR');
+    const mod = await import('./i18n');
+    expect(mod.locale.value).toBe('en');
+  });
+
   it('localStorage 优先于浏览器语言', async () => {
     stubEnv('en-US', new Map([['devflow-lang', 'zh-CN']]));
     const mod = await import('./i18n');

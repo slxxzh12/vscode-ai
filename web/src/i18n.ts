@@ -1,23 +1,15 @@
 import { ref, type Ref } from 'vue';
-import { translate, normalizeLocale, LOCALES } from '@devflow/shared/i18n';
+import { translate, normalizeLocale, detectLocale, LOCALES } from '@devflow/shared/i18n';
 
 const STORE = 'devflow-lang';
 
-// 默认跟随系统语言：系统为中文 → 中文；其余一律 → 英文
-function systemLocale(): string {
-  try {
-    const lang = (typeof navigator !== 'undefined' && navigator.language) || '';
-    return lang.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
-  } catch { /* ignore */ }
-  return 'en';
-}
-
+// 默认跟随当前机器语言：中文 → 中文；其余（含无法识别）→ 英文。
 function initial(): string {
   try {
     const saved = localStorage.getItem(STORE);
     if (saved) return normalizeLocale(saved);
   } catch { /* ignore */ }
-  return systemLocale();
+  return detectLocale();
 }
 
 export const locale: Ref<string> = ref(initial());

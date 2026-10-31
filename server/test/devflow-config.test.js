@@ -40,10 +40,15 @@ test('parseDevflowConfig 解析 server/agents/workflows', () => {
   assert.deepEqual(c.workflows[0].stages[0].prompts, ['p1', 'p2']);
 });
 
-test('parseDevflowConfig 非法/缺失回落默认', () => {
+test('parseDevflowConfig 非法/缺失回落英文', () => {
   const c = parseDevflowConfig('<devflow><server port="abc" language="fr"/></devflow>');
-  assert.equal(c.server.language, 'zh-CN');
+  assert.equal(c.server.language, 'en');
   assert.equal(c.agents.default, 'opencode');
+});
+
+test('parseDevflowConfig language="auto" 跟随机器语言', () => {
+  const c = parseDevflowConfig('<devflow><server language="auto" /></devflow>');
+  assert.ok(['zh-CN', 'en'].includes(c.server.language));
 });
 
 test('serialize → parse 往返一致', () => {
@@ -73,9 +78,9 @@ test('updateServerAttrs 只写 language/host，不再写 port，且保留注释'
   assert.ok(xml.includes('nga.cmd'), '其余内容保留');
 });
 
-test('loadDevflowConfig 文件缺失返回默认', () => {
+test('loadDevflowConfig 文件缺失返回默认（语言跟随机器）', () => {
   const c = loadDevflowConfig(tmpFile());
-  assert.equal(c.server.language, 'zh-CN');
+  assert.ok(['zh-CN', 'en'].includes(c.server.language));
   assert.ok(c.agents.list.length >= 1);
 });
 
