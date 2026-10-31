@@ -1,3 +1,5 @@
+import DOMPurify from 'dompurify';
+import type MarkdownIt from 'markdown-it';
 import { createMarkdown, escapeHtml as escHtml, isMarkdownFile } from '@devflow/shared/markdown';
 import { groupMermaidSides, renderMermaidBlocks, type MermaidLike } from '@devflow/shared/markdown-client';
 import { t } from './i18n';
@@ -6,7 +8,15 @@ export interface MarkdownOptions {
   projectId: string;
   fileDir: string;
   assetMap?: Map<string, string>;
+  // 开启后在 Markdown 中渲染原始 HTML（表格/图标等），默认关闭；渲染结果会经 DOMPurify 消毒。
+  html?: boolean;
 }
+
+// 原始 HTML 模式的安全边界：移除可执行/可嵌入内容；其余标签与属性交给 DOMPurify 白名单。
+const PURIFY_OPTS = {
+  FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'textarea', 'button', 'select', 'option', 'svg', 'math', 'link', 'meta', 'base'],
+  FORBID_ATTR: ['srcdoc'],
+};
 
 function buildRaw(projectId: string, rel: string, suffix: string): string {
   return `/api/raw?project=${encodeURIComponent(projectId)}&path=${encodeURIComponent(rel)}${suffix}`;
@@ -37,6 +47,7 @@ function resolveTarget(raw: string, dir: string): { rel: string; suffix: string 
 }
 
 const md = createMarkdown();
+const mdHtml = createMarkdown({ html: true });
 
 function rewriteTokenAttrs(tokens: unknown[], opt: MarkdownOptions): void {
   for (const t of tokens as Array<{ type: string; children?: unknown[]; attrGet(n: string): string | null; attrSet(n: string, v: string): void }>) {
@@ -69,14 +80,60 @@ function rewriteTokenAttrs(tokens: unknown[], opt: MarkdownOptions): void {
   }
 }
 
-md.core.ruler.push('rewrite-assets', (state) => {
-  const opt = (state.env && (state.env as { opt?: MarkdownOptions }).opt) || undefined;
-  if (opt) rewriteTokenAttrs(state.tokens, opt);
-});
+function installAssetRewrite(engine: MarkdownIt): void {
+  engine.core.ruler.push('rewrite-assets', (state) => {
+    const opt = (state.env && (state.env as { opt?: MarkdownOptions }).opt) || undefined;
+    if (opt) rewriteTokenAttrs(state.tokens, opt);
+  });
+}
+installAssetRewrite(md);
+installAssetRewrite(mdHtml);
+
+// 原始 HTML 模式下，把 <img src>/<a href> 的相对路径同样改写为项目 raw 地址或已解析的 blob。
+function rewriteHtmlUrls(root: ParentNode, opt: MarkdownOptions): void {
+  for (const img of Array.from(root.querySelectorAll('img[src]'))) {
+    const r = resolveTarget(img.getAttribute('src') || '', opt.fileDir);
+    if (!r) continue;
+    const mapped = opt.assetMap?.get(r.rel);
+    if (mapped) img.setAttribute('src', mapped);
+    else if (opt.projectId) img.setAttribute('src', buildRaw(opt.projectId, r.rel, r.suffix));
+  }
+  for (const a of Array.from(root.querySelectorAll('a[href]'))) {
+    const r = resolveTarget(a.getAttribute('href') || '', opt.fileDir);
+    if (!r) continue;
+    a.setAttribute('data-md-link', r.rel);
+    const mapped = opt.assetMap?.get(r.rel);
+    if (mapped) a.setAttribute('href', mapped);
+    else if (opt.projectId) a.setAttribute('href', buildRaw(opt.projectId, r.rel, r.suffix));
+    a.setAttribute('target', '_blank');
+    a.setAttribute('rel', 'noopener');
+  }
+}
+
+function renderSafeHtml(mdText: string, opt: MarkdownOptions): string {
+  const raw = mdHtml.render(mdText, { opt });
+  // 外层 div 用于避开部分 DOM 实现对“以 <table> 开头”片段的解析差异；消毒后再去掉。
+  const wrapped = `<div data-md-html-root>${raw}</div>`;
+  const clean = DOMPurify.sanitize(wrapped, PURIFY_OPTS);
+  if (typeof document === 'undefined') return clean;
+  const host = document.createElement('div');
+  host.innerHTML = clean;
+  const root = host.querySelector('[data-md-html-root]') || host;
+  rewriteHtmlUrls(root, opt);
+  return root.innerHTML;
+}
 
 // 抽取 markdown 里的相对资源引用（图片/链接），供本地来源预解析成 blob URL。
-export function collectAssetRefs(mdText: string, fileDir: string): { rel: string; suffix: string }[] {
+export function collectAssetRefs(mdText: string, fileDir: string, scanHtml = false): { rel: string; suffix: string }[] {
   const found = new Map<string, { rel: string; suffix: string }>();
+  if (scanHtml) {
+    const re = /\b(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(String(mdText || '')))) {
+      const r = resolveTarget(m[1] ?? m[2] ?? '', fileDir);
+      if (r) found.set(r.rel, r);
+    }
+  }
   const walk = (tokens: unknown[]): void => {
     for (const tok of tokens as Array<{ type: string; children?: unknown[]; attrGet(n: string): string | null }>) {
       if (tok.type === 'inline' && tok.children) { walk(tok.children); continue; }
@@ -91,7 +148,9 @@ export function collectAssetRefs(mdText: string, fileDir: string): { rel: string
 }
 
 export function renderMarkdown(mdText: string, opt: MarkdownOptions): string {
-  return md.render(mdText, { opt });
+  if (!opt.html) return md.render(mdText, { opt });
+  // 先消毒再改写链接：避免把未过滤的脚本等节点交给 DOM 解析，也避免 blob/raw 地址被消毒规则误删。
+  return renderSafeHtml(mdText, opt);
 }
 
 // 渲染远端 Markdown（如公告）：不做相对路径改写，外链新标签打开

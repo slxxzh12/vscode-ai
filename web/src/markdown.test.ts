@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { isMarkdownFile, renderMarkdown, renderRemoteMarkdown, printMarkdown, collectAssetRefs } from './markdown';
 
@@ -11,6 +12,30 @@ describe('isMarkdownFile', () => {
     expect(isMarkdownFile('a.txt')).toBe(false);
     expect(isMarkdownFile('.md')).toBe(false);
     expect(isMarkdownFile('notes')).toBe(false);
+  });
+});
+
+describe('renderMarkdown 原始 HTML 模式', () => {
+  const htmlOpt = { ...P, html: true };
+
+  it('默认关闭：表格里的原始 HTML 被转义', () => {
+    const h = renderMarkdown('| a | b |\n| - | - |\n| <img src="x.png"> | z |', P);
+    expect(h).toContain('&lt;img');
+  });
+
+  it('开启后渲染表格、行内图片与内联样式', () => {
+    const md = '| 图标 | 说明 |\n| - | - |\n| <span style="color:red"><img src="a.png" width="16"> <img src="b.png" width="16"></span> | x |';
+    const h = renderMarkdown(md, htmlOpt);
+    expect(h).toContain('<table');
+    expect(h).toContain('<span');
+    expect(h).toContain('<img');
+    expect(h).toContain('style="color:red"');
+  });
+
+  it('开启后仍移除 script 与事件属性', () => {
+    const h = renderMarkdown('<script>alert(1)</script><img src="x.png" onerror="alert(1)">', htmlOpt);
+    expect(h).not.toContain('<script');
+    expect(h).not.toContain('onerror');
   });
 });
 

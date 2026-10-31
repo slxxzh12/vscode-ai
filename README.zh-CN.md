@@ -1,14 +1,14 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-# DevFlow / 网页版 opencode（devflow-web-terminal）
+# vscode-ai（Void）/ 网页版 AI 编码终端
 
-在浏览器里管理本机终端与 opencode 会话：多会话、多项目、提示词工作流、Markdown 预览、静态网站 / 反向代理 / LLM 中转站、手机遥控与绿色包分发，一套 Web 界面全部搞定。
+在浏览器里运行和管理 CLI 编码 Agent：opencode、Claude Code、pi 等；多窗口 / 多会话终端、多项目、提示词工作流、Markdown 预览、静态网站 / 反向代理 / LLM 中转站、手机遥控与绿色包分发，一套 Web 界面全部搞定。
 
-> **关键词（便于搜索）**：opencode Web 版、浏览器终端、Web Terminal、在线终端、多会话终端、多项目目录树、工作流编排、提示词工作流、Markdown 预览、复杂表格、Mermaid 折线图、饼图、ECharts、PPT 演示、静态网站托管、反向代理、Nginx 规则、LLM 中转站、OpenAI 兼容 API、API 中转、Postman、Navicat、YAML、Base64、远程访问、手机遥控、免安装绿色包、Windows、macOS、Vue3、Vite、TypeScript、Node.js、node-pty、WebSocket。
+> **关键词（便于搜索）**：opencode Web 版、Claude Code Web 版、pi Agent、浏览器终端、Web Terminal、在线终端、多窗口终端、多会话终端、多项目目录树、工作流编排、提示词工作流、Markdown 预览、复杂表格、Mermaid 折线图、饼图、ECharts、PPT 演示、静态网站托管、反向代理、Nginx 规则、LLM 中转站、OpenAI 兼容 API、API 中转、Postman、Navicat、YAML、Base64、远程访问、手机遥控、免安装绿色包、Windows、macOS、Vue3、Vite、TypeScript、Node.js、node-pty、WebSocket。
 
 ## 这个项目解决什么问题
 
-- **opencode 只有命令行，切换项目和会话很麻烦**：这里提供浏览器里的多标签终端，会话在服务端常驻，关网页 / 断网不丢。
+- **CLI 编码 Agent（opencode、Claude Code、pi）缺少网页工作台，切换项目和会话很麻烦**：这里提供浏览器里的多窗口 / 多标签终端，会话在服务端常驻，关网页 / 断网不丢。
 - **提示词散落在各处，复用困难**：把常用提示词组织成「工作流 / 分组 / 阶段」，一键填入输入框或按组自动执行。
 - **文档、图表、演示分散在多个工具里**：Markdown 预览内置复杂表格、折线图 / 柱状图 / 饼图与 PPT 演示模式。
 - **本地静态站点、接口转发、LLM Key 管理配置繁琐**：内置静态网站托管、反向代理与 LLM 中转站，可视化配置。
@@ -18,6 +18,7 @@
 
 ## 功能总览
 
+- **Agent 与网页多窗口管理**：同一网页终端可运行 opencode、Claude Code、pi 等 CLI 编码 Agent；多会话 / 多窗口以页签管理，支持断线重连与缓冲重放。
 - **终端与会话**：多会话页签、断线重连重放、会话备注 / 描述、历史消息与提示词收藏。
 - **项目与文件**：多项目目录树、文件预览 / 编辑、代码搜索、Git 统计、代码行数统计。
 - **工作流**：工作流 → 小组 → 阶段 → 技能（Markdown 文件）目录化存储；阶段常用提示词 chip；支持直接从文件刷新与就地编辑。

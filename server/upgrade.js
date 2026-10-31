@@ -1,6 +1,6 @@
 export const UPGRADE_API_URL = 'https://gitee.com/api/v5/repos/slxxzh12/vscode-ai/releases/latest';
 export const UPGRADE_PAGE_URL = 'https://gitee.com/slxxzh12/vscode-ai/releases';
-export const CACHE_MS = 10 * 24 * 60 * 60 * 1000;   // 10 天
+export const CACHE_MS = 15 * 24 * 60 * 60 * 1000;   // 15 天
 
 const norm = (v) => String(v == null ? '' : v).trim();
 

@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { SchedulerStore } from '../scheduler/store.js';
 import { writeRunContext, ensureReport, legacyReport, stripAnsi, archiveReport } from '../scheduler/report.js';
+import { setLocale } from '../i18n.js';
+
+// 报告文案跟随服务端语言；这里固定中文以校验中文报告内容。
+setLocale('zh-CN');
 
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'sched-report-')); }
 function mkStore() {

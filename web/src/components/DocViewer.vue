@@ -117,6 +117,19 @@ const mdErr = ref('');
 const mdBodyRef = ref<HTMLDivElement | null>(null);
 let previewSeq = 0;
 
+// —— Markdown 原始 HTML 开关（默认关闭；开启后经 DOMPurify 消毒）——
+const MD_HTML_KEY = 'devflow-md-html';
+function readMdHtmlPref(): boolean {
+  try { return localStorage.getItem(MD_HTML_KEY) === '1'; } catch { return false; }
+}
+const mdHtmlOn = ref(readMdHtmlPref());
+function toggleMdHtml() {
+  mdHtmlOn.value = !mdHtmlOn.value;
+  try { localStorage.setItem(MD_HTML_KEY, mdHtmlOn.value ? '1' : '0'); } catch { /* ignore */ }
+  if (viewMode.value === 'preview' && isMd.value) void applyPreview();
+  if (pptOpen.value) ppt?.refresh();
+}
+
 // —— PPT 模式：DOM / 翻页 / 全屏统一由 shared/markdown-ppt 提供 ——
 const pptOpen = ref(false);
 // 有 Mermaid/图表时先隐藏，增强完成再显示，避免原始代码闪烁与尺寸跳变
@@ -335,13 +348,14 @@ function fileDirOf(p: string) {
 async function renderMdContent(text: string): Promise<string> {
   let assetMap: Map<string, string> | undefined;
   if (props.source.resolveMarkdownAssets) {
-    const refs = collectAssetRefs(text, fileDirOf(props.path));
+    const refs = collectAssetRefs(text, fileDirOf(props.path), mdHtmlOn.value);
     if (refs.length) assetMap = await props.source.resolveMarkdownAssets(refs);
   }
   return renderMarkdown(text, {
     projectId: props.source.markdownImageBase?.projectId || '',
     fileDir: fileDirOf(props.path),
     assetMap,
+    html: mdHtmlOn.value,
   });
 }
 async function applyPreview() {
@@ -353,13 +367,14 @@ async function applyPreview() {
     props.source.releaseMarkdownAssets?.();
     let assetMap: Map<string, string> | undefined;
     if (props.source.resolveMarkdownAssets) {
-      const refs = collectAssetRefs(raw.value, fileDirOf(props.path));
+      const refs = collectAssetRefs(raw.value, fileDirOf(props.path), mdHtmlOn.value);
       if (refs.length) assetMap = await props.source.resolveMarkdownAssets(refs);
     }
     mdHtml.value = renderMarkdown(raw.value, {
       projectId: props.source.markdownImageBase?.projectId || '',
       fileDir: fileDirOf(props.path),
       assetMap,
+      html: mdHtmlOn.value,
     });
   } catch (e: any) {
     previewPending.value = false;
@@ -871,6 +886,7 @@ onBeforeUnmount(() => {
             <button type="button" :class="{ on: viewMode === 'table' }" @click="viewMode = 'table'">{{ $t('fp.table') }}</button>
             <button type="button" :class="{ on: viewMode === 'code' }" @click="viewMode = 'code'">{{ $t('fp.code') }}</button>
           </div>
+          <button v-if="isMd && status === 'ok'" class="fmt-btn" :class="{ on: mdHtmlOn }" :title="$t('fp.md_html_hint')" @click="toggleMdHtml">HTML</button>
           <button v-if="isMd && status === 'ok'" class="fmt-btn" :class="{ on: pptOpen }" :title="$t('fp.ppt')" @click="togglePpt">{{ pptOpen ? $t('fp.ppt.exit') : $t('fp.ppt') }}</button>
           <button v-if="isMd && status === 'ok' && viewMode === 'preview'" class="fmt-btn" :title="$t('fp.pdf.tip')" @click="printPdf">{{ $t('fp.pdf') }}</button>
           <span v-if="saveState === 'saving'" class="save saveing">{{ $t('fp.saving') }}</span>

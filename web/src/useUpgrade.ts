@@ -30,7 +30,7 @@ export async function checkNow(): Promise<void> {
   finally { loading.value = false; }
 }
 
-// 是否自动弹窗：有新版、未被「不再提示」、且距上次弹窗满 10 天
+// 是否自动弹窗：有新版、未被「不再提示」、且距上次弹窗满 15 天
 export function shouldPopup(
   info: Pick<UpgradeInfo, 'hasUpdate' | 'latest'> | null,
   now: number,
@@ -38,7 +38,7 @@ export function shouldPopup(
 ): boolean {
   if (!info || !info.hasUpdate || !info.latest) return false;
   if (opts.skip && opts.skip === info.latest) return false;
-  const interval = opts.intervalMs ?? 10 * 24 * 3600 * 1000;
+  const interval = opts.intervalMs ?? 15 * 24 * 3600 * 1000;
   const last = Number(opts.popupAt || 0);
   return !last || now - last >= interval;
 }
