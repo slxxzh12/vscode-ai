@@ -14,6 +14,7 @@ import { isMarkdownFile, renderMarkdown, printMarkdown, collectAssetRefs } from 
 import { enhanceMarkdown, disposeMarkdown } from '../markdown-enhance';
 import { makeReadAsset } from '../markdownAssets';
 import { splitMarkdownSlides } from '../markdownSlides';
+import { extractStyleBlocks, type MarkdownStyleBlock } from '@devflow/shared/markdown-css';
 import { createPptPresenter, type PptPresenter } from '@devflow/shared/markdown-ppt';
 import '@devflow/shared/markdown-ppt.css';
 import { parseCurlCommands } from '../curl';
@@ -117,10 +118,13 @@ const mdErr = ref('');
 const mdBodyRef = ref<HTMLDivElement | null>(null);
 let previewSeq = 0;
 
-// —— Markdown 原始 HTML 开关（默认关闭；开启后经 DOMPurify 消毒）——
+// —— Markdown 原始 HTML 开关（默认开启；内容经 DOMPurify 消毒）——
 const MD_HTML_KEY = 'devflow-md-html';
 function readMdHtmlPref(): boolean {
-  try { return localStorage.getItem(MD_HTML_KEY) === '1'; } catch { return false; }
+  try {
+    const v = localStorage.getItem(MD_HTML_KEY);
+    return v === null ? true : v === '1';
+  } catch { return true; }
 }
 const mdHtmlOn = ref(readMdHtmlPref());
 function toggleMdHtml() {
@@ -344,8 +348,13 @@ function fileDirOf(p: string) {
   const i = q.lastIndexOf('/');
   return i >= 0 ? q.slice(0, i) : '';
 }
+function docSlides(): { slides: ReturnType<typeof splitMarkdownSlides>; blocks: MarkdownStyleBlock[] } {
+  if (!mdHtmlOn.value) return { slides: splitMarkdownSlides(raw.value), blocks: [] };
+  const { markdown, blocks } = extractStyleBlocks(raw.value);
+  return { slides: splitMarkdownSlides(markdown), blocks };
+}
 // PPT 单页渲染：相对图片/链接按当前文件目录解析，和普通预览保持一致
-async function renderMdContent(text: string): Promise<string> {
+async function renderMdContent(text: string, extraStyleBlocks?: MarkdownStyleBlock[]): Promise<string> {
   let assetMap: Map<string, string> | undefined;
   if (props.source.resolveMarkdownAssets) {
     const refs = collectAssetRefs(text, fileDirOf(props.path), mdHtmlOn.value);
@@ -356,6 +365,7 @@ async function renderMdContent(text: string): Promise<string> {
     fileDir: fileDirOf(props.path),
     assetMap,
     html: mdHtmlOn.value,
+    extraStyleBlocks,
   });
 }
 async function applyPreview() {
@@ -399,11 +409,12 @@ function ensurePpt(): PptPresenter {
   ppt = createPptPresenter({
     showOpenButton: false,
     filename: () => props.name,
-    slideCount: () => (isMd.value ? splitMarkdownSlides(raw.value).length : 0),
-    slideTitle: (i) => splitMarkdownSlides(raw.value)[i]?.title || '',
+    slideCount: () => (isMd.value ? docSlides().slides.length : 0),
+    slideTitle: (i) => docSlides().slides[i]?.title || '',
     renderSlide: (i) => {
-      const slide = splitMarkdownSlides(raw.value)[i];
-      return slide ? renderMdContent(slide.content) : '';
+      const { slides, blocks } = docSlides();
+      const slide = slides[i];
+      return slide ? renderMdContent(slide.content, blocks) : '';
     },
     enhance: (body) => enhanceMarkdown(body, { readAsset: makeReadAsset(props.source, props.path) }),
     dispose: (body) => disposeMarkdown(body),
