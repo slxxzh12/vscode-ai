@@ -2,20 +2,31 @@ import DOMPurify from 'dompurify';
 import type MarkdownIt from 'markdown-it';
 import { createMarkdown, escapeHtml as escHtml, isMarkdownFile } from '@devflow/shared/markdown';
 import { groupMermaidSides, renderMermaidBlocks, type MermaidLike } from '@devflow/shared/markdown-client';
+import {
+  extractStyleBlocks,
+  nextScopeId,
+  renderStyleBlocks,
+  sanitizeCssValue,
+  type MarkdownStyleBlock,
+} from '@devflow/shared/markdown-css';
 import { t } from './i18n';
 
 export interface MarkdownOptions {
   projectId: string;
   fileDir: string;
   assetMap?: Map<string, string>;
-  // 开启后在 Markdown 中渲染原始 HTML（表格/图标等），默认关闭；渲染结果会经 DOMPurify 消毒。
+  // 默认渲染原始 HTML（经 DOMPurify 消毒）；显式传 false 时按纯文本转义。
   html?: boolean;
+  extraStyleBlocks?: MarkdownStyleBlock[];
 }
 
 // 原始 HTML 模式的安全边界：移除可执行/可嵌入内容；其余标签与属性交给 DOMPurify 白名单。
+// <style> 由 markdown-css 先提取并消毒，不进入正文消毒流程。
 const PURIFY_OPTS = {
-  FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'textarea', 'button', 'select', 'option', 'svg', 'math', 'link', 'meta', 'base'],
+  FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'textarea', 'button', 'select', 'option', 'math', 'link', 'meta', 'base'],
   FORBID_ATTR: ['srcdoc'],
+  ADD_ATTR: ['target'],
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|data|blob):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
 };
 
 function buildRaw(projectId: string, rel: string, suffix: string): string {
@@ -31,8 +42,8 @@ function safeDecode(s: string): string {
 }
 
 function resolveTarget(raw: string, dir: string): { rel: string; suffix: string } | null {
-  if (/^(https?:|data:|mailto:)/i.test(raw)) return null;
-  if (raw.startsWith('#')) return null;
+  if (/^(https?:|data:|blob:|mailto:)/i.test(raw)) return null;
+  if (raw.startsWith('#') || raw.startsWith('/')) return null;
   const qi = raw.search(/[?#]/);
   const before = qi < 0 ? raw : raw.slice(0, qi);
   const suffix = qi < 0 ? '' : raw.slice(qi);
@@ -45,6 +56,15 @@ function resolveTarget(raw: string, dir: string): { rel: string; suffix: string 
   }
   return { rel: segs.join('/'), suffix };
 }
+
+// dompurify 在某些非浏览器环境导出的是工厂函数；统一取出可用实例，浏览器下保持原样。
+const purify = (() => {
+  const factory = DOMPurify as unknown;
+  if (typeof factory === 'function' && typeof window !== 'undefined') {
+    return (factory as (w: Window) => typeof DOMPurify)(window);
+  }
+  return DOMPurify;
+})();
 
 const md = createMarkdown();
 const mdHtml = createMarkdown({ html: true });
@@ -110,15 +130,23 @@ function rewriteHtmlUrls(root: ParentNode, opt: MarkdownOptions): void {
   }
 }
 
+function sanitizeInlineStyles(root: ParentNode): void {
+  for (const el of Array.from(root.querySelectorAll('[style]'))) {
+    const v = el.getAttribute('style') || '';
+    el.setAttribute('style', sanitizeCssValue(v));
+  }
+}
+
 function renderSafeHtml(mdText: string, opt: MarkdownOptions): string {
   const raw = mdHtml.render(mdText, { opt });
   // 外层 div 用于避开部分 DOM 实现对“以 <table> 开头”片段的解析差异；消毒后再去掉。
   const wrapped = `<div data-md-html-root>${raw}</div>`;
-  const clean = DOMPurify.sanitize(wrapped, PURIFY_OPTS);
+  const clean = purify.sanitize(wrapped, PURIFY_OPTS);
   if (typeof document === 'undefined') return clean;
   const host = document.createElement('div');
   host.innerHTML = clean;
   const root = host.querySelector('[data-md-html-root]') || host;
+  sanitizeInlineStyles(root);
   rewriteHtmlUrls(root, opt);
   return root.innerHTML;
 }
@@ -148,9 +176,16 @@ export function collectAssetRefs(mdText: string, fileDir: string, scanHtml = fal
 }
 
 export function renderMarkdown(mdText: string, opt: MarkdownOptions): string {
-  if (!opt.html) return md.render(mdText, { opt });
+  if (opt.html === false) return md.render(mdText, { opt });
+  const { markdown, blocks } = extractStyleBlocks(mdText);
+  // 应用内页面级样式也按内容级处理，避免影响应用界面
+  const all = blocks.concat(opt.extraStyleBlocks || []).map((b) => ({ ...b, page: false }));
   // 先消毒再改写链接：避免把未过滤的脚本等节点交给 DOM 解析，也避免 blob/raw 地址被消毒规则误删。
-  return renderSafeHtml(mdText, opt);
+  const clean = renderSafeHtml(markdown, opt);
+  if (!all.length) return clean;
+  const scope = nextScopeId();
+  const tags = renderStyleBlocks(all, `[data-md-css="${scope}"]`);
+  return `<div data-md-css="${scope}">${tags.content}${clean}</div>`;
 }
 
 // 渲染远端 Markdown（如公告）：不做相对路径改写，外链新标签打开

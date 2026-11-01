@@ -1,4 +1,4 @@
-// @vitest-environment happy-dom
+// @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { isMarkdownFile, renderMarkdown, renderRemoteMarkdown, printMarkdown, collectAssetRefs } from './markdown';
 
@@ -16,26 +16,32 @@ describe('isMarkdownFile', () => {
 });
 
 describe('renderMarkdown 原始 HTML 模式', () => {
-  const htmlOpt = { ...P, html: true };
-
-  it('默认关闭：表格里的原始 HTML 被转义', () => {
-    const h = renderMarkdown('| a | b |\n| - | - |\n| <img src="x.png"> | z |', P);
-    expect(h).toContain('&lt;img');
-  });
-
-  it('开启后渲染表格、行内图片与内联样式', () => {
-    const md = '| 图标 | 说明 |\n| - | - |\n| <span style="color:red"><img src="a.png" width="16"> <img src="b.png" width="16"></span> | x |';
-    const h = renderMarkdown(md, htmlOpt);
-    expect(h).toContain('<table');
-    expect(h).toContain('<span');
-    expect(h).toContain('<img');
+  it('默认开启：原始 HTML 与内联样式渲染，脚本与事件属性移除', () => {
+    const md = '<div style="color:red">x</div><script>alert(1)</script><img src="x.png" onerror="alert(1)">';
+    const h = renderMarkdown(md, P);
+    expect(h).toContain('<div');
     expect(h).toContain('style="color:red"');
-  });
-
-  it('开启后仍移除 script 与事件属性', () => {
-    const h = renderMarkdown('<script>alert(1)</script><img src="x.png" onerror="alert(1)">', htmlOpt);
     expect(h).not.toContain('<script');
     expect(h).not.toContain('onerror');
+  });
+
+  it('html:false 时原始 HTML 转义', () => {
+    const h = renderMarkdown('<script>alert(1)</script>', { ...P, html: false });
+    expect(h).toContain('&lt;script&gt;');
+  });
+
+  it('<style> 转为作用域样式，@import 被移除', () => {
+    const h = renderMarkdown('<style>@import "x.css"; .a { animation: fade 1s; }</style><div class="a">x</div>', P);
+    expect(h).toContain('@scope');
+    expect(h).toContain('animation: fade 1s');
+    expect(h).not.toContain('@import');
+  });
+
+  it('内联 SVG 保留，脚本移除', () => {
+    const h = renderMarkdown('<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg><script>x</script>', P);
+    expect(h).toContain('<svg');
+    expect(h).toContain('<circle');
+    expect(h).not.toContain('<script');
   });
 });
 
@@ -74,7 +80,7 @@ describe('renderMarkdown', () => {
   });
 
   it('html:false → 原始 HTML/脚本被转义', () => {
-    const h = renderMarkdown('<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>', P);
+    const h = renderMarkdown('<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>', { ...P, html: false });
     expect(h).not.toContain('<script>');
     expect(h).not.toContain('<img src=x');
     expect(h).toContain('&lt;script&gt;');
