@@ -77,15 +77,66 @@ export function groupMermaidSides(container) {
   }
 }
 
+const BLUE_PIE = [
+  '#1d4ed8', '#2563eb', '#3b82f6', '#60a5fa', '#0ea5e9', '#38bdf8',
+  '#0284c7', '#0891b2', '#06b6d4', '#0f766e', '#14b8a6', '#22d3ee',
+];
+
+// 统一图表配色：偏蓝色科技风，不使用粉/紫背景
+function mermaidThemeVariables(dark) {
+  const pie = {};
+  BLUE_PIE.forEach((c, i) => { pie[`pie${i + 1}`] = c; });
+  if (dark) {
+    return {
+      background: '#0e1726',
+      primaryColor: '#0f2a4d',
+      primaryTextColor: '#e5edff',
+      primaryBorderColor: '#3b82f6',
+      lineColor: '#60a5fa',
+      secondaryColor: '#10243d',
+      tertiaryColor: '#0b1f33',
+      noteBkgColor: '#10243d',
+      noteTextColor: '#dbeafe',
+      noteBorderColor: '#3b82f6',
+      ...pie,
+    };
+  }
+  return {
+    background: '#f6f9ff',
+    primaryColor: '#dbeafe',
+    primaryTextColor: '#1e3a8a',
+    primaryBorderColor: '#3b82f6',
+    lineColor: '#2563eb',
+    secondaryColor: '#eff6ff',
+    tertiaryColor: '#e0f2fe',
+    noteBkgColor: '#eff6ff',
+    noteTextColor: '#1e3a8a',
+    noteBorderColor: '#3b82f6',
+    ...pie,
+  };
+}
+
+// Mermaid 初始化配置：蓝色科技主题 + 紧凑布局；classDef/linkStyle 由图中定义，优先级高于主题。
+export function mermaidInitOptions(theme = 'dark') {
+  return {
+    startOnLoad: false,
+    securityLevel: 'strict',
+    theme,
+    themeVariables: mermaidThemeVariables(theme === 'dark'),
+    // 横排/竖排都收紧间距，避免大片空白
+    flowchart: { htmlLabels: true, curve: 'linear', nodeSpacing: 24, rankSpacing: 24, padding: 2, useMaxWidth: true },
+    sequence: { useMaxWidth: true, wrap: true, diagramMarginX: 6, diagramMarginY: 6, actorMargin: 30, messageMargin: 18 },
+    gantt: { useMaxWidth: true, barHeight: 18, fontSize: 12, gridLineStartPadding: 12, leftPadding: 60 },
+    pie: { useMaxWidth: true, textPosition: 0.62 },
+    mindmap: { useMaxWidth: true, padding: 4 },
+  };
+}
+
 export async function renderMermaidBlocks(container, mermaid, options = {}) {
   groupMermaidSides(container);
   const nodes = Array.from(container.querySelectorAll('pre.mermaid:not([data-processed="true"])'));
   if (!mermaid || !nodes.length) return;
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'strict',
-    theme: options.theme || 'dark',
-  });
+  mermaid.initialize(mermaidInitOptions(options.theme || 'dark'));
   let seq = 0;
   await Promise.all(nodes.map(async (pre) => {
     const code = pre.textContent || '';

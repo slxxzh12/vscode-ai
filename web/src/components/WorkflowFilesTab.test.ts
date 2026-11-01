@@ -77,6 +77,7 @@ describe('WorkflowFilesTab', () => {
     expect(JSON.parse(String(call!.opt!.body))).toEqual({
       from: '100_A/100_G/100_S1/100_a.md',
       to: '100_A/100_G/200_S2/100_a.md',
+      local: true,
     });
   });
 

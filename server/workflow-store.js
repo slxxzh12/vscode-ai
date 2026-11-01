@@ -121,7 +121,7 @@ export function readWorkflowsDir(dir, logger = null) {
   return sortWorkflows(out);
 }
 
-export function createWorkflowStore({ dir, configFile = null, seedDir = null, seedStore = null, logger = console } = {}) {
+export function createWorkflowStore({ dir, configFile = null, seedDir = null, seedStore = null, logger = console, seed = true } = {}) {
   fs.mkdirSync(dir, { recursive: true });
 
   function groupHints() {
@@ -418,7 +418,7 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
     return wfs.length > 0;
   }
 
-  seedFromDir();
+  if (seed) seedFromDir();
   migrateXmlFiles();
   migrateOldLayout();
 

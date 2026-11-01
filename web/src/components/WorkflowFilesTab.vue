@@ -56,7 +56,7 @@ async function loadTree(keep = false) {
   }
   if (!props.workflowId) { tree.value = []; return; }
   try {
-    const res = await fetch(`/api/workflows-tree?workflowId=${encodeURIComponent(props.workflowId)}`);
+    const res = await fetch(`/api/workflows-tree?workflowId=${encodeURIComponent(props.workflowId)}&local=1`);
     const data = await res.json();
     const next = Array.isArray(data?.tree) ? data.tree : [];
     tree.value = next;
@@ -81,7 +81,7 @@ async function refresh() {
     await loadTree(true);
     const node = selected.value;
     if (!node || node.type !== 'file') return;
-    const res = await fetch(`/api/workflows-file?path=${encodeURIComponent(node.path)}`);
+    const res = await fetch(`/api/workflows-file?path=${encodeURIComponent(node.path)}&local=1`);
     if (!res.ok) return;
     const text = await res.text();
     if (text !== content.value) content.value = text;
@@ -98,7 +98,7 @@ async function reveal(node: TreeNode | null) {
     const res = await fetch('/api/workflows-reveal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: node.path }),
+      body: JSON.stringify({ path: node.path, local: true }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -114,7 +114,7 @@ async function openFile(node: TreeNode) {
   content.value = '';
   error.value = '';
   try {
-    const res = await fetch(`/api/workflows-file?path=${encodeURIComponent(node.path)}`);
+    const res = await fetch(`/api/workflows-file?path=${encodeURIComponent(node.path)}&local=1`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     content.value = await res.text();
   } catch (e: any) {
@@ -130,7 +130,7 @@ async function removeFile(node: TreeNode) {
     const res = await fetch('/api/workflows-file-delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: node.path }),
+      body: JSON.stringify({ path: node.path, local: true }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -179,7 +179,7 @@ async function onDrop(e: DragEvent, node: TreeNode) {
     const res = await fetch('/api/workflows-file-move', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: src.path, to }),
+      body: JSON.stringify({ from: src.path, to, local: true }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

@@ -188,7 +188,7 @@ body { background: #fff; color: #1f2937; font-family: ui-sans-serif, system-ui, 
 .md-body pre.hljs { padding: 12px 14px; }
 .md-body code.hljs { padding: 0; }
 .md-body img { max-width: 100%; border-radius: 6px; }
-.md-body .mermaid { display: flex; justify-content: center; background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; margin: 0.9em 0; }
+.md-body .mermaid { display: flex; justify-content: center; background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px; margin: 0.6em 0; }
 .md-body .mermaid svg { max-width: 100%; }
 .md-body .mermaid-err { color: #b91c1c; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; padding: 8px 12px; }
 .hljs { background: transparent; color: inherit; }

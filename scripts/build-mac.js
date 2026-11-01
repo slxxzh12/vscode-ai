@@ -317,6 +317,11 @@ fs.copyFileSync(
     check(fs.existsSync(p), "missing " + rel);
     console.log("[build-mac]   ok " + label + "  (" + rel + ")");
   }
+  // 项目级技能：源仓有 .void/skills 时必须打进包，否则首次启动检测不到
+  if (fs.existsSync(path.join(ROOT, ".void", "skills"))) {
+    check(fs.existsSync(path.join(APP, ".void", "skills")), "missing .void/skills");
+    console.log("[build-mac]   ok skills  (.void/skills)");
+  }
 
   // 运行时依赖自检：以包内 server/ 的视角逐个 import，并真正调用一次 esbuild 原生二进制。
   // 跨架构包不能在本机执行（arm64 二进制在 x64 上跑不了），只在宿主架构做。

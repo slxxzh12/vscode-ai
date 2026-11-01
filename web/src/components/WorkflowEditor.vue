@@ -24,7 +24,7 @@ watch(model, () => {
 async function load(keep = false) {
   const prev = currentId.value;
   try {
-    const r = await fetch('/api/workflows-xml').then((x) => x.json());
+    const r = await fetch('/api/workflows-xml?local=1').then((x) => x.json());
     model.value = Array.isArray(r?.workflows) ? JSON.parse(JSON.stringify(r.workflows)) : [];
   } catch { if (!keep) model.value = []; return; }
   currentId.value = keep && model.value.some((w) => w.id === prev) ? prev : model.value[0]?.id || '';
@@ -60,7 +60,7 @@ async function restoreDefault() {
     const res = await fetch('/api/workflows-restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ workflowId: currentId.value }),
+      body: JSON.stringify({ workflowId: currentId.value, local: true }),
     });
     const j: any = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
@@ -85,7 +85,7 @@ async function forceOverwriteAll() {
     const res = await fetch('/api/workflows-restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ all: true }),
+      body: JSON.stringify({ all: true, local: true }),
     });
     const j: any = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j.message || j.error || `HTTP ${res.status}`);
@@ -107,7 +107,7 @@ async function openPromptsDir() {
     const res = await fetch('/api/workflows-reveal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: '' }),
+      body: JSON.stringify({ path: '', local: true }),
     });
     if (!res.ok) {
       const j: any = await res.json().catch(() => ({}));

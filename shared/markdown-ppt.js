@@ -163,9 +163,32 @@ export function createPptPresenter(options) {
 
   function onKey(e) {
     if (!open) return;
-    if (e.key === 'Escape') { e.preventDefault(); hide(); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); prev(); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
+    const target = e.target;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    switch (e.key) {
+      case 'Escape': e.preventDefault(); hide(); break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+      case 'PageUp': e.preventDefault(); prev(); break;
+      case 'ArrowRight':
+      case 'ArrowDown':
+      case 'PageDown': e.preventDefault(); next(); break;
+      case ' ':
+      case 'Spacebar': e.preventDefault(); if (e.shiftKey) prev(); else next(); break;
+      case 'Home': e.preventDefault(); go(0); break;
+      case 'End': e.preventDefault(); go(total() - 1); break;
+      default: break;
+    }
+  }
+
+  function go(i) {
+    if (!open) return;
+    const size = total();
+    const nextIndex = Math.min(Math.max(0, Number(i) || 0), Math.max(0, size - 1));
+    if (nextIndex === index) return;
+    index = nextIndex;
+    void render();
   }
 
   function show(startIndex) {

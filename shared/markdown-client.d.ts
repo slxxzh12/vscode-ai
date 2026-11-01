@@ -8,6 +8,7 @@ export type { ChartSpec, ChartHandle, EChartsLike } from './markdown-charts';
 export { enhanceSimpleTables } from './markdown-table-sort';
 
 export function groupMermaidSides(container: HTMLElement): void;
+export function mermaidInitOptions(theme?: string): Record<string, unknown>;
 export function enhanceDataCharts(
   container: HTMLElement,
   options?: { readAsset?: (rel: string) => Promise<string>; dataErrorText?: (msg: string) => string },

@@ -4,7 +4,7 @@
 
 Run and manage CLI coding agents from the browser: opencode, Claude Code, pi, and more; multi-window / multi-tab terminals, multiple projects, prompt workflows, Markdown preview, static sites / reverse proxy / LLM relay, phone remote control, and portable packages — all in one web UI.
 
-> **Keywords (for search)**: opencode web UI, Claude Code web UI, pi agent, browser terminal, web terminal, online terminal, multi-window terminal, multi-session terminal, multi-project file tree, workflow orchestration, prompt workflow, Markdown preview, complex tables, Mermaid line chart, pie chart, ECharts, PPT presentation, static site hosting, reverse proxy, Nginx rules, LLM relay, OpenAI-compatible API, API gateway, Postman, Navicat, YAML, Base64, remote access, phone remote control, portable package, Windows, macOS, Vue 3, Vite, TypeScript, Node.js, node-pty, WebSocket.
+> **Keywords (for search)**: opencode web UI, Claude Code web UI, pi agent, browser terminal, web terminal, online terminal, multi-window terminal, multi-session terminal, multi-project file tree, workflow orchestration, prompt workflow, Markdown preview, complex tables, Mermaid flowchart, line chart, pie chart, ECharts, PPT presentation, static site hosting, reverse proxy, Nginx rules, LLM relay, OpenAI-compatible API, API gateway, Postman, Navicat, YAML, Base64, remote access, phone remote control, portable package, Windows, macOS, Vue 3, Vite, TypeScript, Node.js, node-pty, WebSocket.
 
 ## What problems does it solve?
 
@@ -21,8 +21,8 @@ Run and manage CLI coding agents from the browser: opencode, Claude Code, pi, an
 - **Agents and web multi-window management**: run opencode, Claude Code, pi, and other CLI coding agents in the same web terminal; manage multiple sessions/windows as tabs, with reconnect and buffer replay.
 - **Terminals and sessions**: multi-session tabs, reconnect with buffer replay, session notes/descriptions, message history, and prompt collection.
 - **Projects and files**: multi-project file tree, file preview/edit, code search, Git statistics, and code line counting.
-- **Workflows**: workflows → groups → stages → skills (Markdown files) stored as folders; stage prompt chips; reload from files and edit prompts in place.
-- **Markdown enhancements**: complex tables, Mermaid `xychart-beta` line/bar charts, `pie` charts (rendered as ECharts), `mermaid row` side-by-side charts, `mermaid-data` data scripts, and PPT presentation.
+- **Workflows**: workflows → groups → stages → skills (Markdown files) stored as folders; stage prompt chips; reload from files and edit prompts in place. The workflow editor edits the current project's `.void/workflows` directly (refresh, move, delete, and restore-default all apply to project files).
+- **Markdown enhancements**: complex tables, Mermaid flowcharts (branches, back-edges, subgraphs, custom colors), Mermaid `xychart-beta` line/bar charts, `pie` charts (rendered as ECharts), `mermaid row` side-by-side charts, `mermaid-data` data scripts, and PPT presentation; diagrams share a blue tech theme.
 - **Toolbox**: TXT/Markdown, YAML, translation, Postman (curl history), Navicat (MySQL / PostgreSQL / SQLite / Redis), Nginx, Base64.
 - **Static sites / reverse proxy / LLM relay**: static directory hosting, SPA fallback, site prefix, request capture; expose via path or dedicated port; issue JWTs for external machines to call upstream models.
 - **Collaboration and statistics**: group members, group chat, machine usage reporting, token statistics.
@@ -101,7 +101,7 @@ node scripts/build-opencode.js       # Windows package with bundled opencode
 node scripts/build-mac.js            # macOS (must run on macOS; builds arm64 + x64)
 ```
 
-Artifacts go to `dist-portable/` as `vscode-ai-windows-x64-vYYYYMMDD` directories with matching `.zip` files. Packages bundle `runtime/node.exe` and a compiled node-pty, so target machines do not need Node installed.
+Artifacts go to `dist-portable/` as `vscode-ai-windows-x64-vYYYYMMDD` directories with matching `.zip` files. Packages bundle `runtime/node.exe` and a compiled node-pty, so target machines do not need Node installed. When the source repo has `.void/skills`, it is bundled too, so project-level skills are detected on first run.
 
 ## Project layout
 
@@ -133,13 +133,15 @@ Keep secrets (tokens, passwords, keys, credential-bearing URLs) in the local `en
 Markdown preview (in-app file preview, the TXT/Markdown tools, and static site pages) shares one rendering pipeline:
 
 - **Complex tables**: GFM tables render as Element Plus tables with column alignment, horizontal scrolling for wide tables, and duplicate-row deduplication.
+- **Flowcharts**: `flowchart TD / LR` supports branches, back-edges (loops), subgraphs (`subgraph`, each with its own `direction`), and `classDef` / `class` custom colors; rendered as ECharts, with elbow connectors across subgraphs.
 - **Line / bar charts**: Mermaid `line` / `bar` inside `xychart-beta` are converted to ECharts; `line "name" [...]` shows a legend.
 - **Pie charts**: Mermaid `pie` is converted to an ECharts pie chart.
 - **Side-by-side charts**: tag a code block as `mermaid row` and multiple charts (e.g. line + pie) render on the same row.
-- **PPT presentation**: click "PPT mode" in Markdown preview (static site pages are also supported). Slides are split by H1/H2 headings, with previous/next, arrow-key navigation, and fullscreen; tables and charts render on each slide.
+- **PPT presentation**: click "PPT mode" in Markdown preview (static site pages are also supported). Slides are split by H1/H2 headings; previous/next, fullscreen, arrow keys / PageUp / PageDown / Space (Shift+Space for previous) / Home / End navigate, and Esc exits. Typing in an input does not turn pages. Tables and charts render on each slide.
 - **Data-script charts**: `mermaid-data` code blocks can read CSV/JSON from the same directory and return Mermaid source to generate charts.
+- **Unified theme**: Mermaid diagrams use a blue tech palette for both dark and light themes (no pink/purple), with tighter node and rank spacing and width fitting.
 
-See `test/markdown_data/` (`charts.md`, `mermaid-line-pie.md`, etc.) for examples.
+See `test/markdown_data/` (`charts.md`, `mermaid-line-pie.md`, `mermaid-flowchart.md`, `flowchart-two-subgraphs.md`, etc.) for examples.
 
 ## Tests
 

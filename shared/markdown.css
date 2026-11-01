@@ -130,8 +130,37 @@
   border: 1px solid var(--bd);
   border-radius: 6px;
 }
-.md-body .mermaid { display: flex; justify-content: center; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; padding: 10px; margin: 0.9em 0; }
+.md-body .mermaid { display: flex; justify-content: center; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; padding: 6px; margin: 0.6em 0; }
 .md-body .mermaid svg { max-width: 100%; }
+/* Mermaid 流程图统一浅蓝：节点边框/底色、子图底色、连线 */
+.md-body .mermaid .node rect,
+.md-body .mermaid .node polygon,
+.md-body .mermaid .node circle,
+.md-body .mermaid .node ellipse {
+  fill: #e6f3ff !important;
+  stroke: #8ab8e6 !important;
+}
+.md-body .mermaid .nodeLabel,
+.md-body .mermaid .node .label,
+.md-body .mermaid .node text {
+  color: #1f2937 !important;
+  fill: #1f2937 !important;
+}
+.md-body .mermaid .cluster rect {
+  fill: #f2f8ff !important;
+  stroke: #a9ccef !important;
+}
+.md-body .mermaid .cluster-label,
+.md-body .mermaid .cluster span {
+  color: #1f4f7a !important;
+}
+.md-body .mermaid .edgePath .path {
+  stroke: #8ab8e6 !important;
+}
+.md-body .mermaid .marker {
+  fill: #8ab8e6 !important;
+  stroke: #8ab8e6 !important;
+}
 .md-body .mermaid-err { color: var(--errtx); font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; padding: 8px 12px; }
 /* ```mermaid row``` 连续图块：一行并排，窄屏自动换行 */
 .md-body .mermaid-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; margin: 0.9em 0; }

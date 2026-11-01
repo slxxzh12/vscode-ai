@@ -290,7 +290,7 @@ function workflowsForSession(ws, sessionId, logger = console) {
 }
 
 // 工作流目录展示：优先用户项目内的 .void/workflows（打包后即包内工作目录），没有再回落到数据目录
-function workflowDisplayRoot(ws, sessionId) {
+function localWorkflowRoot(ws, sessionId) {
   const dirs = [];
   if (sessionId) {
     const session = ws?.sessionManager?.get(sessionId);
@@ -301,7 +301,31 @@ function workflowDisplayRoot(ws, sessionId) {
     if (!dir) continue;
     try { if (fs.statSync(dir).isDirectory()) return dir; } catch { /* next */ }
   }
-  return ws?.workflowStore?.dir || '';
+  return '';
+}
+
+function workflowDisplayRoot(ws, sessionId) {
+  return localWorkflowRoot(ws, sessionId) || ws?.workflowStore?.dir || '';
+}
+
+// 编辑器操作 .void/workflows：只读源仍是同一目录，写操作（删除/移动/恢复默认）落在这里；
+// seed=false 避免打开编辑器时把默认工作流灌进 .void。
+const localWorkflowStores = new Map();
+function editorWorkflowStore(ws, sessionId, local) {
+  if (!local) return ws?.workflowStore || null;
+  const dir = localWorkflowRoot(ws, sessionId);
+  if (!dir) return null;
+  let store = localWorkflowStores.get(dir);
+  if (!store) {
+    store = createWorkflowStore({
+      dir,
+      seedDir: path.join(__dirname, '..', 'config', 'workflows'),
+      seed: false,
+      logger: log,
+    });
+    localWorkflowStores.set(dir, store);
+  }
+  return store;
 }
 
 // 项目级 skills 来源：会话 cwd 与服务启动目录下的 .void/skills
@@ -904,7 +928,11 @@ const server = http.createServer(async (req, res) => {
   // 配置类接口永远可用（不依赖档案）
   if (url.pathname === '/api/workflows-xml' && req.method === 'GET') {
     const sessionId = url.searchParams.get('sessionId') || '';
-    const workflows = ws ? workflowsForSession(ws, sessionId, log) : [];
+    const local = url.searchParams.get('local') === '1';
+    const localDir = local ? localWorkflowRoot(ws, sessionId) : '';
+    const workflows = local
+      ? (localDir ? readWorkflowsDir(localDir, log) : [])
+      : (ws ? workflowsForSession(ws, sessionId, log) : []);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ workflows }));
     return;
@@ -946,15 +974,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/workflows-tree' && req.method === 'GET') {
-    const tree = ws?.workflowStore?.tree(url.searchParams.get('workflowId') || '') || [];
+    const sessionId = url.searchParams.get('sessionId') || '';
+    const local = url.searchParams.get('local') === '1';
+    const store = editorWorkflowStore(ws, sessionId, local);
+    const tree = store?.tree(url.searchParams.get('workflowId') || '') || [];
+    const root = local ? (store?.dir || '') : workflowDisplayRoot(ws, sessionId);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ tree, root: workflowDisplayRoot(ws, url.searchParams.get('sessionId') || '') }));
+    res.end(JSON.stringify({ tree, root }));
     return;
   }
   if (url.pathname === '/api/workflows-file' && req.method === 'GET') {
-    if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
+    const store = editorWorkflowStore(ws, url.searchParams.get('sessionId') || '', url.searchParams.get('local') === '1');
+    if (!store) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
     try {
-      const text = ws.workflowStore.readFile(url.searchParams.get('path') || '');
+      const text = store.readFile(url.searchParams.get('path') || '');
       res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(text);
     } catch (e) {
@@ -964,16 +997,19 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/workflows-file-delete' && req.method === 'POST') {
-    if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const local = body.local === true;
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+      const store = editorWorkflowStore(ws, sessionId, local);
+      if (!store) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
       const rel = typeof body.path === 'string' ? body.path : '';
       if (!rel) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
       try {
-        ws.workflowStore.deleteFile(rel);
+        store.deleteFile(rel);
       } catch (e) {
         const code = String((e && e.message) || 'delete-failed');
         const status = code === 'bad-path' || code === 'bad-file' ? 400 : (code === 'ENOENT' ? 404 : 500);
@@ -982,24 +1018,27 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
-      const workflows = ws.workflowStore.readAll();
+      const workflows = local ? store.readAll() : (ws?.workflowStore?.readAll() || []);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: true, workflows }));
     });
     return;
   }
   if (url.pathname === '/api/workflows-file-move' && req.method === 'POST') {
-    if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const local = body.local === true;
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+      const store = editorWorkflowStore(ws, sessionId, local);
+      if (!store) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
       const from = typeof body.from === 'string' ? body.from : '';
       const to = typeof body.to === 'string' ? body.to : '';
       if (!from || !to) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'path required' })); return; }
       try {
-        ws.workflowStore.moveFile(from, to);
+        store.moveFile(from, to);
       } catch (e) {
         const code = String((e && e.message) || 'move-failed');
         const status = code === 'bad-path' || code === 'bad-file' || code === 'bad-target' ? 400
@@ -1009,14 +1048,13 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
-      const workflows = ws.workflowStore.readAll();
+      const workflows = local ? store.readAll() : (ws?.workflowStore?.readAll() || []);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: true, workflows }));
     });
     return;
   }
   if (url.pathname === '/api/workflows-reveal' && req.method === 'POST') {
-    if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
@@ -1024,11 +1062,14 @@ const server = http.createServer(async (req, res) => {
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       const rel = typeof body.path === 'string' ? body.path : '';
       const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+      const local = body.local === true;
+      const store = editorWorkflowStore(ws, sessionId, local);
+      if (!store) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
       let abs = '';
       if (!rel) {
-        abs = workflowDisplayRoot(ws, sessionId);
+        abs = local ? store.dir : workflowDisplayRoot(ws, sessionId);
       } else {
-        try { abs = ws.workflowStore.absPath(rel); }
+        try { abs = store.absPath(rel); }
         catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'bad-path' })); return; }
       }
       let st = null;
@@ -1333,17 +1374,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/api/workflows-restore' && req.method === 'POST') {
-    if (!ws?.workflowStore) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
     let raw = '';
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const local = body.local === true;
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+      const store = editorWorkflowStore(ws, sessionId, local);
+      if (!store) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
       const workflowId = typeof body.workflowId === 'string' ? body.workflowId : '';
       const all = body.all === true;
       if (!all && !workflowId) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'workflowId required' })); return; }
       let restored;
-      try { restored = all ? ws?.workflowStore?.overwriteAllFromSeed() : ws?.workflowStore?.restoreFromSeed(workflowId); }
+      try { restored = all ? store.overwriteAllFromSeed() : store.restoreFromSeed(workflowId); }
       catch (e) {
         const code = String((e && e.message) || 'restore-failed');
         res.writeHead(code === 'not-found' ? 404 : (code === 'no-default' || code === 'no-seed') ? 409 : 500, { 'Content-Type': 'application/json' });
@@ -1351,7 +1395,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
-      const workflows = ws?.workflowStore?.readAll() || [];
+      const workflows = store.readAll() || [];
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ ok: true, restored, workflows }));
     });

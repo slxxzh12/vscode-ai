@@ -1,4 +1,5 @@
 // Mermaid xychart-beta / pie 的解析与 ECharts 渲染（Web 预览与静态站点共用同一份实现）
+import { parseFlowchart, flowchartOption } from './markdown-flowchart.js';
 
 function unquote(text) {
   const s = String(text || '').trim();
@@ -218,56 +219,6 @@ function parseTimeline(lines) {
   return { kind: 'timeline', title, periods: out, height: Math.max(210, 130 + maxEvents * 22) };
 }
 
-// ---------- 线性阶段流程图（A --> B --> C） ----------
-function flowLabel(raw) {
-  let t = String(raw || '').trim();
-  if (/^\(\([\s\S]*\)\)$/.test(t)) t = t.slice(2, -2);
-  else if (/^\[\[[\s\S]*\]\]$/.test(t)) t = t.slice(2, -2);
-  else if (/^\[[\s\S]*\]$/.test(t)) t = t.slice(1, -1);
-  else if (/^\([\s\S]*\)$/.test(t)) t = t.slice(1, -1);
-  else if (/^\{[\s\S]*\}$/.test(t)) t = t.slice(1, -1);
-  else if (/^>[\s\S]*\]$/.test(t)) t = t.slice(1, -1);
-  return unquote(t);
-}
-
-function readFlowNode(line, pos) {
-  const m = /^\s*([A-Za-z0-9_-]+)\s*(\(\([\s\S]*?\)\)|\[\[[\s\S]*?\]\]|\[[\s\S]*?\]|\([\s\S]*?\)|\{[\s\S]*?\}|>[\s\S]*?\]|)\s*(?:::\s*([A-Za-z0-9_-]+))?/.exec(line.slice(pos));
-  if (!m) return null;
-  return { id: m[1], label: m[2] ? flowLabel(m[2]) : m[1], cls: m[3] || '', length: m[0].length };
-}
-
-function readFlowEdge(line, pos) {
-  const rest = line.slice(pos);
-  let m;
-  if ((m = /^\s*--\s+(.+?)\s+-->\s*/.exec(rest))) return { label: m[1].trim(), length: m[0].length };
-  if ((m = /^\s*-\.\s*(.+?)\s*\.->\s*/.exec(rest))) return { label: m[1].trim(), length: m[0].length };
-  if ((m = /^\s*==\s*(.+?)\s*==>\s*/.exec(rest))) return { label: m[1].trim(), length: m[0].length };
-  if ((m = /^\s*(-->|---|-\.->|==>)\s*\|([^|]*)\|\s*/.exec(rest))) return { label: m[2].trim(), length: m[0].length };
-  if ((m = /^\s*(-->|---|-\.->|==>)\s*/.exec(rest))) return { label: '', length: m[0].length };
-  return null;
-}
-
-function parseFlowLine(line) {
-  const nodes = [];
-  const edges = [];
-  let pos = 0;
-  const first = readFlowNode(line, pos);
-  if (!first) return null;
-  pos += first.length;
-  nodes.push({ id: first.id, label: first.label, cls: first.cls });
-  while (line.slice(pos).trim()) {
-    const edge = readFlowEdge(line, pos);
-    if (!edge) return null;
-    pos += edge.length;
-    const next = readFlowNode(line, pos);
-    if (!next) return null;
-    pos += next.length;
-    edges.push({ from: nodes[nodes.length - 1].id, to: next.id, label: edge.label });
-    nodes.push({ id: next.id, label: next.label, cls: next.cls });
-  }
-  return { nodes, edges };
-}
-
 function contrastText(color) {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color || ''));
   if (!m) return '#ffffff';
@@ -279,109 +230,6 @@ function contrastText(color) {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#1f2937' : '#ffffff';
 }
 
-function parseFlowchart(lines) {
-  const dirRaw = (lines[0].trim().split(/\s+/)[1] || 'TD').toUpperCase();
-  const direction = { LR: 'LR', RL: 'RL', TD: 'TD', TB: 'TD', BT: 'BT' }[dirRaw];
-  if (!direction) return null;
-  const nodes = new Map();
-  const edges = [];
-  const classDefs = new Map();
-  const classAssign = new Map();
-  for (const raw of lines.slice(1)) {
-    let line = raw.trim();
-    if (!line || line.startsWith('%%')) continue;
-    line = line.replace(/;+\s*$/, '').trim();
-    if (!line) continue;
-    if (/^classDef\b/.test(line)) {
-      const m = /^classDef\s+([A-Za-z0-9_-]+)\s+(.+)$/.exec(line);
-      if (!m) return null;
-      const styles = {};
-      for (const part of m[2].split(',')) {
-        const ci = part.indexOf(':');
-        if (ci < 0) continue;
-        const k = part.slice(0, ci).trim().toLowerCase();
-        const v = part.slice(ci + 1).trim();
-        if (k && v) styles[k] = v;
-      }
-      classDefs.set(m[1], styles);
-      continue;
-    }
-    if (/^class\b/.test(line)) {
-      const m = /^class\s+([A-Za-z0-9_,\s-]+?)\s+([A-Za-z0-9_-]+)$/.exec(line);
-      if (!m) return null;
-      for (const id of m[1].split(',').map((s) => s.trim()).filter(Boolean)) classAssign.set(id, m[2]);
-      continue;
-    }
-    if (/^(style|linkStyle|click|subgraph)\b/.test(line)) return null;
-    if (/^(end|direction|accTitle|accDescr)\b/.test(line)) continue;
-    if (line.includes('&')) return null;
-    const parsed = parseFlowLine(line);
-    if (!parsed) return null;
-    for (const n of parsed.nodes) {
-      const ex = nodes.get(n.id);
-      if (ex) {
-        if (n.label && n.label !== n.id) ex.label = n.label;
-        if (n.cls) ex.cls = n.cls;
-      } else nodes.set(n.id, { ...n });
-    }
-    edges.push(...parsed.edges);
-  }
-  if (!nodes.size) return null;
-
-  const outDeg = new Map();
-  const inDeg = new Map();
-  for (const e of edges) {
-    outDeg.set(e.from, (outDeg.get(e.from) || 0) + 1);
-    inDeg.set(e.to, (inDeg.get(e.to) || 0) + 1);
-    if (outDeg.get(e.from) > 1 || inDeg.get(e.to) > 1) return null;
-  }
-  const ids = [...nodes.keys()];
-  let order;
-  if (ids.length === 1) order = ids.slice();
-  else {
-    if (edges.length !== ids.length - 1) return null;
-    const starts = ids.filter((id) => !inDeg.has(id));
-    if (starts.length !== 1) return null;
-    order = [];
-    const seen = new Set();
-    let cur = starts[0];
-    while (cur) {
-      if (seen.has(cur)) return null;
-      seen.add(cur);
-      order.push(cur);
-      const e = edges.find((x) => x.from === cur);
-      cur = e ? e.to : null;
-    }
-    if (order.length !== ids.length) return null;
-  }
-
-  const step = direction === 'LR' || direction === 'RL' ? 190 : 90;
-  const outNodes = order.map((id, i) => {
-    const n = nodes.get(id);
-    const styles = classDefs.get(n.cls || classAssign.get(id)) || {};
-    const fill = styles.fill || SERIES_COLORS[i % SERIES_COLORS.length];
-    const stroke = styles.stroke || fill;
-    const color = styles.color || contrastText(fill);
-    const k = direction === 'RL' ? -i : i;
-    return {
-      id: n.id,
-      label: n.label || n.id,
-      fill,
-      stroke,
-      color,
-      x: direction === 'LR' || direction === 'RL' ? k * step : 0,
-      y: direction === 'LR' || direction === 'RL' ? 0 : i * step,
-    };
-  });
-  return {
-    kind: 'flowchart',
-    direction,
-    nodes: outNodes,
-    edges: edges.map((e) => ({ source: e.from, target: e.to, label: e.label })),
-    height: direction === 'LR' || direction === 'RL' ? 190 : Math.max(160, order.length * 90 + 40),
-  };
-}
-
 function isChevron(head) {
   return /\bchevron\b/i.test(head);
 }
@@ -390,7 +238,7 @@ function ganttChevron(spec) {
   const day = 86400000;
   return spec.tasks.map((t, i) => {
     const days = (t.end - t.start) / day;
-    const tagColor = t.tag === 'milestone' ? '#ec4899'
+    const tagColor = t.tag === 'milestone' ? '#0ea5e9'
       : t.tag === 'crit' ? '#e5484d'
         : t.tag === 'active' ? '#f5a524'
           : t.tag === 'done' ? '#2ea043'
@@ -417,7 +265,7 @@ export function parseMermaidChart(code) {
   const lines = String(code || '')
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter(Boolean);
+    .filter((l) => l && !l.startsWith('%%'));
   if (!lines.length) return null;
   const head = lines[0].toLowerCase();
   if (head.startsWith('pie')) return parsePie(lines);
@@ -450,9 +298,9 @@ export const SERIES_COLORS = [
   '#e5484d', // 红
   '#2ea043', // 绿
   '#f5a524', // 橙
-  '#8b5cf6', // 紫
+  '#38bdf8', // 天蓝
   '#06b6d4', // 青
-  '#ec4899', // 粉
+  '#0ea5e9', // 亮蓝
   '#84cc16', // 黄绿
   '#f97316', // 深橙
   '#14b8a6', // 蓝绿
@@ -478,7 +326,7 @@ function fmtDay(ms) {
 function ganttOption(spec, th) {
   const tasks = spec.tasks;
   const colorOf = (t, i) => {
-    if (t.tag === 'milestone') return '#8b5cf6';
+    if (t.tag === 'milestone') return '#0ea5e9';
     if (t.tag === 'crit') return '#e5484d';
     if (t.tag === 'active') return '#f5a524';
     if (t.tag === 'done') return '#2ea043';
@@ -586,129 +434,6 @@ function timelineOption(spec, th, dark) {
         },
       },
     }],
-  };
-}
-
-function flowchartOption(spec, th) {
-  const nodes = spec.nodes;
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const xs = nodes.map((n) => n.x);
-  const ys = nodes.map((n) => n.y);
-  const vertical = spec.direction === 'TD' || spec.direction === 'BT';
-  const W = 140;
-  const H = 44;
-  const HW = W / 2;
-  const HH = H / 2;
-  return {
-    ...chartBase({ title: '' }, th),
-    grid: { left: 20, right: 20, top: 20, bottom: 20, containLabel: false },
-    xAxis: {
-      type: 'value',
-      show: false,
-      min: vertical ? -W : Math.min(...xs) - 110,
-      max: vertical ? W : Math.max(...xs) + 110,
-    },
-    yAxis: {
-      type: 'value',
-      show: false,
-      inverse: spec.direction === 'TD',
-      min: vertical ? Math.min(...ys) - HH - 30 : -HH - 30,
-      max: vertical ? Math.max(...ys) + HH + 30 : HH + 30,
-    },
-    tooltip: {
-      trigger: 'item',
-      formatter: (p) => {
-        if (p.seriesIndex === 0) {
-          const e = spec.edges[p.dataIndex];
-          return e ? (e.label || `${e.source} → ${e.target}`) : '';
-        }
-        const n = nodes[p.dataIndex];
-        return n ? n.label : '';
-      },
-    },
-    series: [
-      {
-        type: 'custom',
-        z: 1,
-        data: spec.edges.map((e) => ({ value: [0, 0] })),
-        renderItem: (params, api) => {
-          const e = spec.edges[params.dataIndex];
-          const a = byId.get(e.source);
-          const b = byId.get(e.target);
-          if (!a || !b) return null;
-          const p1 = api.coord([a.x, a.y]);
-          const p2 = api.coord([b.x, b.y]);
-          const dx = p2[0] - p1[0];
-          const dy = p2[1] - p1[1];
-          const horizontal = Math.abs(dx) >= Math.abs(dy);
-          const sx = horizontal ? Math.sign(dx) * HW : 0;
-          const sy = horizontal ? 0 : Math.sign(dy) * HH;
-          const x1 = p1[0] + sx;
-          const y1 = p1[1] + sy;
-          const x2 = p2[0] - sx;
-          const y2 = p2[1] - sy;
-          const len = Math.hypot(x2 - x1, y2 - y1) || 1;
-          const ux = (x2 - x1) / len;
-          const uy = (y2 - y1) / len;
-          const bx = x2 - ux * 8;
-          const by = y2 - uy * 8;
-          const children = [
-            { type: 'line', shape: { x1, y1, x2: bx, y2: by }, style: { stroke: th.axis, lineWidth: 2 } },
-            { type: 'polygon', shape: { points: [[x2, y2], [bx - uy * 4, by + ux * 4], [bx + uy * 4, by - ux * 4]] }, style: { fill: th.axis } },
-          ];
-          if (e.label) {
-            children.push({
-              type: 'text',
-              style: {
-                text: e.label,
-                x: (x1 + x2) / 2,
-                y: (y1 + y2) / 2 - 9,
-                fill: th.text,
-                fontSize: 11,
-                align: 'center',
-                verticalAlign: 'bottom',
-              },
-            });
-          }
-          return { type: 'group', children };
-        },
-      },
-      {
-        type: 'custom',
-        z: 2,
-        data: nodes.map((n) => ({ kind: 'node', node: n, value: [n.x, n.y] })),
-        renderItem: (params, api) => {
-          const n = nodes[params.dataIndex];
-          const p = api.coord([n.x, n.y]);
-          return {
-            type: 'group',
-            children: [
-              {
-                type: 'rect',
-                shape: { x: p[0] - HW, y: p[1] - HH, width: W, height: H, r: 8 },
-                style: { fill: n.fill, stroke: n.stroke, lineWidth: 2 },
-              },
-              {
-                type: 'text',
-                style: {
-                  text: n.label,
-                  x: p[0],
-                  y: p[1],
-                  fill: n.color,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  fontFamily: 'sans-serif',
-                  align: 'center',
-                  verticalAlign: 'middle',
-                  width: W - 16,
-                  overflow: 'truncate',
-                },
-              },
-            ],
-          };
-        },
-      },
-    ],
   };
 }
 

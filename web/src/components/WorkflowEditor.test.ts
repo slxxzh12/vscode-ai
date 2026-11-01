@@ -30,7 +30,7 @@ describe('WorkflowEditor', () => {
     await flushPromises();
     const call = calls.find((c) => c.url === '/api/workflows-reveal');
     expect(call).toBeTruthy();
-    expect(JSON.parse(String(call!.opt!.body))).toEqual({ path: '' });
+    expect(JSON.parse(String(call!.opt!.body))).toEqual({ path: '', local: true });
   });
 
   it('点击「从文件刷新」重新加载工作流列表', async () => {
@@ -41,10 +41,10 @@ describe('WorkflowEditor', () => {
     }));
     const w = mountC(WorkflowEditor);
     await flushPromises();
-    const before = calls.filter((u) => u === '/api/workflows-xml').length;
+    const before = calls.filter((u) => u === '/api/workflows-xml?local=1').length;
     await w.find('.wrefresh').trigger('click');
     await flushPromises();
-    expect(calls.filter((u) => u === '/api/workflows-xml').length).toBe(before + 1);
+    expect(calls.filter((u) => u === '/api/workflows-xml?local=1').length).toBe(before + 1);
   });
 
   it('轮询自动刷新工作流列表', async () => {

@@ -40,6 +40,33 @@ describe('enhanceCharts', () => {
 });
 
 describe('enhanceMarkdown（统一入口）', () => {
+  it('子图流程走 ECharts 渲染（子图/连线/节点三组 series）', async () => {
+    const host = document.createElement('div');
+    host.innerHTML = [
+      '<pre class="mermaid">flowchart LR',
+      'subgraph P1["A"]',
+      'direction LR',
+      'a1[a] --> a2[b]',
+      'end',
+      'subgraph P2["B"]',
+      'direction LR',
+      'b1[c] --> b2[d]',
+      'end',
+      'a2 --> b1</pre>',
+    ].join('\n');
+    const options: any[] = [];
+    const echarts = {
+      init: () => ({
+        setOption: (o: any) => { options.push(o); },
+        resize: () => {},
+        dispose: () => {},
+      }),
+    };
+    const items = await enhanceMarkdown(host, { echarts });
+    expect(items).toHaveLength(1);
+    expect(options[0].series).toHaveLength(3);
+  });
+
   it('同一入口同时处理表格回调、ECharts 与 Mermaid', async () => {
     const host = document.createElement('div');
     host.innerHTML = [

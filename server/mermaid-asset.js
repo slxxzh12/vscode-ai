@@ -48,10 +48,12 @@ export function readMarkdownClientScript() {
   const sharedDir = path.dirname(require.resolve('@devflow/shared'));
   const file = path.join(sharedDir, 'markdown-client.js');
   const charts = path.join(sharedDir, 'markdown-charts.js');
+  const flow = path.join(sharedDir, 'markdown-flowchart.js');
   const ppt = path.join(sharedDir, 'markdown-ppt.js');
   const mtime = Math.max(
     fs.statSync(file).mtimeMs,
     fs.statSync(charts).mtimeMs,
+    fs.existsSync(flow) ? fs.statSync(flow).mtimeMs : 0,
     fs.statSync(ppt).mtimeMs,
   );
   if (!clientCached || mtime !== clientMtime) {

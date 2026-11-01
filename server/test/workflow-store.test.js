@@ -217,3 +217,11 @@ test('readWorkflowsDir 只读扫描 .void/workflows，不写盘不迁移', () =>
   assert.deepEqual(list[0].stages[0].prompts, ['hello']);
   assert.equal(fs.readdirSync(root).sort().join(','), before);
 });
+
+test('seed:false 不把默认工作流复制进目标目录（编辑器操作 .void 时用）', () => {
+  const seed = tmp();
+  createWorkflowStore({ dir: seed }).writeAll([wf('a', 'A')]);
+  const dir = tmp();
+  createWorkflowStore({ dir, seedDir: seed, seed: false });
+  assert.deepEqual(createWorkflowStore({ dir }).readAll().map((w) => w.label), []);
+});

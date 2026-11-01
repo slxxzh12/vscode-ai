@@ -317,6 +317,11 @@ for (const [label, rel] of entries) {
   check(fs.existsSync(p), "missing " + rel);
   console.log("[build]   ok " + label + "  (" + rel + ")");
 }
+// 项目级技能：源仓有 .void/skills 时必须打进包，否则首次启动检测不到
+if (fs.existsSync(path.join(ROOT, ".void", "skills"))) {
+  check(fs.existsSync(path.join(APP, ".void", "skills")), "missing .void/skills");
+  console.log("[build]   ok skills  (.void/skills)");
+}
 
 // 运行时依赖自检：收集 server 代码真正 import 的每一个运行时依赖
 // （server/package.json 声明的包 + @devflow/shared 的各个子路径），以包内 server/

@@ -4,7 +4,7 @@
 
 在浏览器里运行和管理 CLI 编码 Agent：opencode、Claude Code、pi 等；多窗口 / 多会话终端、多项目、提示词工作流、Markdown 预览、静态网站 / 反向代理 / LLM 中转站、手机遥控与绿色包分发，一套 Web 界面全部搞定。
 
-> **关键词（便于搜索）**：opencode Web 版、Claude Code Web 版、pi Agent、浏览器终端、Web Terminal、在线终端、多窗口终端、多会话终端、多项目目录树、工作流编排、提示词工作流、Markdown 预览、复杂表格、Mermaid 折线图、饼图、ECharts、PPT 演示、静态网站托管、反向代理、Nginx 规则、LLM 中转站、OpenAI 兼容 API、API 中转、Postman、Navicat、YAML、Base64、远程访问、手机遥控、免安装绿色包、Windows、macOS、Vue3、Vite、TypeScript、Node.js、node-pty、WebSocket。
+> **关键词（便于搜索）**：opencode Web 版、Claude Code Web 版、pi Agent、浏览器终端、Web Terminal、在线终端、多窗口终端、多会话终端、多项目目录树、工作流编排、提示词工作流、Markdown 预览、复杂表格、Mermaid 流程图、折线图、饼图、ECharts、PPT 演示、静态网站托管、反向代理、Nginx 规则、LLM 中转站、OpenAI 兼容 API、API 中转、Postman、Navicat、YAML、Base64、远程访问、手机遥控、免安装绿色包、Windows、macOS、Vue3、Vite、TypeScript、Node.js、node-pty、WebSocket。
 
 ## 这个项目解决什么问题
 
@@ -21,8 +21,8 @@
 - **Agent 与网页多窗口管理**：同一网页终端可运行 opencode、Claude Code、pi 等 CLI 编码 Agent；多会话 / 多窗口以页签管理，支持断线重连与缓冲重放。
 - **终端与会话**：多会话页签、断线重连重放、会话备注 / 描述、历史消息与提示词收藏。
 - **项目与文件**：多项目目录树、文件预览 / 编辑、代码搜索、Git 统计、代码行数统计。
-- **工作流**：工作流 → 小组 → 阶段 → 技能（Markdown 文件）目录化存储；阶段常用提示词 chip；支持直接从文件刷新与就地编辑。
-- **Markdown 增强**：复杂表格、Mermaid `xychart-beta` 折线 / 柱状图、`pie` 饼图（转换为 ECharts）、`mermaid row` 并排图表、`mermaid-data` 数据脚本、PPT 演示。
+- **工作流**：工作流 → 小组 → 阶段 → 技能（Markdown 文件）目录化存储；阶段常用提示词 chip；支持直接从文件刷新与就地编辑。工作流编辑器直接编辑当前项目内的 `.void/workflows`（刷新、移动、删除、恢复默认都作用于项目文件）。
+- **Markdown 增强**：复杂表格、Mermaid 流程图（分支 / 回边 / 子图 / 自定义配色）、`xychart-beta` 折线 / 柱状图、`pie` 饼图（转换为 ECharts）、`mermaid row` 并排图表、`mermaid-data` 数据脚本、PPT 演示；图表统一蓝色科技主题。
 - **小工具集**：TXT / Markdown、YAML、翻译、Postman（curl 记录）、Navicat（MySQL / PostgreSQL / SQLite / Redis）、Nginx、Base64。
 - **静态网站 / 反向代理 / LLM 中转站**：静态目录托管、SPA 回退、站点前缀、请求抓包；按路径或独立端口接入；签发 JWT 供外部机器调用上游模型。
 - **协作与统计**：群成员、群聊、机器用量上报、Token 统计。
@@ -101,7 +101,7 @@ node scripts/build-opencode.js       # Windows 内置 opencode 包
 node scripts/build-mac.js            # macOS（必须在 macOS 上执行，一次出 arm64 + x64）
 ```
 
-产物在 `dist-portable/`，目录名形如 `vscode-ai-windows-x64-vYYYYMMDD`，并附带同名 `.zip`。绿色包自带 `runtime/node.exe` 与已编译的 node-pty，目标机无需安装 Node。
+产物在 `dist-portable/`，目录名形如 `vscode-ai-windows-x64-vYYYYMMDD`，并附带同名 `.zip`。绿色包自带 `runtime/node.exe` 与已编译的 node-pty，目标机无需安装 Node；源码仓存在 `.void/skills` 时也会一并打入包内，首次启动即可检测到项目级技能。
 
 ## 目录结构
 
@@ -133,13 +133,15 @@ test/     Markdown / 图表等测试样例数据
 Markdown 预览（应用内文件预览、记事本 / Markdown 工具、静态网站页面）共用同一套渲染增强：
 
 - **复杂表格**：GFM 表格渲染为 Element Plus 表格，支持列对齐、超宽表横向滚动与重复行去重。
+- **流程图**：`flowchart TD / LR` 支持分支、回边（循环）、子图（`subgraph`，可各自设置 `direction`）与 `classDef` / `class` 自定义配色；渲染为 ECharts，跨子图连线自动走折线。
 - **折线图 / 柱状图**：Mermaid `xychart-beta` 中的 `line` / `bar` 自动转换为 ECharts；写成 `line "名称" [...]` 可显示图例。
 - **饼图**：Mermaid `pie` 自动转换为 ECharts 饼图。
 - **并排图表**：代码块语言标记写成 `mermaid row`，多个图表（如折线图 + 饼图）会在同一行并排展示。
-- **PPT 展示**：Markdown 预览点击「PPT 模式」进入演示（静态网站页面同样支持），按一级 / 二级标题自动分页，支持上一页 / 下一页、键盘方向键与全屏；每页中的表格、折线图、饼图都会正常渲染。
+- **PPT 展示**：Markdown 预览点击「PPT 模式」进入演示（静态网站页面同样支持），按一级 / 二级标题自动分页；支持上一页 / 下一页、全屏，以及方向键 / PageUp / PageDown / 空格（Shift+空格上一页）/ Home / End 翻页、Esc 退出；在输入框中打字时不会误翻页。每页中的表格与图表都会正常渲染。
 - **数据脚本图表**：`mermaid-data` 代码块可读取同目录 CSV / JSON，处理后返回 Mermaid 源码生成图表。
+- **统一主题**：Mermaid 图表使用蓝色科技配色，深色 / 浅色主题均适配（不使用粉 / 紫），并收紧节点与层级间距、按容器宽度自适应。
 
-示例见 `test/markdown_data/`（`charts.md`、`mermaid-line-pie.md` 等）。
+示例见 `test/markdown_data/`（`charts.md`、`mermaid-line-pie.md`、`mermaid-flowchart.md`、`flowchart-two-subgraphs.md` 等）。
 
 ## 测试
 

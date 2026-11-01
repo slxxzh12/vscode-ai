@@ -156,6 +156,30 @@ describe('parseMermaidChart', () => {
     expect(nodes[2].fill).toBe('#f5a524');
   });
 
+  it('解析子图流程：子图横向并排，子图内节点横向排列', () => {
+    const spec = parseMermaidChart([
+      'flowchart LR',
+      '  subgraph P1["第一段"]',
+      '    direction LR',
+      '    A[开始] --> B[校验] --> C[处理]',
+      '  end',
+      '  subgraph P2["第二段"]',
+      '    direction LR',
+      '    D[写入] --> E[通知] --> F[结束]',
+      '  end',
+      '  C --> D',
+    ].join('\n')) as any;
+    expect(spec).toMatchObject({ kind: 'flowchart' });
+    expect(spec.groups.map((g: any) => g.label)).toEqual(['第一段', '第二段']);
+    expect(spec.groups[0].x).toBeLessThan(spec.groups[1].x);
+    const node = (id: string) => spec.nodes.find((n: any) => n.id === id);
+    expect(node('A').x).toBeLessThan(node('B').x);
+    expect(node('A').y).toBeCloseTo(node('B').y, 3);
+    expect(node('D').x).toBeLessThan(node('E').x);
+    expect(node('D').y).toBeCloseTo(node('E').y, 3);
+    expect(spec.edges).toContainEqual({ source: 'C', target: 'D', label: '' });
+  });
+
   it('gantt chevron 按持续时间生成箭头时间轴段', () => {
     const spec = parseMermaidChart([
       'gantt chevron',
