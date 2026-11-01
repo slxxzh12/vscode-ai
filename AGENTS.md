@@ -100,6 +100,18 @@
 - 数据按端口隔离在 `%USERPROFILE%\.local\share\void\ports\<端口>\`；宿主端口文件在仓库根/绿色包根的 `data/port.txt`。
 - 测试：`npm.cmd test`（server + web）；类型：`npm.cmd run typecheck`；代码行统计：`npm.cmd run count:code`（去注释/空行/纯括号/无英文行，输出每文件实际代码行）。
 
+## 文档仓
+
+`docs/` 存放团队与项目文档，现有结构：
+
+- `docs/learn/`：流程与操作规范（提交/发布/环境等），相关规范的唯一事实源。
+- `docs/knowledge/`：模块知识，按模块平铺，文件名「模块名.md」。
+- `docs/memory/`：经验教训，平铺，文件名「YYYY-MM-DD-主题.md」。
+- `docs/version/`：版本文档，按需求平铺文件夹，命名「US编号-名称/」（US 开头，一个需求一个文件夹）。
+- `docs/superpowers/`：计划与设计草稿（specs/plans）。
+
+每个知识/经验/版本目录保留 `README.md`（用途与命名规范）与 `.gitkeep` 占位；新增或调整目录时同步更新本节。
+
 ## 目录组织（强制）
 
 - **一个独立功能放一个独立文件夹，不要把不相关的代码平铺到同一个目录下**：新功能优先新建自己的模块文件/子目录（必要时含各自的测试文件），按职责聚合，而不是往现有大文件或根目录里堆。
