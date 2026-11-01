@@ -20,9 +20,10 @@ const forbidden = new Set([
   'style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'textarea',
   'button', 'select', 'option', 'link', 'meta', 'base',
 ]);
+// sanitize-html 的默认白名单不含 img（也不含 svg），这里显式补回 Markdown 常用标签。
 const allowedTags = sanitizeHtml.defaults.allowedTags
   .filter((t) => !forbidden.has(t))
-  .concat(SVG_TAGS);
+  .concat(['img'], SVG_TAGS);
 const allowedAttributes = { ...sanitizeHtml.defaults.allowedAttributes };
 allowedAttributes['*'] = [...(allowedAttributes['*'] || []), 'class', 'id', 'style', 'title'];
 for (const tag of SVG_TAGS) {

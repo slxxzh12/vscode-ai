@@ -23,6 +23,14 @@ test('Markdown 样式按内容作用域注入，页面级样式进入 head', () 
   assert.match(html, /<div class="a">x<\/div>/);
 });
 
+test('同级目录图片保留相对路径', () => {
+  const html = renderMarkdownDocument(
+    '# t\n\n![pic](sample-image.svg)\n\n<img src="sample-image.svg" alt="x">',
+    't',
+  );
+  assert.equal((html.match(/<img src="sample-image.svg"/g) || []).length, 2);
+});
+
 test('静态页移除脚本并保留内联 SVG', () => {
   const html = renderMarkdownDocument(
     '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg><script>x</script>',
