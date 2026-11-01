@@ -24,6 +24,7 @@ import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
 import { useVersion } from '../useVersion';
+import { useSkillsInstall } from '../useSkillsInstall';
 import { useUpgrade } from '../useUpgrade';
 import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from './portRestart';
 import { getFileAssoc, setFileAssoc } from '../fileAssoc';
@@ -386,6 +387,17 @@ const agentSecRef = ref<HTMLElement | null>(null);
 // 刷新后恢复的页签数（设置面板即时生效，存 localStorage）
 const restoreTabsCount = ref(restoreTabs.value);
 function saveRestoreTabsCount() { restoreTabsCount.value = setRestoreTabs(restoreTabsCount.value); }
+// 默认 skills：设置面板一键安装（只补缺失，不覆盖已存在）
+const { status: skillsStatus, installing: skillsInstalling, loadSkillsStatus, installMissingSkills } = useSkillsInstall();
+const skillsMsg = ref('');
+const skillsDetected = computed(() => skillsStatus.value?.targets || []);
+const skillsMissingTargets = computed(() => skillsDetected.value.filter((t) => t.missing.length > 0));
+async function installSkillsFromSettings() {
+  skillsMsg.value = '';
+  const r = await installMissingSkills();
+  if (!r) { skillsMsg.value = t('skills.install_failed', { msg: t('skills.install_request_failed') }); return; }
+  skillsMsg.value = r.installed ? t('skills.install_done', { count: r.installed }) : t('skills.install_none');
+}
 const { version: appVersion } = useVersion();
 const { upgrade: upgradeInfo, loading: upgradeLoading, checkNow } = useUpgrade();
 const checkOpen = ref(false);
@@ -1019,7 +1031,8 @@ function clearPrompt() {
 const promptsRoot = ref('');
 async function loadPromptsRoot() {
   try {
-    const r = await fetch('/api/workflows-tree?workflowId=').then((x) => x.json());
+    const sid = props.terminal.state.activeSessionId || '';
+    const r = await fetch(`/api/workflows-tree?workflowId=&sessionId=${encodeURIComponent(sid)}`).then((x) => x.json());
     if (typeof r?.root === 'string') promptsRoot.value = r.root;
   } catch { /* ignore */ }
 }
@@ -1028,7 +1041,7 @@ async function openPromptsRoot() {
     await fetch('/api/workflows-reveal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: '' }),
+      body: JSON.stringify({ path: '', sessionId: props.terminal.state.activeSessionId || '' }),
     });
   } catch { /* ignore */ }
 }
@@ -1318,6 +1331,7 @@ function onTabClose(id: string, ev: Event) {
 watch([agentId, agents, wfKind], saveCfg, { deep: true });
 
 watch(settingsOpen, (open, was) => {
+  if (open) void loadSkillsStatus();
   if (was && !open) {
     firstRunHint.value = false;
     window.dispatchEvent(new Event('df-settings-closed'));
@@ -1475,6 +1489,23 @@ onBeforeUnmount(() => {
               <input v-model.number="restoreTabsCount" type="number" min="1" :max="MAX_RESTORE_TABS" @change="saveRestoreTabsCount" />
             </div>
             <div class="cfghint">{{ $t('term.restore_tabs_hint') }}</div>
+          </div>
+          <div class="setsec">
+            <div class="settitle">
+              {{ $t('skills.settings_title') }}
+              <button class="ghostcfg" :disabled="skillsInstalling" @click="installSkillsFromSettings">
+                {{ skillsInstalling ? $t('skills.installing') : $t('skills.settings_install') }}
+              </button>
+            </div>
+            <div v-if="!skillsDetected.length" class="cfghint">{{ $t('skills.no_targets') }}</div>
+            <div v-else-if="!skillsMissingTargets.length" class="cfghint">{{ $t('skills.install_none') }}</div>
+            <div v-else class="cfgrow">
+              <span v-for="st in skillsMissingTargets" :key="st.id" class="cfghint">
+                {{ $t('skills.target_summary', { name: st.label, count: st.missing.length }) }}
+              </span>
+            </div>
+            <div class="cfghint">{{ $t('skills.settings_hint') }}</div>
+            <div v-if="skillsMsg" class="cfghint">{{ skillsMsg }}</div>
           </div>
           </template>
           <template v-else>
@@ -1828,6 +1859,7 @@ onBeforeUnmount(() => {
 .chkrow input { margin-top: 2px; cursor: pointer; }
 .cfghint { color: var(--tx6); font-size: 11px; }
 .cfghint.warn { color: var(--warn2); }
+.cfgrow .cfghint { width: auto; flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .assoc-exts { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .assoc-ext { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-family: Consolas, monospace; }
 .assoc-ext input { cursor: pointer; }

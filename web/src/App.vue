@@ -27,6 +27,8 @@ import { startDesktopRemoteCoder } from './remote-coder/useDesktopRemoteCoder';
 import { useVersion } from './useVersion';
 import { useUpgrade, shouldPopup } from './useUpgrade';
 import UpgradeDialog from './components/UpgradeDialog.vue';
+import SkillsInstallDialog from './components/SkillsInstallDialog.vue';
+import { useSkillsInstall } from './useSkillsInstall';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
 import { useSessionProjects } from './sessionProjects';
 import { fetchWindowState, planRestore, saveWindowState, flushWindowState, toSavedTabs, type HistoryTab, type Rail, type AllStyle } from './windowState';
@@ -79,6 +81,17 @@ const projectsApi = useProjects();
 const { version: appVersion, loadVersion } = useVersion();
 const { upgrade: upgradeInfo, loadUpgrade } = useUpgrade();
 const showUpgrade = ref(false);
+const { status: skillsStatus, installing: skillsInstalling, loadSkillsStatus, installMissingSkills } = useSkillsInstall();
+const showSkillsInstall = ref(false);
+const skillsDialogTargets = computed(() => (skillsStatus.value?.targets || []).filter((t) => t.missing.length > 0));
+async function maybeSkillsPopup() {
+  const s = await loadSkillsStatus('', true);
+  if (s && s.startupPrompt && s.missing > 0) showSkillsInstall.value = true;
+}
+async function installSkillsNow() {
+  const r = await installMissingSkills();
+  if (r) showSkillsInstall.value = false;
+}
 const UPGRADE_POPUP_KEY = 'devflow-upgrade-popup-at';
 const UPGRADE_SKIP_KEY = 'devflow-upgrade-skip';
 function openUpgrade() { const u = upgradeInfo.value?.downloadUrl || upgradeInfo.value?.url; if (u) window.open(u, '_blank', 'noopener'); }
@@ -738,6 +751,7 @@ function openAgentSettings(firstRun = false) {
 onMounted(async () => {
   loadVersion();
   void loadUpgrade().finally(maybeUpgradePopup);
+  void maybeSkillsPopup();
   try {
     const landing = readMobileLanding(window.localStorage, Date.now());
     writeMobileLanding(window.localStorage, landing);
@@ -880,6 +894,7 @@ onBeforeUnmount(() => {
     </div>
     <LocalDropOverlay v-if="localDragging" />
     <UpgradeDialog :open="showUpgrade" :current="appVersion" :latest="upgradeInfo?.latest || ''" :download-url="upgradeInfo?.downloadUrl || ''" @go="upgradeGo" @close="upgradeClose" @skip="upgradeSkip" />
+    <SkillsInstallDialog :open="showSkillsInstall" :targets="skillsDialogTargets" :installing="skillsInstalling" @install="installSkillsNow" @close="showSkillsInstall = false" />
   </div>
   </ElConfigProvider>
 </template>

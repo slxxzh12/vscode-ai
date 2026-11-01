@@ -178,6 +178,14 @@ cpDir(
   path.join(APP, "config"),
   (e) => e.name !== "runtime-port.txt",
 );
+// 项目级技能与工作流（.void）随包发布；排除本机检测状态
+if (fs.existsSync(path.join(ROOT, ".void"))) {
+  cpDir(
+    path.join(ROOT, ".void"),
+    path.join(APP, ".void"),
+    (e) => e.name !== "skills-checked.json",
+  );
+}
 
 // 运行时依赖（真实拷贝，含 node-pty 原生 .node）
 fs.mkdirSync(path.join(APP, "node_modules", "@devflow"), { recursive: true });

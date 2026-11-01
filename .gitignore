@@ -26,3 +26,5 @@ server/collaboration/inbox/
 # 运行时端口记录（服务启动时生成；data/ 为宿主端口文件与运行时端口记录目录，禁止入库）
 data/
 config/runtime-port.txt
+# 默认 skills 首次检测记录（本机运行状态）
+.void/skills-checked.json

@@ -55,6 +55,7 @@ import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateSer
 import { createWorkflowSeedStore } from './workflow-seed.js';
 import { createWorkflowStore } from './workflow-store.js';
 import { localWorkflowDir, mergeLocalWorkflows } from './workflow-local.js';
+import { skillsStatus, installSkills, readSkillsChecked, markSkillsChecked } from './skills-install.js';
 import { installVoid } from './void-install.js';
 import { fallbackWorkflows } from './workflow-xml.js';
 import { setLocale, t } from './i18n.js';
@@ -286,6 +287,32 @@ function workflowsForSession(ws, sessionId, logger = console) {
   }
   dirs.push(localWorkflowDir(process.cwd()));
   return mergeLocalWorkflows(base, dirs, logger);
+}
+
+// 工作流目录展示：优先用户项目内的 .void/workflows（打包后即包内工作目录），没有再回落到数据目录
+function workflowDisplayRoot(ws, sessionId) {
+  const dirs = [];
+  if (sessionId) {
+    const session = ws?.sessionManager?.get(sessionId);
+    if (session && session.cwd) dirs.push(localWorkflowDir(session.cwd));
+  }
+  dirs.push(localWorkflowDir(process.cwd()));
+  for (const dir of dirs) {
+    if (!dir) continue;
+    try { if (fs.statSync(dir).isDirectory()) return dir; } catch { /* next */ }
+  }
+  return ws?.workflowStore?.dir || '';
+}
+
+// 项目级 skills 来源：会话 cwd 与服务启动目录下的 .void/skills
+function skillsSourceDirs(ws, sessionId) {
+  const dirs = [];
+  if (sessionId) {
+    const session = ws?.sessionManager?.get(sessionId);
+    if (session && session.cwd) dirs.push(path.join(session.cwd, '.void', 'skills'));
+  }
+  dirs.push(path.join(process.cwd(), '.void', 'skills'));
+  return dirs;
 }
 
 function buildWorkspace({ paths, port }) {
@@ -882,10 +909,46 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ workflows }));
     return;
   }
+  if (url.pathname === '/api/skills/status' && req.method === 'GET') {
+    const sessionId = url.searchParams.get('sessionId') || '';
+    const status = skillsStatus({ sourceDirs: skillsSourceDirs(ws, sessionId) });
+    // 只在首次启动检测时允许自动弹窗，结果记录到 <当前目录>/.void/skills-checked.json；
+    // 之后由用户在设置里手动安装。
+    const startup = url.searchParams.get('startup') === '1';
+    if (startup) {
+      const checked = readSkillsChecked(process.cwd());
+      status.startupPrompt = !checked && status.missing > 0;
+      if (!checked) {
+        markSkillsChecked(process.cwd(), {
+          missing: status.missing,
+          targets: status.targets.map((t) => ({ id: t.id, dir: t.dir, missing: t.missing.length })),
+        });
+      }
+    } else {
+      status.startupPrompt = false;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(status));
+    return;
+  }
+  if (url.pathname === '/api/skills/install' && req.method === 'POST') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+      const targetIds = Array.isArray(body.targets) ? body.targets : null;
+      const result = installSkills({ sourceDirs: skillsSourceDirs(ws, sessionId), targetIds, logger: log });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(result));
+    });
+    return;
+  }
   if (url.pathname === '/api/workflows-tree' && req.method === 'GET') {
     const tree = ws?.workflowStore?.tree(url.searchParams.get('workflowId') || '') || [];
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ tree, root: ws?.workflowStore?.dir || '' }));
+    res.end(JSON.stringify({ tree, root: workflowDisplayRoot(ws, url.searchParams.get('sessionId') || '') }));
     return;
   }
   if (url.pathname === '/api/workflows-file' && req.method === 'GET') {
@@ -959,9 +1022,15 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const rel = typeof body.path === 'string' ? body.path : '';
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
       let abs = '';
-      try { abs = ws.workflowStore.absPath(typeof body.path === 'string' ? body.path : ''); }
-      catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'bad-path' })); return; }
+      if (!rel) {
+        abs = workflowDisplayRoot(ws, sessionId);
+      } else {
+        try { abs = ws.workflowStore.absPath(rel); }
+        catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'bad-path' })); return; }
+      }
       let st = null;
       try { st = fs.statSync(abs); } catch { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'not-found' })); return; }
       if (!revealInOs(abs, st.isDirectory())) { res.writeHead(501, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'unsupported' })); return; }
