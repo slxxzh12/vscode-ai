@@ -134,6 +134,7 @@ Markdown 预览（应用内文件预览、记事本 / Markdown 工具、静态�
 
 - **复杂表格**：GFM 表格渲染为 Element Plus 表格，支持列对齐、超宽表横向滚动与重复行去重。
 - **流程图**：`flowchart TD / LR` 支持分支、回边（循环）、子图（`subgraph`，可各自设置 `direction`）与 `classDef` / `class` 自定义配色；渲染为 ECharts，跨子图连线自动走折线。
+- **CSS 动画**：Markdown 预览与静态 `.md` 页面都支持 `<style>` 与内联 `style`；内容级样式自动限定在文档内，页面级样式（`<style data-scope="page">`）只在静态页生效。允许内联 SVG，仍禁止脚本。
 - **折线图 / 柱状图**：Mermaid `xychart-beta` 中的 `line` / `bar` 自动转换为 ECharts；写成 `line "名称" [...]` 可显示图例。
 - **饼图**：Mermaid `pie` 自动转换为 ECharts 饼图。
 - **并排图表**：代码块语言标记写成 `mermaid row`，多个图表（如折线图 + 饼图）会在同一行并排展示。

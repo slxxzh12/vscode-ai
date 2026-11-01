@@ -134,6 +134,7 @@ Markdown preview (in-app file preview, the TXT/Markdown tools, and static site p
 
 - **Complex tables**: GFM tables render as Element Plus tables with column alignment, horizontal scrolling for wide tables, and duplicate-row deduplication.
 - **Flowcharts**: `flowchart TD / LR` supports branches, back-edges (loops), subgraphs (`subgraph`, each with its own `direction`), and `classDef` / `class` custom colors; rendered as ECharts, with elbow connectors across subgraphs.
+- **CSS animations**: `<style>` blocks and inline `style` work in Markdown preview and static `.md` pages; content styles are scoped to the document, while page-level styles (`<style data-scope="page">`) apply only to static pages. Inline SVG is allowed; scripts remain disabled.
 - **Line / bar charts**: Mermaid `line` / `bar` inside `xychart-beta` are converted to ECharts; `line "name" [...]` shows a legend.
 - **Pie charts**: Mermaid `pie` is converted to an ECharts pie chart.
 - **Side-by-side charts**: tag a code block as `mermaid row` and multiple charts (e.g. line + pie) render on the same row.
