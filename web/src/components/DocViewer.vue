@@ -1112,7 +1112,7 @@ onBeforeUnmount(() => {
 .seg button.on { background: var(--ac); color: var(--onac); }
 .pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .csv-pane { flex: 1; min-height: 0; display: flex; }
-.scroll { flex: 1; overflow: auto; min-height: 0; padding: 14px 20px 40px; }
+.scroll { flex: 1; overflow: auto; min-height: 0; padding: 14px 20px 40px; position: relative; contain: layout paint; }
 .html-frame { display: block; width: 100%; height: 100%; border: none; background: #fff; }
 .editor { flex: 1; min-height: 0; overflow: auto; }
 .editor :deep(.cm-editor) { height: 100%; font-size: 12.5px; }
