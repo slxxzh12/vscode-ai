@@ -412,6 +412,7 @@ function ensurePpt(): PptPresenter {
       close: t('common.close'),
       prev: '← ' + t('fp.ppt.prev'),
       next: t('fp.ppt.next') + ' →',
+      hide: t('fp.ppt.hide_nav'),
     },
     onOpen: () => { pptOpen.value = true; },
     onClose: (restore) => {

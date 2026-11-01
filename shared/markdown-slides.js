@@ -1,5 +1,5 @@
-// Markdown → PPT 章节：按一级/二级标题切分，代码块里的 # 不参与切分。
-export function splitMarkdownSlides(md, maxLevel = 2) {
+// Markdown → PPT 章节：默认只按一级标题切分（二级及以下留在同一页），代码块里的 # 不参与切分。
+export function splitMarkdownSlides(md, maxLevel = 1) {
   const lines = String(md || '').replace(/\r\n?/g, '\n').split('\n');
   const slides = [];
   let cur = [];

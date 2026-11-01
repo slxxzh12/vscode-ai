@@ -137,7 +137,7 @@ Markdown preview (in-app file preview, the TXT/Markdown tools, and static site p
 - **Line / bar charts**: Mermaid `line` / `bar` inside `xychart-beta` are converted to ECharts; `line "name" [...]` shows a legend.
 - **Pie charts**: Mermaid `pie` is converted to an ECharts pie chart.
 - **Side-by-side charts**: tag a code block as `mermaid row` and multiple charts (e.g. line + pie) render on the same row.
-- **PPT presentation**: click "PPT mode" in Markdown preview (static site pages are also supported). Slides are split by H1/H2 headings; previous/next, fullscreen, arrow keys / PageUp / PageDown / Space (Shift+Space for previous) / Home / End navigate, and Esc exits. Typing in an input does not turn pages. Tables and charts render on each slide.
+- **PPT presentation**: click "PPT mode" in Markdown preview (static site pages are also supported). Slides are split by H1 headings only (H2 and deeper stay on the same slide); previous/next, fullscreen, arrow keys / PageUp / PageDown / Space (Shift+Space for previous) / Home / End navigate, and Esc exits. Typing in an input does not turn pages. A hide-pager button hides the whole pager for the current session (keyboard navigation keeps working); reopen PPT to show it again. Tables and charts render on each slide.
 - **Data-script charts**: `mermaid-data` code blocks can read CSV/JSON from the same directory and return Mermaid source to generate charts.
 - **Unified theme**: Mermaid diagrams use a blue tech palette for both dark and light themes (no pink/purple), with tighter node and rank spacing and width fitting.
 

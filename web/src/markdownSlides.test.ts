@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { splitMarkdownSlides } from './markdownSlides';
 
 describe('splitMarkdownSlides', () => {
-  it('按一级/二级标题切分章节', () => {
+  it('只按一级标题切分，二级标题不单独成页', () => {
     const slides = splitMarkdownSlides([
       '# 标题',
       '开头',
@@ -13,8 +13,15 @@ describe('splitMarkdownSlides', () => {
       '## 第二章',
       '内容二',
     ].join('\n'));
-    expect(slides.map((s) => s.title)).toEqual(['标题', '第一章', '第二章']);
-    expect(slides[1].content).toContain('### 小节');
+    expect(slides).toHaveLength(1);
+    expect(slides[0].title).toBe('标题');
+    expect(slides[0].content).toContain('## 第一章');
+    expect(slides[0].content).toContain('## 第二章');
+  });
+
+  it('多个一级标题按页切分', () => {
+    const slides = splitMarkdownSlides(['# 第一页', 'A', '# 第二页', 'B'].join('\n'));
+    expect(slides.map((s) => s.title)).toEqual(['第一页', '第二页']);
   });
 
   it('标题前的内容单独成一页', () => {

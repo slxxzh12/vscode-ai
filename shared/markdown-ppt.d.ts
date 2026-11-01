@@ -3,6 +3,7 @@ export interface PptLabels {
   close?: string;
   prev?: string;
   next?: string;
+  hide?: string;
 }
 
 export interface PptOptions {

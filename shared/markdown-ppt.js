@@ -58,15 +58,17 @@ export function createPptPresenter(options) {
   const main = make('div', 'df-ppt-main');
   const body = make('div', 'md-body df-ppt-body');
   const foot = make('footer', 'df-ppt-foot');
-  const prevBtn = make('button', 'df-ppt-btn', labels.prev || '\u2190');
+  const prevBtn = make('button', 'df-ppt-btn df-ppt-nav', labels.prev || '\u2190');
   prevBtn.type = 'button';
   const countEl = make('span', 'df-ppt-count', '');
-  const nextBtn = make('button', 'df-ppt-btn', labels.next || '\u2192');
+  const nextBtn = make('button', 'df-ppt-btn df-ppt-nav', labels.next || '\u2192');
   nextBtn.type = 'button';
+  const hideBtn = make('button', 'df-ppt-btn df-ppt-hide', labels.hide || 'Hide pager');
+  hideBtn.type = 'button';
 
   head.append(fileEl, titleEl, closeBtn);
   main.appendChild(body);
-  foot.append(prevBtn, countEl, nextBtn);
+  foot.append(prevBtn, countEl, nextBtn, hideBtn);
   win.append(head, main, foot);
   root.appendChild(win);
   mount.appendChild(root);
@@ -85,6 +87,17 @@ export function createPptPresenter(options) {
       try { opts.dispose(body); } catch { /* ignore */ }
     }
   }
+
+  let navHidden = false;
+
+  function applyNavHidden() {
+    foot.classList.toggle('is-nav-hidden', navHidden);
+    hideBtn.textContent = labels.hide || 'Hide pager';
+    hideBtn.title = hideBtn.textContent;
+    hideBtn.setAttribute('aria-pressed', navHidden ? 'true' : 'false');
+  }
+
+  applyNavHidden();
 
   function setChrome(size) {
     fileEl.textContent = filename();
@@ -199,6 +212,8 @@ export function createPptPresenter(options) {
     prevOverflow = doc.documentElement.style.overflow;
     doc.documentElement.style.overflow = 'hidden';
     root.hidden = false;
+    navHidden = false;
+    applyNavHidden();
     if (opts.onOpen) opts.onOpen();
     void requestFullscreen();
     void render();
@@ -243,6 +258,7 @@ export function createPptPresenter(options) {
   closeBtn.addEventListener('click', () => hide());
   prevBtn.addEventListener('click', prev);
   nextBtn.addEventListener('click', next);
+  hideBtn.addEventListener('click', () => { navHidden = true; applyNavHidden(); });
   root.addEventListener('click', (e) => { if (e.target === root) hide(); });
   doc.addEventListener('keydown', onKey);
   doc.addEventListener('fullscreenchange', onFullscreenChange);

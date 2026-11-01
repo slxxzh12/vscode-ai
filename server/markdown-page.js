@@ -106,7 +106,8 @@ function scriptsHtml(text, body, title, slides) {
       + 'renderSlide:(i)=>((slides[i]&&slides[i].html)||\'\'),'
       + 'enhance:enhance,dispose:dispose,'
       + 'labels:{open:' + jsString(t('fp.ppt')) + ',close:' + jsString(t('common.close'))
-      + ',prev:' + jsString('← ' + t('fp.ppt.prev')) + ',next:' + jsString(t('fp.ppt.next') + ' →') + '},'
+      + ',prev:' + jsString('← ' + t('fp.ppt.prev')) + ',next:' + jsString(t('fp.ppt.next') + ' →')
+      + ',hide:' + jsString(t('fp.ppt.hide_nav')) + '},'
       + 'renderError:(e)=>\'<p class="note err">\'+String(e&&e.message||e||\'\')+\'</p>\'});'
       + 'window.__dfPpt=ppt;'
       + 'try{const q=new URLSearchParams(location.search);if(q.get(\'ppt\')===\'1\')ppt.open(Math.max(0,Number(q.get(\'slide\'))||0));}catch(e){}'

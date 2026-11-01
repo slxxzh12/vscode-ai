@@ -1500,6 +1500,7 @@ export const messages = {
   'fp.ppt.exit': 'Exit PPT',
   'fp.ppt.prev': 'Previous',
   'fp.ppt.next': 'Next',
+  'fp.ppt.hide_nav': 'Hide pager',
   'fp.binary_unsupported': 'This file is binary and cannot be previewed in the browser',
   'fp.reveal': '📂 Reveal in file manager',
   'fp.b64.encode': 'Base64 encoding (live)',

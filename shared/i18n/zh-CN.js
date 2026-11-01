@@ -1500,6 +1500,7 @@ export const messages = {
   'fp.ppt.exit': '退出 PPT',
   'fp.ppt.prev': '上一页',
   'fp.ppt.next': '下一页',
+  'fp.ppt.hide_nav': '隐藏翻页',
   'fp.binary_unsupported': '此文件为二进制格式，不支持网页预览',
   'fp.reveal': '📂 在资源管理器中定位',
   'fp.b64.encode': 'Base64 编码（实时）',

@@ -123,6 +123,14 @@
   opacity: 0.4;
   cursor: default;
 }
+.df-ppt-foot.is-nav-hidden {
+  display: none;
+}
+.df-ppt-hide {
+  padding: 4px 10px;
+  font-size: 12px;
+  opacity: 0.8;
+}
 .df-ppt-count {
   color: var(--tx3, var(--tx2));
   font-size: 12px;

@@ -69,6 +69,29 @@ describe('PPT 键盘翻页', () => {
     expect(count()).toBe('1 / 3');
   });
 
+  it('点击隐藏翻页后隐藏上下页按钮，键盘仍可翻页', async () => {
+    make();
+    ppt!.open(0);
+    await flushPromises();
+    const foot = ppt!.element.querySelector('.df-ppt-foot') as HTMLElement;
+    const hide = ppt!.element.querySelector('.df-ppt-hide') as HTMLButtonElement;
+    expect(ppt!.element.querySelectorAll('.df-ppt-nav')).toHaveLength(2);
+    expect(foot.classList.contains('is-nav-hidden')).toBe(false);
+
+    hide.click();
+    await flushPromises();
+    expect(foot.classList.contains('is-nav-hidden')).toBe(true);
+    press('ArrowRight');
+    await flushPromises();
+    expect(count()).toBe('2 / 3');
+
+    ppt!.close();
+    await flushPromises();
+    ppt!.open(0);
+    await flushPromises();
+    expect(foot.classList.contains('is-nav-hidden')).toBe(false);
+  });
+
   it('输入框内按方向键不翻页', async () => {
     make();
     ppt!.open(0);
