@@ -16,6 +16,7 @@
     "./markdown-client": { "types": "./markdown-client.d.ts", "default": "./markdown-client.js" },
     "./markdown-charts": { "types": "./markdown-charts.d.ts", "default": "./markdown-charts.js" },
     "./markdown-slides": { "types": "./markdown-slides.d.ts", "default": "./markdown-slides.js" },
+    "./markdown-css": { "types": "./markdown-css.d.ts", "default": "./markdown-css.js" },
     "./markdown-ppt": { "types": "./markdown-ppt.d.ts", "default": "./markdown-ppt.js" },
     "./markdown-ppt.css": { "default": "./markdown-ppt.css" },
     "./markdown-table-sort": { "types": "./markdown-table-sort.d.ts", "default": "./markdown-table-sort.js" },
