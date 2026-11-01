@@ -54,6 +54,7 @@ import { createScheduler } from './scheduler/index.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, setDefaultAgent } from './devflow-config.js';
 import { createWorkflowSeedStore } from './workflow-seed.js';
 import { createWorkflowStore } from './workflow-store.js';
+import { localWorkflowDir, mergeLocalWorkflows } from './workflow-local.js';
 import { installVoid } from './void-install.js';
 import { fallbackWorkflows } from './workflow-xml.js';
 import { setLocale, t } from './i18n.js';
@@ -274,6 +275,19 @@ const broadcastNginx = (ev) => {
 };
 
 // ---- 由档案路径构建所有数据模块（不监听端口、不建 gateway）----
+// 当前会话目录（<cwd>/.void/workflows）与服务启动目录（process.cwd()/.void/workflows）
+// 的项目级工作流，合并进系统默认（同名以本地为准），本地优先排在最前；只读、不写盘。
+function workflowsForSession(ws, sessionId, logger = console) {
+  const base = ws?.workflowStore?.readAll() || [];
+  const dirs = [];
+  if (sessionId) {
+    const session = ws?.sessionManager?.get(sessionId);
+    if (session && session.cwd) dirs.push(localWorkflowDir(session.cwd));
+  }
+  dirs.push(localWorkflowDir(process.cwd()));
+  return mergeLocalWorkflows(base, dirs, logger);
+}
+
 function buildWorkspace({ paths, port }) {
   // 所有表共用一个 SQLite 文件：<数据目录>/void.db（usage / seed / member / member_command / message）
   const usageDbFile = path.join(paths.dir, 'void.db');
@@ -562,7 +576,7 @@ function buildWorkspace({ paths, port }) {
   setInterval(() => sessionLedger.flushAll(), 10000).unref?.();
   const workflowRunner = new WorkflowRunner({
     sessionManager,
-    getWorkflows: () => workflowStore.readAll(),
+    getWorkflows: (sessionId) => workflowsForSession({ workflowStore, sessionManager }, sessionId, log),
     doneMarker: (token, { runId, index }) => t('wf.done_marker', { runId, index }),
     logger: log,
   });
@@ -862,7 +876,8 @@ const server = http.createServer(async (req, res) => {
 
   // 配置类接口永远可用（不依赖档案）
   if (url.pathname === '/api/workflows-xml' && req.method === 'GET') {
-    const workflows = ws?.workflowStore?.readAll() || [];
+    const sessionId = url.searchParams.get('sessionId') || '';
+    const workflows = ws ? workflowsForSession(ws, sessionId, log) : [];
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ workflows }));
     return;

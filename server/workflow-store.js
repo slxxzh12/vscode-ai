@@ -88,6 +88,39 @@ function copyTree(from, to) {
 // 工作流目录结构：
 //   <workflows>/100_工作流/200_小组/300_阶段/400_技能.md
 // 文件夹名（含数字前缀）就是 id，显示名称去掉前缀；同一层按数字前缀升序。
+// 只读扫描一个工作流目录（工作流/小组/阶段/技能.md），不做 seed / 迁移 / 写盘。
+// 用于当前项目目录下的 `.void/workflows/` 等外部只读来源。
+export function readWorkflowsDir(dir, logger = null) {
+  const out = [];
+  for (const wfName of listDirs(dir)) {
+    const wfDir = path.join(dir, wfName);
+    const stages = [];
+    for (const groupName of listDirs(wfDir)) {
+      const groupDir = path.join(wfDir, groupName);
+      for (const stageName of listDirs(groupDir)) {
+        const stageDir = path.join(groupDir, stageName);
+        const prompts = [];
+        for (const fileName of listMd(stageDir)) {
+          try {
+            const text = fs.readFileSync(path.join(stageDir, fileName), 'utf8').replace(/\s+$/, '');
+            if (text.trim()) prompts.push(text);
+          } catch (e) {
+            logger?.warn?.(`workflow skill read failed: ${fileName}`, (e && e.message) || e);
+          }
+        }
+        stages.push({
+          id: `${groupName}/${stageName}`,
+          label: stripPrefix(stageName),
+          group: stripPrefix(groupName),
+          prompts,
+        });
+      }
+    }
+    out.push({ id: wfName, label: stripPrefix(wfName), priority: -prefixOf(wfName), stages });
+  }
+  return sortWorkflows(out);
+}
+
 export function createWorkflowStore({ dir, configFile = null, seedDir = null, seedStore = null, logger = console } = {}) {
   fs.mkdirSync(dir, { recursive: true });
 
@@ -215,34 +248,7 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
   }
 
   function readAll() {
-    const out = [];
-    for (const wfName of listDirs(dir)) {
-      const wfDir = path.join(dir, wfName);
-      const stages = [];
-      for (const groupName of listDirs(wfDir)) {
-        const groupDir = path.join(wfDir, groupName);
-        for (const stageName of listDirs(groupDir)) {
-          const stageDir = path.join(groupDir, stageName);
-          const prompts = [];
-          for (const fileName of listMd(stageDir)) {
-            try {
-              const text = fs.readFileSync(path.join(stageDir, fileName), 'utf8').replace(/\s+$/, '');
-              if (text.trim()) prompts.push(text);
-            } catch (e) {
-              logger?.warn?.(`workflow skill read failed: ${fileName}`, (e && e.message) || e);
-            }
-          }
-          stages.push({
-            id: `${groupName}/${stageName}`,
-            label: stripPrefix(stageName),
-            group: stripPrefix(groupName),
-            prompts,
-          });
-        }
-      }
-      out.push({ id: wfName, label: stripPrefix(wfName), priority: -prefixOf(wfName), stages });
-    }
-    return sortWorkflows(out);
+    return readWorkflowsDir(dir, logger);
   }
 
   function writeAll(list) {

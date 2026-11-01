@@ -988,7 +988,11 @@ function stageStatus(s: StageDef): string {
   return '';
 }
 function stageIcon(st: string): string { return st === 'running' ? '▶' : st === 'done' ? '✓' : st === 'error' ? '✕' : ''; }
-watch(() => props.terminal.state.activeSessionId, () => { wfRun.value = null; wfAnchor.value = ''; });
+watch(() => props.terminal.state.activeSessionId, () => {
+  wfRun.value = null;
+  wfAnchor.value = '';
+  void loadWorkflows();   // 切会话后按新会话 cwd 重新加载（含 .void/workflows）
+});
 
 // 替换型 chip 整段填入输入框；追加型 chip（编号）点击即直接发送
 function onChipClick(c: Chip) {
@@ -1036,7 +1040,9 @@ async function reloadWorkflowsFromFiles() {
 }
 async function loadWorkflows() {
   try {
-    const r = await fetch('/api/workflows-xml').then((x) => x.json());
+    const sid = props.terminal.state.activeSessionId;
+    const url = sid ? `/api/workflows-xml?sessionId=${encodeURIComponent(sid)}` : '/api/workflows-xml';
+    const r = await fetch(url).then((x) => x.json());
     if (Array.isArray(r?.workflows) && r.workflows.length) {
       wfDefs.value = r.workflows;
       if (!r.workflows.some((w: WfDef) => w.id === wfKind.value)) wfKind.value = r.workflows[0].id as any;

@@ -29,3 +29,12 @@ export function mergeWorkflowList(current = [], incoming = []) {
   }
   return out;
 }
+
+// 合并结果里把本地自定义的工作流排到最前；其余保持原有顺序（sort 稳定）。
+export function preferLocalFirst(list = [], local = []) {
+  const keyOf = (w) => String((w && (w.label || w.id)) || '').trim();
+  const first = new Set((Array.isArray(local) ? local : []).map(keyOf));
+  return (Array.isArray(list) ? list.slice() : []).sort(
+    (a, b) => Number(first.has(keyOf(b))) - Number(first.has(keyOf(a))),
+  );
+}

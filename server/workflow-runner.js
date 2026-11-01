@@ -154,7 +154,7 @@ export class WorkflowRunner {
     return { ok: true, run };
   }
   startGroup({ workflowId, groupAnchor, sessionId }) {
-    const wfs = this.getWorkflows ? this.getWorkflows() : [];
+    const wfs = this.getWorkflows ? this.getWorkflows(sessionId) : [];
     const wf = wfs.find((w) => w.id === workflowId);
     if (!wf) return { ok: false, code: 'not-found', message: 'workflow not found' };
     const expanded = expandGroupSteps(wf.stages || [], groupAnchor);
@@ -173,7 +173,7 @@ export class WorkflowRunner {
     return { ok: true, run };
   }
   startAll({ workflowId, sessionId, finalStatus = 'done' }) {
-    const wfs = this.getWorkflows ? this.getWorkflows() : [];
+    const wfs = this.getWorkflows ? this.getWorkflows(sessionId) : [];
     const wf = wfs.find((w) => w.id === workflowId);
     if (!wf) return { ok: false, code: 'not-found', message: 'workflow not found' };
     const session = this.sm.get(sessionId);

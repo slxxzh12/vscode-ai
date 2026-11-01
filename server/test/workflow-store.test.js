@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createWorkflowStore } from '../workflow-store.js';
+import { createWorkflowStore, readWorkflowsDir } from '../workflow-store.js';
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'df-wfstore-')); }
 function wf(id, label, stages) {
@@ -203,4 +203,17 @@ test('seedDir：同名工作流只解压一次，新增工作流会补入', () =
   assert.equal(out.filter((w) => w.label === 'A').length, 1);
   assert.equal(out.find((w) => w.label === 'A').stages[0].prompts[0], '已改');
   assert.equal(out.find((w) => w.label === 'B').stages[0].prompts[0], '新增');
+});
+
+test('readWorkflowsDir 只读扫描 .void/workflows，不写盘不迁移', () => {
+  const root = tmp();
+  const base = path.join(root, '.void', 'workflows');
+  const writer = createWorkflowStore({ dir: base });
+  writer.writeAll([wf('local', 'Local', [{ id: 's', label: 'Stage', group: 'Group', prompts: ['hello'] }])]);
+  const before = fs.readdirSync(root).sort().join(',');
+  const list = readWorkflowsDir(base);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].label, 'Local');
+  assert.deepEqual(list[0].stages[0].prompts, ['hello']);
+  assert.equal(fs.readdirSync(root).sort().join(','), before);
 });

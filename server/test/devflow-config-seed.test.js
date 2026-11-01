@@ -54,7 +54,7 @@ test('overwriteAllFromSeed：同名覆盖、补齐包内工作流、保留本地
   const store = createWorkflowStore({ dir, seedDir: SEED, logger: { warn() {} } });
   const wf = store.readAll().find((w) => w.label === '开发工作流');
   assert.ok(wf, '缺少开发工作流');
-  const stageFile = path.join(dir, wf.id, '200_开发交付', '400_Push&Merge 代码', '100_push代码到当前分支.md');
+  const stageFile = path.join(dir, wf.id, '200_开发交付', '500_Push&Merge 代码', '100_push代码到当前分支.md');
   fs.writeFileSync(stageFile, '本地改动\n', 'utf8');
   const extra = path.join(dir, '999_本地额外');
   fs.mkdirSync(path.join(extra, '100_组', '100_阶段'), { recursive: true });
@@ -72,7 +72,7 @@ test('restoreFromSeed：用默认内容覆盖本地工作流并保留本地文�
   const store = createWorkflowStore({ dir, seedDir: SEED, logger: { warn() {} } });
   const wf = store.readAll().find((w) => w.label === '开发工作流');
   assert.ok(wf, '缺少开发工作流');
-  const localFile = path.join(dir, wf.id, '200_开发交付', '400_Push&Merge 代码', '100_push代码到当前分支.md');
+  const localFile = path.join(dir, wf.id, '200_开发交付', '500_Push&Merge 代码', '100_push代码到当前分支.md');
   fs.writeFileSync(localFile, '本地改动\n', 'utf8');
   const restored = store.restoreFromSeed(wf.id);
   assert.equal(restored.label, '开发工作流');

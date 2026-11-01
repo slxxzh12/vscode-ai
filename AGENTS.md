@@ -16,6 +16,7 @@
 - **所有敏感信息（令牌、口令/密码、密钥、私钥、任何带凭据的 URL 等）一律只放 `env/` 目录**（如 `env/gitee-release.ini`、`env/github.ini`、`env/git-credentials`）；`env/` 已在 `.gitignore`，**禁止 `git add`/提交**。
 - **代码、脚本、配置模板、README、以及 `docs/` 下的设计/计划文档中，一律禁止出现任何明文敏感信息**；需要引用时只用占位符（如 `https://<user>:<token>@gitee.com/...`），真实值从 `env/` 读取。提交前用 `git grep -n -I -E "https?://[^/]+:[^/]+@|ghp_|github_pat_|glpat_|-----BEGIN [A-Z ]*PRIVATE KEY-----"` 自查。
 - **代码中一律禁止写死绝对路径**（如 `D:\...`、`C:/...`、`/Users/...`）或本机用户名/主机名；路径只能来自运行时推导（`__dirname`、`process.cwd()`、数据目录、配置项/环境变量）或写成占位符（如 `<数据目录>/void.db`）。本「环境」节记录本机特异路径属例外。
+- **代码仓位置记录在 `env/code.ini` 的 `code_dir`**（本机特异项，`env/` 不入库）。首次环境检查或换基础环境时**必须先询问用户「代码仓是不是当前目录」**：回答是 → 在 `env/code.ini` 写入 `code_dir=<当前目录>`；回答否 → 按用户给出的实际路径写入。该绝对路径只允许出现在 `env/` 配置里，代码/文档中一律用占位符。
 
 ### 敏感信息（强制）
 

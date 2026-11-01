@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeWorkflowList } from '../collaboration/workflow-merge.js';
+import { mergeWorkflowList, preferLocalFirst } from '../collaboration/workflow-merge.js';
 
 const wf = (id, label, stageCount = 1) => ({
   id, label, stages: Array.from({ length: stageCount }, (_, i) => ({ id: `${id}-s${i}`, label: `S${i}`, prompts: ['p'] })),
@@ -37,4 +37,11 @@ test('忽略脏数据；本地顺序稳定', () => {
   assert.deepEqual(out.map((w) => w.id), ['a', 'b'], '无 label/stages 的项不落库');
   const out2 = mergeWorkflowList(cur, [wf('c', 'C')]);
   assert.deepEqual(out2.map((w) => w.id), ['a', 'b', 'c'], '新增追加在末尾');
+});
+
+test('preferLocalFirst 把本地自定义工作流排在最前，其余保持原顺序', () => {
+  const list = [wf('a', 'A'), wf('b', 'B'), wf('c', 'C')];
+  const out = preferLocalFirst(list, [{ id: 'b-remote', label: 'B' }, { id: 'c-remote', label: 'C' }]);
+  assert.deepEqual(out.map((w) => w.id), ['b', 'c', 'a']);
+  assert.deepEqual(list.map((w) => w.id), ['a', 'b', 'c'], '不修改入参');
 });
