@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { escapeHtml, isMarkdownFile, renderMarkdownHtml } from '@devflow/shared/markdown';
+import { escapeHtml, isMarkdownFile, renderMarkdownRawHtml } from '@devflow/shared/markdown';
+import { extractStyleBlocks, renderStyleBlocks } from '@devflow/shared/markdown-css';
 import { splitMarkdownSlides } from '@devflow/shared/markdown-slides';
+import { sanitizeMarkdownHtml } from './markdown-sanitize.js';
 import { t } from './i18n.js';
 import { ECHARTS_SCRIPT_NAME, MARKDOWN_CLIENT_SCRIPT_NAME, MERMAID_SCRIPT_NAME } from './mermaid-asset.js';
 
@@ -124,12 +126,17 @@ function scriptsHtml(text, body, title, slides) {
 }
 
 export function renderMarkdownDocument(text, title, extraHtml = '') {
-  const body = renderMarkdownHtml(text);
-  const slides = splitMarkdownSlides(text).map((s) => ({ title: s.title, html: renderMarkdownHtml(s.content) }));
+  const { markdown, blocks } = extractStyleBlocks(text);
+  const body = sanitizeMarkdownHtml(renderMarkdownRawHtml(markdown));
+  const slides = splitMarkdownSlides(markdown).map((s) => ({
+    title: s.title,
+    html: sanitizeMarkdownHtml(renderMarkdownRawHtml(s.content)),
+  }));
+  const styles = renderStyleBlocks(blocks, '.md-body');
   const hasMermaid = /<pre class="[^"]*\bmermaid\b/.test(body);
   const hasData = /<pre class="[^"]*\bmermaid-data\b/.test(body);
-  const dynamic = hasMermaid || hasChartSyntax(text) || hasData;
-  const scripts = scriptsHtml(text, body, title, slides);
+  const dynamic = hasMermaid || hasChartSyntax(markdown) || hasData;
+  const scripts = scriptsHtml(markdown, body, title, slides);
   const pending = dynamic ? ' data-df-pending="1"' : '';
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><script>${THEME_INIT_SCRIPT}</script><style>${THEME_CSS}${markdownCss()}${pptCss()}</style></head><body><article class="md-body md-page"${pending}>${body}</article>${scripts}${extraHtml}</body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><script>${THEME_INIT_SCRIPT}</script><style>${THEME_CSS}${markdownCss()}${pptCss()}</style>${styles.content}${styles.page}</head><body><article class="md-body md-page"${pending}>${body}</article>${scripts}${extraHtml}</body></html>`;
 }

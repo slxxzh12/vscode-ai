@@ -52,7 +52,12 @@ export function isMarkdownFile(name) {
 }
 
 export const markdown = createMarkdown();
+export const markdownHtml = createMarkdown({ html: true });
 
 export function renderMarkdownHtml(text) {
   return markdown.render(String(text || ''));
+}
+
+export function renderMarkdownRawHtml(text) {
+  return markdownHtml.render(String(text || ''));
 }
