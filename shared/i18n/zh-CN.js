@@ -1494,8 +1494,6 @@ export const messages = {
   'fp.loading': '加载中…',
   'fp.open_failed': '打开失败：{msg}',
   'fp.refresh': '↻ 刷新',
-  'fp.md_html': 'HTML',
-  'fp.md_html_hint': '渲染 Markdown 中的原始 HTML、内联 SVG 与 CSS 动画（默认开启；关闭后按纯文本显示，内容会经安全消毒）',
   'fp.ppt': 'PPT 模式',
   'fp.ppt.exit': '退出 PPT',
   'fp.ppt.prev': '上一页',

@@ -1494,8 +1494,6 @@ export const messages = {
   'fp.loading': 'Loading…',
   'fp.open_failed': 'Open failed: {msg}',
   'fp.refresh': '↻ Refresh',
-  'fp.md_html': 'HTML',
-  'fp.md_html_hint': 'Render raw HTML, inline SVG, and CSS animations inside Markdown (on by default; turn off to show them as text; content is sanitized)',
   'fp.ppt': 'PPT mode',
   'fp.ppt.exit': 'Exit PPT',
   'fp.ppt.prev': 'Previous',
