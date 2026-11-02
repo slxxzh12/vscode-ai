@@ -18,6 +18,7 @@
     "./markdown-slides": { "types": "./markdown-slides.d.ts", "default": "./markdown-slides.js" },
     "./markdown-css": { "types": "./markdown-css.d.ts", "default": "./markdown-css.js" },
     "./markdown-flowchart-graph": { "types": "./markdown-flowchart-graph.d.ts", "default": "./markdown-flowchart-graph.js" },
+    "./markdown-flowchart-model": { "types": "./markdown-flowchart-model.d.ts", "default": "./markdown-flowchart-model.js" },
     "./markdown-flowchart-x6": { "types": "./markdown-flowchart-x6.d.ts", "default": "./markdown-flowchart-x6.js" },
     "./markdown-ppt": { "types": "./markdown-ppt.d.ts", "default": "./markdown-ppt.js" },
     "./markdown-ppt-export": { "types": "./markdown-ppt-export.d.ts", "default": "./markdown-ppt-export.js" },
