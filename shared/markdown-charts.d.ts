@@ -74,8 +74,12 @@ export function renderChart(
   options?: { dark?: boolean },
 ): Promise<ChartHandle>;
 
+export interface FlowX6Module {
+  renderFlowchartX6(el: HTMLElement, spec: ChartSpec, options?: { theme?: { text?: string; axis?: string } }): ChartHandle;
+}
+
 export function enhanceCharts(
   container: HTMLElement,
   echarts: EChartsLike | null | undefined,
-  options?: { dark?: boolean },
+  options?: { dark?: boolean; loadFlowX6?: () => Promise<FlowX6Module> },
 ): Promise<Array<{ host: HTMLElement; dispose(): void }>>;

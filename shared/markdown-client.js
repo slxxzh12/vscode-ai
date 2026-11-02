@@ -4,6 +4,7 @@ import { enhanceSimpleTables } from './markdown-table-sort.js';
 
 export { enhanceCharts, parseMermaidChart, enhanceSimpleTables };
 export { createPptPresenter } from './markdown-ppt.js';
+export { exportPptx, pptFileName } from './markdown-ppt-export.js';
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -171,7 +172,12 @@ export async function enhanceMarkdown(container, options = {}) {
     .some((pre) => parseMermaidChart(pre.textContent || ''));
   if (hasChart) {
     const echarts = options.echarts || (options.loadEcharts ? await options.loadEcharts() : null);
-    if (echarts) items.push(...await enhanceCharts(container, echarts, { dark: options.dark }));
+    if (echarts || options.loadFlowX6) {
+      items.push(...await enhanceCharts(container, echarts, {
+        dark: options.dark,
+        loadFlowX6: options.loadFlowX6,
+      }));
+    }
   }
 
   if (container.querySelector('pre.mermaid:not([data-processed="true"])')) {

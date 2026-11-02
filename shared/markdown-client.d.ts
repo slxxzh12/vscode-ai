@@ -4,7 +4,7 @@ export interface MermaidLike {
 }
 
 export { enhanceCharts, parseMermaidChart } from './markdown-charts';
-export type { ChartSpec, ChartHandle, EChartsLike } from './markdown-charts';
+export type { ChartSpec, ChartHandle, EChartsLike, FlowX6Module } from './markdown-charts';
 export { enhanceSimpleTables } from './markdown-table-sort';
 
 export function groupMermaidSides(container: HTMLElement): void;
@@ -27,6 +27,7 @@ export interface EnhanceItem {
 export interface EnhanceMarkdownOptions {
   echarts?: EChartsLike | null;
   loadEcharts?: () => EChartsLike | Promise<EChartsLike | null> | null;
+  loadFlowX6?: () => Promise<import('./markdown-charts').FlowX6Module>;
   mermaid?: MermaidLike | null;
   loadMermaid?: () => MermaidLike | Promise<MermaidLike | null> | null;
   theme?: string;

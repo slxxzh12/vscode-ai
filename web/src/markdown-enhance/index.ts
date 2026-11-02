@@ -39,6 +39,7 @@ export async function enhanceMarkdown(
 
   const items = await enhanceShared(container, {
     loadEcharts,
+    loadFlowX6: () => import('@devflow/shared/markdown-flowchart-x6'),
     loadMermaid: async () => (await import('mermaid')).default as unknown as MermaidLike,
     theme: document.documentElement.dataset.theme === 'light' ? 'default' : 'dark',
     errorText: (msg) => t('markdown.mermaid_error', { msg }),

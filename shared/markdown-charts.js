@@ -649,13 +649,33 @@ export async function renderChart(el, spec, echarts, options = {}) {
   };
 }
 
-// 把容器里所有 xychart-beta / pie 的 pre.mermaid 换成 ECharts 容器
+// 把容器里所有 xychart-beta / pie 换成 ECharts，flowchart 换成按需加载的 X6
 export async function enhanceCharts(container, echarts, options = {}) {
   const items = [];
-  if (!echarts) return items;
+  const dark = options.dark === undefined
+    ? (typeof document === 'undefined' || document.documentElement.dataset.theme !== 'light')
+    : Boolean(options.dark);
+  const flowTheme = options.flowTheme || chartTheme(dark);
   for (const pre of Array.from(container.querySelectorAll('pre.mermaid'))) {
     const spec = parseMermaidChart(pre.textContent || '');
     if (!spec) continue;
+    if (spec.kind === 'flowchart') {
+      if (!options.loadFlowX6) continue;
+      const host = document.createElement('div');
+      host.className = 'md-echart';
+      host.dataset.flowSrc = pre.textContent || '';
+      pre.before(host);
+      try {
+        const mod = await options.loadFlowX6();
+        const chart = mod.renderFlowchartX6(host, spec, { theme: flowTheme });
+        pre.remove();
+        items.push({ host, ...chart });
+      } catch {
+        host.remove();
+      }
+      continue;
+    }
+    if (!echarts) continue;
     const host = document.createElement('div');
     host.className = 'md-echart';
     pre.before(host);
