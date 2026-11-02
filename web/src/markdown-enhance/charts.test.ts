@@ -180,6 +180,17 @@ describe('parseMermaidChart', () => {
     expect(spec.edges).toContainEqual({ source: 'C', target: 'D', label: '' });
   });
 
+  it('解析 %% x6-positions 并覆盖节点/子图坐标', () => {
+    const spec = parseMermaidChart([
+      'flowchart TD',
+      '  A[开始] --> B[结束]',
+      '%% x6-positions: {"A":{"x":10,"y":20},"g1":{"x":0,"y":0,"w":200,"h":120}}',
+    ].join('\n')) as any;
+    const a = spec.nodes.find((n: any) => n.id === 'A');
+    expect(a.x).toBe(10 + a.w / 2);
+    expect(a.y).toBe(20 + a.h / 2);
+  });
+
   it('gantt chevron 按持续时间生成箭头时间轴段', () => {
     const spec = parseMermaidChart([
       'gantt chevron',

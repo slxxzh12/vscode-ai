@@ -261,11 +261,42 @@ function timelineChevron(spec) {
   }));
 }
 
+function readX6Positions(lines) {
+  for (const line of lines) {
+    const m = /^%%\s*x6-positions:\s*(\{.*\})\s*$/.exec(line);
+    if (!m) continue;
+    try { return JSON.parse(m[1]); } catch { return null; }
+  }
+  return null;
+}
+
+function applyX6Positions(spec, positions) {
+  if (!spec || !positions) return spec;
+  for (const n of spec.nodes) {
+    const p = positions[n.id];
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+      n.x = p.x + n.w / 2;
+      n.y = p.y + n.h / 2;
+    }
+  }
+  for (const g of spec.groups || []) {
+    const p = positions[g.id];
+    if (!p) continue;
+    if (Number.isFinite(p.x)) g.x = p.x;
+    if (Number.isFinite(p.y)) g.y = p.y;
+    if (Number.isFinite(p.w)) g.width = p.w;
+    if (Number.isFinite(p.h)) g.height = p.h;
+  }
+  return spec;
+}
+
 export function parseMermaidChart(code) {
-  const lines = String(code || '')
+  const rawLines = String(code || '')
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith('%%'));
+    .filter(Boolean);
+  const positions = readX6Positions(rawLines);
+  const lines = rawLines.filter((l) => !l.startsWith('%%'));
   if (!lines.length) return null;
   const head = lines[0].toLowerCase();
   if (head.startsWith('pie')) return parsePie(lines);
@@ -282,7 +313,9 @@ export function parseMermaidChart(code) {
     if (!isChevron(head)) return spec;
     return { kind: 'chevron', title: spec.title, segments: timelineChevron(spec), height: 150 };
   }
-  if (/^(flowchart|graph)\b/.test(head)) return parseFlowchart(lines);
+  if (/^(flowchart|graph)\b/.test(head)) {
+    return applyX6Positions(parseFlowchart(lines), positions);
+  }
   return null;
 }
 
