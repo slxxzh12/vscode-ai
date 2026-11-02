@@ -5,7 +5,8 @@ function pad(n) {
 }
 
 function todayVersion(date = new Date()) {
-  return "v" + date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate());
+  return "v" + date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate())
+    + pad(date.getHours()) + pad(date.getMinutes()) + pad(date.getSeconds());
 }
 
 module.exports = { todayVersion };

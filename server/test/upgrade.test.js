@@ -4,10 +4,14 @@ import { compareVersion, createUpgradeChecker, UPGRADE_PAGE_URL } from '../upgra
 
 const okRes = (tag) => ({ ok: true, json: async () => ({ tag_name: tag }) });
 
-test('compareVersion：vYYYYMMDD 数值比较；非日期回退字符串比较', () => {
+test('compareVersion：vYYYYMMDD / vYYYYMMDDHHmmss 数值比较；非日期回退字符串比较', () => {
   assert.equal(compareVersion('v20260929', 'v20260101'), 1);
   assert.equal(compareVersion('v20260101', 'v20260929'), -1);
   assert.equal(compareVersion('v20260929', 'v20260929'), 0);
+  assert.equal(compareVersion('v20260929153012', 'v20260929153011'), 1);
+  assert.equal(compareVersion('v20260929153011', 'v20260929153012'), -1);
+  assert.equal(compareVersion('v20260929153012', 'v20260929153012'), 0);
+  assert.equal(compareVersion('v20260929153012', 'v20260929'), 1);
   assert.equal(compareVersion('', 'v20260929'), -1);
   assert.equal(compareVersion('aaa', 'bbb'), -1);
   assert.equal(compareVersion('bbb', 'aaa'), 1);

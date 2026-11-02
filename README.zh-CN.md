@@ -101,7 +101,7 @@ node scripts/build-opencode.js       # Windows 内置 opencode 包
 node scripts/build-mac.js            # macOS（必须在 macOS 上执行，一次出 arm64 + x64）
 ```
 
-产物在 `dist-portable/`，目录名形如 `vscode-ai-windows-x64-vYYYYMMDD`，并附带同名 `.zip`。绿色包自带 `runtime/node.exe` 与已编译的 node-pty，目标机无需安装 Node；源码仓存在 `.void/skills` 时也会一并打入包内，首次启动即可检测到项目级技能。
+产物在 `dist-portable/`，目录名形如 `vscode-ai-windows-x64-vYYYYMMDDHHmmss`，并附带同名 `.zip`。绿色包自带 `runtime/node.exe` 与已编译的 node-pty，目标机无需安装 Node；源码仓存在 `.void/skills` 时也会一并打入包内，首次启动即可检测到项目级技能。
 
 ## 目录结构
 

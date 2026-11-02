@@ -1609,6 +1609,8 @@ function startListening(port = currentPort) {
     configFile = resolveActiveConfigFile(APP_DIR, actual);
     BOOT_CFG = loadDevflowConfig(configFile);
     setLocale(BOOT_CFG.server.language);
+    const browseHost = HOST === '0.0.0.0' || HOST === '::' || !HOST ? '127.0.0.1' : HOST;
+    log.info(`访问地址: http://${browseHost}:${actual}/`);
     log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)  ${VERSION}`);
 
     try {

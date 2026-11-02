@@ -24,8 +24,8 @@ const OUT_ROOT = path.join(ROOT, "dist-portable");
 // 产物命名对齐 opencode release 风格：<name>-<os>-<arch>
 const WIN_ARCH = process.arch; // x64 | arm64
 const { todayVersion } = require("../shared/version.cjs");
-const { makeLaunchPs1 } = require("./launcher.js");
-const VERSION = todayVersion();
+const { makeLaunchPs1, makeOpenVbs } = require("./launcher.js");
+const VERSION = String(process.env.DEVFLOW_VERSION || "").trim() || todayVersion();
 const APP_NAME = "vscode-ai-windows-" + WIN_ARCH + "-" + VERSION;
 const APP = path.join(OUT_ROOT, APP_NAME);
 const ZIP = path.join(OUT_ROOT, APP_NAME + ".zip");
@@ -256,6 +256,9 @@ fs.writeFileSync(
   "utf8",
 );
 
+// 文件关联入口：wscript 隐藏启动，避免双击文件时闪控制台
+fs.writeFileSync(path.join(APP, "script", "open.vbs"), makeOpenVbs(), "utf8");
+
 const bat = [
   "@echo off",
   'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0script\\launch.ps1" %*',
@@ -352,12 +355,19 @@ const serverDeps = [
     ...sharedSpecs,
   ]),
 ].sort();
+// X6 仅用于浏览器端流程图，由 esbuild 打包；Node 侧不能直接 import（包的 ESM/CJS 混用会报错）。
+const BROWSER_ONLY_DEPS = new Set(["@antv/x6"]);
+const smokeDeps = serverDeps.filter((d) => !BROWSER_ONLY_DEPS.has(d));
+const flowX6Entry = path.join(APP, "node_modules", "@devflow", "shared", "markdown-flowchart-x6.js");
 const smokeCode = [
-  "const deps = " + JSON.stringify(serverDeps) + ";",
+  "const deps = " + JSON.stringify(smokeDeps) + ";",
   "for (const d of deps) await import(d);",
   "if (deps.includes('esbuild')) {",
-  "  const { transformSync } = await import('esbuild');",
+  "  const { transformSync, buildSync } = await import('esbuild');",
   "  if (!transformSync('const a = 1', { minify: true }).code) throw new Error('esbuild minify returned empty');",
+  "  if (" + JSON.stringify(serverDeps.includes("@antv/x6")) + ") {",
+  "    buildSync({ entryPoints: [" + JSON.stringify(flowX6Entry) + "], bundle: true, format: 'esm', platform: 'browser', write: false, logLevel: 'silent' });",
+  "  }",
   "}",
   "console.log('ok');",
 ].join("\n");

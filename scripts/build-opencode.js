@@ -22,7 +22,7 @@ const { makeLaunchPs1 } = require("./launcher.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const OUT_ROOT = path.join(ROOT, "dist-portable");
-const VERSION = todayVersion();
+const VERSION = String(process.env.DEVFLOW_VERSION || "").trim() || todayVersion();
 const ARCH = "x64";
 const BASE = "vscode-ai-windows-" + ARCH + "-" + VERSION;
 const APP = path.join(OUT_ROOT, BASE);

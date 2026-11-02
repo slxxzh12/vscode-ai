@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { makeLaunchPs1, makeLaunchSh, makeStartCommand } = require('../../scripts/launcher.js');
+const { makeLaunchPs1, makeOpenVbs, makeLaunchSh, makeStartCommand } = require('../../scripts/launcher.js');
 
 test('launch.ps1 含 desired/running 双端口与 -Plan 钩子', () => {
   const ps = makeLaunchPs1({ port: 22222 });
@@ -31,15 +31,17 @@ test('launch.ps1 保留原有能力（快捷方式 / 关联子命令 / 浏览器
   assert.match(ps, /22222/, '默认端口写入脚本');
 });
 
-test('launch.ps1 已在运行时只开浏览器并立即退出（快捷方式版本检查在早退之前）', () => {
+test('launch.ps1 已在运行时只开浏览器并立即退出（打开文件不重写快捷方式/关联）', () => {
   const ps = makeLaunchPs1({ port: 22222 });
   const early = ps.indexOf('已在运行：只打开浏览器');
   assert.ok(early > -1, '存在 action=open 的早退分支');
   const seg = ps.slice(early, early + 400);
   assert.match(seg, /exit 0/);
   assert.ok(ps.indexOf('Void.lnk') > -1, '存在桌面快捷方式检查');
-  assert.ok(ps.indexOf('Void.lnk') < early, '快捷方式版本检查应出现在 open 早退之前');
-  assert.ok(ps.indexOf('file-assoc.json') < early, '启动自查应出现在 open 早退之前（已在运行时也纠正关联）');
+  assert.ok(ps.indexOf('Void.lnk') < early, '快捷方式版本检查出现在 open 早退之前（但仅 start/restart 执行）');
+  assert.match(ps, /if \(-not \$NoShortcut -and \$action -ne 'open'\)/);
+  const apply = ps.indexOf("$pref.enabled) { Set-VoidAssoc 'apply' }");
+  assert.ok(apply > early, '关联静默校正只在 open 早退之后（真正启动时）执行');
 });
 
 test('launch.ps1 按版本决定是否更新桌面快捷方式', () => {
@@ -66,6 +68,22 @@ test('launch.ps1 含 -Assoc 子命令与启动自查，且不再有 WScript 首�
   assert.match(ps, /DeleteSubKeyTree/, '删 UserChoice 才能成为默认程序');
   assert.match(ps, /UserChoiceLatest/, '新版 Windows 还需删 UserChoiceLatest');
   assert.match(ps, /SHChangeNotify/, '设置后广播 SHCNE_ASSOCCHANGED 刷新 Shell 关联');
+});
+
+test('文件关联命令指向隐藏启动器而不是 start.bat', () => {
+  const ps = makeLaunchPs1({ port: 22222 });
+  assert.match(ps, /wscript\.exe/);
+  assert.match(ps, /open\.vbs/);
+  assert.match(ps, /\$cmd\.SetValue\('', \('"' \+ \$wscript \+ '" \/\/B "' \+ \$openVbs \+ '" "%1"'\)\)/);
+});
+
+test('open.vbs 隐藏窗口并显式传 -Open（不依赖位置参数隐式绑定）', () => {
+  const vbs = makeOpenVbs();
+  assert.match(vbs, /WindowStyle Hidden/);
+  assert.match(vbs, /-Open /);
+  assert.match(vbs, /sh\.Run cmd, 0, False/, '0 = 隐藏窗口');
+  assert.match(vbs, /launch\.ps1/);
+  assert.ok(!/[^\x00-\x7F]/.test(vbs), 'VBS 保持纯 ASCII，避免 WSH 按 ANSI 解码出问题');
 });
 
 test('launch.sh 含 desired 优先、nc 存活探测与 --plan 钩子', () => {

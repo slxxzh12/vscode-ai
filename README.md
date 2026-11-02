@@ -101,7 +101,7 @@ node scripts/build-opencode.js       # Windows package with bundled opencode
 node scripts/build-mac.js            # macOS (must run on macOS; builds arm64 + x64)
 ```
 
-Artifacts go to `dist-portable/` as `vscode-ai-windows-x64-vYYYYMMDD` directories with matching `.zip` files. Packages bundle `runtime/node.exe` and a compiled node-pty, so target machines do not need Node installed. When the source repo has `.void/skills`, it is bundled too, so project-level skills are detected on first run.
+Artifacts go to `dist-portable/` as `vscode-ai-windows-x64-vYYYYMMDDHHmmss` directories with matching `.zip` files. Packages bundle `runtime/node.exe` and a compiled node-pty, so target machines do not need Node installed. When the source repo has `.void/skills`, it is bundled too, so project-level skills are detected on first run.
 
 ## Project layout
 

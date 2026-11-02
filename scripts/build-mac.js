@@ -29,7 +29,7 @@ const ROOT = path.resolve(__dirname, "..");
 const OUT_ROOT = path.join(ROOT, "dist-portable");
 const { todayVersion } = require("../shared/version.cjs");
 const { makeLaunchSh, makeStartCommand } = require("./launcher.js");
-const VERSION = todayVersion();
+const VERSION = String(process.env.DEVFLOW_VERSION || "").trim() || todayVersion();
 const ENV = path.join(ROOT, "env");
 const noZip = process.argv.includes("--no-zip");
 const HOST_ARCH = process.arch; // arm64 | x64
@@ -329,12 +329,19 @@ fs.copyFileSync(
     const serverDeps = Object.keys(
       require(path.join(ROOT, "server", "package.json")).dependencies || {},
     );
+    // X6 仅用于浏览器端流程图，由 esbuild 打包；Node 侧不能直接 import。
+    const browserOnly = new Set(["@antv/x6"]);
+    const smokeDeps = serverDeps.filter((d) => !browserOnly.has(d));
+    const flowX6Entry = path.join(APP, "node_modules", "@devflow", "shared", "markdown-flowchart-x6.js");
     const smokeCode = [
-      "const deps = " + JSON.stringify(serverDeps) + ";",
+      "const deps = " + JSON.stringify(smokeDeps) + ";",
       "for (const d of deps) await import(d);",
       "if (deps.includes('esbuild')) {",
-      "  const { transformSync } = await import('esbuild');",
+      "  const { transformSync, buildSync } = await import('esbuild');",
       "  if (!transformSync('const a = 1', { minify: true }).code) throw new Error('esbuild minify returned empty');",
+      "  if (" + JSON.stringify(serverDeps.includes("@antv/x6")) + ") {",
+      "    buildSync({ entryPoints: [" + JSON.stringify(flowX6Entry) + "], bundle: true, format: 'esm', platform: 'browser', write: false, logLevel: 'silent' });",
+      "  }",
       "}",
       "console.log('ok');",
     ].join("\n");

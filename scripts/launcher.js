@@ -11,7 +11,7 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
       ]
     : [];
   return [
-    "param([switch]$NoBrowser, [switch]$NoShortcut, [switch]$Plan, [switch]$NoPrompt, [string]$Open = '', [string]$Assoc = '')",
+    "param([switch]$NoBrowser, [switch]$NoShortcut, [switch]$Plan, [switch]$NoPrompt, [Parameter(Position=0)][string]$Open = '', [string]$Assoc = '')",
     "$ErrorActionPreference = 'SilentlyContinue'",
     "$scriptDir = $PSScriptRoot",
     "if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }",
@@ -41,8 +41,10 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "  }",
     "  $prog = $cu.CreateSubKey('Software\\Classes\\Void')",
     "  $prog.SetValue('', 'Void')",
+    "  $wscript = if ($env:SystemRoot) { Join-Path $env:SystemRoot 'System32\\wscript.exe' } else { 'wscript.exe' }",
+    "  $openVbs = Join-Path $scriptDir 'open.vbs'",
     "  $cmd = $prog.CreateSubKey('shell\\open\\command')",
-    "  $cmd.SetValue('', ('\"' + (Join-Path $root 'start.bat') + '\" \"%1\"'))",
+    "  $cmd.SetValue('', ('\"' + $wscript + '\" //B \"' + $openVbs + '\" \"%1\"'))",
     "  $cmd.Close()",
     "  $icon = $prog.CreateSubKey('DefaultIcon')",
     "  $icon.SetValue('', (Join-Path $scriptDir 'icon.ico'))",
@@ -99,7 +101,7 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "}",
     "if ($Assoc) { Set-VoidAssoc $Assoc; exit 0 }",
     "# 桌面快捷方式：只在当前版本不低于已指向版本时更新，避免旧包抢走新包的入口",
-    "if (-not $NoShortcut) {",
+    "if (-not $NoShortcut -and $action -ne 'open') {",
     "  try {",
     "    $desktop = [Environment]::GetFolderPath('Desktop')",
     "    if ($desktop -and (Test-Path $desktop)) {",
@@ -127,13 +129,6 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "    }",
     "  } catch { }",
     "}",
-    "# 每次启动（含已在运行）：设置里启用了就把默认打开方式静默校正为 Void",
-    "try {",
-    "  if (Test-Path $assocPref) {",
-    "    $pref = Get-Content -Raw $assocPref | ConvertFrom-Json",
-    "    if ($pref.enabled) { Set-VoidAssoc 'apply' }",
-    "  }",
-    "} catch { }",
     "$openPort = $desired",
     "if ($action -eq 'restart') {",
     "  $killed = $false",
@@ -159,6 +154,13 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "  }",
     "  exit 0",
     "}",
+    "# 仅在真正启动/重启时校正默认打开方式；打开文件走 action=open 早退，避免每次都重写注册表",
+    "try {",
+    "  if (Test-Path $assocPref) {",
+    "    $pref = Get-Content -Raw $assocPref | ConvertFrom-Json",
+    "    if ($pref.enabled) { Set-VoidAssoc 'apply' }",
+    "  }",
+    "} catch { }",
     "# 启动失败时把 node 的输出留下来，并弹窗提示原因，避免「双击没反应」",
     "$started = $true",
     "$logDir = Join-Path $root 'logs'",
@@ -193,6 +195,26 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "  if ($Open) { Start-Process ('http://127.0.0.1:{0}/?open={1}' -f $openPort, [uri]::EscapeDataString($Open)) }",
     "  else { Start-Process ('http://127.0.0.1:{0}' -f $openPort) }",
     "}",
+    "",
+  ].join("\r\n");
+}
+
+// 文件关联入口：经 wscript 隐藏启动，避免每次双击文件都闪 cmd/powershell 控制台。
+// 显式传 -Open，不依赖 PowerShell 的位置参数隐式绑定。
+function makeOpenVbs() {
+  return [
+    "' Void file-association entry: opens a file with a hidden window (no console flash).",
+    "Option Explicit",
+    'Dim fso, sh, scriptDir, arg, cmd',
+    'Set fso = CreateObject("Scripting.FileSystemObject")',
+    'scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)',
+    'If WScript.Arguments.Count > 0 Then arg = WScript.Arguments(0) Else arg = ""',
+    'Set sh = CreateObject("WScript.Shell")',
+    'cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Q(scriptDir & "\\launch.ps1") & " -Open " & Q(arg)',
+    'sh.Run cmd, 0, False',
+    'Function Q(s)',
+    '  Q = """" & s & """"',
+    'End Function',
     "",
   ].join("\r\n");
 }
@@ -257,4 +279,4 @@ function makeStartCommand() {
   ].join("\n");
 }
 
-module.exports = { makeLaunchPs1, makeLaunchSh, makeStartCommand };
+module.exports = { makeLaunchPs1, makeOpenVbs, makeLaunchSh, makeStartCommand };

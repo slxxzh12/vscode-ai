@@ -48,7 +48,7 @@
 - 常用 `type`：`feat` `fix` `docs` `chore` `refactor` `test` `style` `perf` `build` `ci`
 - 描述用中文（与本仓库现状一致）；必要时用第二行补充原因/影响。
 - 示例：
-  - `feat(build): 服务版本号 vYYYYMMDD（顶栏/关于页/产物命名/API）`
+  - `feat(build): 服务版本号 vYYYYMMDDHHmmss（顶栏/关于页/产物命名/API）`
   - `chore(security): 移除文档中明文口令，AGENTS 明确敏感信息只放 env/`
 
 ## 4. 分支与推送

@@ -18,9 +18,9 @@ function withoutEnv(fn) {
   }
 }
 
-test('todayVersion 补零且带 v 前缀', () => {
-  assert.equal(todayVersion(new Date(2026, 8, 14)), 'v20260914');
-  assert.equal(todayVersion(new Date(2026, 0, 3)), 'v20260103');
+test('todayVersion 精确到秒、补零且带 v 前缀', () => {
+  assert.equal(todayVersion(new Date(2026, 8, 14, 15, 30, 12)), 'v20260914153012');
+  assert.equal(todayVersion(new Date(2026, 0, 3, 4, 5, 6)), 'v20260103040506');
 });
 
 test('resolveVersion：DEVFLOW_VERSION 优先', () => {
@@ -42,7 +42,7 @@ test('resolveVersion：读取冻结的 version.txt', () => {
 
 test('resolveVersion：无 version.txt 回退当天', () => {
   withoutEnv(() => {
-    assert.match(resolveVersion(tmpRoot()), /^v\d{8}$/);
+    assert.match(resolveVersion(tmpRoot()), /^v\d{14}$/);
     assert.equal(resolveVersion(tmpRoot()), todayVersion());
   });
 });

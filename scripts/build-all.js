@@ -22,6 +22,10 @@ const ROOT = path.resolve(__dirname, "..");
 const noZip = process.argv.includes("--no-zip");
 const zipFlag = noZip ? ["--no-zip"] : [];
 const SOFT_ZIP = path.join(ROOT, "soft", "opencode-windows-x64.zip");
+// 一次 build-all 内所有变体共用同一个版本号（精确到秒），避免 opencode/标准包版本不一致。
+const { todayVersion } = require(path.join(ROOT, "shared", "version.cjs"));
+const VERSION = String(process.env.DEVFLOW_VERSION || "").trim() || todayVersion();
+process.env.DEVFLOW_VERSION = VERSION;
 
 function run(label, cmd, args) {
   console.log("");
@@ -42,6 +46,8 @@ console.log(
     process.platform +
     " arch=" +
     process.arch +
+    " version=" +
+    VERSION +
     (noZip ? " (no-zip)" : ""),
 );
 

@@ -4,11 +4,11 @@ export const CACHE_MS = 15 * 24 * 60 * 60 * 1000;   // 15 天
 
 const norm = (v) => String(v == null ? '' : v).trim();
 
-// 版本比较：vYYYYMMDD 按数值比；否则回退字符串比较
+// 版本比较：vYYYYMMDD 或 vYYYYMMDDHHmmss 按数值比；否则回退字符串比较
 export function compareVersion(a, b) {
   const x = norm(a).replace(/^v/i, '');
   const y = norm(b).replace(/^v/i, '');
-  if (/^\d{8}$/.test(x) && /^\d{8}$/.test(y)) {
+  if (/^\d{8,14}$/.test(x) && /^\d{8,14}$/.test(y)) {
     const nx = Number(x); const ny = Number(y);
     return nx < ny ? -1 : nx > ny ? 1 : 0;
   }
