@@ -196,11 +196,11 @@ export function renderRemoteMarkdown(mdText: string): string {
 export { isMarkdownFile };
 
 const PRINT_CSS = `
-@page { size: A4; margin: 18mm 16mm; }
+@page { size: A4; margin: 20mm 18mm; }
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; width: 100%; }
 body { background: #fff; color: #1f2937; font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; line-height: 1.7; }
-.md-body { word-wrap: break-word; }
+.md-body { word-wrap: break-word; overflow-wrap: anywhere; max-width: 100%; }
 .md-body > :first-child { margin-top: 0; }
 .md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6 { margin: 1.2em 0 0.6em; line-height: 1.3; font-weight: 600; color: #111827; }
 .md-body h1 { font-size: 1.7em; padding-bottom: 0.3em; border-bottom: 1px solid #e5e7eb; }
@@ -213,13 +213,13 @@ body { background: #fff; color: #1f2937; font-family: ui-sans-serif, system-ui, 
 .md-body li { margin: 0.25em 0; }
 .md-body blockquote { margin: 0.8em 0; padding: 0.1em 1em; color: #4b5563; border-left: 3px solid #2563eb; background: #f6f8fa; border-radius: 0 6px 6px 0; }
 .md-body hr { margin: 1.4em 0; border: none; border-top: 1px solid #e5e7eb; }
-.md-body table { border-collapse: collapse; margin: 0.9em 0; display: block; max-width: 100%; overflow: auto; }
-.md-body th, .md-body td { border: 1px solid #d7dce3; padding: 6px 12px; }
+.md-body table { border-collapse: collapse; margin: 0.9em 0; display: table; width: 100%; max-width: 100%; table-layout: fixed; }
+.md-body th, .md-body td { border: 1px solid #d7dce3; padding: 6px 12px; word-break: break-word; overflow-wrap: anywhere; }
 .md-body th { background: #f0f2f5; font-weight: 600; }
 .md-body tr:nth-child(2n) td { background: #f6f8fa; }
 .md-body code { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; background: #f0f2f5; padding: 0.15em 0.4em; border-radius: 4px; color: #0550ae; }
-.md-body pre { background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; overflow: auto; margin: 0.9em 0; }
-.md-body pre code { background: transparent; padding: 0; color: #1f2937; font-size: 12.5px; line-height: 1.55; display: block; }
+.md-body pre { background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; overflow: visible; white-space: pre-wrap; word-break: break-word; margin: 0.9em 0; }
+.md-body pre code { background: transparent; padding: 0; color: #1f2937; font-size: 12.5px; line-height: 1.55; display: block; white-space: inherit; }
 .md-body pre.hljs { padding: 12px 14px; }
 .md-body code.hljs { padding: 0; }
 .md-body img { max-width: 100%; border-radius: 6px; }

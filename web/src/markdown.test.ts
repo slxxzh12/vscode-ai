@@ -182,6 +182,9 @@ describe('printMarkdown', () => {
     expect(win.document.opened).toBe(true);
     expect(win.document.written).toContain('标题&lt;1&gt;');
     expect(win.document.written).toContain('<article class="md-body">');
+    expect(win.document.written).toContain('@page { size: A4; margin: 20mm 18mm; }');
+    expect(win.document.written).toContain('white-space: pre-wrap');
+    expect(win.document.written).toContain('table-layout: fixed');
     expect(win.document.closed).toBe(true);
     expect(win.printed).toBe(1);
   });

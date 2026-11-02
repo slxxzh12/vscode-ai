@@ -91,7 +91,7 @@ body { background: var(--bg0); color: var(--tx); font-family: "Segoe UI", system
 *::-webkit-scrollbar { width: 9px; height: 9px; }
 *::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 5px; }
 
-/* ---- Element Plus ±äÁ¿Ó³Éä£º¸úËæÓ¦ÓÃÅäÉ«£¨html[data-theme] Óë html.dark Í¬ÓÅÏÈ¼¶£¬¿¿ÒýÈëË³Ðò¸²¸Ç£©---- */
+/* ---- Element Plus ï¿½ï¿½ï¿½ï¿½Ó³ï¿½ä£ºï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½ï¿½ï¿½É«ï¿½ï¿½html[data-theme] ï¿½ï¿½ html.dark Í¬ï¿½ï¿½ï¿½È¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë³ï¿½ò¸²¸Ç£ï¿½---- */
 html[data-theme] {
   --el-color-primary: var(--ac);
   --el-color-primary-light-3: var(--ac2);
@@ -129,3 +129,15 @@ html[data-theme] {
 }
 .el-table th.el-table__cell { font-weight: 600; }
 .el-table .cell { line-height: 1.5; }
+
+/* print: hide chrome, keep side margins, force light colors */
+@media print {
+  @page { size: A4; margin: 14mm 12mm; }
+  html, body, #app, .app { height: auto !important; overflow: visible !important; background: #fff !important; }
+  body { color: #111 !important; }
+  .top, .activity, .side, .divider, .df-ppt, .df-ppt-open, .joinmask { display: none !important; }
+  .main { display: block !important; height: auto !important; overflow: visible !important; }
+  .center { display: block !important; width: auto !important; height: auto !important; overflow: visible !important; padding: 0 6mm !important; }
+  .center, .center * { color: #111 !important; background: transparent !important; border-color: #ccc !important; }
+  .center a { color: #1d4ed8 !important; }
+}
