@@ -13,6 +13,9 @@ test('launch.ps1 含 desired/running 双端口与 -Plan 钩子', () => {
   assert.match(ps, /\$running/);
   assert.match(ps, /PLAN desired=\{0\} running=\{1\} alive=\{2\} action=\{3\}/);
   assert.match(ps, /-f \$desired, \$running, \[int\]\$alive, \$action/);
+  assert.match(ps, /访问地址: http:\/\/127\.0\.0\.1:\{0\}\//);
+  assert.match(ps, /-f \$running/);
+  assert.match(ps, /-f \$openPort/);
 });
 
 test('launch.ps1 结束旧实例前有安全校验（只杀本应用）', () => {
@@ -94,6 +97,8 @@ test('launch.sh 含 desired 优先、nc 存活探测与 --plan 钩子', () => {
   assert.match(sh, /PLAN desired=/);
   assert.match(sh, /nc -z 127\.0\.0\.1 "\$RUNNING"/);
   assert.match(sh, /exec "\$DIR\/runtime\/node" "server\/index\.js"/);
+  assert.match(sh, /访问地址: \$URL/);
+  assert.match(sh, /访问地址: http:\/\/127\.0\.0\.1:\$\{RUNNING\}/);
 });
 
 test('start.command 只转发到 launch.sh', () => {
