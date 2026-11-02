@@ -23,12 +23,25 @@ test('Markdown 样式按内容作用域注入，页面级样式进入 head', () 
   assert.match(html, /<div class="a">x<\/div>/);
 });
 
+test('流程图页面注入 X6 资源与加载器', () => {
+  const html = renderMarkdownDocument('```mermaid\nflowchart TD\n  A-->B\n```', 't');
+  assert.match(html, /__devflow_flowx6__\.js/);
+});
+
 test('同级目录图片保留相对路径', () => {
   const html = renderMarkdownDocument(
     '# t\n\n![pic](sample-image.svg)\n\n<img src="sample-image.svg" alt="x">',
     't',
   );
   assert.equal((html.match(/<img src="sample-image.svg"/g) || []).length, 2);
+});
+
+test('Markdown 页面带 PPT 导出接线与两个按需脚本名', () => {
+  const html = renderMarkdownDocument('# 标题\n\n正文', 't');
+  assert.match(html, /exportPptx/);
+  assert.match(html, /__devflow_html_to_image__\.js/);
+  assert.match(html, /__devflow_pptxgen__\.js/);
+  assert.match(html, /onExport/);
 });
 
 test('静态页移除脚本并保留内联 SVG', () => {

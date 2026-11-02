@@ -4,6 +4,8 @@ export interface PptLabels {
   prev?: string;
   next?: string;
   hide?: string;
+  export?: string;
+  exporting?: string;
 }
 
 export interface PptOptions {
@@ -20,6 +22,8 @@ export interface PptOptions {
   showOpenButton?: boolean;
   onOpen?: () => void;
   onClose?: (restore: boolean) => void;
+  onExport?: (progress: (done: number, total: number) => void) => Promise<void> | void;
+  onExportError?: (error: unknown) => void;
 }
 
 export interface PptPresenter {
@@ -31,6 +35,11 @@ export interface PptPresenter {
   next: () => void;
   prev: () => void;
   refresh: () => void;
+  size: () => number;
+  index: () => number;
+  renderAt: (index: number) => Promise<void>;
+  captureEl: () => HTMLElement;
+  isBusy: () => boolean;
   destroy: () => void;
 }
 

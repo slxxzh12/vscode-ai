@@ -4,8 +4,10 @@ import { DIR_ICON, fileIcon } from '@devflow/shared/file-icon';
 import { isCsvFile, renderCsvDocument } from './csv-page.js';
 import { isMarkdownFile, renderMarkdownDocument } from './markdown-page.js';
 import {
-  ECHARTS_SCRIPT_NAME, MARKDOWN_CLIENT_SCRIPT_NAME, MERMAID_SCRIPT_NAME,
-  readEchartsScript, readMarkdownClientScript, readMermaidScript,
+  ECHARTS_SCRIPT_NAME, FLOW_X6_SCRIPT_NAME, HTML_TO_IMAGE_SCRIPT_NAME, MARKDOWN_CLIENT_SCRIPT_NAME,
+  MERMAID_SCRIPT_NAME, PPTXGEN_SCRIPT_NAME,
+  readEchartsScript, readFlowX6Script, readHtmlToImageScript, readMarkdownClientScript,
+  readMermaidScript, readPptxgenScript,
 } from './mermaid-asset.js';
 
 const MIME = {
@@ -220,13 +222,19 @@ export function serveStatic({ root, req, res, urlPath = '/', extraHeaders = [], 
         ? readEchartsScript()
         : assetName === MARKDOWN_CLIENT_SCRIPT_NAME
           ? readMarkdownClientScript()
-          : null;
+          : assetName === FLOW_X6_SCRIPT_NAME
+            ? readFlowX6Script()
+            : assetName === HTML_TO_IMAGE_SCRIPT_NAME
+              ? readHtmlToImageScript()
+              : assetName === PPTXGEN_SCRIPT_NAME
+                ? readPptxgenScript()
+                : null;
     if (asset) {
       const headers = mergeHeaders({
         'content-type': 'text/javascript; charset=utf-8',
         'content-length': String(asset.length),
         // 增强脚本很小且会随开发变化，禁缓存；Mermaid/ECharts 本体保持长缓存
-        'cache-control': assetName === MARKDOWN_CLIENT_SCRIPT_NAME ? 'no-cache' : 'public, max-age=86400',
+        'cache-control': (assetName === MARKDOWN_CLIENT_SCRIPT_NAME || assetName === FLOW_X6_SCRIPT_NAME) ? 'no-cache' : 'public, max-age=86400',
       }, extraHeaders);
       res.writeHead(200, headers);
       res.end(req.method === 'HEAD' ? undefined : asset);

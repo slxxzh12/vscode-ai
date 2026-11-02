@@ -655,6 +655,14 @@ test('Markdown 图表页加载 Mermaid 脚本（相对路径直出）', async ()
   assert.match(clientText, /parseFlowchart/);
   assert.match(clientText, /chevronOption/);
   assert.match(clientText, /createPptPresenter/);
+  const htmlToImage = await fetch(`http://127.0.0.1:${port}/doc/__devflow_html_to_image__.js`);
+  assert.equal(htmlToImage.status, 200);
+  assert.match(htmlToImage.headers.get('content-type'), /javascript/);
+  assert.match(await htmlToImage.text(), /htmlToImage/);
+  const pptxgen = await fetch(`http://127.0.0.1:${port}/doc/__devflow_pptxgen__.js`);
+  assert.equal(pptxgen.status, 200);
+  assert.match(pptxgen.headers.get('content-type'), /javascript/);
+  assert.match(await pptxgen.text(), /PptxGenJS/);
   engine.stop(rule.id);
 });
 

@@ -16,7 +16,9 @@ import { makeReadAsset } from '../markdownAssets';
 import { splitMarkdownSlides } from '../markdownSlides';
 import { extractStyleBlocks, type MarkdownStyleBlock } from '@devflow/shared/markdown-css';
 import { createPptPresenter, type PptPresenter } from '@devflow/shared/markdown-ppt';
+import { exportPptx, pptFileName } from '@devflow/shared/markdown-ppt-export';
 import '@devflow/shared/markdown-ppt.css';
+import { captureViewportPng, pptBackground } from '../snapshot';
 import { parseCurlCommands } from '../curl';
 import CurlView from './CurlView.vue';
 import CodeEditor from './CodeEditor.vue';
@@ -407,7 +409,23 @@ function ensurePpt(): PptPresenter {
       prev: '← ' + t('fp.ppt.prev'),
       next: t('fp.ppt.next') + ' →',
       hide: t('fp.ppt.hide_nav'),
+      export: t('fp.ppt.export'),
+      exporting: t('fp.ppt.exporting'),
     },
+    onExport: async (progress) => {
+      const { default: PptxGenJS } = await import('pptxgenjs');
+      await exportPptx({
+        controller: ppt!,
+        capture: captureViewportPng,
+        createDeck: () => new PptxGenJS(),
+        filename: props.name,
+        background: pptBackground(ppt!.captureEl()),
+        onProgress: progress,
+        isCancelled: () => !ppt?.isOpen(),
+      });
+      setToolMsg(t('fp.ppt.export_done', { name: pptFileName(props.name) }));
+    },
+    onExportError: (e) => setToolMsg(t('fp.ppt.export_failed', { msg: String((e as any)?.message || e) }), false),
     onOpen: () => { pptOpen.value = true; },
     onClose: (restore) => {
       pptOpen.value = false;

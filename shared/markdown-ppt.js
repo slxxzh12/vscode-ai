@@ -65,8 +65,14 @@ export function createPptPresenter(options) {
   nextBtn.type = 'button';
   const hideBtn = make('button', 'df-ppt-btn df-ppt-hide', labels.hide || 'Hide pager');
   hideBtn.type = 'button';
+  const exportBtn = opts.onExport
+    ? make('button', 'df-ppt-btn df-ppt-export', labels.export || 'Export PPT')
+    : null;
+  if (exportBtn) exportBtn.type = 'button';
 
-  head.append(fileEl, titleEl, closeBtn);
+  head.append(fileEl, titleEl);
+  if (exportBtn) head.appendChild(exportBtn);
+  head.appendChild(closeBtn);
   main.appendChild(body);
   foot.append(prevBtn, countEl, nextBtn, hideBtn);
   win.append(head, main, foot);
@@ -89,6 +95,9 @@ export function createPptPresenter(options) {
   }
 
   let navHidden = false;
+  let busy = false;
+  const exportLabel = labels.export || 'Export PPT';
+  const exportingLabel = labels.exporting || 'Exporting {done} / {total}';
 
   function applyNavHidden() {
     foot.classList.toggle('is-nav-hidden', navHidden);
@@ -105,6 +114,7 @@ export function createPptPresenter(options) {
     countEl.textContent = size ? `${index + 1} / ${size}` : `0 / ${size}`;
     prevBtn.disabled = index <= 0;
     nextBtn.disabled = index >= size - 1;
+    if (exportBtn) exportBtn.disabled = busy || !size;
   }
 
   async function render() {
@@ -176,6 +186,7 @@ export function createPptPresenter(options) {
 
   function onKey(e) {
     if (!open) return;
+    if (busy) return;
     const target = e.target;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -196,7 +207,7 @@ export function createPptPresenter(options) {
   }
 
   function go(i) {
-    if (!open) return;
+    if (!open || busy) return;
     const size = total();
     const nextIndex = Math.min(Math.max(0, Number(i) || 0), Math.max(0, size - 1));
     if (nextIndex === index) return;
@@ -214,6 +225,7 @@ export function createPptPresenter(options) {
     root.hidden = false;
     navHidden = false;
     applyNavHidden();
+    if (exportBtn) { exportBtn.textContent = exportLabel; exportBtn.disabled = false; }
     if (opts.onOpen) opts.onOpen();
     void requestFullscreen();
     void render();
@@ -233,14 +245,56 @@ export function createPptPresenter(options) {
   }
 
   function next() {
-    if (!open) return;
+    if (!open || busy) return;
     if (index < total() - 1) { index++; void render(); }
   }
 
   function prev() {
-    if (!open) return;
+    if (!open || busy) return;
     if (index > 0) { index--; void render(); }
   }
+
+  function size() { return total(); }
+
+  function indexNow() { return index; }
+
+  function captureEl() { return main; }
+
+  function isBusy() { return busy; }
+
+  async function renderAt(i) {
+    const n = total();
+    if (!n) return;
+    index = Math.min(Math.max(0, Number(i) || 0), n - 1);
+    await render();
+  }
+
+  async function runExport() {
+    if (busy || !exportBtn || !opts.onExport) return;
+    busy = true;
+    if (open) setChrome(total());
+    exportBtn.disabled = true;
+    exportBtn.textContent = exportingLabel.replace('{done}', '0').replace('{total}', String(total()));
+    const progress = (done, totalCount) => {
+      const d = Number(done) || 0;
+      const t = Number(totalCount) || total();
+      exportBtn.textContent = exportingLabel.replace('{done}', String(d)).replace('{total}', String(t));
+    };
+    try {
+      await opts.onExport(progress);
+    } catch (e) {
+      if (opts.onExportError) {
+        try { opts.onExportError(e); } catch { /* ignore handler errors */ }
+      }
+    } finally {
+      busy = false;
+      exportBtn.textContent = exportLabel;
+      if (open) setChrome(total());
+      else exportBtn.disabled = true;
+    }
+  }
+
+  if (exportBtn) exportBtn.addEventListener('click', () => { void runExport(); });
 
   function refresh() {
     if (!open) return;
@@ -272,6 +326,11 @@ export function createPptPresenter(options) {
     next,
     prev,
     refresh,
+    size,
+    index: indexNow,
+    renderAt,
+    captureEl,
+    isBusy,
     destroy,
   };
 }

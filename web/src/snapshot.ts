@@ -17,6 +17,20 @@ export interface SnapshotOptions {
   pixelRatio: number;
   backgroundColor: string;
   filter: (node: HTMLElement) => boolean;
+  width?: number;
+  height?: number;
+  style?: Record<string, string>;
+}
+
+export function pptBackground(
+  el: HTMLElement,
+  getStyle: StyleReader = (e) => getComputedStyle(e),
+): string {
+  const s = getStyle(el);
+  return (s.getPropertyValue('--bg3') || '').trim()
+    || (s.getPropertyValue('--bg1') || '').trim()
+    || (s.getPropertyValue('--bg0') || '').trim()
+    || '#1e1e1e';
 }
 
 export function snapshotFilter(node: HTMLElement): boolean {
@@ -44,4 +58,19 @@ export async function captureToPngDataUrl(
   deps: CaptureDeps = { toPng },
 ): Promise<string> {
   return deps.toPng(el, snapshotOptions(el));
+}
+
+export async function captureViewportPng(
+  el: HTMLElement,
+  deps: CaptureDeps = { toPng },
+): Promise<{ dataUrl: string; width: number; height: number }> {
+  const width = el.clientWidth || el.offsetWidth || 1280;
+  const height = el.clientHeight || el.offsetHeight || 720;
+  const dataUrl = await deps.toPng(el, {
+    ...snapshotOptions(el),
+    width,
+    height,
+    style: { overflow: 'hidden' },
+  });
+  return { dataUrl, width, height };
 }

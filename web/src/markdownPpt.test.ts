@@ -103,3 +103,78 @@ describe('PPT 键盘翻页', () => {
     expect(count()).toBe('1 / 3');
   });
 });
+
+describe('PPT 导出按钮', () => {
+  it('提供 onExport 时渲染导出按钮，并能显示进度', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    ppt = createPptPresenter({
+      document: window.document,
+      mount: document.body,
+      showOpenButton: false,
+      slideCount: () => 3,
+      slideTitle: (i) => `S${i}`,
+      renderSlide: (i) => `<p>slide ${i}</p>`,
+      onExport: async (progress) => {
+        progress(1, 3);
+        await gate;
+        progress(3, 3);
+      },
+      labels: { export: '导出 PPT', exporting: '导出中 {done} / {total}' },
+    });
+    ppt.open(0);
+    await flushPromises();
+    const btn = ppt.element.querySelector('.df-ppt-export') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    expect(btn.textContent).toBe('导出 PPT');
+
+    btn.click();
+    await flushPromises();
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toBe('导出中 1 / 3');
+
+    press('ArrowRight');
+    await flushPromises();
+    expect(count()).toBe('1 / 3');
+
+    release();
+    await flushPromises();
+    expect(btn.disabled).toBe(false);
+    expect(btn.textContent).toBe('导出 PPT');
+  });
+
+  it('导出失败时恢复按钮并回调 onExportError', async () => {
+    const errors: unknown[] = [];
+    ppt = createPptPresenter({
+      document: window.document,
+      mount: document.body,
+      showOpenButton: false,
+      slideCount: () => 1,
+      slideTitle: () => 'S',
+      renderSlide: () => '<p>x</p>',
+      onExport: async () => { throw new Error('boom'); },
+      onExportError: (e) => errors.push(e),
+      labels: { export: '导出 PPT', exporting: '导出中 {done} / {total}' },
+    });
+    ppt.open(0);
+    await flushPromises();
+    ppt.element.querySelector<HTMLButtonElement>('.df-ppt-export')!.click();
+    await flushPromises();
+    expect(errors).toHaveLength(1);
+    expect(ppt.element.querySelector<HTMLButtonElement>('.df-ppt-export')!.textContent).toBe('导出 PPT');
+  });
+
+  it('暴露 size/index/renderAt/captureEl，renderAt 后仍可正常翻页', async () => {
+    make();
+    ppt!.open(0);
+    await flushPromises();
+    expect(ppt!.size()).toBe(3);
+    expect(ppt!.index()).toBe(0);
+    expect(ppt!.captureEl().classList.contains('df-ppt-main')).toBe(true);
+
+    await ppt!.renderAt(2);
+    await flushPromises();
+    expect(ppt!.index()).toBe(2);
+    expect(count()).toBe('3 / 3');
+  });
+});

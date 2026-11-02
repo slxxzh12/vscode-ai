@@ -6,7 +6,10 @@ import { extractStyleBlocks, renderStyleBlocks } from '@devflow/shared/markdown-
 import { splitMarkdownSlides } from '@devflow/shared/markdown-slides';
 import { sanitizeMarkdownHtml } from './markdown-sanitize.js';
 import { t } from './i18n.js';
-import { ECHARTS_SCRIPT_NAME, MARKDOWN_CLIENT_SCRIPT_NAME, MERMAID_SCRIPT_NAME } from './mermaid-asset.js';
+import {
+  ECHARTS_SCRIPT_NAME, FLOW_X6_SCRIPT_NAME, HTML_TO_IMAGE_SCRIPT_NAME, MARKDOWN_CLIENT_SCRIPT_NAME,
+  MERMAID_SCRIPT_NAME, PPTXGEN_SCRIPT_NAME,
+} from './mermaid-asset.js';
 
 export { isMarkdownFile };
 
@@ -75,6 +78,7 @@ function scriptsHtml(text, body, title, slides) {
   // 注意不能写成 body.includes('class="mermaid"')：```mermaid row``` 渲染出的
   // class 是 "mermaid mermaid-side"，严格子串匹配会漏掉，导致 Mermaid 本体脚本不加载。
   const hasMermaid = /<pre class="[^"]*\bmermaid\b/.test(body);
+  const hasFlowchart = /<pre class="[^"]*\bmermaid\b[^>]*>\s*(?:flowchart|graph)\b/i.test(body);
   const hasData = /<pre class="[^"]*\bmermaid-data\b/.test(body);
   const hasCharts = hasChartSyntax(text);
   const dynamic = hasMermaid || hasCharts || hasData;
@@ -85,7 +89,7 @@ function scriptsHtml(text, body, title, slides) {
   if (hasMermaid || hasData) tags.push(`<script src="${MERMAID_SCRIPT_NAME}"></script>`);
   if (hasCharts || hasData) tags.push(`<script src="${ECHARTS_SCRIPT_NAME}"></script>`);
   tags.push(
-    `<script type="module">import { createPptPresenter, enhanceMarkdown, enhanceSimpleTables } from './${MARKDOWN_CLIENT_SCRIPT_NAME}';(async()=>{`
+    `<script type="module">import { createPptPresenter, enhanceMarkdown, enhanceSimpleTables, exportPptx } from './${MARKDOWN_CLIENT_SCRIPT_NAME}';(async()=>{`
       + 'const waitGlobal=async(n,ms)=>{const s=Date.now();while(!window[n]&&Date.now()-s<ms){await new Promise(r=>setTimeout(r,50));}return window[n]||null;};'
       + 'const dt=document.documentElement.dataset.theme;'
       + 'const light=dt?dt===\'light\':(window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: light)\').matches);'
@@ -94,6 +98,7 @@ function scriptsHtml(text, body, title, slides) {
       + `const errTpl=${errTpl};`
       + `const dataErrTpl=${dataErrTpl};`
       + 'const opts={echarts:echarts,mermaid:mermaid,theme:light?\'default\':\'dark\',dark:!light,'
+      + (hasFlowchart ? `loadFlowX6:()=>import('./${FLOW_X6_SCRIPT_NAME}'),` : '')
       + 'errorText:(msg)=>errTpl.replace(\'@@MSG@@\',String(msg||\'\')),'
       + 'dataErrorText:(msg)=>dataErrTpl.replace(\'@@MSG@@\',String(msg||\'\'))};'
       + 'const enhance=async(root)=>{const items=await enhanceMarkdown(root,opts);enhanceSimpleTables(root);root.__dfItems=items;return items;};'
@@ -102,6 +107,8 @@ function scriptsHtml(text, body, title, slides) {
       + 'const article=document.querySelector(\'article.md-page\');'
       + 'try{if(article)await enhance(article);}finally{if(article)article.removeAttribute(\'data-df-pending\');}'
       + `const slides=${slidesJson};`
+      + 'const loadScript=(src)=>new Promise((resolve,reject)=>{const old=document.querySelector("script[data-df-src=\\""+src+"\\"]");if(old){resolve();return;}const s=document.createElement("script");s.src=src;s.dataset.dfSrc=src;s.onload=()=>resolve();s.onerror=()=>reject(new Error("load failed: "+src));document.head.appendChild(s);});'
+      + 'const exportSlides=async(progress)=>{await loadScript(' + jsString(HTML_TO_IMAGE_SCRIPT_NAME) + ');await loadScript(' + jsString(PPTXGEN_SCRIPT_NAME) + ');const h=window.htmlToImage;const P=window.PptxGenJS;if(!h||!P)throw new Error("export libs missing");const css=getComputedStyle(ppt.captureEl());const bg=(css.getPropertyValue("--bg3")||css.getPropertyValue("--bg1")||"#1e1e1e").trim();await exportPptx({controller:ppt,capture:(el)=>h.toPng(el,{cacheBust:true,pixelRatio:(window.devicePixelRatio||1),width:el.clientWidth,height:el.clientHeight,style:{overflow:"hidden"},backgroundColor:bg}).then((dataUrl)=>({dataUrl,width:el.clientWidth,height:el.clientHeight})),createDeck:()=>new P(),filename:' + jsString(title) + ',background:bg,onProgress:progress,isCancelled:()=>!ppt.isOpen()});};'
       + 'const ppt=createPptPresenter({showOpenButton:true,filename:' + jsString(title) + ','
       + 'slideCount:()=>slides.length,'
       + 'slideTitle:(i)=>(slides[i]&&slides[i].title)||\'\','
@@ -109,7 +116,9 @@ function scriptsHtml(text, body, title, slides) {
       + 'enhance:enhance,dispose:dispose,'
       + 'labels:{open:' + jsString(t('fp.ppt')) + ',close:' + jsString(t('common.close'))
       + ',prev:' + jsString('← ' + t('fp.ppt.prev')) + ',next:' + jsString(t('fp.ppt.next') + ' →')
-      + ',hide:' + jsString(t('fp.ppt.hide_nav')) + '},'
+      + ',hide:' + jsString(t('fp.ppt.hide_nav'))
+      + ',export:' + jsString(t('fp.ppt.export')) + ',exporting:' + jsString(t('fp.ppt.exporting')) + '},'
+      + 'onExport:exportSlides,onExportError:(e)=>{try{const d=document.createElement("div");d.textContent=' + jsString(t('fp.ppt.export_failed', { msg: '@@MSG@@' })) + '.replace("@@MSG@@",String(e&&e.message||e));d.style.cssText="position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;background:#7f1d1d;color:#fff;padding:8px 14px;border-radius:6px;font-size:13px;max-width:80vw";document.body.appendChild(d);setTimeout(()=>d.remove(),5000);}catch(_){}},'
       + 'renderError:(e)=>\'<p class="note err">\'+String(e&&e.message||e||\'\')+\'</p>\'});'
       + 'window.__dfPpt=ppt;'
       + 'try{const q=new URLSearchParams(location.search);if(q.get(\'ppt\')===\'1\')ppt.open(Math.max(0,Number(q.get(\'slide\'))||0));}catch(e){}'
