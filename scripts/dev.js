@@ -86,7 +86,7 @@ async function ensureAgent() {
 
 async function main() {
   await ensureAgent();
-  console.log(`[dev] DEVFLOW_PORT=${PORT}; 后端 http://127.0.0.1:${PORT}；前端 http://localhost:5173`);
+  console.log(`[dev] 访问地址: http://localhost:5173 （后端 http://127.0.0.1:${PORT}，日志 logs/）`);
   start("server", process.execPath, ["--watch", "server/index.js"], "dev-server.log");
   start("web", NPM, ["--prefix", "web", "run", "dev"], "dev-web.log");
 }
