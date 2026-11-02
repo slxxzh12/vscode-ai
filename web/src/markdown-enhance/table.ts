@@ -18,6 +18,7 @@ function cellText(html: string): string {
 }
 
 function filterOptions(rows: string[][], col: number): Array<{ text: string; value: string }> {
+  if (rows.length <= 20) return [];
   const seen = new Map<string, string>();
   for (const row of rows) {
     const value = row[col] ?? '';
@@ -78,7 +79,7 @@ const TableHost = defineComponent({
       h(ElConfigProvider, { locale: elementLocale.value }, () =>
         h(
           ElTable,
-          { data: data.value, border: true, stripe: true, size: 'small', maxHeight: 420 },
+          { data: data.value, border: true, stripe: true, size: 'small' },
           () =>
             props.headers.map((label, i) => {
               const opts = filters.value[i];
@@ -87,7 +88,6 @@ const TableHost = defineComponent({
                 {
                   key: i,
                   prop: `c${i}`,
-                  showOverflowTooltip: true,
                   sortable: true,
                   sortMethod: (a: Record<string, string>, b: Record<string, string>) =>
                     compareCells(a[`c${i}`] ?? '', b[`c${i}`] ?? ''),

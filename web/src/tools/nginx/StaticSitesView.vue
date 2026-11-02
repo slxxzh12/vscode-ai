@@ -30,6 +30,9 @@ function onSaved(rule: NginxRule) {
   highlightId.value = rule.id || '';
 }
 function clearDraft() { draft.value = null; }
+function openDemo(ppt = false) {
+  window.open('/api/demo-site/' + (ppt ? '?ppt=1' : ''), '_blank', 'noopener');
+}
 
 onMounted(async () => {
   const wanted = new URLSearchParams(location.search).get('rule') || '';
@@ -42,9 +45,20 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 
 <template>
   <div class="ssbody">
-    <div class="ssnewrow">
-      <button class="ssbtn ssnew" @click="newSite">{{ $t('static_site.new') }}</button>
-    </div>
+    <section class="ssshowcase">
+      <div class="sstitle">{{ $t('static_site.showcase_title') }}</div>
+      <div class="ssdesc">{{ $t('static_site.showcase_desc') }}</div>
+      <div class="ssfeat">
+        <span>{{ $t('static_site.showcase_ppt') }}</span>
+        <span>{{ $t('static_site.showcase_table') }}</span>
+        <span>{{ $t('static_site.showcase_css') }}</span>
+      </div>
+      <div class="ssnewrow">
+        <button class="ssbtn ssnew" @click="newSite">{{ $t('static_site.new') }}</button>
+        <button class="ssbtn" @click="openDemo(false)">{{ $t('static_site.demo_open') }}</button>
+        <button class="ssbtn ppt" @click="openDemo(true)">{{ $t('static_site.ppt_demo') }}</button>
+      </div>
+    </section>
 
     <StaticSiteCard
       v-if="draft"
@@ -74,4 +88,10 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 .ssnewrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; flex: none; }
 .ssempty { padding: 12px; opacity: .6; }
 .ssbtn { background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.ssshowcase { flex: none; border: 1px solid var(--bd); border-radius: 8px; background: var(--bg3); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.sstitle { color: var(--tx1); font-weight: 600; }
+.ssdesc { color: var(--tx3); font-size: 12px; line-height: 1.5; }
+.ssfeat { display: flex; flex-wrap: wrap; gap: 6px; }
+.ssfeat span { color: var(--ac2); font-size: 11px; background: rgba(76, 154, 255, .1); border: 1px solid rgba(76, 154, 255, .25); border-radius: 999px; padding: 2px 8px; }
+.ssbtn.ppt { border-color: var(--ac2); color: var(--ac2); font-weight: 600; }
 </style>

@@ -12,6 +12,7 @@ import { Projects } from './projects.js';
 import { createLogger } from './log.js';
 import { revealInOs } from './reveal.js';
 import { createStaticServer } from './static.js';
+import { serveStatic } from './proxy-static.js';
 import { ensureDefaults, loadProjects } from './config.js';
 import { createCodeGroups } from './code-groups.js';
 import { createCodePrefs } from './code-prefs.js';
@@ -1498,6 +1499,16 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/scheduler')) { await ws.scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/navicat')) { await ws.navicatMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/nginx')) { await ws.proxyMount(req, res, url); return; }
+  if (url.pathname === '/api/demo-site' || url.pathname.startsWith('/api/demo-site/')) {
+    serveStatic({
+      root: path.join(__dirname, 'demo-site'),
+      req,
+      res,
+      urlPath: url.pathname.slice('/api/demo-site'.length) || '/',
+      publicBase: '/api/demo-site',
+    });
+    return;
+  }
   if (url.pathname.startsWith('/api/')) {
     await ws.httpApi(req, res);
     return;
