@@ -166,7 +166,8 @@ export function parseFlowchart(lines) {
       for (const id of cm[1].split(',').map((s) => s.trim()).filter(Boolean)) classAssign.set(id, cm[2]);
       continue;
     }
-    if (/^(style|linkStyle|click)\b/.test(line)) return null;
+    // 样式/交互指令不影响图结构：X6 只读渲染忽略它们，交给 Mermaid 反而会退回旧渲染
+    if (/^(style|linkStyle|click)\b/.test(line)) continue;
     if (/^(accTitle|accDescr)\b/.test(line)) continue;
     if (line.includes('&')) return null;
 
