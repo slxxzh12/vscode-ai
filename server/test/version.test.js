@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import versionMod from '@devflow/shared/version.cjs';
 import { resolveVersion } from '../version.js';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const { todayVersion } = versionMod;
 
@@ -45,4 +48,11 @@ test('resolveVersion：无 version.txt 回退当天', () => {
     assert.match(resolveVersion(tmpRoot()), /^v\d{14}$/);
     assert.equal(resolveVersion(tmpRoot()), todayVersion());
   });
+});
+
+test('打包脚本把同一个精确到秒的版本号传给子构建', () => {
+  const all = fs.readFileSync(path.join(ROOT, 'scripts', 'build-all.js'), 'utf8');
+  const oc = fs.readFileSync(path.join(ROOT, 'scripts', 'build-opencode.js'), 'utf8');
+  assert.match(all, /process\.env\.DEVFLOW_VERSION = VERSION/);
+  assert.match(oc, /DEVFLOW_VERSION: VERSION/);
 });

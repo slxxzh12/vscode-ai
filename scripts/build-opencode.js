@@ -137,7 +137,7 @@ console.log("[build-opencode] 1/5 build standard package (build.js --no-zip)");
 const build = spawnSync(
   process.execPath,
   [path.join(ROOT, "scripts", "build.js"), "--no-zip"],
-  { stdio: "inherit" },
+  { stdio: "inherit", env: { ...process.env, DEVFLOW_VERSION: VERSION } },
 );
 if (build.status !== 0) process.exit(build.status || 1);
 
