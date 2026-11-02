@@ -40,7 +40,7 @@ describe('enhanceCharts', () => {
 });
 
 describe('enhanceMarkdown（统一入口）', () => {
-  it('子图流程走 ECharts 渲染（子图/连线/节点三组 series）', async () => {
+  it('子图流程走 X6 渲染，不再交给 ECharts', async () => {
     const host = document.createElement('div');
     host.innerHTML = [
       '<pre class="mermaid">flowchart LR',
@@ -54,17 +54,18 @@ describe('enhanceMarkdown（统一入口）', () => {
       'end',
       'a2 --> b1</pre>',
     ].join('\n');
-    const options: any[] = [];
-    const echarts = {
-      init: () => ({
-        setOption: (o: any) => { options.push(o); },
-        resize: () => {},
-        dispose: () => {},
-      }),
-    };
-    const items = await enhanceMarkdown(host, { echarts });
+    const calls: any[] = [];
+    const loadFlowX6 = async () => ({
+      renderFlowchartX6: (el: HTMLElement, spec: any) => {
+        calls.push({ el, spec });
+        return { dispose: () => {} };
+      },
+    });
+    const items = await enhanceMarkdown(host, { echarts: fakeEcharts(), loadFlowX6 });
     expect(items).toHaveLength(1);
-    expect(options[0].series).toHaveLength(3);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].spec.groups).toHaveLength(2);
+    expect(host.querySelector('pre.mermaid')).toBeNull();
   });
 
   it('同一入口同时处理表格回调、ECharts 与 Mermaid', async () => {
