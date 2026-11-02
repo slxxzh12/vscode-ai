@@ -7,8 +7,8 @@ import { splitMarkdownSlides } from '@devflow/shared/markdown-slides';
 import { sanitizeMarkdownHtml } from './markdown-sanitize.js';
 import { t } from './i18n.js';
 import {
-  ECHARTS_SCRIPT_NAME, FLOW_X6_SCRIPT_NAME, HTML_TO_IMAGE_SCRIPT_NAME, MARKDOWN_CLIENT_SCRIPT_NAME,
-  MERMAID_SCRIPT_NAME, PPTXGEN_SCRIPT_NAME,
+  ECHARTS_SCRIPT_NAME, FLOW_EDIT_SCRIPT_NAME, FLOW_X6_SCRIPT_NAME, HTML_TO_IMAGE_SCRIPT_NAME,
+  MARKDOWN_CLIENT_SCRIPT_NAME, MERMAID_SCRIPT_NAME, PPTXGEN_SCRIPT_NAME,
 } from './mermaid-asset.js';
 
 export { isMarkdownFile };
@@ -88,6 +88,24 @@ function scriptsHtml(text, body, title, slides) {
   const tags = [];
   if (hasMermaid || hasData) tags.push(`<script src="${MERMAID_SCRIPT_NAME}"></script>`);
   if (hasCharts || hasData) tags.push(`<script src="${ECHARTS_SCRIPT_NAME}"></script>`);
+  if (hasFlowchart) {
+    const editLabels = JSON.stringify({
+      title: t('flowchart.edit.title'),
+      save: t('flowchart.edit.save'),
+      cancel: t('flowchart.edit.cancel'),
+      addNode: t('flowchart.edit.add_node'),
+      addEdge: t('flowchart.edit.add_edge'),
+      addGroup: t('flowchart.edit.add_group'),
+      del: t('flowchart.edit.del'),
+      layout: t('flowchart.edit.layout'),
+      reconnectSource: t('flowchart.edit.reconnect_source'),
+      reconnectTarget: t('flowchart.edit.reconnect_target'),
+      hint: t('flowchart.edit.hint'),
+    }).replace(/</g, '\\u003c');
+    tags.push(
+      `<script type="module">document.addEventListener('df-edit-flowchart',async(ev)=>{const d=ev.detail;if(!d)return;const m=await import('./${FLOW_EDIT_SCRIPT_NAME}');m.openFlowchartEditor({code:d.code,labels:${editLabels},onSave:async(code)=>{try{await navigator.clipboard.writeText(code);}catch(e){}const blob=new Blob([code],{type:'text/markdown;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=${jsString(title + '.flowchart.md')};a.click();}});});</script>`,
+    );
+  }
   tags.push(
     `<script type="module">import { createPptPresenter, enhanceMarkdown, enhanceSimpleTables, exportPptx } from './${MARKDOWN_CLIENT_SCRIPT_NAME}';(async()=>{`
       + 'const waitGlobal=async(n,ms)=>{const s=Date.now();while(!window[n]&&Date.now()-s<ms){await new Promise(r=>setTimeout(r,50));}return window[n]||null;};'

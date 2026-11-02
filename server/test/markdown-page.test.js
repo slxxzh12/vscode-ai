@@ -26,6 +26,8 @@ test('Markdown 样式按内容作用域注入，页面级样式进入 head', () 
 test('流程图页面注入 X6 资源与加载器', () => {
   const html = renderMarkdownDocument('```mermaid\nflowchart TD\n  A-->B\n```', 't');
   assert.match(html, /__devflow_flowx6__\.js/);
+  assert.match(html, /__devflow_flowedit__\.js/);
+  assert.match(html, /df-edit-flowchart/);
 });
 
 test('同级目录图片保留相对路径', () => {

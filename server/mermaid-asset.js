@@ -13,6 +13,7 @@ export const ECHARTS_SCRIPT_NAME = '__devflow_echarts__.js';
 export const MARKDOWN_CLIENT_SCRIPT_NAME = '__devflow_markdown__.js';
 // 流程图编辑器/渲染器按需加载，避免首屏引入 X6
 export const FLOW_X6_SCRIPT_NAME = '__devflow_flowx6__.js';
+export const FLOW_EDIT_SCRIPT_NAME = '__devflow_flowedit__.js';
 // PPT 导出按需加载：截图库与 pptx 生成库
 export const HTML_TO_IMAGE_SCRIPT_NAME = '__devflow_html_to_image__.js';
 export const PPTXGEN_SCRIPT_NAME = '__devflow_pptxgen__.js';
@@ -101,6 +102,26 @@ export function readFlowX6Script() {
   });
   flowX6Cached = Buffer.from(result.outputFiles[0].text, 'utf8');
   return flowX6Cached;
+}
+
+let flowEditCached = null;
+export function readFlowEditScript() {
+  if (flowEditCached) return flowEditCached;
+  const require = createRequire(import.meta.url);
+  const sharedDir = path.dirname(require.resolve('@devflow/shared'));
+  const entry = path.join(sharedDir, 'markdown-flowchart-editor.js');
+  const result = buildSync({
+    entryPoints: [entry],
+    absWorkingDir: sharedDir,
+    bundle: true,
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2020',
+    write: false,
+    logLevel: 'silent',
+  });
+  flowEditCached = Buffer.from(result.outputFiles[0].text, 'utf8');
+  return flowEditCached;
 }
 
 function packageRoot(moduleName) {
