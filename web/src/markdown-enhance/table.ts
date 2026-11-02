@@ -75,6 +75,7 @@ const TableHost = defineComponent({
       }),
     );
     const filters = computed(() => props.headers.map((_, i) => filterOptions(props.rows, i)));
+    const sortable = computed(() => props.rows.length > 20);
     return () =>
       h(ElConfigProvider, { locale: elementLocale.value }, () =>
         h(
@@ -88,9 +89,11 @@ const TableHost = defineComponent({
                 {
                   key: i,
                   prop: `c${i}`,
-                  sortable: true,
-                  sortMethod: (a: Record<string, string>, b: Record<string, string>) =>
-                    compareCells(a[`c${i}`] ?? '', b[`c${i}`] ?? ''),
+                  sortable: sortable.value,
+                  sortMethod: sortable.value
+                    ? (a: Record<string, string>, b: Record<string, string>) =>
+                      compareCells(a[`c${i}`] ?? '', b[`c${i}`] ?? '')
+                    : undefined,
                   filters: opts.length ? opts : undefined,
                   filterMethod: opts.length
                     ? (value: string, row: Record<string, string>) => row[`c${i}`] === value

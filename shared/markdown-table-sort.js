@@ -3,9 +3,12 @@ export function enhanceSimpleTables(container) {
   const tables = Array.from(container.querySelectorAll('table.md-table'));
   for (const table of tables) {
     if (table.dataset.dfSortable === '1') continue;
-    const head = table.tHead && table.tHead.rows[0];
-    const body = table.tBodies && table.tBodies[0];
+    const head = table.querySelector('thead tr');
+    const body = table.querySelector('tbody');
     if (!head || !body || !head.cells.length) continue;
+    const dataRows = Array.from(body.children).filter((row) => row.tagName === 'TR');
+    // 数据不超过 20 行时不需要排序
+    if (dataRows.length <= 20) continue;
     table.dataset.dfSortable = '1';
     Array.from(head.cells).forEach((th, idx) => {
       th.classList.add('df-sortable');
@@ -18,7 +21,7 @@ export function enhanceSimpleTables(container) {
         });
         th.dataset.dfSort = dir === 1 ? 'asc' : 'desc';
         th.classList.add(dir === 1 ? 'df-sort-asc' : 'df-sort-desc');
-        const rows = Array.from(body.rows);
+        const rows = dataRows.slice();
         rows.sort((a, b) => {
           const av = (a.cells[idx] && a.cells[idx].textContent || '').trim();
           const bv = (b.cells[idx] && b.cells[idx].textContent || '').trim();
