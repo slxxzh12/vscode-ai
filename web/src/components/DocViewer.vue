@@ -15,6 +15,7 @@ import { enhanceMarkdown, disposeMarkdown } from '../markdown-enhance';
 import { makeReadAsset } from '../markdownAssets';
 import { splitMarkdownSlides } from '../markdownSlides';
 import { extractStyleBlocks, type MarkdownStyleBlock } from '@devflow/shared/markdown-css';
+import { replaceMermaidBlock } from '@devflow/shared/markdown-flowchart-model';
 import { createPptPresenter, type PptPresenter } from '@devflow/shared/markdown-ppt';
 import { exportPptx, pptFileName } from '@devflow/shared/markdown-ppt-export';
 import '@devflow/shared/markdown-ppt.css';
@@ -338,6 +339,55 @@ function docSlides(): { slides: ReturnType<typeof splitMarkdownSlides>; blocks: 
   const { markdown, blocks } = extractStyleBlocks(raw.value);
   return { slides: splitMarkdownSlides(markdown), blocks };
 }
+function downloadMarkdown(name: string, text: string) {
+  try {
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch { /* ignore */ }
+}
+
+async function onEditFlowchart(ev: Event) {
+  const detail = (ev as CustomEvent).detail as { index: number; code: string } | undefined;
+  if (!detail || !isMd.value) return;
+  const mod = await import('@devflow/shared/markdown-flowchart-editor');
+  mod.openFlowchartEditor({
+    code: detail.code,
+    labels: {
+      title: t('flowchart.edit.title'),
+      save: t('flowchart.edit.save'),
+      cancel: t('flowchart.edit.cancel'),
+      addNode: t('flowchart.edit.add_node'),
+      addEdge: t('flowchart.edit.add_edge'),
+      addGroup: t('flowchart.edit.add_group'),
+      del: t('flowchart.edit.del'),
+      layout: t('flowchart.edit.layout'),
+      reconnectSource: t('flowchart.edit.reconnect_source'),
+      reconnectTarget: t('flowchart.edit.reconnect_target'),
+      hint: t('flowchart.edit.hint'),
+    },
+    onSave: async (nextCode: string) => {
+      const updated = replaceMermaidBlock(raw.value, detail.index, nextCode);
+      try {
+        await props.source.write(props.path, updated);
+        raw.value = updated;
+        await applyPreview();
+        if (pptOpen.value) ppt?.refresh();
+        setToolMsg(t('flowchart.edit.saved'));
+      } catch {
+        await copyText(nextCode);
+        const base = props.name.replace(/\.(md|markdown)$/i, '') || 'flowchart';
+        downloadMarkdown(`${base}.flowchart.md`, nextCode);
+        setToolMsg(t('flowchart.edit.fallback'), false);
+      }
+    },
+  });
+}
+
 // PPT 单页渲染：相对图片/链接按当前文件目录解析，和普通预览保持一致
 async function renderMdContent(text: string, extraStyleBlocks?: MarkdownStyleBlock[]): Promise<string> {
   let assetMap: Map<string, string> | undefined;
@@ -850,6 +900,7 @@ watch([status, viewMode], applyPreview);
 
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKey);
+  nextTick(() => mdBodyRef.value?.addEventListener('df-edit-flowchart', onEditFlowchart));
   loadDiffH();
 });
 
@@ -857,6 +908,7 @@ onBeforeUnmount(() => {
   disposed = true;
   if (ppt) { ppt.destroy(); ppt = null; }
   window.removeEventListener('keydown', onGlobalKey);
+  mdBodyRef.value?.removeEventListener('df-edit-flowchart', onEditFlowchart);
   unbindTools?.();
   if (fmtTimer) clearTimeout(fmtTimer);
   if (runTimer) clearTimeout(runTimer);

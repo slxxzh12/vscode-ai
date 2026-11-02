@@ -656,14 +656,24 @@ export async function enhanceCharts(container, echarts, options = {}) {
     ? (typeof document === 'undefined' || document.documentElement.dataset.theme !== 'light')
     : Boolean(options.dark);
   const flowTheme = options.flowTheme || chartTheme(dark);
-  for (const pre of Array.from(container.querySelectorAll('pre.mermaid'))) {
+  const allPre = Array.from(container.querySelectorAll('pre.mermaid'));
+  for (const pre of allPre) {
     const spec = parseMermaidChart(pre.textContent || '');
     if (!spec) continue;
     if (spec.kind === 'flowchart') {
       if (!options.loadFlowX6) continue;
       const host = document.createElement('div');
       host.className = 'md-echart';
-      host.dataset.flowSrc = pre.textContent || '';
+      const code = pre.textContent || '';
+      const blockIndex = allPre.indexOf(pre);
+      host.dataset.flowSrc = code;
+      host.dataset.flowIndex = String(blockIndex);
+      host.addEventListener('dblclick', () => {
+        container.dispatchEvent(new CustomEvent('df-edit-flowchart', {
+          bubbles: true,
+          detail: { index: blockIndex, code, host },
+        }));
+      });
       pre.before(host);
       try {
         const mod = await options.loadFlowX6();

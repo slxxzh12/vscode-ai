@@ -68,6 +68,22 @@ describe('enhanceMarkdown（统一入口）', () => {
     expect(host.querySelector('pre.mermaid')).toBeNull();
   });
 
+  it('双击流程图派发编辑事件，带块序号与源码', async () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<pre class="mermaid">flowchart TD\n  A --> B</pre>';
+    let detail: any = null;
+    host.addEventListener('df-edit-flowchart', (e: any) => { detail = e.detail; });
+    await enhanceMarkdown(host, {
+      echarts: fakeEcharts(),
+      loadFlowX6: async () => ({ renderFlowchartX6: () => ({ dispose: () => {} }) }),
+    });
+    const flow = host.querySelector('.md-echart');
+    expect(flow).not.toBeNull();
+    flow!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(detail.index).toBe(0);
+    expect(detail.code).toContain('flowchart TD');
+  });
+
   it('同一入口同时处理表格回调、ECharts 与 Mermaid', async () => {
     const host = document.createElement('div');
     host.innerHTML = [
