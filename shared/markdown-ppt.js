@@ -144,6 +144,9 @@ export function createPptPresenter(options) {
     }
     if (my !== seq || !open) return;
     body.innerHTML = html || '';
+    // 每页从顶部开始，避免沿用上一页的滚动位置导致截图看起来一样
+    main.scrollTop = 0;
+    main.scrollLeft = 0;
     // 有 Mermaid/图表时先隐藏整页，增强完成再显示，避免原始代码 / 尺寸跳变
     if (body.querySelector('pre.mermaid')) body.dataset.dfPending = '1';
     else delete body.dataset.dfPending;
@@ -268,6 +271,13 @@ export function createPptPresenter(options) {
     if (!n) return;
     index = Math.min(Math.max(0, Number(i) || 0), n - 1);
     await render();
+    // 等一帧排版完成，导出截图时拿到的是当前页而不是上一页
+    await new Promise((resolve) => {
+      const raf = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (cb) => setTimeout(cb, 0);
+      raf(() => raf(resolve));
+    });
   }
 
   async function runExport() {
