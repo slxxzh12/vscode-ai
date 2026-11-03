@@ -54,6 +54,8 @@ export async function enhanceMarkdown(
         if (!data) continue;
         const host = document.createElement('div');
         host.className = 'md-el-table';
+        const width = table.getAttribute('data-md-table-width');
+        if (width) host.style.setProperty('--md-table-width', width);
         table.replaceWith(host);
         out.push({ host, ...mountTable(host, data) });
       }

@@ -196,11 +196,11 @@ export function renderRemoteMarkdown(mdText: string): string {
 export { isMarkdownFile };
 
 const PRINT_CSS = `
-@page { size: A4; margin: 20mm 18mm; }
+@page { size: A4; margin: 24mm 20mm; }
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; width: 100%; }
+html, body { margin: 0; padding: 0; width: 100%; height: auto !important; overflow: visible !important; }
 body { background: #fff; color: #1f2937; font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; line-height: 1.7; }
-.md-body { word-wrap: break-word; overflow-wrap: anywhere; max-width: 100%; }
+.md-body { word-wrap: break-word; overflow-wrap: anywhere; max-width: 100%; overflow: visible !important; }
 .md-body > :first-child { margin-top: 0; }
 .md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6 { margin: 1.2em 0 0.6em; line-height: 1.3; font-weight: 600; color: #111827; }
 .md-body h1 { font-size: 1.7em; padding-bottom: 0.3em; border-bottom: 1px solid #e5e7eb; }
@@ -213,16 +213,30 @@ body { background: #fff; color: #1f2937; font-family: ui-sans-serif, system-ui, 
 .md-body li { margin: 0.25em 0; }
 .md-body blockquote { margin: 0.8em 0; padding: 0.1em 1em; color: #4b5563; border-left: 3px solid #2563eb; background: #f6f8fa; border-radius: 0 6px 6px 0; }
 .md-body hr { margin: 1.4em 0; border: none; border-top: 1px solid #e5e7eb; }
-.md-body table { border-collapse: collapse; margin: 0.9em 0; display: table; width: 100%; max-width: 100%; table-layout: fixed; }
-.md-body th, .md-body td { border: 1px solid #d7dce3; padding: 6px 12px; word-break: break-word; overflow-wrap: anywhere; }
-.md-body th { background: #f0f2f5; font-weight: 600; }
+.md-body table { border-collapse: collapse; margin: 0.7em 0; display: table; width: 100%; max-width: 100%; table-layout: fixed; font-size: 14px; }
+.md-body th, .md-body td { border: 1px solid #d7dce3; padding: 7px 8px; word-break: break-word; overflow-wrap: anywhere; }
+.md-body th { background: #1e40af; color: #ffffff; font-weight: 600; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .md-body tr:nth-child(2n) td { background: #f6f8fa; }
+/* 预览里的 Element Plus 表格在打印窗口没有样式，强制回到可排版的原生表格，避免固定像素宽度把内容顶出纸面 */
+.md-body .md-el-table { display: block; width: 100% !important; max-width: 100% !important; margin: 0.7em 0; overflow: visible !important; border: none !important; background: none !important; box-shadow: none !important; }
+.md-body .md-el-table .el-table { width: 100% !important; max-width: 100% !important; overflow: visible !important; background: transparent !important; }
+.md-body .md-el-table .el-table__inner-wrapper,
+.md-body .md-el-table .el-table__header-wrapper,
+.md-body .md-el-table .el-table__body-wrapper { width: 100% !important; max-width: 100% !important; overflow: visible !important; }
+.md-body .md-el-table table { width: 100% !important; max-width: 100% !important; table-layout: fixed !important; }
+.md-body .md-el-table col { width: auto !important; }
+.md-body .md-el-table .el-table__cell { padding: 6px 0 !important; }
+.md-body .md-el-table .cell { padding: 0 8px !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.5 !important; }
+.md-body .md-el-table .caret-wrapper,
+.md-body .md-el-table .el-table__column-filter-trigger { display: none !important; }
+.md-body tr { break-inside: avoid; }
 .md-body code { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; background: #f0f2f5; padding: 0.15em 0.4em; border-radius: 4px; color: #0550ae; }
 .md-body pre { background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; overflow: visible; white-space: pre-wrap; word-break: break-word; margin: 0.9em 0; }
 .md-body pre code { background: transparent; padding: 0; color: #1f2937; font-size: 12.5px; line-height: 1.55; display: block; white-space: inherit; }
 .md-body pre.hljs { padding: 12px 14px; }
 .md-body code.hljs { padding: 0; }
 .md-body img { max-width: 100%; border-radius: 6px; }
+.md-body img, .md-body svg, .md-body canvas, .md-body .md-echart { max-width: 100% !important; }
 .md-body .mermaid { display: flex; justify-content: center; background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px; margin: 0.6em 0; }
 .md-body .mermaid svg { max-width: 100%; }
 .md-body .mermaid-err { color: #b91c1c; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; padding: 8px 12px; }
@@ -234,12 +248,58 @@ body { background: #fff; color: #1f2937; font-family: ui-sans-serif, system-ui, 
 .md-body .hljs-title, .md-body .hljs-function .hljs-title, .md-body .hljs-title.class_ { color: #8250df; }
 .md-body .hljs-attr, .md-body .hljs-attribute, .md-body .hljs-variable, .md-body .hljs-template-variable { color: #953800; }
 .md-body .hljs-built_in, .md-body .hljs-type, .md-body .hljs-symbol, .md-body .hljs-bullet { color: #0550ae; }
-pre, table, blockquote, img, .mermaid { break-inside: avoid; }
+pre, blockquote { break-inside: auto; }
+img, .mermaid { break-inside: avoid; }
+table { break-inside: auto; page-break-inside: auto; }
+thead { display: table-header-group; }
+tr { break-inside: auto; page-break-inside: auto; }
 h1, h2, h3, h4, h5, h6 { break-after: avoid; }
 `;
 
+function printableCellHtml(cell: Element): string {
+  const inner = cell.querySelector('.cell');
+  return (inner || cell).innerHTML.trim();
+}
+
+// 打印窗口没有 Element Plus 样式：把增强后的 div 表格还原成原生 table，
+// 这样表格可以按页拆分、表头重复，不会因为固定像素宽度丢数据。
+function toPrintableHtml(html: string): string {
+  if (typeof document === 'undefined') return html;
+  const root = document.createElement('div');
+  root.innerHTML = html;
+  for (const host of Array.from(root.querySelectorAll('.md-el-table'))) {
+    const headerRow = host.querySelector('.el-table__header tr');
+    if (!headerRow) continue;
+    const bodyRows = Array.from(host.querySelectorAll('.el-table__body tr'));
+    const table = document.createElement('table');
+    table.className = 'md-table';
+    const thead = document.createElement('thead');
+    const headTr = document.createElement('tr');
+    for (const cell of Array.from(headerRow.children)) {
+      const th = document.createElement('th');
+      th.innerHTML = printableCellHtml(cell);
+      headTr.appendChild(th);
+    }
+    thead.appendChild(headTr);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for (const row of bodyRows) {
+      const tr = document.createElement('tr');
+      for (const cell of Array.from(row.children)) {
+        const td = document.createElement('td');
+        td.innerHTML = printableCellHtml(cell);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    host.replaceWith(table);
+  }
+  return root.innerHTML;
+}
+
 function buildPrintDoc(html: string, title: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escHtml(title)}</title><style>${PRINT_CSS}</style></head><body><article class="md-body">${html}</article></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escHtml(title)}</title><style>${PRINT_CSS}</style></head><body><article class="md-body">${toPrintableHtml(html)}</article></body></html>`;
 }
 
 // 将已渲染的 markdown HTML 送入新窗口并调起打印（仅打印文档内容，无应用边框）
@@ -255,7 +315,10 @@ export function printMarkdown(html: string, title: string): void {
   const fire = () => {
     if (fired) return;
     fired = true;
-    try { win.focus(); win.print(); } catch { /* ignore */ }
+    // 等新窗口完成一轮布局再调打印，长表格/大文档直接 print 容易只打出一部分。
+    setTimeout(() => {
+      try { win.focus(); win.print(); } catch { /* ignore */ }
+    }, 300);
   };
   const imgs = Array.from(win.document.images);
   if (imgs.length === 0) { fire(); return; }

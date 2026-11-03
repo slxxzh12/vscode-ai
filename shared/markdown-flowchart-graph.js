@@ -28,28 +28,73 @@ export function buildFlowGraphModel(spec, theme = {}) {
       label: { text: g.label || '', fill: text, fontSize: 11, refY: 12 },
     },
   }));
-  const edges = spec.edges.map((e, i) => ({
-    id: `e${i}`,
-    source: e.source,
-    target: e.target,
-    router: { name: 'manhattan' },
-    connector: { name: 'rounded' },
-    zIndex: 1,
-    attrs: {
-      line: {
-        stroke: axis,
-        strokeWidth: 1.4,
-        targetMarker: { name: 'block', width: 7, height: 7 },
+  const direction = spec.direction || 'TD';
+  const byId = new Map((spec.nodes || []).map((n) => [n.id, n]));
+  let maxX = 0;
+  let maxY = 0;
+  for (const n of spec.nodes || []) {
+    maxX = Math.max(maxX, n.x + n.w / 2);
+    maxY = Math.max(maxY, n.y + n.h / 2);
+  }
+  for (const g of spec.groups || []) {
+    maxX = Math.max(maxX, g.x + g.width);
+    maxY = Math.max(maxY, g.y + g.height);
+  }
+
+  const LANE_BASE = 32;
+  const LANE_GAP = 20;
+  let bottomLanes = 0;
+  let rightLanes = 0;
+
+  // 回边（环形连线）绕到图外走一条独立通道，避免从节点/方框中间穿过去。
+  function backEdgeVertices(e) {
+    const s = byId.get(e.source);
+    const t = byId.get(e.target);
+    if (!s || !t) return [];
+    if (direction === 'LR' || direction === 'RL') {
+      const back = direction === 'LR' ? t.x < s.x : t.x > s.x;
+      if (!back) return [];
+      const y = maxY + LANE_BASE + bottomLanes * LANE_GAP;
+      bottomLanes += 1;
+      return [{ x: s.x, y }, { x: t.x, y }];
+    }
+    const back = direction === 'TD' ? t.y < s.y : t.y > s.y;
+    if (!back) return [];
+    const x = maxX + LANE_BASE + rightLanes * LANE_GAP;
+    rightLanes += 1;
+    return [{ x, y: s.y }, { x, y: t.y }];
+  }
+
+  const edges = spec.edges.map((e, i) => {
+    const vertices = backEdgeVertices(e);
+    const edge = {
+      id: `e${i}`,
+      source: { cell: e.source, connectionPoint: { name: 'boundary' } },
+      target: { cell: e.target, connectionPoint: { name: 'boundary' } },
+      router: { name: 'manhattan', args: { padding: 12 } },
+      connector: { name: 'rounded' },
+      zIndex: 1,
+      attrs: {
+        line: {
+          stroke: axis,
+          strokeWidth: 1.4,
+          targetMarker: { name: 'block', width: 7, height: 7 },
+        },
       },
-    },
-    labels: e.label
-      ? [{ attrs: { label: { text: e.label, fill: text, fontSize: 11 } } }]
-      : [],
-  }));
+      labels: e.label
+        ? [{ attrs: { label: { text: e.label, fill: text, fontSize: 11 } } }]
+        : [],
+    };
+    if (vertices.length) edge.vertices = vertices;
+    return edge;
+  });
+
+  const bottomExtra = bottomLanes ? LANE_BASE + (bottomLanes - 1) * LANE_GAP : 0;
+  const rightExtra = rightLanes ? LANE_BASE + (rightLanes - 1) * LANE_GAP : 0;
   return {
     nodes: groups.concat(nodes),
     edges,
-    width: Math.max(240, Number(spec.width) || 240),
-    height: Math.max(160, Number(spec.height) || 160),
+    width: Math.max(240, Number(spec.width) || 240) + rightExtra,
+    height: Math.max(160, Number(spec.height) || 160) + bottomExtra,
   };
 }

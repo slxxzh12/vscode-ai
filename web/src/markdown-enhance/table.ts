@@ -38,6 +38,16 @@ function compareCells(a: string, b: string): number {
   return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+function columnMinWidth(headers: string[], rows: string[][], col: number): number {
+  let chars = cellText(headers[col] ?? '').length;
+  for (const row of rows) chars = Math.max(chars, cellText(row[col] ?? '').length);
+  return Math.min(360, Math.max(96, Math.round(chars * 12 + 32)));
+}
+
+function tableMinWidth(headers: string[], rows: string[][]): number {
+  return headers.reduce((sum, _, col) => sum + columnMinWidth(headers, rows, col), 0);
+}
+
 export function extractTable(table: HTMLTableElement): TableData | null {
   // Element Plus 表格内部也是 <table>，不能再次提取，否则会生成第二个表头
   if (table.closest('.el-table')) return null;
@@ -75,12 +85,19 @@ const TableHost = defineComponent({
       }),
     );
     const filters = computed(() => props.headers.map((_, i) => filterOptions(props.rows, i)));
+    const widths = computed(() => props.headers.map((_, i) => columnMinWidth(props.headers, props.rows, i)));
     const sortable = computed(() => props.rows.length > 20);
     return () =>
       h(ElConfigProvider, { locale: elementLocale.value }, () =>
         h(
           ElTable,
-          { data: data.value, border: true, stripe: true, size: 'small' },
+          {
+            data: data.value,
+            border: true,
+            stripe: true,
+            size: 'small',
+            fit: false,
+          },
           () =>
             props.headers.map((label, i) => {
               const opts = filters.value[i];
@@ -89,6 +106,7 @@ const TableHost = defineComponent({
                 {
                   key: i,
                   prop: `c${i}`,
+                  minWidth: widths.value[i],
                   sortable: sortable.value,
                   sortMethod: sortable.value
                     ? (a: Record<string, string>, b: Record<string, string>) =>
@@ -113,6 +131,7 @@ const TableHost = defineComponent({
 });
 
 export function mountTable(host: HTMLElement, data: TableData): { dispose(): void } {
+  host.style.setProperty('--md-table-inner-width', `${tableMinWidth(data.headers, data.rows)}px`);
   const app = createApp(TableHost, data);
   app.mount(host);
   return { dispose: () => app.unmount() };

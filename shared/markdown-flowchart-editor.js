@@ -141,9 +141,9 @@ export function openFlowchartEditor(options = {}) {
   }
   const edges = model.edges.map((e, i) => ({
     id: `e${i}`,
-    source: e.source,
-    target: e.target,
-    router: { name: 'manhattan' },
+    source: { cell: e.source, connectionPoint: { name: 'boundary' } },
+    target: { cell: e.target, connectionPoint: { name: 'boundary' } },
+    router: { name: 'manhattan', args: { padding: 12 } },
     connector: { name: 'rounded' },
     labels: e.label ? [{ attrs: { label: { text: e.label, fill: dark ? '#d5dae1' : '#1f2937', fontSize: 11 } } }] : [],
     attrs: { line: { stroke: '#4c9aff', strokeWidth: 1.5, targetMarker: { name: 'block', width: 7, height: 7 } } },

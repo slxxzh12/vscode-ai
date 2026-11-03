@@ -45,6 +45,18 @@ function readFlowEdge(line, pos) {
   return null;
 }
 
+function parseStyleList(text) {
+  const styles = {};
+  for (const part of String(text || '').split(',')) {
+    const ci = part.indexOf(':');
+    if (ci < 0) continue;
+    const k = part.slice(0, ci).trim().toLowerCase();
+    const v = part.slice(ci + 1).trim();
+    if (k && v) styles[k] = v;
+  }
+  return styles;
+}
+
 function parseFlowLine(line) {
   const nodes = [];
   const edges = [];
@@ -111,6 +123,7 @@ export function parseFlowchart(lines) {
   const groupStack = [];
   const classDefs = new Map();
   const classAssign = new Map();
+  const directStyles = new Map();
 
   for (const raw of lines.slice(1)) {
     let line = raw.trim();
@@ -149,15 +162,7 @@ export function parseFlowchart(lines) {
     if (/^classDef\b/.test(line)) {
       const cm = /^classDef\s+([A-Za-z0-9_-]+)\s+(.+)$/.exec(line);
       if (!cm) return null;
-      const styles = {};
-      for (const part of cm[2].split(',')) {
-        const ci = part.indexOf(':');
-        if (ci < 0) continue;
-        const k = part.slice(0, ci).trim().toLowerCase();
-        const v = part.slice(ci + 1).trim();
-        if (k && v) styles[k] = v;
-      }
-      classDefs.set(cm[1], styles);
+      classDefs.set(cm[1], parseStyleList(cm[2]));
       continue;
     }
     if (/^class\b/.test(line)) {
@@ -166,8 +171,18 @@ export function parseFlowchart(lines) {
       for (const id of cm[1].split(',').map((s) => s.trim()).filter(Boolean)) classAssign.set(id, cm[2]);
       continue;
     }
-    // 样式/交互指令不影响图结构：X6 只读渲染忽略它们，交给 Mermaid 反而会退回旧渲染
-    if (/^(style|linkStyle|click)\b/.test(line)) continue;
+    if (/^style\b/.test(line)) {
+      const sm = /^style\s+([A-Za-z0-9_,\s-]+?)\s+(.+)$/.exec(line);
+      if (sm) {
+        const styles = parseStyleList(sm[2]);
+        for (const id of sm[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+          directStyles.set(id, { ...(directStyles.get(id) || {}), ...styles });
+        }
+      }
+      continue;
+    }
+    // 交互指令不影响图结构：X6 只读渲染忽略它们，交给 Mermaid 反而会退回旧渲染
+    if (/^(linkStyle|click)\b/.test(line)) continue;
     if (/^(accTitle|accDescr)\b/.test(line)) continue;
     if (line.includes('&')) return null;
 
@@ -289,7 +304,10 @@ export function parseFlowchart(lines) {
   for (const g of activeGroups) { g.rect.x += dx; g.rect.y += dy; }
 
   for (const n of nodes.values()) {
-    const styles = classDefs.get(n.cls || classAssign.get(n.id)) || {};
+    const styles = {
+      ...(classDefs.get(n.cls || classAssign.get(n.id)) || {}),
+      ...(directStyles.get(n.id) || {}),
+    };
     n.fill = styles.fill || '#e6f3ff';
     n.stroke = styles.stroke || '#8ab8e6';
     n.color = styles.color || (styles.fill ? contrastText(styles.fill) : '#1f2937');

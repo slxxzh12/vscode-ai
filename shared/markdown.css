@@ -1,4 +1,11 @@
-.md-body { color: var(--tx); font-size: 14px; line-height: 1.7; font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; word-wrap: break-word; }
+.md-body {
+  --md-table-head-bg: #1e40af;
+  --md-table-head-color: #ffffff;
+  --md-table-row-alt-bg: var(--bg2);
+  --md-table-margin: 0.7em 0;   /* 居中改成：0.7em auto */
+  /* 可选：--md-table-width: 60%; 控制表格占可用宽度的比例 */
+  color: var(--tx); font-size: 14px; line-height: 1.7; font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; word-wrap: break-word;
+}
 .md-body > :first-child { margin-top: 0; }
 .md-body > [data-md-css] > :first-child,
 .md-body > [data-md-css] > style:first-child + * { margin-top: 0; }
@@ -104,11 +111,37 @@
 .md-body blockquote { margin: 0.8em 0; padding: 0.1em 1em; color: var(--tx2); border-left: 3px solid var(--ac); background: var(--bg2); border-radius: 0 6px 6px 0; }
 .md-body hr { margin: 1.4em 0; border: none; border-top: 1px solid var(--bd); }
 /* Markdown 原始表格：块级 + 自适应宽度，既保留横向滚动，又避免 thead/tbody 之间出现空行 */
-.md-body table.md-table { border-collapse: collapse; border-spacing: 0; border: 1px solid var(--bd); border-radius: 8px; margin: 0.9em 0; display: block; width: fit-content; max-width: 100%; overflow: auto; }
-.md-body table.md-table th, .md-body table.md-table td { border: 1px solid var(--bd); padding: 6px 12px; }
-.md-body table.md-table th { background: rgba(76, 154, 255, 0.13); color: var(--tx1); font-weight: 600; }
-.md-body table.md-table tbody tr:nth-child(2n) td { background: var(--bg2); }
-.md-body table.md-table tbody tr:hover td { background: rgba(76, 154, 255, 0.08); }
+.md-body table.md-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--bd);
+  border-radius: 0;
+  margin: var(--md-table-margin);
+  display: block;
+  width: var(--md-table-width, fit-content);
+  max-width: 100%;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.5;
+  background: transparent;
+}
+.md-body table.md-table th,
+.md-body table.md-table td {
+  border: none;
+  border-right: 1px solid var(--bd);
+  border-bottom: 1px solid var(--bd);
+  padding: 7px clamp(8px, 1.2vw, 14px);
+}
+.md-body table.md-table th:last-child,
+.md-body table.md-table td:last-child { border-right: none; }
+.md-body table.md-table th {
+  background: var(--md-table-head-bg);
+  color: var(--md-table-head-color);
+  font-weight: 600;
+}
+.md-body table.md-table tbody tr:last-child td { border-bottom: none; }
+.md-body table.md-table tbody tr:nth-child(2n) td { background: var(--md-table-row-alt-bg); }
+.md-body table.md-table tbody tr:hover td { background: var(--md-table-row-alt-bg); }
 .md-body table.md-table th.df-sortable { cursor: pointer; user-select: none; }
 .md-body table.md-table th.df-sortable::after { content: " ⇅"; opacity: .35; font-size: 10px; }
 .md-body table.md-table th.df-sort-asc::after { content: " ↑"; opacity: .9; }
@@ -176,41 +209,68 @@
   .md-body .mermaid-row > pre.mermaid,
   .md-body .mermaid-row > .md-echart { max-width: 100%; }
 }
-.md-body .md-el-table { margin: 0.9em 0; }
-/* Element Plus 表格：淡蓝表头 + 只保留横向分隔线，避免表头出现多条重叠横线 */
+/* Element Plus 表格：保持普通方形表格，不使用蓝色/圆角装饰 */
+.md-body .md-el-table {
+  display: block;
+  width: var(--md-table-width, var(--md-table-inner-width, fit-content));
+  max-width: 100%;
+  margin: var(--md-table-margin);
+  border: 1px solid var(--bd);
+  border-radius: 0;
+  background: transparent;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.md-body .md-el-table::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.md-body .md-el-table .el-scrollbar__bar.is-horizontal { display: none; }
+/* PPT 截图导出期间临时隐藏所有滚动条，避免滚动条被拍进幻灯片 */
+.df-no-scroll, .df-no-scroll * { scrollbar-width: none; -ms-overflow-style: none; }
+.df-no-scroll::-webkit-scrollbar,
+.df-no-scroll *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 .md-body .md-el-table .el-table {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(76, 154, 255, 0.13);
-  --el-table-header-text-color: var(--tx1);
+  --el-table-header-bg-color: var(--md-table-head-bg);
+  --el-table-header-text-color: var(--md-table-head-color);
   --el-table-text-color: var(--tx);
-  --el-table-border-color: transparent;
-  --el-table-row-hover-bg-color: rgba(76, 154, 255, 0.08);
-  border-radius: 8px;
+  --el-table-border-color: var(--bd);
+  --el-table-row-hover-bg-color: var(--md-table-row-alt-bg);
+  width: 100% !important;
+  max-width: 100%;
+  border-radius: 0;
   overflow: hidden;
   background: transparent;
   color: var(--tx);
+  font-size: 14px;
 }
+.md-body .md-el-table .el-table__cell { padding: 7px 0 !important; }
+.md-body .md-el-table .el-table .cell { padding: 0 clamp(8px, 1.2vw, 14px); line-height: 1.5; }
 .md-body .md-el-table .el-table__inner-wrapper::before,
 .md-body .md-el-table .el-table::before,
 .md-body .md-el-table .el-table--border::after { display: none; }
 .md-body .md-el-table .el-table th.el-table__cell {
-  background: rgba(76, 154, 255, 0.13) !important;
-  color: var(--tx1);
+  background: var(--md-table-head-bg) !important;
+  color: var(--md-table-head-color);
   font-weight: 600;
   border-right: none !important;
-  border-bottom: 1px solid rgba(76, 154, 255, 0.4) !important;
+  border-bottom: 1px solid var(--bd) !important;
 }
 .md-body .md-el-table .el-table td.el-table__cell {
   border-right: none !important;
   border-bottom: 1px solid var(--bd) !important;
+  transition: background 0.15s ease;
 }
 .md-body .md-el-table .el-table--border .el-table__cell,
 .md-body .md-el-table .el-table--border th.el-table__cell {
   border-right: none !important;
 }
-.md-body .md-el-table .el-table__row--striped td.el-table__cell { background: var(--bg2); }
-.md-body .md-el-table .el-table__body tr:hover > td.el-table__cell { background: rgba(76, 154, 255, 0.08) !important; }
+.md-body .md-el-table .el-table__row--striped td.el-table__cell { background: var(--md-table-row-alt-bg); }
+.md-body .md-el-table .el-table__body tr:hover > td.el-table__cell { background: var(--md-table-row-alt-bg) !important; }
+.md-body .md-el-table .el-table__body tr:last-child > td.el-table__cell { border-bottom: none !important; }
+.md-body .md-el-table .el-table__body td.el-table__cell:first-child { color: var(--tx1); }
 .md-body .md-el-table .caret-wrapper i,
 .md-body .md-el-table .el-table__column-filter-trigger i { color: var(--ac2); }
 .md-body .md-echart { width: 100%; height: 320px; margin: 0.9em 0; }

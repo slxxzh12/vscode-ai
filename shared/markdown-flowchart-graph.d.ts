@@ -9,12 +9,18 @@ export interface FlowGraphNode {
   attrs: Record<string, unknown>;
 }
 
+export interface FlowGraphTerminal {
+  cell: string;
+  connectionPoint: { name: string };
+}
+
 export interface FlowGraphEdge {
   id: string;
-  source: string;
-  target: string;
-  router: { name: string };
+  source: FlowGraphTerminal;
+  target: FlowGraphTerminal;
+  router: { name: string; args?: Record<string, unknown> };
   connector: { name: string };
+  vertices?: Array<{ x: number; y: number }>;
   zIndex: number;
   attrs: Record<string, unknown>;
   labels: unknown[];

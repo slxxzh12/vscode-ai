@@ -15,6 +15,22 @@ describe('isMarkdownFile', () => {
   });
 });
 
+describe('表格宽度指令', () => {
+  const src = '<!-- df-table width=60% -->\n\n| A | B |\n| --- | --- |\n| 1 | 2 |';
+
+  it('默认 HTML 模式：写成 data 属性与宽度样式', () => {
+    const h = renderMarkdown(src, P);
+    expect(h).toContain('data-md-table-width="60%"');
+    expect(h).toContain('width:60%');
+  });
+
+  it('html:false 模式同样识别，且不把注释渲染成正文', () => {
+    const h = renderMarkdown(src, { ...P, html: false });
+    expect(h).toContain('data-md-table-width="60%"');
+    expect(h).not.toContain('df-table');
+  });
+});
+
 describe('renderMarkdown 原始 HTML 模式', () => {
   it('默认开启：原始 HTML 与内联样式渲染，脚本与事件属性移除', () => {
     const md = '<div style="color:red">x</div><script>alert(1)</script><img src="x.png" onerror="alert(1)">';
@@ -175,24 +191,46 @@ describe('printMarkdown', () => {
     expect(() => printMarkdown('<p>x</p>', 'T')).not.toThrow();
   });
 
-  it('无图片：写入文档并立即打印（标题转义）', () => {
+  it('无图片：写入文档并延迟一拍打印（标题转义）', () => {
+    vi.useFakeTimers();
     const win = fakeWin([]);
     vi.stubGlobal('window', { open: () => win });
     printMarkdown('<p>x</p>', '标题<1>');
     expect(win.document.opened).toBe(true);
     expect(win.document.written).toContain('标题&lt;1&gt;');
     expect(win.document.written).toContain('<article class="md-body">');
-    expect(win.document.written).toContain('@page { size: A4; margin: 20mm 18mm; }');
+    expect(win.document.written).toContain('@page { size: A4; margin: 24mm 20mm; }');
     expect(win.document.written).toContain('white-space: pre-wrap');
-    expect(win.document.written).toContain('table-layout: fixed');
+    expect(win.document.written).toContain('width: 100%; max-width: 100%; table-layout: fixed');
+    expect(win.document.written).toContain('.md-body .md-el-table');
     expect(win.document.closed).toBe(true);
+    expect(win.printed).toBe(0);
+    vi.advanceTimersByTime(300);
     expect(win.printed).toBe(1);
   });
 
-  it('图片已完成：立即打印', () => {
+  it('打印前把 Element Plus 表格还原成原生表，避免固定宽度丢数据', () => {
+    const win = fakeWin([]);
+    vi.stubGlobal('window', { open: () => win });
+    const html =
+      '<div class="md-el-table"><div class="el-table">' +
+      '<table class="el-table__header"><thead><tr><th><div class="cell">Name</div></th></tr></thead></table>' +
+      '<table class="el-table__body"><tbody><tr><td><div class="cell"><b>Alice</b></div></td></tr></tbody></table>' +
+      '</div></div>';
+    printMarkdown(html, 'T');
+    expect(win.document.written).toContain('<table class="md-table">');
+    expect(win.document.written).toContain('<th>Name</th>');
+    expect(win.document.written).toContain('<td><b>Alice</b></td>');
+    expect(win.document.written).not.toContain('<div class="md-el-table">');
+  });
+
+  it('图片已完成：延迟一拍打印', () => {
+    vi.useFakeTimers();
     const win = fakeWin([{ complete: true }]);
     vi.stubGlobal('window', { open: () => win });
     printMarkdown('<p>x</p>', 'T');
+    expect(win.printed).toBe(0);
+    vi.advanceTimersByTime(300);
     expect(win.printed).toBe(1);
   });
 
@@ -205,6 +243,7 @@ describe('printMarkdown', () => {
     printMarkdown('<p>x</p>', 'T');
     expect(win.printed).toBe(0);
     handlers.load();
+    vi.advanceTimersByTime(300);
     expect(win.printed).toBe(1);
     vi.advanceTimersByTime(8000);
     expect(win.printed).toBe(1);

@@ -66,11 +66,17 @@ export async function captureViewportPng(
 ): Promise<{ dataUrl: string; width: number; height: number }> {
   const width = el.clientWidth || el.offsetWidth || 1280;
   const height = el.clientHeight || el.offsetHeight || 720;
-  const dataUrl = await deps.toPng(el, {
-    ...snapshotOptions(el),
-    width,
-    height,
-    style: { overflow: 'hidden' },
-  });
-  return { dataUrl, width, height };
+  const hadNoScroll = el.classList?.contains('df-no-scroll');
+  el.classList?.add('df-no-scroll');
+  try {
+    const dataUrl = await deps.toPng(el, {
+      ...snapshotOptions(el),
+      width,
+      height,
+      style: { overflow: 'hidden' },
+    });
+    return { dataUrl, width, height };
+  } finally {
+    if (!hadNoScroll) el.classList?.remove('df-no-scroll');
+  }
 }

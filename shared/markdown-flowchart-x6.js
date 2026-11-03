@@ -2,13 +2,19 @@
 import { Graph } from '@antv/x6';
 import { buildFlowGraphModel } from './markdown-flowchart-graph.js';
 
+const MIN_HEIGHT = 240;
+const MAX_HEIGHT = 1600;
+const FIT_PADDING = 16;
+const MIN_READABLE_SCALE = 0.8;
+
 export function renderFlowchartX6(el, spec, options = {}) {
   const model = buildFlowGraphModel(spec, options.theme || {});
-  el.style.height = `${Math.max(240, Math.min(760, model.height))}px`;
+  const height = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, model.height));
+  el.style.height = `${height}px`;
   const graph = new Graph({
     container: el,
     width: el.clientWidth || model.width,
-    height: el.clientHeight || Math.max(240, Math.min(760, model.height)),
+    height: el.clientHeight || height,
     background: { color: 'transparent' },
     panning: { enabled: true },
     mousewheel: { enabled: true, modifiers: ['ctrl', 'meta'], minScale: 0.3, maxScale: 2.5 },
@@ -16,10 +22,16 @@ export function renderFlowchartX6(el, spec, options = {}) {
     interacting: false,
   });
   graph.fromJSON({ nodes: model.nodes, edges: model.edges });
-  graph.zoomToFit({ padding: 16, maxScale: 1 });
+  const fit = () => graph.zoomToFit({
+    padding: FIT_PADDING,
+    maxScale: 1,
+    minScale: MIN_READABLE_SCALE,
+  });
+  fit();
   const ro = typeof ResizeObserver !== 'undefined'
     ? new ResizeObserver(() => {
-      graph.resize(el.clientWidth || model.width, el.clientHeight || 240);
+      graph.resize(el.clientWidth || model.width, el.clientHeight || height);
+      fit();
     })
     : null;
   if (ro) ro.observe(el);
