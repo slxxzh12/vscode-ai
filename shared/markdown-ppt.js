@@ -100,6 +100,7 @@ export function createPptPresenter(options) {
   const exportingLabel = labels.exporting || 'Exporting {done} / {total}';
 
   function applyNavHidden() {
+    head.classList.toggle('is-nav-hidden', navHidden);
     foot.classList.toggle('is-nav-hidden', navHidden);
     hideBtn.textContent = labels.hide || 'Hide pager';
     hideBtn.title = hideBtn.textContent;

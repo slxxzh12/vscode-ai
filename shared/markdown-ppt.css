@@ -123,6 +123,7 @@
   opacity: 0.4;
   cursor: default;
 }
+.df-ppt-head.is-nav-hidden,
 .df-ppt-foot.is-nav-hidden {
   display: none;
 }
