@@ -245,6 +245,10 @@ fs.copyFileSync(
     path.join(APP, "config"),
     (e) => e.name !== "runtime-port.txt",
   );
+  // test/ 里是可直接打开的 Markdown/图片样例，随包提供方便对照查看
+  if (fs.existsSync(path.join(ROOT, "test"))) {
+    cpDir(path.join(ROOT, "test"), path.join(APP, "test"));
+  }
   // 项目级技能与工作流（.void）随包发布；排除本机检测状态
   if (fs.existsSync(path.join(ROOT, ".void"))) {
     cpDir(
@@ -321,6 +325,10 @@ fs.copyFileSync(
   if (fs.existsSync(path.join(ROOT, ".void", "skills"))) {
     check(fs.existsSync(path.join(APP, ".void", "skills")), "missing .void/skills");
     console.log("[build-mac]   ok skills  (.void/skills)");
+  }
+  if (fs.existsSync(path.join(ROOT, "test"))) {
+    check(fs.existsSync(path.join(APP, "test")), "missing test/");
+    console.log("[build-mac]   ok test  (test/)");
   }
 
   // 运行时依赖自检：以包内 server/ 的视角逐个 import，并真正调用一次 esbuild 原生二进制。
