@@ -54,7 +54,7 @@ describe('snapshotOptions', () => {
     vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: (n: string) => (n === '--bg1' ? '#abcdef' : '') }));
     try {
       const o = snapshotOptions({} as HTMLElement, 2);
-      expect(o).toMatchObject({ cacheBust: true, pixelRatio: 2, backgroundColor: '#abcdef' });
+      expect(o).toMatchObject({ cacheBust: true, includeQueryParams: true, pixelRatio: 2, backgroundColor: '#abcdef' });
       expect(typeof o.filter).toBe('function');
     } finally {
       vi.unstubAllGlobals();

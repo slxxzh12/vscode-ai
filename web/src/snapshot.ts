@@ -14,6 +14,9 @@ export function snapshotBackground(
 
 export interface SnapshotOptions {
   cacheBust: boolean;
+  // 同一路径用 query 区分图片（如 /api/raw?path=a、?path=b）时必须带上 query，
+  // 否则 html-to-image 会按去掉 query 的 URL 缓存，导致所有图片都变成第一张。
+  includeQueryParams: boolean;
   pixelRatio: number;
   backgroundColor: string;
   filter: (node: HTMLElement) => boolean;
@@ -43,6 +46,7 @@ export function snapshotOptions(
 ): SnapshotOptions {
   return {
     cacheBust: true,
+    includeQueryParams: true,
     pixelRatio,
     backgroundColor: snapshotBackground(el),
     filter: snapshotFilter,
