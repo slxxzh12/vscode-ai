@@ -31,6 +31,22 @@ describe('表格宽度指令', () => {
   });
 });
 
+describe('图片尺寸语法', () => {
+  it('图片后 {width=300 height=200} 转为属性', () => {
+    const h = renderMarkdown('![a](img.png){width=300 height=200}', P);
+    expect(h).toContain('width="300"');
+    expect(h).toContain('height="200"');
+    expect(h).not.toContain('{width=');
+  });
+
+  it('支持百分比宽度与 px 后缀', () => {
+    const h1 = renderMarkdown('![a](img.png){width=50%}', P);
+    expect(h1).toContain('width="50%"');
+    const h2 = renderMarkdown('![a](img.png){width=320px}', P);
+    expect(h2).toContain('width="320"');
+  });
+});
+
 describe('renderMarkdown 原始 HTML 模式', () => {
   it('默认开启：原始 HTML 与内联样式渲染，脚本与事件属性移除', () => {
     const md = '<div style="color:red">x</div><script>alert(1)</script><img src="x.png" onerror="alert(1)">';

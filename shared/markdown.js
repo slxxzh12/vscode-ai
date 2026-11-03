@@ -21,9 +21,41 @@ function highlightCode(code, lang) {
 
 const TABLE_WIDTH_COMMENT = /^\s*<!--\s*(?:df-table\s+width\s*=|table-width\s*:)\s*([^>]+?)\s*-->\s*$/i;
 const TABLE_WIDTH_VALUE = /^(?:\d+(?:\.\d+)?(?:px|%|em|rem|vw|vh|ch|pt|cm|mm|in)|auto|fit-content|max-content|min-content)$/i;
+const IMAGE_SIZE_ATTRS = /(?:^|[\s,;])(width|height)\s*=\s*([0-9]+(?:\.[0-9]+)?(?:px|%)?)/gi;
+
+function parseImageSize(text) {
+  const out = {};
+  IMAGE_SIZE_ATTRS.lastIndex = 0;
+  let m;
+  while ((m = IMAGE_SIZE_ATTRS.exec(String(text || '')))) {
+    out[m[1].toLowerCase()] = m[2].replace(/px$/i, '');
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 export function createMarkdown(opts = {}) {
   const md = new MarkdownIt({ html: opts.html === true, linkify: true, highlight: highlightCode });
+  md.core.ruler.after('inline', 'df_image_size', (state) => {
+    for (const token of state.tokens) {
+      if (token.type !== 'inline' || !Array.isArray(token.children)) continue;
+      const next = [];
+      for (let i = 0; i < token.children.length; i++) {
+        const child = token.children[i];
+        next.push(child);
+        if (child.type !== 'image') continue;
+        const tail = token.children[i + 1];
+        if (!tail || tail.type !== 'text') continue;
+        const m = /^\s*\{([^}]*)\}\s*/.exec(tail.content);
+        if (!m) continue;
+        const attrs = parseImageSize(m[1]);
+        if (!attrs) continue;
+        for (const [k, v] of Object.entries(attrs)) child.attrSet(k, v);
+        tail.content = tail.content.slice(m[0].length);
+        if (!tail.content) i += 1;
+      }
+      token.children = next;
+    }
+  });
   md.core.ruler.after('block', 'df_table_width', (state) => {
     const out = [];
     let pending = null;
