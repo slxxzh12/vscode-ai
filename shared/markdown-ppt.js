@@ -158,6 +158,7 @@ export function createPptPresenter(options) {
     }
     if (my !== seq || !open) return;
     delete body.dataset.dfPending;
+    body.dataset.slideIndex = String(index);
   }
 
   async function requestFullscreen() {
@@ -269,8 +270,14 @@ export function createPptPresenter(options) {
   async function renderAt(i) {
     const n = total();
     if (!n) return;
-    index = Math.min(Math.max(0, Number(i) || 0), n - 1);
-    await render();
+    const target = Math.min(Math.max(0, Number(i) || 0), n - 1);
+    // 导出期间如果有别的 render 抢先执行，本次 render 会被 seq 守卫丢弃。
+    // 这里确认当前页真的落到 DOM 上，否则重试，避免截图全是同一页。
+    for (let attempt = 0; attempt < 3; attempt++) {
+      index = target;
+      await render();
+      if (body.dataset.slideIndex === String(target)) break;
+    }
     // 等一帧排版完成，导出截图时拿到的是当前页而不是上一页
     await new Promise((resolve) => {
       const raf = typeof requestAnimationFrame === 'function'
@@ -308,7 +315,7 @@ export function createPptPresenter(options) {
   if (exportBtn) exportBtn.addEventListener('click', () => { void runExport(); });
 
   function refresh() {
-    if (!open) return;
+    if (!open || busy) return;
     void render();
   }
 
