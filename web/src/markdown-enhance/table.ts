@@ -96,7 +96,7 @@ const TableHost = defineComponent({
             border: true,
             stripe: true,
             size: 'small',
-            fit: false,
+            fit: true,
           },
           () =>
             props.headers.map((label, i) => {
