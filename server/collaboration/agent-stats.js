@@ -59,7 +59,7 @@ export function resolveAgentBin(cmd, { env = process.env, exists = fs.existsSync
     const fromPath = findIn(c, pathDirs, exists);
     if (fromPath) return fromPath;
   }
-  const bundledDirs = [path.join(appRoot, 'opencode'), path.join(appRoot, 'env')];
+  const bundledDirs = [path.join(appRoot, 'opencode'), path.join(appRoot, 'env'), path.join(appRoot, 'soft')];
   for (const c of candidates) {
     const bundled = findIn(c, bundledDirs, exists);
     if (bundled) return bundled;

@@ -106,6 +106,42 @@ test('旧三层目录自动迁移为默认小组', () => {
   assert.equal(store.readAll()[0].stages[0].prompts[0], 'p');
 });
 
+test('addPrompt 在对应阶段目录追加提示词文件并按同阶段去重', () => {
+  const dir = tmp();
+  const store = createWorkflowStore({ dir });
+  store.writeAll([wf('dev', '测试流', [{ id: 's1', label: '基础', group: '需求', prompts: ['第一步'] }])]);
+  const w = store.readAll()[0];
+  const stageId = w.stages[0].id;
+  const stageDir = path.join(dir, w.id, ...stageId.split('/'));
+  assert.equal(store.addPrompt(w.id, stageId, '第二步').status, 'ok');
+  assert.equal(files(stageDir).length, 2);
+  assert.deepEqual(store.readAll()[0].stages[0].prompts, ['第一步', '第二步']);
+  assert.equal(store.addPrompt(w.id, stageId, '  第二步  ').status, 'exists');
+  assert.equal(files(stageDir).length, 2);
+});
+
+test('addPrompt 拒绝不存在/穿越的路径', () => {
+  const dir = tmp();
+  const store = createWorkflowStore({ dir });
+  store.writeAll([wf('dev', '测试流')]);
+  const w = store.readAll()[0];
+  assert.equal(store.addPrompt(w.id, 'no-such-stage', 'x').status, 'no-stage');
+  assert.equal(store.addPrompt(w.id, '../../evil', 'x').status, 'no-stage');
+  assert.equal(store.addPrompt('no-such-workflow', w.stages[0].id, 'x').status, 'no-stage');
+});
+
+test('updatePrompt 覆盖指定下标的提示词文件', () => {
+  const dir = tmp();
+  const store = createWorkflowStore({ dir });
+  store.writeAll([wf('dev', '测试流', [{ id: 's1', label: '基础', group: '需求', prompts: ['第一步', '第二步'] }])]);
+  const w = store.readAll()[0];
+  const stageId = w.stages[0].id;
+  assert.equal(store.updatePrompt(w.id, stageId, 1, '新第二步').status, 'ok');
+  assert.deepEqual(store.readAll()[0].stages[0].prompts, ['第一步', '新第二步']);
+  assert.equal(store.updatePrompt(w.id, stageId, 9, 'x').status, 'out-of-range');
+  assert.equal(store.updatePrompt(w.id, stageId, 0, '   ').status, 'empty');
+});
+
 test('migrateFromConfigXml 拆分 <workflows> 并从配置移除该段', () => {
   const dir = tmp();
   const cfg = path.join(tmp(), 'devflow.xml');

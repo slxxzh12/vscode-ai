@@ -30,6 +30,13 @@ export class Projects {
     this._byId.set(id, proj);
     return proj;
   }
+  removeProject(id) {
+    const i = this.projects.findIndex((p) => p.id === id);
+    if (i < 0) return false;
+    this.projects.splice(i, 1);
+    this._byId.delete(id);
+    return true;
+  }
   addTempProject({ root, name }) {
     const rootReal = this._realOrResolved(root);
     const id = 'tmp:' + crypto.createHash('sha1').update(rootReal).digest('hex').slice(0, 8);

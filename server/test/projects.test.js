@@ -10,6 +10,14 @@ function makeProjects(roots) {
 }
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'dftree-')); }
 
+test('removeProject 仅移除列表项，未知 id 返回 false', () => {
+  const dir = tmpDir();
+  const p = makeProjects([dir]);
+  assert.equal(p.removeProject('p0'), true);
+  assert.equal(p.listProjects().length, 0);
+  assert.equal(p.removeProject('p0'), false);
+});
+
 test('listProjects 返回概要', () => {
   const dir = tmpDir();
   const p = makeProjects([dir]);

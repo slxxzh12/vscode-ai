@@ -30,6 +30,14 @@ export function useProjects() {
       const r = await res.json() as { project: ProjectInfo };
       return r.project;
     },
+    async remove(id: string): Promise<void> {
+      const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep */ }
+        throw new Error(msg);
+      }
+    },
     async openPath(path: string): Promise<{ project: ProjectInfo & { temp?: boolean }; rel: string }> {
       const res = await fetch('/api/open-file', {
         method: 'POST',

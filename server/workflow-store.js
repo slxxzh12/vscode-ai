@@ -370,6 +370,58 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
     return { path: rel };
   }
 
+  // 定位 工作流/小组/阶段 目录：workflowId 是工作流文件夹名，stageId 是「小组/阶段」。
+  // 只允许直接存在于当前目录下的子目录，避免路径穿越。
+  function stageDirOf(workflowId, stageId) {
+    const wfName = listDirs(dir).find((name) => name === workflowId);
+    if (!wfName) return null;
+    const parts = String(stageId || '').split('/');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+    const [groupName, stageName] = parts;
+    if ([groupName, stageName].some((n) => n === '.' || n === '..')) return null;
+    const stageDir = path.join(dir, wfName, groupName, stageName);
+    try {
+      if (!fs.statSync(path.dirname(stageDir)).isDirectory()) return null;
+      if (!fs.statSync(stageDir).isDirectory()) return null;
+    } catch { return null; }
+    return { wfName, stageDir };
+  }
+
+  // 在指定阶段追加一个提示词文件（<下一个前缀>_<摘要>.md），同阶段内按 trim 去重。
+  // 空文本/已存在 → exists；工作流或阶段不存在 → no-stage。
+  function addPrompt(workflowId, stageId, text) {
+    const plain = String(text == null ? '' : text);
+    const key = plain.trim();
+    if (!key) return { status: 'exists' };
+    const hit = stageDirOf(workflowId, stageId);
+    if (!hit) return { status: 'no-stage' };
+    const existingFiles = listMd(hit.stageDir);
+    for (const fileName of existingFiles) {
+      try {
+        if (fs.readFileSync(path.join(hit.stageDir, fileName), 'utf8').trim() === key) return { status: 'exists' };
+      } catch { /* ignore */ }
+    }
+    const used = new Set(existingFiles);
+    const fileName = uniqueName(`${nextPrefix(existingFiles)}_${promptSlug(plain)}${MD_EXT}`, used);
+    fs.writeFileSync(path.join(hit.stageDir, fileName), `${plain.replace(/\s+$/, '')}\n`, 'utf8');
+    seedStore?.update?.(readAll());
+    return { status: 'ok', path: `${workflowId}/${stageId}/${fileName}` };
+  }
+
+  // 用 text 覆盖指定阶段第 index 个提示词文件（保持原文件名）。
+  function updatePrompt(workflowId, stageId, index, text) {
+    const plain = String(text == null ? '' : text);
+    if (!plain.trim()) return { status: 'empty' };
+    const hit = stageDirOf(workflowId, stageId);
+    if (!hit) return { status: 'no-stage' };
+    const existingFiles = listMd(hit.stageDir);
+    if (!Number.isInteger(index) || index < 0 || index >= existingFiles.length) return { status: 'out-of-range' };
+    const fileName = existingFiles[index];
+    fs.writeFileSync(path.join(hit.stageDir, fileName), `${plain.replace(/\s+$/, '')}\n`, 'utf8');
+    seedStore?.update?.(readAll());
+    return { status: 'ok', path: `${workflowId}/${stageId}/${fileName}` };
+  }
+
   function moveFile(fromRel, toRel) {
     const from = absPath(fromRel);
     const to = absPath(toRel);
@@ -422,5 +474,5 @@ export function createWorkflowStore({ dir, configFile = null, seedDir = null, se
   migrateXmlFiles();
   migrateOldLayout();
 
-  return { readAll, writeAll, tree, readFile, deleteFile, moveFile, absPath, restoreFromSeed, overwriteAllFromSeed, migrateFromConfigXml, dir };
+  return { readAll, writeAll, tree, readFile, deleteFile, moveFile, addPrompt, updatePrompt, absPath, restoreFromSeed, overwriteAllFromSeed, migrateFromConfigXml, dir };
 }

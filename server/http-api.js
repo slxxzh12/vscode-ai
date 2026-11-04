@@ -171,6 +171,14 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
         return sendJson(res, 200, { path: r.path });
       }
+      if (url.pathname.startsWith('/api/projects/') && req.method === 'DELETE') {
+        const id = decodeURIComponent(url.pathname.slice('/api/projects/'.length));
+        if (!id || !projects.removeProject(id)) return sendJson(res, 404, { error: 'not-found' });
+        try { saveProjects?.(); } catch { /* ignore */ }
+        try { sessionLedger?.reload?.(); } catch { /* ignore */ }
+        sendJson(res, 200, { ok: true });
+        return;
+      }
       if (url.pathname === '/api/projects' && req.method === 'POST') {
         let body;
         try { body = await readJsonBody(req); } catch { sendJson(res, 400, { error: 'bad body' }); return; }
@@ -194,6 +202,7 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         const name = (typeof body.name === 'string' && body.name.trim()) || base;
         const proj = projects.addProject({ id, name, root: abs });
         try { saveProjects?.(); } catch { /* ignore */ }
+        try { sessionLedger?.reload?.(); } catch { /* ignore */ }
         sendJson(res, 200, { project: { id: proj.id, name: proj.name, root: proj.root } });
         return;
       }

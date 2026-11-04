@@ -144,6 +144,7 @@ function openBrowser(url) {
 function agentEnv() {
   const env = { ...process.env };
   const extra = [
+    path.join(APP_ROOT, 'soft'),
     path.join(APP_ROOT, 'opencode'),
     path.join(APP_ROOT, 'env'),
   ].filter((p) => fs.existsSync(p));

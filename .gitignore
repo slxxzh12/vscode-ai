@@ -3,6 +3,7 @@ dist/
 dist-portable/
 dist-portable-mac/
 env/
+soft/
 .superpowers/
 *.log
 logs/

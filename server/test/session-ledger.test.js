@@ -119,6 +119,22 @@ test('分片会话账本：写按项目拆分、读合并，重启后可回读',
   assert.deepEqual(fresh.read().sessions.map((s) => s.id).sort(), ['s1', 's2', 's3']);
 });
 
+test('分片会话账本 reload：项目移出后不再读取，重新加入可恢复历史', () => {
+  const dir = tmpDir();
+  const dirFor = (pid) => path.join(dir, 'projects', pid || '_global');
+  let keys = ['_global', 'p1'];
+  const dirs = () => keys.map((k) => path.join(dir, 'projects', k));
+  const ledger = createSessionLedger({ sessionsDirs: dirs, sessionsDirFor: dirFor });
+  ledger.upsert(entry('s1', { projectId: 'p1' }));
+
+  keys = ['_global'];
+  assert.deepEqual(ledger.reload().sessions.map((s) => s.id), []);
+  assert.equal(fs.existsSync(path.join(dir, 'projects', 'p1', 'sessions.json')), true);
+
+  keys = ['_global', 'p1'];
+  assert.deepEqual(ledger.reload().sessions.map((s) => s.id), ['s1']);
+});
+
 test('分片会话账本：删除某项目最后一个会话后清理其分片文件', () => {
   const dir = tmpDir();
   const dirFor = (pid) => path.join(dir, 'projects', pid || '_global');

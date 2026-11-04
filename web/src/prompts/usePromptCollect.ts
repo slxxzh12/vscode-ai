@@ -11,6 +11,7 @@ const TARGET_KEY = 'devflow-prompt-collect-target';
 // 模块级单例：终端上报当前工作流/高亮阶段，历史面板与 chips 共用同一份收藏状态。
 const workflows = ref<Workflow[]>([]);
 const current = ref<CollectTarget>({ workflowId: '', stageId: '' });
+const currentSessionId = ref('');
 const lastTarget = ref<CollectTarget | null>(readTarget());
 
 function readTarget(): CollectTarget | null {
@@ -51,17 +52,20 @@ export function usePromptCollect(): {
   workflows: Ref<Workflow[]>;
   current: Ref<CollectTarget>;
   lastTarget: Ref<CollectTarget | null>;
-  setCurrent(workflowId: string, stageId: string): void;
+  setCurrent(workflowId: string, stageId: string, sessionId?: string): void;
   loadWorkflows(): Promise<void>;
   collect(text: string, target?: CollectTarget): Promise<CollectStatus>;
   updatePrompt(target: CollectTarget, index: number, text: string): Promise<CollectStatus>;
 } {
-  function setCurrent(workflowId: string, stageId: string) {
+  function setCurrent(workflowId: string, stageId: string, sessionId = '') {
     current.value = { workflowId, stageId };
+    currentSessionId.value = sessionId;
   }
   async function loadWorkflows() {
     try {
-      const r = await fetch('/api/workflows-xml').then((x) => x.json());
+      const sid = currentSessionId.value;
+      const url = sid ? `/api/workflows-xml?sessionId=${encodeURIComponent(sid)}` : '/api/workflows-xml';
+      const r = await fetch(url).then((x) => x.json());
       workflows.value = Array.isArray(r && r.workflows) ? r.workflows : [];
     } catch { /* 保留旧缓存 */ }
   }
@@ -77,6 +81,24 @@ export function usePromptCollect(): {
       workflows.value = Array.isArray(j && j.workflows) ? j.workflows : next;
       return true;
     } catch { return false; }
+  }
+  // 提示词增改落盘：服务端按会话优先写项目本地 .void/workflows，回落默认工作流目录；
+  // 只提交单个目标，避免全量覆盖把本地/默认工作流互相复制。
+  async function remotePrompt(path: string, body: Record<string, unknown>): Promise<{ status: CollectStatus; list?: Workflow[] }> {
+    try {
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: currentSessionId.value || undefined, ...body }),
+      });
+      if (!r.ok) return { status: 'error' };
+      const j: any = await r.json().catch(() => ({}));
+      const list = Array.isArray(j && j.workflows) ? j.workflows : undefined;
+      if (j && j.status === 'ok') return { status: 'ok', list };
+      if (j && j.status === 'exists') return { status: 'exists', list };
+      if (j && (j.status === 'no-stage' || j.status === 'no-workflow')) return { status: 'no-stage', list };
+      return { status: 'error', list };
+    } catch { return { status: 'error' }; }
   }
   async function collect(text: string, target?: CollectTarget): Promise<CollectStatus> {
     await loadWorkflows();
@@ -97,7 +119,15 @@ export function usePromptCollect(): {
     const res = appendPromptToWorkflow(workflows.value, tgt.workflowId, tgt.stageId, text);
     if (res.status === 'no-workflow' || res.status === 'no-stage') return 'no-stage';
     if (res.status === 'exists') return 'exists';
-    if (!(await persist(res.list))) return 'error';
+    const wf = workflows.value.find((w) => w.id === tgt.workflowId);
+    const out = await remotePrompt('/api/workflows-prompt-add', {
+      workflowId: tgt.workflowId,
+      stageId: tgt.stageId,
+      workflowLabel: wf ? (wf.label || wf.id) : '',
+      text,
+    });
+    if (out.list) workflows.value = out.list;
+    if (out.status !== 'ok') return out.status;
     writeTarget(tgt);
     return 'ok';
   }
@@ -106,7 +136,16 @@ export function usePromptCollect(): {
     const res = updatePromptText(workflows.value, target.workflowId, target.stageId, index, text);
     if (res.status === 'empty') return 'exists';
     if (res.status !== 'ok') return 'no-stage';
-    return (await persist(res.list)) ? 'ok' : 'error';
+    const wf = workflows.value.find((w) => w.id === target.workflowId);
+    const out = await remotePrompt('/api/workflows-prompt-update', {
+      workflowId: target.workflowId,
+      stageId: target.stageId,
+      workflowLabel: wf ? (wf.label || wf.id) : '',
+      index,
+      text,
+    });
+    if (out.list) workflows.value = out.list;
+    return out.status;
   }
   return { workflows, current, lastTarget, setCurrent, loadWorkflows, collect, updatePrompt };
 }
@@ -115,5 +154,6 @@ export function usePromptCollect(): {
 export function __resetPromptCollect() {
   workflows.value = [];
   current.value = { workflowId: '', stageId: '' };
+  currentSessionId.value = '';
   writeTarget(null);
 }

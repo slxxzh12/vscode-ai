@@ -28,7 +28,9 @@ import { useVersion } from './useVersion';
 import { useUpgrade, shouldPopup } from './useUpgrade';
 import UpgradeDialog from './components/UpgradeDialog.vue';
 import SkillsInstallDialog from './components/SkillsInstallDialog.vue';
+import OpencodeInstallDialog from './components/OpencodeInstallDialog.vue';
 import { useSkillsInstall } from './useSkillsInstall';
+import { useOpencodeInstall } from './useOpencodeInstall';
 import { readMobileLanding, writeMobileLanding } from './mobileLanding';
 import { useSessionProjects } from './sessionProjects';
 import { fetchWindowState, planRestore, saveWindowState, flushWindowState, toSavedTabs, type HistoryTab, type Rail, type AllStyle } from './windowState';
@@ -84,7 +86,36 @@ const showUpgrade = ref(false);
 const { status: skillsStatus, installing: skillsInstalling, loadSkillsStatus, installMissingSkills } = useSkillsInstall();
 const showSkillsInstall = ref(false);
 const skillsDialogTargets = computed(() => (skillsStatus.value?.targets || []).filter((t) => t.missing.length > 0));
+const { status: opencodeStatus, installing: opencodeInstalling, fetchOpencodeStatus, startOpencodeInstall } = useOpencodeInstall();
+const showOpencodeInstall = ref(false);
+let opencodePoll: ReturnType<typeof setInterval> | null = null;
+function stopOpencodePoll() {
+  if (opencodePoll) clearInterval(opencodePoll);
+  opencodePoll = null;
+}
+async function refreshOpencodeStatus() {
+  const s = await fetchOpencodeStatus();
+  if (!s || s.download.state !== 'downloading') stopOpencodePoll();
+}
+async function checkOpencodeInstall() {
+  const s = await fetchOpencodeStatus();
+  if (!s || !s.supported) return;
+  if (!s.anyInstalled && s.download.state !== 'done') showOpencodeInstall.value = true;
+  if (s.download.state === 'downloading') {
+    showOpencodeInstall.value = true;
+    stopOpencodePoll();
+    opencodePoll = setInterval(() => { void refreshOpencodeStatus(); }, 800);
+  }
+}
+async function installOpencodeNow() {
+  const s = await startOpencodeInstall();
+  if (s?.download.state === 'downloading') {
+    stopOpencodePoll();
+    opencodePoll = setInterval(() => { void refreshOpencodeStatus(); }, 800);
+  }
+}
 async function maybeSkillsPopup() {
+  if (showOpencodeInstall.value) return;
   const s = await loadSkillsStatus('', true);
   if (s && s.startupPrompt && s.missing > 0) showSkillsInstall.value = true;
 }
@@ -100,6 +131,7 @@ function upgradeGo() { openUpgrade(); markUpgradePopup(); showUpgrade.value = fa
 function upgradeClose() { markUpgradePopup(); showUpgrade.value = false; }
 function upgradeSkip() { try { localStorage.setItem(UPGRADE_SKIP_KEY, upgradeInfo.value?.latest || ''); } catch { /* ignore */ } showUpgrade.value = false; }
 function maybeUpgradePopup() {
+  if (showOpencodeInstall.value) return;
   let skip = ''; let popupAt = 0;
   try { skip = localStorage.getItem(UPGRADE_SKIP_KEY) || ''; popupAt = Number(localStorage.getItem(UPGRADE_POPUP_KEY) || 0); } catch { /* ignore */ }
   showUpgrade.value = shouldPopup(upgradeInfo.value, Date.now(), { skip, popupAt });
@@ -646,6 +678,23 @@ function selectProject(id: string) {
   currentProject.value = id;
   if (id) touchRecent(id);
 }
+async function removeCurrentProject() {
+  const proj = currentProjectInfo.value;
+  if (!proj) return;
+  if (!window.confirm(t('top.remove_folder_confirm', { name: proj.name }))) return;
+  try {
+    await projectsApi.remove(proj.id);
+    const remaining = projects.value.filter((p) => p.id !== proj.id);
+    projects.value = remaining;
+    const kept = recents.value.filter((r) => r.id !== proj.id);
+    recents.value = kept;
+    saveRecents(kept);
+    const byId = new Set(remaining.map((p) => p.id));
+    const next = kept.slice().sort((a, b) => b.ts - a.ts).find((r) => byId.has(r.id));
+    currentProject.value = next ? next.id : (remaining[0]?.id || null);
+    if (currentProject.value) touchRecent(currentProject.value);
+  } catch (e) { alert(t('top.remove_folder_failed', { msg: (e as Error).message || String(e) })); }
+}
 const addOpen = ref(false);
 const addPath = ref('');
 const noProjectPrompted = ref(false);
@@ -766,8 +815,6 @@ function openAgentSettings(firstRun = false) {
 }
 onMounted(async () => {
   loadVersion();
-  void loadUpgrade().finally(maybeUpgradePopup);
-  void maybeSkillsPopup();
   try {
     const landing = readMobileLanding(window.localStorage, Date.now());
     writeMobileLanding(window.localStorage, landing);
@@ -787,13 +834,21 @@ onMounted(async () => {
     window.history.replaceState({}, '', u.pathname + u.search + u.hash);
   }
   initFileHistory();
-  const projectsReady = (async () => { await checkFirstRunAgentChoice(); await checkFirstRunFileAssoc(); await loadProjects(); })();
-  // 首启设置框只自动弹一次（本地记住），之后不再自动弹；用户仍可点 ⚙ 手动打开
+  const projectsReady = (async () => {
+    await checkOpencodeInstall();
+    if (!showOpencodeInstall.value) {
+      void loadUpgrade().finally(maybeUpgradePopup);
+      void maybeSkillsPopup();
+    }
+    await checkFirstRunAgentChoice();
+    await checkFirstRunFileAssoc();
+    await loadProjects();
+  })();
   void restoreWindowState(projectsReady).finally(() => {
     void processVoidProject();
     let shown = false;
     try { shown = localStorage.getItem(SETTINGS_AUTO_KEY) === '1'; } catch { /* ignore */ }
-    if (!shown && (pendingAgentChoice.value || pendingFileAssoc.value)) {
+    if (!shown && !showOpencodeInstall.value && (pendingAgentChoice.value || pendingFileAssoc.value)) {
       try { localStorage.setItem(SETTINGS_AUTO_KEY, '1'); } catch { /* ignore */ }
       openAgentSettings(true);
     }
@@ -816,6 +871,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopRemoteCoder?.();
   stopRemoteCoder = null;
+  stopOpencodePoll();
   window.removeEventListener('hashchange', applyHash);
   window.removeEventListener('df-open-history', onOpenHistory);
   window.removeEventListener('df-settings-closed', onSettingsClosed);
@@ -839,6 +895,7 @@ onBeforeUnmount(() => {
           {{ it.project.name }}{{ it.ts ? ' · ' + fmtRecent(it.ts) : '' }}
         </option>
       </select>
+      <button v-if="currentProjectInfo" class="rmproj" :title="$t('top.remove_folder')" @click="removeCurrentProject">×</button>
       <span v-if="displayPath" class="projpath" :title="displayPath + '\n' + $t('top.path_open_dir')" @dblclick="revealDisplayPath">{{ displayPath }}</span>
       <div class="spacer" />
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
@@ -913,6 +970,7 @@ onBeforeUnmount(() => {
     <LocalDropOverlay v-if="localDragging" />
     <UpgradeDialog :open="showUpgrade" :current="appVersion" :latest="upgradeInfo?.latest || ''" :download-url="upgradeInfo?.downloadUrl || ''" @go="upgradeGo" @close="upgradeClose" @skip="upgradeSkip" />
     <SkillsInstallDialog :open="showSkillsInstall" :targets="skillsDialogTargets" :installing="skillsInstalling" @install="installSkillsNow" @close="showSkillsInstall = false" />
+    <OpencodeInstallDialog :open="showOpencodeInstall" :status="opencodeStatus" :installing="opencodeInstalling" @install="installOpencodeNow" @close="showOpencodeInstall = false" />
   </div>
   </ElConfigProvider>
 </template>
@@ -926,6 +984,8 @@ onBeforeUnmount(() => {
 .app-ver { color: var(--tx3); font-size: 12px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
 .addproj { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
 .addproj:hover { border-color: var(--ac2); color: var(--ac2); }
+.rmproj { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 7px; cursor: pointer; font-size: 13px; line-height: 1.2; }
+.rmproj:hover { border-color: var(--danger, #d9534f); color: var(--danger, #d9534f); }
 .projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; flex: 0 1 auto; min-width: 0; white-space: normal; word-break: break-all; line-height: 1.35; cursor: pointer; padding: 6px 0; }
 .projpath:hover { color: var(--tx2); }
 .proj-sel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; max-width: 320px; }
@@ -936,7 +996,7 @@ onBeforeUnmount(() => {
 .lang-btn:hover { border-color: var(--ac2); }
 .color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
 .top.colored .logo, .top.colored .projpath, .top.colored .net, .top.colored .app-ver { color: #fff; }
-.top.colored .lang-btn, .top.colored .theme-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
+.top.colored .lang-btn, .top.colored .theme-btn, .top.colored .addproj, .top.colored .rmproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel, .top.colored .proj-sel { background: var(--bg1); color: var(--tx); border-color: rgba(255,255,255,.45); }
 .top.colored .color-sel option, .top.colored .proj-sel option { color: #111; background: #fff; }
 .net { color: var(--warn); font-size: 12px; }

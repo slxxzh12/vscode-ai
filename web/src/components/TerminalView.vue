@@ -941,7 +941,9 @@ const stageGroups = computed(() => {
 });
 const activeStage = ref('');
 // 把当前工作流/高亮阶段上报给提示词收藏（供历史面板与 chips 的「+」快速追加）
-watch([wfKind, activeStage], () => { promptCollect.setCurrent(wfKind.value, activeStage.value); }, { immediate: true });
+watch([wfKind, activeStage, () => props.terminal.state.activeSessionId], () => {
+  promptCollect.setCurrent(wfKind.value, activeStage.value, props.terminal.state.activeSessionId || '');
+}, { immediate: true });
 const chips = computed<Chip[]>(() => {
   const st = curWf.value.stages.find((s) => s.id === activeStage.value) || curWf.value.stages[0];
   // 阶段提示（替换型）+ 固定附加项 1/2/3/4/5（追加型），见 phaseChips.ts

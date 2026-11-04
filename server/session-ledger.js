@@ -81,7 +81,12 @@ function createShardedSessionsStore({ dirs = () => [], dirFor = (projectId) => '
       if (fs.existsSync(f)) { try { fs.rmSync(f, { force: true }); } catch { /* ignore */ } }
     }
   };
-  return { read: () => data, write: (next) => { data = normalizeLedger(next); save(); return data; } };
+  return {
+    read: () => data,
+    write: (next) => { data = normalizeLedger(next); save(); return data; },
+    // 项目增删后重新扫描磁盘：让移出的项目不再参与读写，重新加入的项目能恢复历史
+    reload: () => { data = loadAll(); return data; },
+  };
 }
 
 export function createSessionLedger({ file = null, logsDir = null, logDirFor = null, sessionsDirs = null, sessionsDirFor = null, logger = console } = {}) {
@@ -162,5 +167,5 @@ export function createSessionLedger({ file = null, logsDir = null, logDirFor = n
     }
     if (moved) logger?.info?.(`session logs migrated to per-project dirs: ${moved}`);
   }
-  return { read: store.read, upsert, remove, close, appendLog, flushLog, flushAll, readLog, migrateLogs };
+  return { read: store.read, reload: () => (store.reload ? store.reload() : store.read()), upsert, remove, close, appendLog, flushLog, flushAll, readLog, migrateLogs };
 }

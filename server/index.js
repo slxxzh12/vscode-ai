@@ -44,6 +44,8 @@ import { recognizeViaMaster } from './usage-recognize.js';
 import { loadProbe, saveProbe, toProbeRecord } from './usage-probe-store.js';
 import { createNotepadStore } from './notepad-store.js';
 import { ensureAgentOnPath, probeAgentStats } from './collaboration/agent-stats.js';
+import { createOpencodeInstaller } from './opencode-install.js';
+import { createOpencodeMount } from './opencode-mount.js';
 import { projectDir } from './project-data.js';
 import { createTranslator, createTranslateMount, defaultCatalog, defaultProviderResolver } from './translate.js';
 import { loadInvite, saveInvite, clearInvite, isInviteActive } from './remote-invite.js';
@@ -55,7 +57,7 @@ import { createScheduler } from './scheduler/index.js';
 import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateServerAttrs, parseDevflowConfig, setDefaultAgent } from './devflow-config.js';
 import { createWorkflowSeedStore } from './workflow-seed.js';
 import { createWorkflowStore } from './workflow-store.js';
-import { localWorkflowDir, mergeLocalWorkflows } from './workflow-local.js';
+import { localWorkflowDir, mergeLocalWorkflows, resolveWorkflowSource } from './workflow-local.js';
 import { skillsStatus, installSkills, readSkillsChecked, markSkillsChecked } from './skills-install.js';
 import { installVoid } from './void-install.js';
 import { fallbackWorkflows } from './workflow-xml.js';
@@ -329,6 +331,20 @@ function editorWorkflowStore(ws, sessionId, local) {
   return store;
 }
 
+// 提示词增改落点：优先当前项目本地 .void/workflows（前端展示的本地工作流优先于默认工作流），
+// 本地找不到该工作流/阶段时回落到数据目录里的默认工作流。同名本地工作流会覆盖默认内容，
+// 而合并列表保留默认 id，所以除 id 外还要按 label 匹配一次。
+function promptTargetStore(ws, sessionId, { workflowId, workflowLabel, stageId }) {
+  const localStore = editorWorkflowStore(ws, sessionId, true);
+  const globalStore = ws?.workflowStore;
+  const hit = resolveWorkflowSource(localStore?.readAll() || [], globalStore?.readAll() || [], {
+    workflowId, workflowLabel, stageId,
+  });
+  if (!hit) return null;
+  const store = hit.source === 'local' ? localStore : globalStore;
+  return store ? { store, workflowId: hit.workflowId } : null;
+}
+
 // 项目级 skills 来源：会话 cwd 与服务启动目录下的 .void/skills
 function skillsSourceDirs(ws, sessionId) {
   const dirs = [];
@@ -367,18 +383,12 @@ function buildWorkspace({ paths, port }) {
     try { fs.writeFileSync(projectsFile, JSON.stringify({ projects: projects.rawProjects() }, null, 2), 'utf8'); }
     catch (e) { log.warn?.('save projects failed', e && e.message); }
   };
-  // 内置 demo_ppt 样例目录作为默认工作目录；已存在同路径项目时不重复添加
+  // 用户还没有任何工作目录时，内置 demo_ppt 样例目录作为默认工作目录。
+  // 用户可删除；删除后不保留，下次启动若仍无目录会再次加入。
   const demoPptRoot = path.join(__dirname, '..', 'demo_ppt');
-  if (fs.existsSync(demoPptRoot)) {
-    const demoReal = path.resolve(demoPptRoot);
-    const exists = projects.listProjects().some((p) => path.resolve(p.root) === demoReal);
-    if (!exists) {
-      let id = 'demo_ppt';
-      let n = 2;
-      while (projects.listProjects().some((p) => p.id === id)) id = `demo_ppt_${n++}`;
-      projects.addProject({ id, name: 'demo_ppt', root: demoPptRoot }, true);
-      saveProjects();
-    }
+  if (!projects.listProjects().length && fs.existsSync(demoPptRoot)) {
+    projects.addProject({ id: 'demo_ppt', name: 'demo_ppt', root: demoPptRoot }, true);
+    saveProjects();
   }
   // projectId → 项目根目录（权威来源 projects 列表）；对话数据按项目分目录存，键 = sha256(根路径)
   const projectRootOf = (projectId) => {
@@ -680,6 +690,14 @@ function buildWorkspace({ paths, port }) {
   const agentBin = ensureAgentOnPath(agent.cmd);
   if (agentBin) log.info(`agent bin resolved: ${agentBin}`);
   else log.warn(`agent "${agent.cmd}" not found on PATH; usage collection will fail (set DEVFLOW_OPENCODE to override)`);
+  const opencodeInstaller = createOpencodeInstaller({
+    appRoot: APP_DIR,
+    getAgents: () => loadDevflowConfig(configFile).agents.list || [],
+    logger: log,
+  });
+  const opencodeMount = createOpencodeMount({ installer: opencodeInstaller });
+  const opencodeStatus = opencodeInstaller.status();
+  if (!opencodeStatus.anyInstalled) log.warn('no agent executable detected; opencode install prompt will be shown');
   const usageReporter = createUsageReporter({
     file: paths.usageReportFile,
     identity: () => ({ ...engine.pub }),
@@ -811,7 +829,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
+  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
 }
 
 // ---- 工作区（端口档案）----
@@ -1430,6 +1448,50 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (url.pathname === '/api/workflows-prompt-add' && req.method === 'POST') {
+    if (!ws) { res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+      const workflowId = typeof body.workflowId === 'string' ? body.workflowId : '';
+      const stageId = typeof body.stageId === 'string' ? body.stageId : '';
+      const workflowLabel = typeof body.workflowLabel === 'string' ? body.workflowLabel : '';
+      const text = typeof body.text === 'string' ? body.text : '';
+      const target = promptTargetStore(ws, sessionId, { workflowId, workflowLabel, stageId });
+      const status = target ? target.store.addPrompt(target.workflowId, stageId, text).status : 'no-stage';
+      if (status === 'ok') {
+        for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ status, workflows: workflowsForSession(ws, sessionId, log) }));
+    });
+    return;
+  }
+  if (url.pathname === '/api/workflows-prompt-update' && req.method === 'POST') {
+    if (!ws) { res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ error: 'not-ready' })); return; }
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
+      const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+      const workflowId = typeof body.workflowId === 'string' ? body.workflowId : '';
+      const stageId = typeof body.stageId === 'string' ? body.stageId : '';
+      const workflowLabel = typeof body.workflowLabel === 'string' ? body.workflowLabel : '';
+      const text = typeof body.text === 'string' ? body.text : '';
+      const target = promptTargetStore(ws, sessionId, { workflowId, workflowLabel, stageId });
+      const result = target ? target.store.updatePrompt(target.workflowId, stageId, Number(body.index), text) : { status: 'no-stage' };
+      if (result.status === 'ok') {
+        for (const conn of (gateway?.conns || [])) conn.send({ type: S2C.CONFIG_CHANGED });
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ status: result.status, workflows: workflowsForSession(ws, sessionId, log) }));
+    });
+    return;
+  }
 
   // 用量统计：按天写入 SQLite，存于当前端口档案目录（与个人数据一起按端口隔离）
   if (url.pathname === '/api/usage' && req.method === 'POST') {
@@ -1502,6 +1564,7 @@ const server = http.createServer(async (req, res) => {
     ws.proxyEngine.handleHttp(req, res, url);
     return;
   }
+  if (url.pathname.startsWith('/api/opencode/')) { await ws.opencodeMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/llm')) { await ws.llmMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/translate')) { await ws.translateMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }

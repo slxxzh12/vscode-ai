@@ -653,6 +653,22 @@ test('POST /api/projects 新增目录：校验 body/路径/目录/重名，重�
   assert.equal(JSON.parse(named.body).project.name, 'Custom');
 });
 
+test('DELETE /api/projects/:id 只移除列表项（不删数据），未知 id 404', async (t) => {
+  const dir = tmpDir();
+  let saves = 0;
+  const projects = new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] });
+  const server = await start(projects, { saveProjects: () => { saves++; } });
+  t.after(() => server.close());
+
+  assert.equal((await del(server, '/api/projects/nope')).status, 404);
+  const removed = await del(server, '/api/projects/a');
+  assert.equal(removed.status, 200);
+  assert.deepEqual(JSON.parse(removed.body), { ok: true });
+  assert.equal(saves, 1);
+  assert.equal(projects.listProjects().length, 0);
+  assert.equal(fs.existsSync(dir), true);
+});
+
 test('/api/run-script 注入执行器：ok / 不支持扩展名 / 平台不支持', async (t) => {
   const dir = tmpDir();
   fs.writeFileSync(path.join(dir, 'a.bat'), 'echo hi');
