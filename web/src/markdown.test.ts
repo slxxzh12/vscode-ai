@@ -29,6 +29,39 @@ describe('表格宽度指令', () => {
     expect(h).toContain('data-md-table-width="60%"');
     expect(h).not.toContain('df-table');
   });
+
+  it('支持表头预设蓝色/灰色/暗红色，并自动配文字色', () => {
+    const blue = renderMarkdown('<!-- df-table head-bg=blue -->\n\n| A | B |\n| --- | --- |\n| 1 | 2 |', P);
+    expect(blue).toContain('data-md-table-head-bg="#1e40af"');
+    expect(blue).toContain('data-md-table-head-color="#ffffff"');
+
+    const gray = renderMarkdown('<!-- df-table head-bg=gray -->\n\n| A | B |\n| --- | --- |\n| 1 | 2 |', P);
+    expect(gray).toContain('data-md-table-head-bg="#4b5563"');
+
+    const red = renderMarkdown('<!-- df-table head-bg=darkred -->\n\n| A | B |\n| --- | --- |\n| 1 | 2 |', P);
+    expect(red).toContain('data-md-table-head-bg="#7f1d1d"');
+  });
+
+  it('支持自定义表头背景色与文字色', () => {
+    const h = renderMarkdown('<!-- df-table head-bg=#2f6feb head-color=#fff -->\n\n| A | B |\n| --- | --- |\n| 1 | 2 |', P);
+    expect(h).toContain('data-md-table-head-bg="#2f6feb"');
+    expect(h).toContain('data-md-table-head-color="#fff"');
+    expect(h).toContain('--md-table-head-bg:#2f6feb');
+  });
+});
+
+describe('原始 HTML 表格', () => {
+  it('保留嵌套表格、rowspan/colspan 与 border=0', () => {
+    const h = renderMarkdown(
+      '<table border="0"><thead><tr><th rowspan="2">A</th><th colspan="2">B</th></tr></thead>' +
+        '<tbody><tr><td><table><tr><td>x</td></tr></table></td><td colspan="2">y</td></tr></tbody></table>',
+      P,
+    );
+    expect(h).toContain('rowspan="2"');
+    expect(h).toContain('colspan="2"');
+    expect(h).toContain('border="0"');
+    expect((h.match(/<table/g) || []).length).toBe(2);
+  });
 });
 
 describe('图片尺寸语法', () => {

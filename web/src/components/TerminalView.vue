@@ -753,6 +753,10 @@ function onWelcomeNewAgent() {
   if (!props.projectId) { window.dispatchEvent(new CustomEvent('df-add-folder')); return; }
   void startAgent();
 }
+function onWelcomeAddDirectory() {
+  if (props.phone) return;
+  window.dispatchEvent(new CustomEvent('df-add-folder-direct'));
+}
 function onWelcomeOpenTool(id: ToolId) {
   if (id === 'nginx') { requestProxyTab('nginx'); return; }
   if (id === 'notepad' || id === 'yaml' || id === 'translate' || id === 'markdown' || id === 'js' || id === 'base64') { requestToolTab(id); return; }
@@ -1578,7 +1582,7 @@ onBeforeUnmount(() => {
       <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
     </div>
 
-    <WelcomeView v-if="showWelcome" @new-agent="onWelcomeNewAgent" @open-tool="onWelcomeOpenTool" />
+    <WelcomeView v-if="showWelcome" @new-agent="onWelcomeNewAgent" @add-directory="onWelcomeAddDirectory" @open-tool="onWelcomeOpenTool" />
 
     <div v-show="isSessionView" class="term-wrap">
       <div class="term-layer" ref="hostRef" />

@@ -50,12 +50,18 @@ export async function enhanceMarkdown(
       for (const table of Array.from(root.querySelectorAll<HTMLTableElement>('table'))) {
         // 已经增强过的 Element Plus 表格内部也有 <table>，重复 enhance 时不能再包一层（会出现两个表头）
         if (table.closest('.md-el-table, .el-table')) continue;
+        // 嵌套表格保持原生结构（外层单元格可能带 rowspan/colspan），不转 Element Plus
+        if (table.parentElement?.closest('table')) continue;
         const data = extractTable(table);
         if (!data) continue;
         const host = document.createElement('div');
         host.className = 'md-el-table';
         const width = table.getAttribute('data-md-table-width');
+        const headBg = table.getAttribute('data-md-table-head-bg');
+        const headColor = table.getAttribute('data-md-table-head-color');
         if (width) host.style.setProperty('--md-table-width', width);
+        if (headBg) host.style.setProperty('--md-table-head-bg', headBg);
+        if (headColor) host.style.setProperty('--md-table-head-color', headColor);
         table.replaceWith(host);
         out.push({ host, ...mountTable(host, data) });
       }

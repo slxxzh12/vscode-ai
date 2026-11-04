@@ -178,9 +178,9 @@ cpDir(
   path.join(APP, "config"),
   (e) => e.name !== "runtime-port.txt",
 );
-// test/ 里是可直接打开的 Markdown/图片样例，随包提供方便对照查看
-if (fs.existsSync(path.join(ROOT, "test"))) {
-  cpDir(path.join(ROOT, "test"), path.join(APP, "test"));
+// demo_ppt/ 里是可直接打开的 Markdown/图片样例，随包提供方便对照查看
+if (fs.existsSync(path.join(ROOT, "demo_ppt"))) {
+  cpDir(path.join(ROOT, "demo_ppt"), path.join(APP, "demo_ppt"));
 }
 // 项目级技能与工作流（.void）随包发布；排除本机检测状态
 if (fs.existsSync(path.join(ROOT, ".void"))) {
@@ -329,9 +329,9 @@ if (fs.existsSync(path.join(ROOT, ".void", "skills"))) {
   check(fs.existsSync(path.join(APP, ".void", "skills")), "missing .void/skills");
   console.log("[build]   ok skills  (.void/skills)");
 }
-if (fs.existsSync(path.join(ROOT, "test"))) {
-  check(fs.existsSync(path.join(APP, "test")), "missing test/");
-  console.log("[build]   ok test  (test/)");
+if (fs.existsSync(path.join(ROOT, "demo_ppt"))) {
+  check(fs.existsSync(path.join(APP, "demo_ppt")), "missing demo_ppt/");
+  console.log("[build]   ok demo_ppt  (demo_ppt/)");
 }
 
 // 运行时依赖自检：收集 server 代码真正 import 的每一个运行时依赖

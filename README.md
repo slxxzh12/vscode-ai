@@ -111,7 +111,7 @@ server/   Node ESM backend: HTTP API, WebSocket, PTY sessions, collaboration, sc
 web/      Vue 3 + Vite + TypeScript + xterm + CodeMirror + Element Plus frontend
 config/   Seed configuration for first run (devflow.xml, default workflows)
 scripts/  Dev startup, packaging, i18n checks, code statistics
-test/     Markdown / chart sample data
+demo_ppt/ Markdown / chart / PPT sample data
 ```
 
 ## Configuration and data directories
@@ -142,7 +142,7 @@ Markdown preview (in-app file preview, the TXT/Markdown tools, and static site p
 - **Data-script charts**: `mermaid-data` code blocks can read CSV/JSON from the same directory and return Mermaid source to generate charts.
 - **Unified theme**: Mermaid diagrams use a blue tech palette for both dark and light themes (no pink/purple), with tighter node and rank spacing and width fitting.
 
-See `test/markdown_data/` (`charts.md`, `mermaid-line-pie.md`, `mermaid-flowchart.md`, `flowchart-two-subgraphs.md`, etc.) for examples.
+See `demo_ppt/markdown_data/` (`charts.md`, `mermaid-line-pie.md`, `mermaid-flowchart.md`, `flowchart-two-subgraphs.md`, etc.) for examples; `demo_ppt/multi-slide-charts-sample.md` is a full multi-slide PPT sample.
 
 ## Tests
 

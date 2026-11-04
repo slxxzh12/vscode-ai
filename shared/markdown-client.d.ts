@@ -8,6 +8,7 @@ export type { ChartSpec, ChartHandle, EChartsLike, FlowX6Module } from './markdo
 export { enhanceSimpleTables } from './markdown-table-sort';
 
 export function groupMermaidSides(container: HTMLElement): void;
+export function markRawTables(container: HTMLElement): void;
 export function mermaidInitOptions(theme?: string): Record<string, unknown>;
 export function enhanceDataCharts(
   container: HTMLElement,

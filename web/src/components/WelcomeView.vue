@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { MINI_TOOLS, type ToolId } from '../tools/catalog';
 
-const emit = defineEmits<{ (e: 'new-agent'): void; (e: 'open-tool', id: ToolId): void }>();
+const emit = defineEmits<{ (e: 'new-agent'): void; (e: 'add-directory'): void; (e: 'open-tool', id: ToolId): void }>();
 </script>
 
 <template>
@@ -9,13 +9,22 @@ const emit = defineEmits<{ (e: 'new-agent'): void; (e: 'open-tool', id: ToolId):
     <div class="whero">
       <div class="wtitle">{{ $t('welcome.title') }}</div>
       <div class="wsub">{{ $t('welcome.subtitle') }}</div>
-      <button class="wprimary" @click="emit('new-agent')">
-        <span class="wplus">＋</span>
-        <span class="wtext">
-          <span class="wmain">{{ $t('welcome.new_agent') }}</span>
-          <span class="whint">{{ $t('welcome.new_agent_hint') }}</span>
-        </span>
-      </button>
+      <div class="wactions">
+        <button class="wprimary" @click="emit('new-agent')">
+          <span class="wplus">＋</span>
+          <span class="wtext">
+            <span class="wmain">{{ $t('welcome.new_agent') }}</span>
+            <span class="whint">{{ $t('welcome.new_agent_hint') }}</span>
+          </span>
+        </button>
+        <button class="wprimary wsecondary" @click="emit('add-directory')">
+          <span class="wplus">＋</span>
+          <span class="wtext">
+            <span class="wmain">{{ $t('welcome.add_folder') }}</span>
+            <span class="whint">{{ $t('welcome.add_folder_hint') }}</span>
+          </span>
+        </button>
+      </div>
     </div>
 
     <div class="wtools">
@@ -37,8 +46,11 @@ const emit = defineEmits<{ (e: 'new-agent'): void; (e: 'open-tool', id: ToolId):
 .whero { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; max-width: 640px; }
 .wtitle { color: var(--tx1); font-size: 24px; font-weight: 700; }
 .wsub { color: var(--tx3); font-size: 13px; line-height: 1.6; }
-.wprimary { margin-top: 8px; display: flex; align-items: center; gap: 14px; background: var(--ac); color: var(--onac); border: none; border-radius: 12px; padding: 14px 26px; cursor: pointer; }
+.wactions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 8px; }
+.wprimary { display: flex; align-items: center; gap: 14px; background: var(--ac); color: var(--onac); border: none; border-radius: 12px; padding: 14px 26px; cursor: pointer; }
 .wprimary:hover { filter: brightness(1.08); }
+.wsecondary { background: var(--bg2); color: var(--tx1); border: 1px solid var(--bd); }
+.wsecondary:hover { border-color: var(--ac2); color: var(--ac2); filter: none; }
 .wplus { font-size: 28px; line-height: 1; }
 .wtext { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .wmain { font-size: 17px; font-weight: 700; }

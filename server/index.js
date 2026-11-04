@@ -367,6 +367,19 @@ function buildWorkspace({ paths, port }) {
     try { fs.writeFileSync(projectsFile, JSON.stringify({ projects: projects.rawProjects() }, null, 2), 'utf8'); }
     catch (e) { log.warn?.('save projects failed', e && e.message); }
   };
+  // 内置 demo_ppt 样例目录作为默认工作目录；已存在同路径项目时不重复添加
+  const demoPptRoot = path.join(__dirname, '..', 'demo_ppt');
+  if (fs.existsSync(demoPptRoot)) {
+    const demoReal = path.resolve(demoPptRoot);
+    const exists = projects.listProjects().some((p) => path.resolve(p.root) === demoReal);
+    if (!exists) {
+      let id = 'demo_ppt';
+      let n = 2;
+      while (projects.listProjects().some((p) => p.id === id)) id = `demo_ppt_${n++}`;
+      projects.addProject({ id, name: 'demo_ppt', root: demoPptRoot }, true);
+      saveProjects();
+    }
+  }
   // projectId → 项目根目录（权威来源 projects 列表）；对话数据按项目分目录存，键 = sha256(根路径)
   const projectRootOf = (projectId) => {
     if (!projectId) return '';

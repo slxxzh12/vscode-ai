@@ -156,12 +156,28 @@ export async function renderMermaidBlocks(container, mermaid, options = {}) {
   }));
 }
 
+// 原始 HTML 表格（含嵌套 / rowspan / colspan）统一打标记，交给样式表处理；
+// Markdown 语法表格已有 .md-table，Element Plus 内部表格不能重复标记。
+export function markRawTables(container) {
+  for (const table of Array.from(container.querySelectorAll('table'))) {
+    if (table.classList.contains('md-table')) continue;
+    if (table.closest('.el-table, .md-el-table')) continue;
+    table.classList.add('md-raw-table');
+    // border="0" 或 class="md-borderless" 时隐藏网格线，只保留斑马纹 / 悬停底色
+    const border = table.getAttribute('border');
+    if (border === '0' || table.classList.contains('md-borderless')) {
+      table.classList.add('md-raw-table--borderless');
+    }
+  }
+}
+
 // Web 预览与静态网站共用的统一增强入口：分组 → 表格 → ECharts → Mermaid。
 // echarts/mermaid 可由调用方直接传入，也可传 loadEcharts/loadMermaid 延迟加载。
 export async function enhanceMarkdown(container, options = {}) {
   const items = [];
   await enhanceDataCharts(container, options);
   groupMermaidSides(container);
+  markRawTables(container);
 
   if (typeof options.enhanceTables === 'function') {
     const extra = await options.enhanceTables(container);

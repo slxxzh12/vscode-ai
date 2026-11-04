@@ -1365,6 +1365,8 @@ export const messages = {
   'welcome.subtitle': 'Start an Agent session, or pick a mini tool below',
   'welcome.new_agent': 'New Agent',
   'welcome.new_agent_hint': 'Recommended · launch an Agent in the selected project',
+  'welcome.add_folder': 'Add workspace',
+  'welcome.add_folder_hint': 'Pick a local folder and add it as a workspace',
   'welcome.tools_title': 'Mini tools',
   'welcome.tools_hint': 'Click a card to open that tool in the App Market',
   'term.new_session_btn': '＋ New session',

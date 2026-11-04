@@ -6,7 +6,8 @@ describe('table width directive', () => {
   it('data-md-table-width 会应用到增强后的表格容器', async () => {
     const host = document.createElement('div');
     host.innerHTML =
-      '<table data-md-table-width="60%"><thead><tr><th>A</th><th>B</th></tr></thead>' +
+      '<table data-md-table-width="60%" data-md-table-head-bg="#1e40af" data-md-table-head-color="#ffffff">' +
+      '<thead><tr><th>A</th><th>B</th></tr></thead>' +
       '<tbody><tr><td>1</td><td>2</td></tr></tbody></table>';
     document.body.appendChild(host);
 
@@ -14,6 +15,8 @@ describe('table width directive', () => {
     const table = host.querySelector('.md-el-table') as HTMLElement;
     expect(table).not.toBeNull();
     expect(table.style.getPropertyValue('--md-table-width')).toBe('60%');
+    expect(table.style.getPropertyValue('--md-table-head-bg')).toBe('#1e40af');
+    expect(table.style.getPropertyValue('--md-table-head-color')).toBe('#ffffff');
 
     disposeMarkdown(host);
     host.remove();

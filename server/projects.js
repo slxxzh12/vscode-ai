@@ -23,9 +23,10 @@ export class Projects {
   rawProjects() {
     return this.projects.map((p) => ({ id: p.id, name: p.name, root: p.root }));
   }
-  addProject({ id, name, root }) {
+  addProject({ id, name, root }, front = false) {
     const proj = { id, name, root };
-    this.projects.push(proj);
+    if (front) this.projects.unshift(proj);
+    else this.projects.push(proj);
     this._byId.set(id, proj);
     return proj;
   }

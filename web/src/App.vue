@@ -678,6 +678,22 @@ async function chooseFolder() {
     if (r.path) addPath.value = r.path;
   } catch (e) { alert(t('top.add_failed', { msg: (e as Error).message || String(e) })); }
 }
+async function addFolderDirect() {
+  try {
+    const r = await projectsApi.pickFolder();
+    if (r.error) { alert(r.error === 'unsupported' ? t('top.pick_unsupported') : t('top.add_failed', { msg: r.message || r.error })); return; }
+    if (!r.path) return;
+    const wasFirst = projects.value.length === 0;
+    const proj = await projectsApi.add(r.path);
+    await loadProjects();
+    if (proj?.id) selectProject(proj.id);
+    if (wasFirst && proj?.id) {
+      historyTab.value = 'tree';
+      await nextTick();
+      window.dispatchEvent(new CustomEvent('df-refresh-tree'));
+    }
+  } catch (e) { alert(t('top.add_failed', { msg: (e as Error).message || String(e) })); }
+}
 async function confirmAddFolder() {
   const p = addPath.value.trim();
   if (!p) return;
@@ -791,6 +807,7 @@ onMounted(async () => {
   window.addEventListener('df-open-history', onOpenHistory);
   window.addEventListener('df-settings-closed', onSettingsClosed);
   window.addEventListener('df-add-folder', openAddFolder);
+  window.addEventListener('df-add-folder-direct', addFolderDirect);
   window.addEventListener('beforeunload', persistFileHistory);
   window.addEventListener('beforeunload', persistWindowState);
   terminal.connect();
@@ -803,6 +820,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('df-open-history', onOpenHistory);
   window.removeEventListener('df-settings-closed', onSettingsClosed);
   window.removeEventListener('df-add-folder', openAddFolder);
+  window.removeEventListener('df-add-folder-direct', addFolderDirect);
   window.removeEventListener('beforeunload', persistFileHistory);
   window.removeEventListener('beforeunload', persistWindowState);
 });

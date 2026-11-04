@@ -111,7 +111,7 @@ server/   Node ESM 后端：HTTP API、WebSocket、PTY 会话、协作、调度�
 web/      Vue3 + Vite + TypeScript + xterm + CodeMirror + Element Plus 前端
 config/   首次启动种子配置（devflow.xml、默认工作流）
 scripts/  开发启动、打包、i18n 检查、代码统计等脚本
-test/     Markdown / 图表等测试样例数据
+demo_ppt/ Markdown / 图表 / PPT 等演示样例数据
 ```
 
 ## 配置与数据目录
@@ -142,7 +142,7 @@ Markdown 预览（应用内文件预览、记事本 / Markdown 工具、静态�
 - **数据脚本图表**：`mermaid-data` 代码块可读取同目录 CSV / JSON，处理后返回 Mermaid 源码生成图表。
 - **统一主题**：Mermaid 图表使用蓝色科技配色，深色 / 浅色主题均适配（不使用粉 / 紫），并收紧节点与层级间距、按容器宽度自适应。
 
-示例见 `test/markdown_data/`（`charts.md`、`mermaid-line-pie.md`、`mermaid-flowchart.md`、`flowchart-two-subgraphs.md` 等）。
+示例见 `demo_ppt/markdown_data/`（`charts.md`、`mermaid-line-pie.md`、`mermaid-flowchart.md`、`flowchart-two-subgraphs.md` 等）；`demo_ppt/multi-slide-charts-sample.md` 是完整的多页 PPT 示例。
 
 ## 测试
 

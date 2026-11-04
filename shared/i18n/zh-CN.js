@@ -1365,6 +1365,8 @@ export const messages = {
   'welcome.subtitle': '新建 Agent 开始对话，或使用下方小工具',
   'welcome.new_agent': '新建 Agent',
   'welcome.new_agent_hint': '推荐 · 在所选项目目录启动 Agent',
+  'welcome.add_folder': '添加工作目录',
+  'welcome.add_folder_hint': '选择一个本地目录并直接加入工作目录',
   'welcome.tools_title': '小工具',
   'welcome.tools_hint': '点击卡片跳转到应用市场并打开对应小工具',
   'term.new_session_btn': '＋ 新建会话',
