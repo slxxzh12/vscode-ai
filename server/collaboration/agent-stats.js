@@ -328,7 +328,7 @@ export function probeAgentStats({
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 采集本机用量。命令来自 agent 配置的 statsCmd 模板（每个 agent 一套），未配置时回退 `<cmd> stats --days N`。
-// 默认只跑一次（启动即报一次 + 每 4 小时定时）；失败时由 statsFile 落盘回读兜底，不再重复拉起进程（避免弹窗）。
+// 默认只跑一次（由上报器在每天 13:00-14:00 与 22:00 后各触发一次）；失败时由 statsFile 落盘回读兜底，不再重复拉起进程（避免弹窗）。
 export function collectAgentStats({
   cmd = 'opencode', statsCmd = '', days = 60, timeoutMs = 20000, env = process.env,
   attempts = 1, retryDelayMs = 800, execFileFn = execFile, sleepFn = sleep,

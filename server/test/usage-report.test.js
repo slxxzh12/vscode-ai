@@ -4,8 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  parseInviteLink, nextDelay, loadReportConfig, saveReportConfig, createUsageReporter,
-  MIN_INTERVAL_MS, MAX_INTERVAL_MS,
+  parseInviteLink, nextSlot, loadReportConfig, saveReportConfig, createUsageReporter,
 } from '../usage-report.js';
 
 function tmpFile() {
@@ -30,21 +29,27 @@ test('parseInviteLink：缺 token / 非 http / 空串都报 bad-link', () => {
   assert.deepEqual(parseInviteLink('随便一串'), { error: 'bad-link' });
 });
 
-test('nextDelay 固定 4 小时', () => {
-  assert.equal(MIN_INTERVAL_MS, 4 * 60 * 60 * 1000);
-  assert.equal(MAX_INTERVAL_MS, 4 * 60 * 60 * 1000);
-  assert.equal(nextDelay(() => 0), MIN_INTERVAL_MS);
-  assert.equal(nextDelay(() => 1 - Number.EPSILON), MIN_INTERVAL_MS);
-  for (let i = 0; i < 20; i += 1) assert.equal(nextDelay(), MIN_INTERVAL_MS);
+test('nextSlot：只在 13:00-14:00 与 22:00 之后各安排一次', () => {
+  const at = (h, m = 0, day = 19) => new Date(2026, 9, day, h, m, 0, 0).getTime();
+  // 13 点窗口内：未跑过立即执行；跑过后等 22 点
+  assert.deepEqual(nextSlot(at(13, 30), ''), { key: '2026-10-19:13', at: at(13, 30) });
+  assert.deepEqual(nextSlot(at(13, 30), '2026-10-19:13'), { key: '2026-10-19:22', at: at(22, 0) });
+  // 窗口外：等下一个时间点
+  assert.deepEqual(nextSlot(at(12, 30), ''), { key: '2026-10-19:13', at: at(13, 0) });
+  assert.deepEqual(nextSlot(at(14, 5), ''), { key: '2026-10-19:22', at: at(22, 0) });
+  // 22 点之后：未跑过立即执行；跑过后等次日 13 点
+  assert.deepEqual(nextSlot(at(23, 0), ''), { key: '2026-10-19:22', at: at(23, 0) });
+  assert.deepEqual(nextSlot(at(23, 0), '2026-10-19:22'), { key: '2026-10-20:13', at: at(13, 0, 20) });
+  assert.deepEqual(nextSlot(at(0, 30, 20), ''), { key: '2026-10-20:13', at: at(13, 0, 20) });
 });
 
-test('loadReportConfig 默认值 / saveReportConfig 落盘读回', () => {
+test('loadReportConfig 默认值与 saveReportConfig 落盘读回', () => {
   const file = tmpFile();
-  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 60, masterPublicKey: '' });
+  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 60, masterPublicKey: '', lastSlot: '' });
   saveReportConfig(file, { masterUrl: 'http://a:1', token: 'tk', days: 3 });
-  assert.deepEqual(loadReportConfig(file), { masterUrl: 'http://a:1', token: 'tk', days: 3, masterPublicKey: '' });
+  assert.deepEqual(loadReportConfig(file), { masterUrl: 'http://a:1', token: 'tk', days: 3, masterPublicKey: '', lastSlot: '' });
   fs.writeFileSync(file, 'broken', 'utf8');
-  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 60, masterPublicKey: '' });
+  assert.deepEqual(loadReportConfig(file), { masterUrl: '', token: '', days: 60, masterPublicKey: '', lastSlot: '' });
 });
 
 test('未配置 master 时：仍采集并本地落库自己那份，但不 POST', async () => {
@@ -211,26 +216,49 @@ test('setConfig：保存配置并回读', () => {
   const file = tmpFile();
   const r = createUsageReporter({ file, identity: () => ({ machineId: 'm1' }) });
   const cfg = r.setConfig({ masterUrl: 'http://a:22222', token: 'tk', days: 7 });
-  assert.deepEqual(cfg, { masterUrl: 'http://a:22222', token: 'tk', days: 7, masterPublicKey: '' });
+  assert.deepEqual(cfg, { masterUrl: 'http://a:22222', token: 'tk', days: 7, masterPublicKey: '', lastSlot: '' });
   assert.deepEqual(loadReportConfig(file), cfg);
 });
 
-test('start：启动立即上报一次，下一次延迟 4 小时', async () => {
+test('start：窗口内启动立即上报并记住本窗口，下一窗口不重复', async () => {
   const file = tmpFile();
   saveReportConfig(file, { masterUrl: 'http://a:22222', token: 'tk' });
   const delays = [];
   let reported = 0;
+  const nowTs = new Date(2026, 9, 19, 13, 30, 0, 0).getTime();
   const r = createUsageReporter({
     file, identity: () => ({ machineId: 'm1' }),
     collect: async () => ({ sessions: 1 }),
     fetchFn: async () => { reported += 1; return { ok: true, json: async () => ({ ok: true }) }; },
-    random: () => 0,
-    scheduleFn: (fn, ms) => { delays.push(ms); return { unref() {} }; },
+    now: () => nowTs,
+    scheduleFn: (fn, ms) => { delays.push(ms); if (ms === 0) setTimeout(fn, 0); return { unref() {} }; },
   });
   r.start();
   await new Promise((res) => setTimeout(res, 20));
   assert.equal(reported, 1);
-  assert.deepEqual(delays, [MIN_INTERVAL_MS]);
+  assert.equal(delays[0], 0);
+  assert.equal(loadReportConfig(file).lastSlot, '2026-10-19:13');
+  assert.equal(delays[1], new Date(2026, 9, 19, 22, 0, 0, 0).getTime() - nowTs);
+  r.stop();
+});
+
+test('start：窗口外启动不立即上报，等到下一个窗口', async () => {
+  const file = tmpFile();
+  saveReportConfig(file, { masterUrl: 'http://a:22222', token: 'tk' });
+  const delays = [];
+  let reported = 0;
+  const nowTs = new Date(2026, 9, 19, 15, 0, 0, 0).getTime();
+  const r = createUsageReporter({
+    file, identity: () => ({ machineId: 'm1' }),
+    collect: async () => ({ sessions: 1 }),
+    fetchFn: async () => { reported += 1; return { ok: true, json: async () => ({ ok: true }) }; },
+    now: () => nowTs,
+    scheduleFn: (fn, ms) => { delays.push(ms); return { unref() {} }; },
+  });
+  r.start();
+  await new Promise((res) => setTimeout(res, 20));
+  assert.equal(reported, 0);
+  assert.deepEqual(delays, [new Date(2026, 9, 19, 22, 0, 0, 0).getTime() - nowTs]);
   r.stop();
 });
 

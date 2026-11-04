@@ -746,12 +746,12 @@ function buildWorkspace({ paths, port }) {
     },
     logger: log,
   });
-  // 默认上报目标：入群时记住 master 的地址与邀请令牌（无需手填链接），并立刻补报一次
+  // 默认上报目标：入群时记住 master 的地址与邀请令牌（无需手填链接）；
+  // 不在入群时立即采集，交给 13:00-14:00 / 22:00 后的定时窗口（或用户手动「立即上报」）。
   engine.onJoined = ({ host, port, token }) => {
     if (!host || !port || !token) return;
     const cfg = usageReporter.setConfig({ masterUrl: `http://${host}:${port}`, token });
     log.info(`usage report target set: ${cfg.masterUrl}`);
-    usageReporter.reportNow().catch(() => { /* 失败只记状态 */ });
   };
   eventBus.on('friend-request', (payload) => broadcastCollab(CollabS2C.COLLAB_FRIEND_REQ, payload));
   eventBus.on('group-invite', (payload) => broadcastCollab(CollabS2C.COLLAB_GROUP_INVITE, payload));
@@ -870,7 +870,7 @@ function initWorkspace(paths, port) {
   distPollTimer.unref?.();
   remoteInvite = loadInvite(paths.inviteFile);   // 令牌落盘：重启后仍有效（expiresAt=0 为长期）
   remoteUsers = createRemoteUsers({ file: path.join(path.dirname(paths.inviteFile), 'users.json'), logger: log });
-  // 用量上报：启动即报一次，之后每 4 小时左右再报
+  // 用量上报：每天 13:00-14:00 与 22:00 之后各自动采集一次，其他时间不主动调用 stats
   if (ws.usageReporter) { ws.usageReporter.stop(); ws.usageReporter.start(); }
   // 升级检测：启动查一次，之后每 10 天一次（非阻塞、失败静默）
   upgradeChecker.check().catch(() => { /* ignore */ });

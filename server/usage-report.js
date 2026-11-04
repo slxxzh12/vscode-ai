@@ -3,10 +3,10 @@ import { collectAgentStats, isClaudeFamily, readStatsFile, refreshStatsOutput } 
 import { SOURCE_AUTO, SOURCE_IMAGE } from './usage-store.js';
 import path from 'node:path';
 
-export const INTERVAL_MS = 4 * 60 * 60 * 1000;   // 4 小时
-export const MIN_INTERVAL_MS = INTERVAL_MS;
-export const MAX_INTERVAL_MS = INTERVAL_MS;
-const DEFAULT_CONFIG = { masterUrl: '', token: '', days: 60, masterPublicKey: '' };
+// 自动采集窗口：每天 13:00-14:00 与 22:00 之后各一次，其他时间不主动调用 stats。
+export const REPORT_SLOT_HOURS = [13, 22];
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_CONFIG = { masterUrl: '', token: '', days: 60, masterPublicKey: '', lastSlot: '' };
 
 // 解析 master 的访问链接：http://<host>:<port>/?access=<token>
 export function parseInviteLink(link) {
@@ -23,14 +23,42 @@ export function parseInviteLink(link) {
   return { masterUrl: `${u.protocol}//${u.hostname}:${port}`, token, masterPublicKey };
 }
 
-export function nextDelay(random = Math.random) {
-  return MIN_INTERVAL_MS + Math.floor(random() * (MAX_INTERVAL_MS - MIN_INTERVAL_MS));
-}
-
 function localDayKey(ts = Date.now()) {
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// 当前所处的采集窗口 key（13 点窗口为 "<日期>:13"，22 点后为 "<日期>:22"），不在窗口返回 ''。
+export function currentSlotKey(ts = Date.now()) {
+  const hour = new Date(ts).getHours();
+  if (hour === 13) return `${localDayKey(ts)}:13`;
+  if (hour >= 22) return `${localDayKey(ts)}:22`;
+  return '';
+}
+
+// 下一个自动采集点：处于窗口内且本窗口尚未跑过 → 立刻；否则等到下一个 13:00 / 22:00。
+// lastSlot 用于避免同一天同一窗口因重启重复采集。
+export function nextSlot(ts = Date.now(), lastSlot = '') {
+  const cur = currentSlotKey(ts);
+  if (cur && cur !== lastSlot) return { key: cur, at: ts };
+  const d = new Date(ts);
+  const candidates = [];
+  for (let offset = 0; offset <= 2; offset += 1) {
+    const base = new Date(d.getFullYear(), d.getMonth(), d.getDate() + offset);
+    for (const hour of REPORT_SLOT_HOURS) {
+      const at = new Date(base.getFullYear(), base.getMonth(), base.getDate(), hour, 0, 0, 0).getTime();
+      const key = `${localDayKey(at)}:${hour}`;
+      if (key !== lastSlot && at >= ts) candidates.push({ key, at });
+    }
+  }
+  candidates.sort((a, b) => a.at - b.at);
+  return candidates[0] || { key: '', at: ts + DAY_MS };
+}
+
+export function nextDelay(nowMs = Date.now(), lastSlot = '') {
+  const slot = nextSlot(nowMs, lastSlot);
+  return Math.max(0, slot.at - nowMs);
 }
 
 export function loadReportConfig(file) {
@@ -42,6 +70,7 @@ export function loadReportConfig(file) {
       token: typeof raw.token === 'string' ? raw.token : '',
       days: Number.isFinite(Number(raw.days)) && Number(raw.days) > 0 ? Number(raw.days) : DEFAULT_CONFIG.days,
       masterPublicKey: typeof raw.masterPublicKey === 'string' ? raw.masterPublicKey : '',
+      lastSlot: typeof raw.lastSlot === 'string' ? raw.lastSlot : '',
     };
   } catch { return { ...DEFAULT_CONFIG }; }
 }
@@ -52,13 +81,15 @@ export function saveReportConfig(file, cfg) {
     token: String((cfg && cfg.token) || ''),
     days: Number.isFinite(Number(cfg && cfg.days)) && Number(cfg.days) > 0 ? Number(cfg.days) : DEFAULT_CONFIG.days,
     masterPublicKey: String((cfg && cfg.masterPublicKey) || ''),
+    lastSlot: String((cfg && cfg.lastSlot) || ''),
   };
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(next, null, 2), 'utf8');
   return next;
 }
 
-// slave 侧上报器：启动即报一次（先本地落库自己这份，再发给 master），之后每 4 小时左右再报
+// slave 侧上报器：只在每天 13:00-14:00 与 22:00 之后各采集上报一次（先本地落库自己这份，再发给 master）；
+// 其他时间不主动调用 stats。手动「立即上报」与图片识别上报不受此限制。
 export function createUsageReporter({
   file, identity, peers = null, onLocal = null, onCollected = null, cmd = 'opencode', statsCmd = '', resolveAgent = null, collect = null,
   getStartDir = null,   // () => 用户当前选中目录根；采集时作为 stats 命令的起始目录（无则回退用户主目录）
@@ -66,7 +97,7 @@ export function createUsageReporter({
   getChatDaily = null,  // () => { 'YYYY-MM-DD': 当天用户聊天消息数 }（上报前一天），与 agent stats 一起上报
   readStats = readStatsFile,     // 读采集结果文件（消费）
   refresh = refreshStatsOutput,  // 后台刷新采集文件（生产）
-  fetchFn = fetch, logger = console, random = Math.random,
+  fetchFn = fetch, logger = console,
   now = () => Date.now(), scheduleFn = (fn, ms) => setTimeout(fn, ms),
 } = {}) {
   let timer = null;
@@ -171,11 +202,25 @@ export function createUsageReporter({
     return submit({ ...(usage || {}), source: SOURCE_IMAGE });
   }
 
+  function markSlot(key) {
+    if (!key) return;
+    try { saveReportConfig(file, { ...config(), lastSlot: key }); }
+    catch (e) { logger?.warn?.('usage report slot mark failed', (e && e.message) || e); }
+  }
+
   function schedule() {
     if (stopped) return;
-    const delay = nextDelay(random);
-    status.nextAt = now() + delay;
-    timer = scheduleFn(async () => { await reportNow(); schedule(); }, delay);
+    const nowTs = now();
+    const slot = nextSlot(nowTs, config().lastSlot);
+    const delay = Math.max(0, slot.at - nowTs);
+    status.nextAt = nowTs + delay;
+    timer = scheduleFn(async () => {
+      if (stopped) return;
+      const current = nextSlot(now(), config().lastSlot);
+      await reportNow();
+      markSlot(current.key || slot.key);
+      schedule();
+    }, delay);
     if (timer && timer.unref) timer.unref();
   }
 
@@ -185,7 +230,7 @@ export function createUsageReporter({
     setConfig(patch) { return saveReportConfig(file, { ...config(), ...patch }); },
     reportNow,
     reportImage,
-    start() { stopped = false; reportNow().then(schedule); },
+    start() { stopped = false; schedule(); },
     stop() { stopped = true; if (timer) { clearTimeout(timer); timer = null; } },
   };
 }
