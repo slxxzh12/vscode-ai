@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { listSkills, detectSkillTargets, skillsStatus, installSkills, readVoidSkills, readSkillsChecked, markSkillsChecked, skillsStateFile } from '../skills-install.js';
+import { listSkills, detectSkillTargets, skillsStatus, installSkills, skillTargets, autoInstallMissingSkills, readVoidSkills, readSkillsChecked, markSkillsChecked, skillsStateFile } from '../skills-install.js';
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'df-skills-')); }
 
@@ -91,6 +91,38 @@ test('installSkills 支持 targetIds 限定目标', () => {
   const r = installSkills({ sourceDirs: [src], targets, targetIds: ['claudecode'] });
   assert.deepEqual(r.targets.map((t) => t.id), ['claudecode']);
   assert.equal(r.installed, 1);
+});
+
+test('skillTargets 纳入配置 agent：opencode 系与 Claude 系按目录去重，自定义 skillsDir 生效', () => {
+  const custom = tmp();
+  const targets = skillTargets([
+    { id: 'opencode', cmd: 'opencode' },
+    { id: 'nga', cmd: 'nga', resume: 'opencode' },
+    { id: 'claudecode', cmd: 'claudecode' },
+    { id: 'codeagent', cmd: 'codeagent', resume: 'claude' },
+    { id: 'mine', cmd: 'mine', skillsDir: custom },
+  ]);
+  const dirs = targets.map((t) => path.resolve(t.dir));
+  assert.equal(new Set(dirs).size, dirs.length, '同一技能目录只保留一个目标');
+  assert.ok(targets.some((t) => t.id === 'mine' && path.resolve(t.dir) === path.resolve(custom)));
+  assert.equal(targets.filter((t) => t.id === 'opencode').length, 1);
+  assert.equal(targets.filter((t) => t.id === 'claudecode').length, 1);
+});
+
+test('autoInstallMissingSkills 检测到缺失自动补齐并返回最新状态', () => {
+  const { targets } = fakeTargets();
+  const src = tmp();
+  writeSkill(src, 'ecc/a');
+  writeSkill(src, 'gstack/b');
+
+  const first = autoInstallMissingSkills({ sourceDirs: [src], targets });
+  assert.equal(first.before.missing, 4, '两个目标各缺 2 个');
+  assert.equal(first.install.installed, 4);
+  assert.equal(first.status.missing, 0, '补齐后不再缺失');
+
+  const again = autoInstallMissingSkills({ sourceDirs: [src], targets });
+  assert.equal(again.install, null, '无缺失时不再执行安装');
+  assert.equal(again.status.missing, 0);
 });
 
 test('readVoidSkills 多来源目录按 id 去重，先出现者优先', () => {

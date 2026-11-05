@@ -58,7 +58,7 @@ import { resolveActiveConfigFile, loadDevflowConfig, ensureConfigFile, updateSer
 import { createWorkflowSeedStore } from './workflow-seed.js';
 import { createWorkflowStore } from './workflow-store.js';
 import { localWorkflowDir, mergeLocalWorkflows, resolveWorkflowSource } from './workflow-local.js';
-import { skillsStatus, installSkills, readSkillsChecked, markSkillsChecked } from './skills-install.js';
+import { skillsStatus, installSkills, autoInstallMissingSkills, skillTargets, markSkillsChecked } from './skills-install.js';
 import { installVoid } from './void-install.js';
 import { fallbackWorkflows } from './workflow-xml.js';
 import { setLocale, t } from './i18n.js';
@@ -354,6 +354,24 @@ function skillsSourceDirs(ws, sessionId) {
   }
   dirs.push(path.join(process.cwd(), '.void', 'skills'));
   return dirs;
+}
+
+// 安装目标：内置 opencode/Claude Code + devflow.xml 已配置的 agent（codeagent 等同属 Claude 系）
+function configuredSkillTargets() {
+  return skillTargets(loadDevflowConfig(configFile).agents.list || []);
+}
+
+// 启动时自动补缺失：不依赖浏览器打开，服务一起来就按启动目录的 .void/skills 补齐
+function autoInstallSkillsAtStartup() {
+  const sourceDirs = [path.join(process.cwd(), '.void', 'skills')];
+  const targets = configuredSkillTargets();
+  try {
+    const r = autoInstallMissingSkills({ sourceDirs, targets, logger: log });
+    if (r.install && r.install.installed) log.info(`skills auto-installed: ${r.install.installed}`);
+    if (r.status.missing) log.warn(`skills still missing after auto-install: ${r.status.missing}`);
+  } catch (e) {
+    log.warn('skills auto-install failed', (e && e.message) || e);
+  }
 }
 
 function buildWorkspace({ paths, port }) {
@@ -971,19 +989,21 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/api/skills/status' && req.method === 'GET') {
     const sessionId = url.searchParams.get('sessionId') || '';
-    const status = skillsStatus({ sourceDirs: skillsSourceDirs(ws, sessionId) });
-    // 只在首次启动检测时允许自动弹窗，结果记录到 <当前目录>/.void/skills-checked.json；
-    // 之后由用户在设置里手动安装。
+    const sourceDirs = skillsSourceDirs(ws, sessionId);
+    const targets = configuredSkillTargets();
     const startup = url.searchParams.get('startup') === '1';
+    // 启动检测后自动补齐缺失技能（含 opencode、claudecode、codeagent 等已配置 agent）；
+    // 只补缺失、不覆盖已有，安装结果记录到 <当前目录>/.void/skills-checked.json。
+    let status = startup
+      ? autoInstallMissingSkills({ sourceDirs, targets, logger: log }).status
+      : skillsStatus({ sourceDirs, targets });
     if (startup) {
-      const checked = readSkillsChecked(process.cwd());
-      status.startupPrompt = !checked && status.missing > 0;
-      if (!checked) {
-        markSkillsChecked(process.cwd(), {
-          missing: status.missing,
-          targets: status.targets.map((t) => ({ id: t.id, dir: t.dir, missing: t.missing.length })),
-        });
-      }
+      markSkillsChecked(process.cwd(), {
+        missing: status.missing,
+        targets: status.targets.map((t) => ({ id: t.id, dir: t.dir, missing: t.missing.length })),
+      });
+      // 自动安装后仍缺失（如权限/占用导致失败）才弹窗让用户手动重试
+      status.startupPrompt = status.missing > 0;
     } else {
       status.startupPrompt = false;
     }
@@ -1685,6 +1705,7 @@ function startListening(port = currentPort) {
     configFile = resolveActiveConfigFile(APP_DIR, actual);
     BOOT_CFG = loadDevflowConfig(configFile);
     setLocale(BOOT_CFG.server.language);
+    autoInstallSkillsAtStartup();
     const browseHost = HOST === '0.0.0.0' || HOST === '::' || !HOST ? '127.0.0.1' : HOST;
     log.info(`访问地址: http://${browseHost}:${actual}/`);
     log.info(`listening on http://${HOST}:${actual}  (ws: ws://${HOST}:${actual}/ws)  ${VERSION}`);

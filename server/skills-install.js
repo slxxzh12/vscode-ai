@@ -5,22 +5,66 @@ import os from 'node:os';
 import path from 'node:path';
 import { opencodeConfigDir } from './llm-config.js';
 
-// 各 agent 的 skills 目录：toolDir 用于判断工具是否装在本机，skillsDir 为实际安装目标
-export function skillTargets() {
-  return [
+const CLAUDE_CMDS = new Set(['claudecode', 'claude', 'codeagent']);
+
+function agentCmd(agent) {
+  return path.basename(String(agent?.cmd || '')).toLowerCase().replace(/\.(cmd|exe|bat|ps1)$/, '');
+}
+
+function isOpencodeAgent(agent) {
+  const id = String(agent?.id || '').toLowerCase();
+  return id === 'opencode' || agentCmd(agent) === 'opencode' || String(agent?.resume || '').toLowerCase() === 'opencode';
+}
+
+function isClaudeAgent(agent) {
+  const id = String(agent?.id || '').toLowerCase();
+  return CLAUDE_CMDS.has(id) || CLAUDE_CMDS.has(agentCmd(agent)) || String(agent?.resume || '').toLowerCase() === 'claude';
+}
+
+// 各 agent 的 skills 目录：toolDir 用于判断工具是否装在本机，skillsDir 为实际安装目标。
+// 内置 opencode / Claude Code（claudecode、codeagent 等同属 Claude 系，共用 ~/.claude/skills），
+// 再按 devflow.xml 的 agents 补充：opencode 系共用 opencode 目录、Claude 系共用 Claude 目录、
+// 其余用各自 skillsDir；按目录去重，避免同一目录重复计数/重复安装。
+export function skillTargets(agents = []) {
+  const opencodeRoot = opencodeConfigDir();
+  const claudeRoot = path.join(os.homedir(), '.claude');
+  const list = [
     {
       id: 'opencode',
       label: 'opencode',
-      toolDir: opencodeConfigDir(),
-      dir: path.join(opencodeConfigDir(), 'skills'),
+      toolDir: opencodeRoot,
+      dir: path.join(opencodeRoot, 'skills'),
     },
     {
       id: 'claudecode',
       label: 'Claude Code',
-      toolDir: path.join(os.homedir(), '.claude'),
-      dir: path.join(os.homedir(), '.claude', 'skills'),
+      toolDir: claudeRoot,
+      dir: path.join(claudeRoot, 'skills'),
     },
   ];
+  const byDir = new Map(list.map((t) => [path.resolve(t.dir), t]));
+  for (const agent of Array.isArray(agents) ? agents : []) {
+    const id = String(agent?.id || '').trim();
+    if (!id) continue;
+    const custom = agent?.skillsDir && String(agent.skillsDir).trim();
+    let dir = '';
+    let toolDir = '';
+    if (custom) {
+      dir = path.resolve(custom);
+      toolDir = dir;
+    } else if (isOpencodeAgent(agent)) {
+      dir = path.join(opencodeRoot, 'skills');
+      toolDir = opencodeRoot;
+    } else if (isClaudeAgent(agent)) {
+      dir = path.join(claudeRoot, 'skills');
+      toolDir = claudeRoot;
+    }
+    if (!dir) continue;
+    const key = path.resolve(dir);
+    if (byDir.has(key)) continue;
+    byDir.set(key, { id, label: agent.name || id, toolDir, dir });
+  }
+  return [...byDir.values()];
 }
 
 function isDir(p) {
@@ -155,4 +199,13 @@ export function installSkills({ sourceDirs = [], targetIds = null, targets = nul
     installed: results.reduce((n, r) => n + r.installed.length, 0),
     targets: results,
   };
+}
+
+// 检测后自动补齐缺失技能：先统计，缺则安装，再返回安装后的最新状态。
+// 只补缺失、不覆盖已有；安装失败时 status.missing 仍 > 0，供 UI 提示用户手动重试。
+export function autoInstallMissingSkills({ sourceDirs = [], targets = null, logger = null } = {}) {
+  const before = skillsStatus({ sourceDirs, targets });
+  if (!before.missing) return { status: before, install: null };
+  const install = installSkills({ sourceDirs, targets, logger });
+  return { status: skillsStatus({ sourceDirs, targets }), install, before };
 }
