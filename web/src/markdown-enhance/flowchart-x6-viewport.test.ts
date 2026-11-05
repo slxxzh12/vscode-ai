@@ -47,4 +47,23 @@ describe('renderFlowchartX6 视口', () => {
     expect(graphCalls.fit.maxScale).toBe(1);
     expect(graphCalls.fit.minScale).toBe(0.8);
   });
+
+  it('放在表格单元格里时给图表最小宽度，避免被单元格裁切', () => {
+    const table = document.createElement('table');
+    const tbody = document.createElement('tbody');
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    const el = document.createElement('div');
+    td.appendChild(el);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    table.appendChild(tbody);
+    document.body.appendChild(table);
+
+    renderFlowchartX6(el, tallSpec());
+
+    expect(el.style.minWidth).toBe('300px');
+
+    table.remove();
+  });
 });

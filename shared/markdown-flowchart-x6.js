@@ -11,6 +11,12 @@ export function renderFlowchartX6(el, spec, options = {}) {
   const model = buildFlowGraphModel(spec, options.theme || {});
   const height = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, model.height));
   el.style.height = `${height}px`;
+  // 表格单元格会按内容收缩：图表放进单元格时给一个不小于模型宽度的下限，
+  // 否则 X6 画布被单元格裁掉，流程图只显示一部分（表格本身可横向滚动）。
+  if (typeof el.closest === 'function' && el.closest('td, th')) {
+    const need = Math.max(240, Math.ceil(model.width));
+    if (!el.style.minWidth) el.style.minWidth = `${need}px`;
+  }
   const graph = new Graph({
     container: el,
     width: el.clientWidth || model.width,

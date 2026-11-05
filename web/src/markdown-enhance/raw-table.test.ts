@@ -2,8 +2,26 @@
 import { describe, it, expect } from 'vitest';
 import { markRawTables } from '@devflow/shared/markdown-client';
 import { disposeMarkdown, enhanceMarkdown } from './index';
+import { extractTable } from './table';
 
 describe('原始 HTML 表格', () => {
+  it('含 mermaid 的布局表格不转 Element Plus', () => {
+    const host = document.createElement('div');
+    host.innerHTML =
+      '<table><thead><tr><th>旧</th><th>新</th></tr></thead>' +
+      '<tbody><tr><td><pre class="mermaid">flowchart LR\\nA-->B</pre></td>' +
+      '<td><pre class="mermaid">flowchart LR\\nC-->D</pre></td></tr></tbody></table>';
+    expect(extractTable(host.querySelector('table')!)).toBeNull();
+  });
+
+  it('普通数据表格仍可转 Element Plus', () => {
+    const host = document.createElement('div');
+    host.innerHTML =
+      '<table><thead><tr><th>名称</th><th>数量</th></tr></thead>' +
+      '<tbody><tr><td>Alpha</td><td>12</td></tr></tbody></table>';
+    expect(extractTable(host.querySelector('table')!)).not.toBeNull();
+  });
+
   it('标记 raw 表格，并识别 border="0" 无边框', () => {
     const host = document.createElement('div');
     host.innerHTML =

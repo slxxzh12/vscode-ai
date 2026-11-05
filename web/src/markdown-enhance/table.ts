@@ -52,6 +52,9 @@ export function extractTable(table: HTMLTableElement): TableData | null {
   // Element Plus 表格内部也是 <table>，不能再次提取，否则会生成第二个表头
   if (table.closest('.el-table')) return null;
   if (table.querySelector('table')) return null;
+  // 布局表格：单元格里含块级内容（mermaid / 代码块 / 列表等）时保持原生 HTML 表格。
+  // 否则会被转成 Element Plus 表格，而它的单元格是异步渲染的，mermaid 增强阶段看不到图块，导致图不渲染。
+  if (table.querySelector('pre, div, ul, ol, blockquote, p')) return null;
   const headRow = table.querySelector('thead tr');
   if (!headRow) return null;
   const cells = Array.from(headRow.children);

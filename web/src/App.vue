@@ -834,7 +834,10 @@ onMounted(async () => {
     window.history.replaceState({}, '', u.pathname + u.search + u.hash);
   }
   initFileHistory();
-  const projectsReady = (async () => {
+  // 目录（项目）列表优先加载：首次运行检查里有 PowerShell 探测（file-assoc 约 800ms），
+  // 不能放在项目列表前面，否则启动后顶栏目录下拉要等校验完才出现。
+  const projectsReady = loadProjects();
+  const firstRunReady = (async () => {
     await checkOpencodeInstall();
     if (!showOpencodeInstall.value) {
       void loadUpgrade().finally(maybeUpgradePopup);
@@ -842,9 +845,9 @@ onMounted(async () => {
     }
     await checkFirstRunAgentChoice();
     await checkFirstRunFileAssoc();
-    await loadProjects();
-  })();
-  void restoreWindowState(projectsReady).finally(() => {
+  })().catch(() => { /* 首次运行检查失败不阻塞界面 */ });
+  void restoreWindowState(projectsReady).finally(async () => {
+    await firstRunReady;
     void processVoidProject();
     let shown = false;
     try { shown = localStorage.getItem(SETTINGS_AUTO_KEY) === '1'; } catch { /* ignore */ }
