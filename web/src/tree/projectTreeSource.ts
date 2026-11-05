@@ -37,7 +37,14 @@ export function projectTreeSource(opts: {
       opts.onDetailFile(pid, node.key, node.name);
     },
     copyName(node) { void copyText(node.name); },
-    copyPath(node) { void copyText(node.key); },
+    async copyPath(node) {
+      try {
+        const meta = await api.fileMeta(pid, node.key);
+        await copyText(meta.abs);
+      } catch {
+        await copyText(node.key);
+      }
+    },
     async copyContent(node) {
       const f = await api.text(pid, node.key);
       await copyText(f.content);

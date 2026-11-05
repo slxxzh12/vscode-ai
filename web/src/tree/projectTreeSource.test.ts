@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { projectTreeSource } from './projectTreeSource';
+import { copyText } from '../clipboard';
 import type { SearchEvent } from './treeSource';
 
-afterEach(() => { vi.unstubAllGlobals(); });
+vi.mock('../clipboard', () => ({ copyText: vi.fn(async () => true) }));
+
+afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 function okJson(body: unknown) { return { ok: true, json: async () => body }; }
 
@@ -38,6 +41,21 @@ describe('projectTreeSource', () => {
     const src = projectTreeSource({ projectId: 'p1', onOpenFile: vi.fn(), onDetailFile });
     src.detail!({ key: 'a.txt', name: 'a.txt', kind: 'item' });
     expect(onDetailFile).toHaveBeenCalledWith('p1', 'a.txt', 'a.txt');
+  });
+
+  it('copyPath 复制系统绝对路径', async () => {
+    const abs = 'D:\\root\\proj\\src\\a.txt';
+    vi.stubGlobal('fetch', vi.fn(async () => okJson({ abs, isDir: false })));
+    const src = projectTreeSource({ projectId: 'p1', onOpenFile: vi.fn(), onDetailFile: vi.fn() });
+    await src.copyPath!({ key: 'src/a.txt', name: 'a.txt', kind: 'item' });
+    expect(copyText).toHaveBeenCalledWith(abs);
+  });
+
+  it('copyPath 解析失败时回退相对路径', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) })));
+    const src = projectTreeSource({ projectId: 'p1', onOpenFile: vi.fn(), onDetailFile: vi.fn() });
+    await src.copyPath!({ key: 'a.txt', name: 'a.txt', kind: 'item' });
+    expect(copyText).toHaveBeenCalledWith('a.txt');
   });
 });
 
