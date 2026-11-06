@@ -37,6 +37,7 @@ import { useEnglishComposer } from '../useEnglishComposer';
 import { getComposerDraft, setComposerDraft } from '../composerDrafts';
 import { captureToPngDataUrl } from '../snapshot';
 import { pickRestoredAgent, restoredAgentIds } from '../sessionRestore';
+import { needsSelectedAgentSession, canReuseAgentSession } from '../agentTarget';
 import { copyText } from '../clipboard';
 import { MAX_RESTORE_TABS, restoreTabs, setRestoreTabs } from '../restorePrefs';
 import { isAgentSession, phoneHintKey } from '../remote-coder/phoneMode';
@@ -345,6 +346,13 @@ function syncAgentRename(sid: string, name: string) {
 
 // —— 固定 Agent 首标签：交互式 Agent（列表可配置）+ 工作流（跑 opencode 自定义命令）——
 interface AgentDef { id: string; name: string; cmd: string; }
+// Agent 设置列表按名称字母序（同 id 兜底），加载/新增后排序一次，编辑时不跳动
+function sortAgents(list: AgentDef[]): AgentDef[] {
+  return list.slice().sort((a, b) => {
+    const byName = (a.name || a.id).localeCompare(b.name || b.id, undefined, { sensitivity: 'base', numeric: true });
+    return byName || a.id.localeCompare(b.id);
+  });
+}
 // 仅作接口不可达时的最小兜底；正式列表来自 config/devflow.xml（GET /api/agents）
 const DEFAULT_AGENTS: AgentDef[] = [{ id: 'opencode', name: 'OpenCode', cmd: 'opencode' }];
 const agentSid = ref<string | null>(null);
@@ -360,7 +368,7 @@ async function loadAgents() {
       ? r.agents.filter((a: any) => a && typeof a.id === 'string' && typeof a.cmd === 'string')
       : [];
     if (!list.length) return;
-    defaultAgents.value = list.map((a: any) => ({ id: a.id, name: a.name || a.id, cmd: a.cmd }));
+    defaultAgents.value = sortAgents(list.map((a: any) => ({ id: a.id, name: a.name || a.id, cmd: a.cmd })));
     defaultAgentId.value = (typeof r.default === 'string' && defaultAgents.value.some((a) => a.id === r.default))
       ? r.default : defaultAgents.value[0].id;
     agents.value = defaultAgents.value.map((a) => ({ ...a }));
@@ -631,7 +639,7 @@ function loadCfg() {
         const merged: AgentDef[] = ok.map((a: any) => ({ id: a.id, name: a.name || a.id, cmd: a.cmd }));
         const ids = new Set(merged.map((a) => a.id));
         for (const d of defaultAgents.value) if (!ids.has(d.id)) merged.push({ ...d });   // 配置里新增的 Agent 始终保留
-        agents.value = merged;
+        agents.value = sortAgents(merged);
       }
     }
     if (typeof c.agentId === 'string' && agents.value.some((a) => a.id === c.agentId)) agentId.value = c.agentId;
@@ -649,7 +657,10 @@ function resetCfg() {
   wfKind.value = 'dev';
 }
 function addAgent() {
-  agents.value.push({ id: `agent-${Date.now().toString(36)}`, name: t('term.new_agent_name'), cmd: '' });
+  agents.value = sortAgents([
+    ...agents.value,
+    { id: `agent-${Date.now().toString(36)}`, name: t('term.new_agent_name'), cmd: '' },
+  ]);
 }
 function removeAgent(id: string) {
   if (agents.value.length <= 1) return;
@@ -670,8 +681,9 @@ function agentActive() {
   return !!agentSid.value && props.terminal.state.sessions.some((s) => s.id === agentSid.value);
 }
 async function startAgent() {
-  if (agentSid.value && agentActive() && (agentProjectId.value ?? null) === (props.projectId ?? null)) {
-    props.terminal.switchTo(agentSid.value);
+  const reusable = props.terminal.state.sessions.find((s) => s.id === agentSid.value) || null;
+  if (reusable && agentActive() && canReuseAgentSession(reusable, agentId.value, props.projectId)) {
+    props.terminal.switchTo(reusable.id);
     return;
   }
   const gen = ++agentGen;
@@ -1155,11 +1167,28 @@ function notePromptSent() {
     compactContext();
   }, AUTO_COMPACT_IDLE_MS);
 }
+function activeSession(): SessionSummary | null {
+  const sid = props.terminal.state.activeSessionId;
+  if (!sid) return null;
+  return props.terminal.state.sessions.find((s) => s.id === sid) || null;
+}
+
 // 非翻译模式：回车直接把输入框内容送入当前会话
 async function submitComposer() {
   const text = composerText.value.trim() || 'ok';
   composerText.value = '';
-  const sid = props.terminal.state.activeSessionId;
+  const active = activeSession();
+  const fixedActive = !active || active.id === agentSid.value;
+  if (!props.phone && fixedActive && needsSelectedAgentSession(active, agentId.value)) {
+    await startAgent();
+    const target = activeSession();
+    if (!target || needsSelectedAgentSession(target, agentId.value)) return;
+    void msgHistory.push(text, { sessionId: target.id, tabName: tabLabel(target.id) });
+    sendToAgent(text);
+    notePromptSent();
+    return;
+  }
+  const sid = active?.id ?? props.terminal.state.activeSessionId;
   void msgHistory.push(text, sid ? { sessionId: sid, tabName: tabLabel(sid) } : {});
   sendToActive(text);
   notePromptSent();
