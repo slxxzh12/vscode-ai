@@ -1,0 +1,12 @@
+请把当前版本的 release 包发布到全部 Release 渠道：
+
+- Gitee（主仓）：地址与凭据从 env/gitee-release.ini 读取。
+- Gitee（公开仓）：https://gitee.com/slxxzh12/vscode-ai/releases
+- GitHub：https://github.com/slxxzh12/vscode-ai/releases
+
+- 版本取 dist-portable/ 下最新的 version.txt，只上传标准包 vscode-ai-windows-x64-<version>.zip（不上传 -opencode 包）。
+- 先推 tag，再创建或更新 Release 并上传附件；tag 已存在则复用，Release 已存在则更新附件。
+- 每个渠道都必须把本版本主要功能/修复简介写入 Release 说明（body），不要只写“标准包”。
+- 凭据只从 env/ 读取，不要回显或提交。
+- 逐个渠道发布，某个渠道失败如实报告，不要跳过。
+- 完成后回显每个渠道的 Release 链接、附件名、大小和简介摘要。
