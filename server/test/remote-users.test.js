@@ -7,45 +7,48 @@ import { createRemoteUsers, normalizeUsername, normalizeUserToken } from '../rem
 
 function tmpFile() { return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'df-users-')), 'collab', 'users.json'); }
 
-test('remote users：创建/落盘/重载/列表', () => {
+test('remote users：创建只用系统生成令牌，落盘/重载/列表', () => {
   const file = tmpFile();
   const s = createRemoteUsers({ file });
-  const a = s.create({ username: 'alice', token: 'token-alice' });
+  const a = s.create({ username: 'alice', token: 'my-weak-password' });
   assert.ok(a.id);
   assert.equal(a.username, 'alice');
   assert.equal(a.enabled, true);
+  assert.notEqual(a.token, 'my-weak-password');
+  assert.match(a.token, /^[0-9a-f]{48}$/);
   assert.equal(s.list().length, 1);
   const s2 = createRemoteUsers({ file });
   assert.equal(s2.list()[0].username, 'alice');
-  assert.equal(s2.list()[0].token, 'token-alice');
+  assert.equal(s2.list()[0].token, a.token);
 });
 
-test('remote users：缺省令牌自动生成；用户名/令牌唯一（用户名不区分大小写）', () => {
+test('remote users：用户名唯一（不区分大小写）', () => {
   const s = createRemoteUsers({ file: tmpFile() });
   const a = s.create({ username: 'bob' });
-  assert.ok(a.token.length >= 16);
-  assert.throws(() => s.create({ username: 'BOB', token: 'x-token-1' }), (e) => e.code === 'duplicate-username');
-  assert.throws(() => s.create({ username: 'carol', token: a.token }), (e) => e.code === 'duplicate-token');
-  assert.throws(() => s.create({ username: '', token: 'x-token-1' }), (e) => e.code === 'bad-username');
-  assert.throws(() => s.create({ username: 'dave', token: 'x' }), (e) => e.code === 'bad-token');
+  assert.match(a.token, /^[0-9a-f]{48}$/);
+  const b = s.create({ username: 'carol' });
+  assert.notEqual(a.token, b.token);
+  assert.throws(() => s.create({ username: 'BOB' }), (e) => e.code === 'duplicate-username');
+  assert.throws(() => s.create({ username: '' }), (e) => e.code === 'bad-username');
 });
 
-test('remote users：登录校验、停用、改令牌、删除', () => {
+test('remote users：登录校验、停用、忽略自定义令牌、删除', () => {
   const s = createRemoteUsers({ file: tmpFile() });
-  const a = s.create({ username: 'alice', token: 'token-alice' });
-  assert.equal(s.findByLogin('alice', 'token-alice').id, a.id);
-  assert.equal(s.findByLogin('ALICE', 'token-alice').id, a.id);
+  const a = s.create({ username: 'alice' });
+  assert.equal(s.findByLogin('alice', a.token).id, a.id);
+  assert.equal(s.findByLogin('ALICE', a.token).id, a.id);
   assert.equal(s.findByLogin('alice', 'wrong'), null);
-  assert.equal(s.findByToken('token-alice').id, a.id);
+  assert.equal(s.findByToken(a.token).id, a.id);
 
   s.update(a.id, { enabled: false });
-  assert.equal(s.findByLogin('alice', 'token-alice'), null);
-  assert.equal(s.findByToken('token-alice'), null);
+  assert.equal(s.findByLogin('alice', a.token), null);
+  assert.equal(s.findByToken(a.token), null);
 
-  const b = s.update(a.id, { enabled: true, token: 'token-alice-2' });
+  const b = s.update(a.id, { enabled: true, token: 'my-weak-password' });
   assert.equal(b.enabled, true);
-  assert.equal(s.findByToken('token-alice'), null);
-  assert.equal(s.findByToken('token-alice-2').id, a.id);
+  assert.equal(b.token, a.token);
+  assert.equal(s.findByToken('my-weak-password'), null);
+  assert.equal(s.findByToken(a.token).id, a.id);
 
   assert.equal(s.remove(a.id), true);
   assert.equal(s.list().length, 0);

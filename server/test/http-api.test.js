@@ -7,6 +7,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { Projects } from '../projects.js';
 import { createHttpApi } from '../http-api.js';
+import { createStartupPrefs } from '../startup-prefs.js';
 import { readZip } from '../collaboration/zip.js';
 import { seedRepo } from './helpers/git-fixture.js';
 
@@ -579,6 +580,23 @@ test('/api/code/prefs GET 默认空、POST 只存已知键且读回', async (t) 
 
   const again = await request(server, '/api/code/prefs');
   assert.deepEqual(JSON.parse(again.body), { exts: '.js, .xml', excludeTestFiles: false });
+});
+
+test('/api/startup/prefs GET 默认隐藏、POST 只存 hide 且读回', async (t) => {
+  const file = path.join(tmpDir(), 'startup-prefs.json');
+  const startupPrefs = createStartupPrefs({ file, logger: { warn() {} } });
+  const server = await start(new Projects({ projects: [] }), { startupPrefs, startupAvailable: () => true });
+  t.after(() => server.close());
+  const empty = await request(server, '/api/startup/prefs');
+  assert.equal(empty.status, 200);
+  assert.deepEqual(JSON.parse(empty.body), { available: true, hide: true });
+
+  const r = await post(server, '/api/startup/prefs', { hide: false, nope: 1 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse(r.body), { available: true, hide: false });
+
+  const again = await request(server, '/api/startup/prefs');
+  assert.deepEqual(JSON.parse(again.body), { available: true, hide: false });
 });
 
 test('/api/composer/prefs GET 默认空、POST 只存 autoSend 且读回', async (t) => {

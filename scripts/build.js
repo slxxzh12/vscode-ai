@@ -24,7 +24,7 @@ const OUT_ROOT = path.join(ROOT, "dist-portable");
 // 产物命名对齐 opencode release 风格：<name>-<os>-<arch>
 const WIN_ARCH = process.arch; // x64 | arm64
 const { todayVersion } = require("../shared/version.cjs");
-const { makeLaunchPs1, makeOpenVbs } = require("./launcher.js");
+const { makeLaunchPs1, makeOpenVbs, makeStartVbs, makeStopVbs } = require("./launcher.js");
 const VERSION = String(process.env.DEVFLOW_VERSION || "").trim() || todayVersion();
 const APP_NAME = "vscode-ai-windows-" + WIN_ARCH + "-" + VERSION;
 const APP = path.join(OUT_ROOT, APP_NAME);
@@ -262,25 +262,35 @@ fs.writeFileSync(
 
 // 文件关联入口：wscript 隐藏启动，避免双击文件时闪控制台
 fs.writeFileSync(path.join(APP, "script", "open.vbs"), makeOpenVbs(), "utf8");
+// 隐藏启动/停止入口：经 wscript 调 launch.ps1，node 以 Hidden 运行，不留黑色控制台
+fs.writeFileSync(path.join(APP, "script", "start-hidden.vbs"), makeStartVbs(), "utf8");
+fs.writeFileSync(path.join(APP, "script", "stop-hidden.vbs"), makeStopVbs(), "utf8");
 
 const bat = [
   "@echo off",
-  'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0script\\launch.ps1" %*',
+  'wscript //nologo "%~dp0script\\start-hidden.vbs" %*',
   "",
 ].join("\r\n");
 fs.writeFileSync(path.join(APP, "start.bat"), bat);
+
+const stopBat = [
+  "@echo off",
+  'wscript //nologo "%~dp0script\\stop-hidden.vbs"',
+  "",
+].join("\r\n");
+fs.writeFileSync(path.join(APP, "stop.bat"), stopBat);
 
 const usage = [
   "vscode-ai（绿色免安装版 / windows-" + WIN_ARCH + "）",
   "版本 / Version：" + VERSION,
   "",
-  "启动：双击 start.bat（已在运行则只打开浏览器；否则自动启动服务）",
+  "启动：双击 start.bat（默认后台隐藏运行，无黑色控制台；可在设置面板取消隐藏，直接显示 Node.js 服务控制台）",
   "桌面图标：首次运行会在桌面创建「Void」快捷方式，之后双击桌面图标即可拉起服务",
-  '停止：关闭弹出的最小化服务窗口',
+  "停止：双击 stop.bat（无黑框）",
   "",
   "端口：默认 " + CFG_PORT + "；被占用时弹窗询问：结束占用进程并重启 / 更换端口",
   "端口文件：data\\port.txt（单行端口号；改端口写这里，重启生效）",
-  "改端口：设置面板保存后点「重启后端」；或关闭服务窗口后重新双击 start.bat",
+  "改端口：设置面板保存后点「重启后端」；或双击 stop.bat 后重新双击 start.bat",
   "数据目录：%USERPROFILE%\\.local\\share\\void\\ports\\<端口>\\（换端口 = 换一份数据）",
   "Agent/工作流配置：编辑 <数据目录>\\ports\\<端口>\\downloads\\devflow.xml 后重启",
   "",
@@ -317,6 +327,10 @@ const entries = [
   ["config", "config/devflow.xml"],
   ["icon", "script/icon.ico"],
   ["launcher", "script/launch.ps1"],
+  ["start-hidden", "script/start-hidden.vbs"],
+  ["stop-hidden", "script/stop-hidden.vbs"],
+  ["start", "start.bat"],
+  ["stop", "stop.bat"],
   ["void", "bin/void.cmd"],
 ];
 for (const [label, rel] of entries) {

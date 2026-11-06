@@ -36,6 +36,7 @@ test('portPaths 全部落在 ports/<端口> 下', () => {
   assert.equal(p.codeGroupsFile, path.join(base, 'code-groups.json'));
   assert.equal(p.codePrefsFile, path.join(base, 'code-prefs.json'));
   assert.equal(p.composerPrefsFile, path.join(base, 'composer-prefs.json'));
+  assert.equal(p.startupPrefsFile, path.join(base, 'startup-prefs.json'));
   assert.equal(p.skillsRoot, path.join(base, 'skills-opencode'));
   assert.equal(p.toolsDir, path.join(base, 'tools'));
   assert.equal(p.postmanDir, path.join(base, 'tools', 'postman'));

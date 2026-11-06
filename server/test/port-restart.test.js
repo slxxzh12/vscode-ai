@@ -46,20 +46,32 @@ test('env 为空串/未定义/纯空白视为未设', () => {
   assert.equal(restartGuard({ appDir, envPort: '   ', platform: 'win32' }).ok, true);
 });
 
-test('spawnRestart：Windows 用新控制台里的助手等本进程退出（避免随本进程控制台一起被杀）', () => {
+test('spawnRestart：Windows 用新控制台里的助手等本进程退出，并经隐藏入口重启', () => {
+  const appDir = tmpApp({ withBat: true });
+  fs.mkdirSync(path.join(appDir, 'script'), { recursive: true });
+  fs.writeFileSync(path.join(appDir, 'script', 'start-hidden.vbs'), '', 'utf8');
   const calls = [];
   const fakeSpawn = (bin, args, opts) => { calls.push({ bin, args, opts }); return { unref() { calls.push({ unref: true }); } }; };
-  spawnRestart({ appDir: 'C:\\app', pid: 4321, platform: 'win32', spawnFn: fakeSpawn });
+  spawnRestart({ appDir, pid: 4321, platform: 'win32', spawnFn: fakeSpawn });
   const { bin, args, opts } = calls[0];
   assert.equal(bin, 'cmd.exe');
   assert.deepEqual(args.slice(0, 4), ['/c', 'start', '""', '/min']);
   assert.ok(args.join(' ').includes('powershell.exe'));
   assert.ok(args.join(' ').includes('Wait-Process -Id 4321'));
-  assert.ok(args.join(' ').includes('start.bat'));
+  assert.ok(args.join(' ').includes('wscript.exe'));
+  assert.ok(args.join(' ').includes('start-hidden.vbs'));
   assert.equal(opts.detached, true);
   assert.equal(opts.stdio, 'ignore');
   assert.notEqual(opts.windowsHide, true); // CREATE_NO_WINDOW 会让助手继续挂在本进程控制台上
   assert.deepEqual(calls[1], { unref: true });
+});
+
+test('spawnRestart：旧包没有隐藏入口时回退 start.bat', () => {
+  const appDir = tmpApp({ withBat: true });
+  const calls = [];
+  const fakeSpawn = (bin, args, opts) => { calls.push({ bin, args, opts }); return { unref() {} }; };
+  spawnRestart({ appDir, pid: 4321, platform: 'win32', spawnFn: fakeSpawn });
+  assert.ok(calls[0].args.join(' ').includes('start.bat'));
 });
 
 test('spawnRestart：macOS 轮询进程退出后 open start.command', () => {

@@ -22,7 +22,12 @@ export function restartGuard({ appDir, envPort = process.env.DEVFLOW_PORT, platf
 // 服务一退、控制台一关助手就被一起杀掉，导致「旧实例退了、新实例没起」。
 // 用 `cmd /c start /min` 让助手跑在独立的新控制台里，从而活过本进程退出。
 export function spawnRestart({ appDir, pid = process.pid, platform = process.platform, spawnFn = spawn } = {}) {
-  const wait = `Wait-Process -Id ${pid} -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300; Start-Process -FilePath '${path.join(appDir, 'start.bat')}'`;
+  const hidden = path.join(appDir, 'script', 'start-hidden.vbs');
+  const wscript = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'wscript.exe') : 'wscript.exe';
+  const launch = fs.existsSync(hidden)
+    ? `Start-Process -FilePath '${wscript}' -ArgumentList '//nologo','"${hidden}"'`
+    : `Start-Process -FilePath '${path.join(appDir, 'start.bat')}'`;
+  const wait = `Wait-Process -Id ${pid} -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300; ${launch}`;
   const child = platform === 'win32'
     ? spawnFn('cmd.exe', [
         '/c', 'start', '""', '/min',

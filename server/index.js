@@ -19,6 +19,7 @@ import { createCodePrefs } from './code-prefs.js';
 import { createComposerPrefs } from './composer-prefs.js';
 import { createSessionProjects } from './session-projects.js';
 import { createWindowState } from './window-state.js';
+import { createStartupPrefs } from './startup-prefs.js';
 import { createSessionLedger } from './session-ledger.js';
 import { restoreSessions, restoreRecord } from './session-restore.js';
 import { discoverAgentSessionId } from './agent-resume.js';
@@ -456,6 +457,7 @@ function buildWorkspace({ paths, port }) {
   const composerPrefs = createComposerPrefs({ file: paths.composerPrefsFile, logger: log });
   const sessionProjects = createSessionProjects({ file: paths.sessionProjectsFile, logger: log });
   const windowState = createWindowState({ file: paths.windowStateFile, logger: log });
+  const startupPrefs = createStartupPrefs({ file: paths.startupPrefsFile, logger: log });
   const sessionLedger = createSessionLedger({ file: paths.sessionsFile, logsDir: paths.sessionLogsDir, logDirFor: (projectId) => path.join(projectDataDirOf(projectId), 'session-logs'), sessionsDirs: listProjectDataDirs, sessionsDirFor: projectDataDirOf, logger: log });
   // 一次性迁移：老单文件 message-history.jsonc 搬到按项目分目录的位置（按 sessionId 归属，无归属落 _global）
   function migrateHistoryToProjects() {
@@ -836,7 +838,12 @@ function buildWorkspace({ paths, port }) {
   const proxyCapture = createProxyCapture({ rootDir: paths.proxyCapturesDir, onEvent: broadcastNginx });
   const proxyEngine = createProxyEngine({ store: proxyStore, capture: proxyCapture, httpServer: server, onEvent: broadcastNginx, logger: log });
   const proxyMount = createProxyMount({ store: proxyStore, engine: proxyEngine, capture: proxyCapture, logger: log });
-  const httpApi = createHttpApi({ projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'), codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, sessionLedger, postmanHistory, notepadStore, fileStores });
+  const httpApi = createHttpApi({
+    projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'),
+    codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, startupPrefs,
+    startupAvailable: () => process.platform === 'win32' && fs.existsSync(path.join(APP_DIR, 'start.bat')),
+    sessionLedger, postmanHistory, notepadStore, fileStores,
+  });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));
   const llmMount = createLlmMount({ vault: llmVault, host: detectHost(), port: LLM_RELAY_PORT, logger: log, pluginsDir: paths.relayPluginsDir, relayTestsDir: path.join(paths.downloadsDir, 'relay-tests') });
@@ -1324,7 +1331,7 @@ const server = http.createServer(async (req, res) => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       try {
-        const item = remoteUsers.create({ username: body.username, token: body.token });
+        const item = remoteUsers.create({ username: body.username });
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ item }));
       } catch (e) {
@@ -1368,7 +1375,7 @@ const server = http.createServer(async (req, res) => {
       try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
       const days = resolveInviteDaysAllowForever(body);   // days=0 = 长期不过期；缺省 1 天，最长 100 天
       const token = crypto.randomBytes(24).toString('hex');
-      const password = crypto.randomBytes(16).toString('base64url');        // 22 字符，≥16
+      const password = crypto.randomBytes(6).toString('base64url');        // 8 字符，约 48 位随机量
       remoteInvite = { token, password, expiresAt: days === 0 ? 0 : Date.now() + Math.min(days * 24 * 3600 * 1000, MAX_TTL_MS) };
       if (ws && ws.paths) saveInvite(ws.paths.inviteFile, remoteInvite);
       remoteFails = 0;

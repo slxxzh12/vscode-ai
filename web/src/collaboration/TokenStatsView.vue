@@ -27,7 +27,6 @@ const loading = ref(false);
 const err = ref('');
 const userMsg = ref('');
 const newUserName = ref('');
-const newUserToken = ref('');
 const metric = ref<'messages' | 'chars'>('messages');
 const chartEl = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
@@ -124,10 +123,10 @@ async function addUser() {
   try {
     const r = await fetch('/api/remote/users', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: newUserName.value, token: newUserToken.value || undefined }),
+      body: JSON.stringify({ username: newUserName.value }),
     }).then((x) => x.json());
     if (r.error) { userMsg.value = userErr(r.error); return; }
-    newUserName.value = ''; newUserToken.value = '';
+    newUserName.value = '';
     await load();
   } catch (e) { userMsg.value = t('remote.failed', { msg: (e as Error)?.message || String(e) }); }
 }
@@ -199,7 +198,6 @@ watch(isDark, async () => { await nextTick(); draw(); });
       </div>
       <div class="addrow">
         <input v-model="newUserName" :placeholder="$t('remote.username')" @keyup.enter="addUser" />
-        <input v-model="newUserToken" :placeholder="$t('remote.token_optional')" @keyup.enter="addUser" />
         <button class="mvbtn" @click="addUser">{{ $t('remote.add_user') }}</button>
       </div>
       <div v-if="userMsg" class="hint">{{ userMsg }}</div>

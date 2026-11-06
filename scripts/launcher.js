@@ -11,11 +11,12 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
       ]
     : [];
   return [
-    "param([switch]$NoBrowser, [switch]$NoShortcut, [switch]$Plan, [switch]$NoPrompt, [Parameter(Position=0)][string]$Open = '', [string]$Assoc = '')",
+    "param([switch]$NoBrowser, [switch]$NoShortcut, [switch]$Plan, [switch]$NoPrompt, [switch]$Stop, [Parameter(Position=0)][string]$Open = '', [string]$Assoc = '')",
     "$ErrorActionPreference = 'SilentlyContinue'",
     "$scriptDir = $PSScriptRoot",
     "if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }",
     "$root = Split-Path -Parent $scriptDir",
+    "$wscript = if ($env:SystemRoot) { Join-Path $env:SystemRoot 'System32\\wscript.exe' } else { 'wscript.exe' }",
     "function Get-VoidVersion([string]$file) {",
     "  if (-not $file -or -not (Test-Path $file)) { return '' }",
     "  try { return ((Get-Content -Raw $file).Trim()) } catch { return '' }",
@@ -83,6 +84,10 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "if (Test-Path $rf) { $t = (Get-Content -Raw $rf).Trim(); if ($t -match '^\\d+$') { $running = [int]$t } }",
     "$dh = if ($env:DEVFLOW_DATA_HOME) { $env:DEVFLOW_DATA_HOME } else { Join-Path $env:USERPROFILE '.local\\share\\void' }",
     "$assocPref = Join-Path (Join-Path $dh ('ports\\' + $desired)) 'file-assoc.json'",
+    "# 启动后是否隐藏服务后台（设置面板写入 startup-prefs.json；缺省隐藏）",
+    "$startupPref = Join-Path (Join-Path $dh ('ports\\' + $desired)) 'startup-prefs.json'",
+    "$hideServer = $true",
+    "try { if (Test-Path $startupPref) { $sp = Get-Content -Raw $startupPref | ConvertFrom-Json; if ($sp.hide -eq $false) { $hideServer = $false } } } catch { }",
     "function Test-Port([int]$p) {",
     "  try {",
     "    $c = New-Object System.Net.Sockets.TcpClient",
@@ -100,6 +105,26 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "  exit 0",
     "}",
     "if ($Assoc) { Set-VoidAssoc $Assoc; exit 0 }",
+    "# 停止隐藏运行的实例：只结束监听本应用端口的 runtime\\node.exe / server\\index.js 进程",
+    "if ($Stop) {",
+    "  $stopPort = $running",
+    "  if (-not (Test-Port $stopPort)) { $stopPort = $desired }",
+    "  $killed = $false",
+    "  try {",
+    "    $conns = Get-NetTCPConnection -State Listen -LocalPort $stopPort -ErrorAction SilentlyContinue",
+    "    foreach ($c in @($conns)) {",
+    "      $p = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $c.OwningProcess) -ErrorAction SilentlyContinue",
+    "      if (-not $p) { continue }",
+    "      $exe = [string]$p.ExecutablePath",
+    "      $cmd = [string]$p.CommandLine",
+    "      $isOurs = ($exe -ieq (Join-Path $root 'runtime\\node.exe')) -or ($cmd -match 'server\\\\index\\.js')",
+    "      if ($isOurs) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue; $killed = $true }",
+    "    }",
+    "  } catch { }",
+    "  if ($killed) { Write-Output ('已停止 Void（端口 {0}）' -f $stopPort) }",
+    "  else { Write-Output ('未发现运行中的 Void（端口 {0}）' -f $stopPort) }",
+    "  exit 0",
+    "}",
     "# 桌面快捷方式：只在当前版本不低于已指向版本时更新，避免旧包抢走新包的入口",
     "if (-not $NoShortcut -and $action -ne 'open') {",
     "  try {",
@@ -120,7 +145,14 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "        }",
     "      }",
     "      if ($update) {",
-    "        $lnk.TargetPath = Join-Path $root 'start.bat'",
+    "        $hidden = Join-Path $scriptDir 'start-hidden.vbs'",
+    "        if (Test-Path $hidden) {",
+    "          $lnk.TargetPath = $wscript",
+    "          $lnk.Arguments = '//nologo \"' + $hidden + '\"'",
+    "        } else {",
+    "          $lnk.TargetPath = Join-Path $root 'start.bat'",
+    "          $lnk.Arguments = ''",
+    "        }",
     "        $lnk.WorkingDirectory = $root",
     "        $lnk.IconLocation = (Join-Path $scriptDir 'icon.ico')",
     "        $lnk.Description = 'Void'",
@@ -169,7 +201,11 @@ function makeLaunchPs1({ port, opencodeDir = "" }) {
     "$logErr = Join-Path $logDir 'server.err.log'",
     "if ($action -ne 'open') {",
     "  try { New-Item -ItemType Directory -Force -Path $logDir | Out-Null } catch { }",
-    "  Start-Process -FilePath (Join-Path $root 'runtime\\node.exe') -ArgumentList 'server\\index.js' -WorkingDirectory $root -WindowStyle Minimized -RedirectStandardOutput $logOut -RedirectStandardError $logErr",
+    "  if ($hideServer) {",
+    "    Start-Process -FilePath (Join-Path $root 'runtime\\node.exe') -ArgumentList 'server\\index.js' -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $logOut -RedirectStandardError $logErr",
+    "  } else {",
+    "    Start-Process -FilePath (Join-Path $root 'runtime\\node.exe') -ArgumentList 'server\\index.js' -WorkingDirectory $root -WindowStyle Normal",
+    "  }",
     "  $deadline = (Get-Date).AddSeconds(20)",
     "  while ((Get-Date) -lt $deadline -and -not (Test-Port $openPort)) { Start-Sleep -Milliseconds 400 }",
     "  $started = Test-Port $openPort",
@@ -275,6 +311,47 @@ function makeLaunchSh({ port }) {
   ].join("\n");
 }
 
+// 隐藏启动入口：start.bat / 桌面快捷方式经 wscript 调它，不再留下 PowerShell / node 黑框。
+function makeStartVbs() {
+  return [
+    "' Void hidden launcher: starts launch.ps1 without a console window.",
+    "Option Explicit",
+    "Dim fso, sh, scriptDir, cmd, args, i, a",
+    'Set fso = CreateObject("Scripting.FileSystemObject")',
+    "scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)",
+    'Set sh = CreateObject("WScript.Shell")',
+    'args = ""',
+    "For i = 0 To WScript.Arguments.Count - 1",
+    "  a = WScript.Arguments(i)",
+    '  args = args & " " & Q(a)',
+    "Next",
+    'cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Q(scriptDir & "\\launch.ps1") & args',
+    "sh.Run cmd, 0, False",
+    "Function Q(s)",
+    '  Q = """" & s & """"',
+    "End Function",
+    "",
+  ].join("\r\n");
+}
+
+// 隐藏停止入口：node 以 Hidden 运行后没有控制台可关，用 stop.bat 调这里停服。
+function makeStopVbs() {
+  return [
+    "' Void hidden stopper: stops the hidden server without a console window.",
+    "Option Explicit",
+    "Dim fso, sh, scriptDir, cmd",
+    'Set fso = CreateObject("Scripting.FileSystemObject")',
+    "scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)",
+    'Set sh = CreateObject("WScript.Shell")',
+    'cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Q(scriptDir & "\\launch.ps1") & " -Stop"',
+    "sh.Run cmd, 0, False",
+    "Function Q(s)",
+    '  Q = """" & s & """"',
+    "End Function",
+    "",
+  ].join("\r\n");
+}
+
 function makeStartCommand() {
   return [
     "#!/bin/bash",
@@ -284,4 +361,4 @@ function makeStartCommand() {
   ].join("\n");
 }
 
-module.exports = { makeLaunchPs1, makeOpenVbs, makeLaunchSh, makeStartCommand };
+module.exports = { makeLaunchPs1, makeOpenVbs, makeStartVbs, makeStopVbs, makeLaunchSh, makeStartCommand };

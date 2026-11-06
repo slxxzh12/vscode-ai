@@ -38,6 +38,7 @@
 - 开发：两个终端分别 `npm.cmd run dev:server`（= `set DEVFLOW_PORT=33333&& node --watch server/index.js`，dev 固定端口 **33333**，与 release 的 22222 区分；改后端自动重启）与 `npm.cmd run dev:web`（Vite :5173，代理 `/api`、`/ws` 到 33333）。访问 http://localhost:5173。dev 与绿色包各用各的数据目录（`ports/33333` 与 `ports/22222`），互不干扰。也可一条命令 `npm.cmd run dev`（= `node scripts/dev.js`）同时起两者，Ctrl-C 一并结束。
 - **dev 日志一律写 `logs\`**（`npm run dev` 固定写 `logs\dev-server.log` / `logs\dev-web.log`；手工重定向也必须指到 `logs\`）；**严禁把日志丢在仓库根目录**（`logs/` 已在 `.gitignore`）。
 - 生产/绿色包：`node server/index.js`（静态托管 `web/dist`，端口取 `data/port.txt`，默认 22222，访问 http://127.0.0.1:22222）。
+- 绿色包默认隐藏服务后台；设置面板「启动 → 启动后隐藏服务后台」可取消隐藏，下次启动/重启由 `launch.ps1` 以可见控制台直接运行 `runtime\node.exe`。偏好存 `<数据目录>/ports/<端口>/startup-prefs.json`（默认 `hide=true`）。
 - 改 `projects.json` 后需重启后端才生效（dev:server 的 `--watch` 不监听 json）。
 
 ## 已验证教训（勿再犯）

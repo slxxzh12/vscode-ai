@@ -8,6 +8,7 @@ import { createCodePrefs } from './code-prefs.js';
 import { createComposerPrefs } from './composer-prefs.js';
 import { createSessionProjects } from './session-projects.js';
 import { createWindowState } from './window-state.js';
+import { createStartupPrefs } from './startup-prefs.js';
 import { buildZip, safeZipName } from './collaboration/zip.js';
 import { createRemoteCoder } from './remote-coder-mount.js';
 import { pickFolder, pickAnyFile } from './native-dialog.js';
@@ -44,7 +45,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), startupPrefs = createStartupPrefs({}), startupAvailable = () => false, sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -439,6 +440,15 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       if (url.pathname === '/api/composer/prefs' && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, composerPrefs.write(body));
+        return;
+      }
+      if (url.pathname === '/api/startup/prefs' && req.method === 'GET') {
+        sendJson(res, 200, { available: !!startupAvailable(), ...startupPrefs.read() });
+        return;
+      }
+      if (url.pathname === '/api/startup/prefs' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, { available: !!startupAvailable(), ...startupPrefs.write(body) });
         return;
       }
       if (url.pathname === '/api/sessions' && req.method === 'GET') {

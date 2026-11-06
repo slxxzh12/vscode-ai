@@ -42,6 +42,7 @@ export function portPaths(port, { root = dataHome() } = {}) {
     codeGroupsFile: path.join(dir, 'code-groups.json'),
     codePrefsFile: path.join(dir, 'code-prefs.json'),
     composerPrefsFile: path.join(dir, 'composer-prefs.json'),
+    startupPrefsFile: path.join(dir, 'startup-prefs.json'),
     skillsRoot: path.join(dir, 'skills-opencode'),
     toolsDir: path.join(dir, 'tools'),
     postmanDir: path.join(dir, 'tools', 'postman'),

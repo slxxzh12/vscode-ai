@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { makeLaunchPs1, makeOpenVbs, makeLaunchSh, makeStartCommand } = require('../../scripts/launcher.js');
+const { makeLaunchPs1, makeOpenVbs, makeStartVbs, makeStopVbs, makeLaunchSh, makeStartCommand } = require('../../scripts/launcher.js');
 
 test('launch.ps1 含 desired/running 双端口与 -Plan 钩子', () => {
   const ps = makeLaunchPs1({ port: 22222 });
@@ -54,7 +54,9 @@ test('launch.ps1 按版本决定是否更新桌面快捷方式', () => {
   assert.match(ps, /version\.txt/);
   assert.match(ps, /Compare-VoidVersion \$oldVer \$curVer/);
   assert.match(ps, /Split-Path -Parent \$target/);
-  assert.match(ps, /\$lnk\.TargetPath = Join-Path \$root 'start\.bat'/);
+  assert.match(ps, /start-hidden\.vbs/);
+  assert.match(ps, /\$lnk\.TargetPath = \$wscript/);
+  assert.match(ps, /\$lnk\.Arguments = '\/\/nologo/);
 });
 
 test('launch.ps1 含 -Assoc 子命令与启动自查，且不再有 WScript 首启弹窗', () => {
@@ -89,6 +91,25 @@ test('open.vbs 隐藏窗口并显式传 -Open（不依赖位置参数隐式绑�
   assert.ok(!/[^\x00-\x7F]/.test(vbs), 'VBS 保持纯 ASCII，避免 WSH 按 ANSI 解码出问题');
 });
 
+test('隐藏启动/停止入口经 wscript 调 launch.ps1，不留控制台', () => {
+  for (const vbs of [makeStartVbs(), makeStopVbs()]) {
+    assert.match(vbs, /WindowStyle Hidden/);
+    assert.match(vbs, /launch\.ps1/);
+    assert.match(vbs, /sh\.Run cmd, 0, False/, '0 = 隐藏窗口');
+    assert.ok(!/[^\x00-\x7F]/.test(vbs), 'VBS 保持纯 ASCII');
+  }
+  assert.match(makeStopVbs(), /-Stop/);
+});
+
+test('node 以 Hidden 启动，且提供 -Stop 子命令', () => {
+  const ps = makeLaunchPs1({ port: 22222 });
+  assert.match(ps, /\[switch\]\$Stop/);
+  assert.match(ps, /-WindowStyle Hidden/);
+  assert.ok(!ps.includes('-WindowStyle Minimized'), '不再使用最小化黑框');
+  assert.match(ps, /if \(\$Stop\) \{/);
+  assert.match(ps, /Stop-Process/);
+});
+
 test('launch.sh 含 desired 优先、nc 存活探测与 --plan 钩子', () => {
   const sh = makeLaunchSh({ port: 22222 });
   assert.match(sh, /data\/port\.txt/);
@@ -117,4 +138,14 @@ test('launch.ps1 可选注入包内 opencode 到 PATH（不传则维持现状）
 
   const plain = makeLaunchPs1({ port: 22222 });
   assert.ok(!plain.includes('$env:PATH'), '不传 opencodeDir 时输出不含 PATH 注入');
+});
+
+test('launch.ps1 读 startup-prefs.json：默认隐藏，取消后以 Normal 窗口启动 node', () => {
+  const ps = makeLaunchPs1({ port: 22222 });
+  assert.match(ps, /startup-prefs\.json/);
+  assert.match(ps, /\$hideServer = \$true/);
+  assert.match(ps, /if \(\$sp\.hide -eq \$false\) \{ \$hideServer = \$false \}/);
+  assert.match(ps, /if \(\$hideServer\) \{/);
+  assert.match(ps, /-WindowStyle Hidden -RedirectStandardOutput \$logOut -RedirectStandardError \$logErr/);
+  assert.match(ps, /-WindowStyle Normal/);
 });

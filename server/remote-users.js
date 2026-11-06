@@ -86,7 +86,7 @@ export function createRemoteUsers({ file, logger = console } = {}) {
     create(input = {}) {
       const list = load();
       const username = normalizeUsername(input.username);
-      const token = normalizeUserToken(input.token || genUserToken());
+      const token = genUserToken();
       ensureUnique(list, username, token, null);
       const ts = now();
       const u = { id: crypto.randomUUID(), username, token, enabled: input.enabled !== false, createdAt: ts, updatedAt: ts, lastLoginAt: 0 };
@@ -100,7 +100,7 @@ export function createRemoteUsers({ file, logger = console } = {}) {
       if (i < 0) throw err('not-found', 'user not found');
       const u = list[i];
       const username = patch.username === undefined ? u.username : normalizeUsername(patch.username);
-      const token = patch.token === undefined || patch.token === '' ? u.token : normalizeUserToken(patch.token);
+      const token = u.token;
       ensureUnique(list, username, token, u.id);
       list[i] = {
         ...u, username, token,

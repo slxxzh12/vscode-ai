@@ -440,6 +440,9 @@ const assocPrompted = ref(true);
 const assocExts = ref<{ ext: string; isDefault: boolean; enabled: boolean }[]>([]);
 const assocMsg = ref('');
 const assocLoadedSel = ref('');   // 已保存的逐扩展勾选（用于判断脏值）
+const startupAvailable = ref(false);
+const hideServerBg = ref(true);
+const startupMsg = ref('');
 const voidBusy = ref(false);
 const voidMsg = ref('');
 async function registerVoid() {
@@ -468,6 +471,29 @@ async function loadFileAssoc() {
   assocLoaded.value = r.enabled;
   assocExts.value = r.extensions || [];
   assocLoadedSel.value = assocExts.value.filter((x) => x.enabled).map((x) => x.ext).join(',');
+}
+async function loadStartupPrefs() {
+  try {
+    const res = await fetch('/api/startup/prefs');
+    if (!res.ok) return;
+    const r = await res.json();
+    startupAvailable.value = !!r?.available;
+    hideServerBg.value = r?.hide !== false;
+  } catch { /* ignore */ }
+}
+async function setHideServerBg(v: boolean) {
+  hideServerBg.value = v;
+  startupMsg.value = '';
+  try {
+    const res = await fetch('/api/startup/prefs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hide: v }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const r = await res.json();
+    hideServerBg.value = r?.hide !== false;
+  } catch (e: any) {
+    startupMsg.value = t('term.startup_save_failed', { msg: String(e?.message || e) });
+  }
 }
 async function loadSettings() {
   try {
@@ -1400,6 +1426,7 @@ onMounted(async () => {
   tabDescsKey = `devflow-tab-descs-${fp}`;
   loadAgentSids();
   void loadComposerPrefs();
+  void loadStartupPrefs();
   loadTabNames();
   msgHistory.setNames(tabNames.value);   // 回灌会话自定义名，供左侧「全部会话」树展示
   loadTabDescs();
@@ -1484,6 +1511,15 @@ onBeforeUnmount(() => {
             <div v-if="portMsg" class="cfghint warn">{{ portMsg }}</div>
             <div v-if="restartMsg" class="cfghint warn">{{ restartMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
+          </div>
+          <div v-if="startupAvailable" class="setsec">
+            <div class="settitle">{{ $t('term.startup_bg') }}</div>
+            <label class="chkrow">
+              <input type="checkbox" :checked="hideServerBg" @change="setHideServerBg(($event.target as HTMLInputElement).checked)" />
+              <span>{{ $t('term.startup_hide_label') }}</span>
+            </label>
+            <div class="cfghint">{{ $t('term.startup_hide_hint') }}</div>
+            <div v-if="startupMsg" class="cfghint warn">{{ startupMsg }}</div>
           </div>
           <div class="setsec">
             <div class="settitle">{{ $t('term.void_title') }}</div>
