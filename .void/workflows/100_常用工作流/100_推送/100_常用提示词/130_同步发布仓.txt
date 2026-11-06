@@ -1,0 +1,1 @@
+提交代码到release代码仓：把当前git代码，除了docs,env目录里面代码，拷贝覆盖到：D:\root\devflow\vscode-ai\vscode-ai  并且把所有代码提交到上去。推送到 Gitee 的所有描述用中文，推送到 GitHub 的所有描述用英文；README.md 用英文，README.zh-CN.md 用中文。
