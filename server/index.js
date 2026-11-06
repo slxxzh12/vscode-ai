@@ -842,7 +842,7 @@ function buildWorkspace({ paths, port }) {
     projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'),
     codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, startupPrefs,
     startupAvailable: () => process.platform === 'win32' && fs.existsSync(path.join(APP_DIR, 'start.bat')),
-    sessionLedger, postmanHistory, notepadStore, fileStores,
+    sessionManager, sessionLedger, postmanHistory, notepadStore, fileStores,
   });
   const llmVault = createVault({ file: path.join(paths.dir, 'llm.vault.json') });
   seedPlugins(paths.relayPluginsDir, path.join(__dirname, '..', 'config', 'relay-plugins'));

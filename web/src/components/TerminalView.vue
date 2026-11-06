@@ -9,6 +9,7 @@ import type { useTerminal, SessionSummary } from '../useTerminal';
 import type { useCenter } from '../useCenter';
 import FilePreview from './FilePreview.vue';
 import DocViewer from './DocViewer.vue';
+import ActiveAgentsTable from './ActiveAgentsTable.vue';
 import { ElMessageBox } from 'element-plus';
 import ToolDocPane from '../tools/doc/ToolDocPane.vue';
 import PostmanTool from '../tools/postman/PostmanTool.vue';
@@ -389,7 +390,68 @@ const RELEASES_URL = 'https://gitee.com/slxxzh12/vscode-ai/releases';
 const MOBILE_RELEASES_URL = 'https://gitee.com/slxxzh12/vscode-ai-mobile/releases';
 const settingsOpen = ref(false);
 const editorOpen = ref(false);
-const settingsTab = ref<'general' | 'about'>('general');
+const settingsTab = ref<'general' | 'active' | 'about'>('general');
+// 活动 Agent：只列出当前仍 running 的 agent 会话，供设置页查看并一键清理
+const activeAgents = computed(() => props.terminal.state.sessions.filter((s) => s.kind === 'agent' && s.state === 'running'));
+const clearingAgents = ref(false);
+const memoryBySession = ref<Record<string, { bytes?: number; processes?: number }>>({});
+let memoryTimer: ReturnType<typeof setInterval> | null = null;
+async function loadAgentMemory() {
+  try {
+    const res = await fetch('/api/sessions/memory');
+    if (!res.ok) return;
+    const r = await res.json();
+    memoryBySession.value = r?.memory || {};
+  } catch { /* ignore */ }
+}
+function stopMemoryPolling() {
+  if (memoryTimer) { clearInterval(memoryTimer); memoryTimer = null; }
+}
+function startMemoryPolling() {
+  stopMemoryPolling();
+  void loadAgentMemory();
+  memoryTimer = setInterval(() => { void loadAgentMemory(); }, 5000);
+}
+// 超过这个数量时弹出提示；同一浏览器 4 小时内最多弹一次，避免频繁打扰
+const OVERLOAD_LIMIT = 10;
+const OVERLOAD_COOLDOWN_MS = 4 * 60 * 60 * 1000;
+const OVERLOAD_LAST_KEY = 'devflow-active-overload-last';
+const overloadOpen = ref(false);
+function overloadLastShown() {
+  try { return Number(localStorage.getItem(OVERLOAD_LAST_KEY)) || 0; } catch { return 0; }
+}
+watch(() => activeAgents.value.length, (n) => {
+  if (n > OVERLOAD_LIMIT) {
+    if (Date.now() - overloadLastShown() >= OVERLOAD_COOLDOWN_MS) {
+      try { localStorage.setItem(OVERLOAD_LAST_KEY, String(Date.now())); } catch { /* ignore */ }
+      overloadOpen.value = true;
+    }
+  } else {
+    overloadOpen.value = false;   // 数量降下来只关弹窗，不重置 4 小时冷却
+  }
+});
+watch([settingsOpen, settingsTab, overloadOpen], ([open, tab, overload]) => {
+  if ((open && tab === 'active') || overload) startMemoryPolling();
+  else stopMemoryPolling();
+});
+function closeOverload() {
+  overloadOpen.value = false;
+}
+function endActiveAgent(s: SessionSummary) { props.terminal.killSession(s.id); }
+async function clearActiveAgents() {
+  if (!activeAgents.value.length) return;
+  try {
+    await ElMessageBox.confirm(
+      t('term.active_clear_confirm', { count: activeAgents.value.length }),
+      t('term.active_clear_title'),
+      { type: 'warning', confirmButtonText: t('term.active_clear_all'), cancelButtonText: t('common.cancel') },
+    );
+  } catch { return; }
+  clearingAgents.value = true;
+  const ids = activeAgents.value.map((s) => s.id);
+  for (const id of ids) props.terminal.killSession(id);
+  clearingAgents.value = false;
+}
 const firstRunHint = ref(false);
 const agentSecRef = ref<HTMLElement | null>(null);
 // 刷新后恢复的页签数（设置面板即时生效，存 localStorage）
@@ -1447,6 +1509,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('df-remote-send', onRemoteSend);
   window.removeEventListener('df-remote-screen', onRemoteScreen);
   if (autoCompactTimer) { clearTimeout(autoCompactTimer); autoCompactTimer = null; }
+  stopMemoryPolling();
   if (copySelTimer) { clearTimeout(copySelTimer); copySelTimer = null; }
   if (repaintTimer) { clearTimeout(repaintTimer); repaintTimer = null; }
   for (const u of wfUnsubs) u();
@@ -1489,6 +1552,7 @@ onBeforeUnmount(() => {
         <div class="setmain">
           <nav class="setnav">
             <button type="button" :class="{ on: settingsTab === 'general' }" @click="settingsTab = 'general'">{{ $t('term.settings') }}</button>
+            <button type="button" :class="{ on: settingsTab === 'active' }" @click="settingsTab = 'active'">{{ $t('term.active_tab') }}<template v-if="activeAgents.length"> ({{ activeAgents.length }})</template></button>
             <button type="button" :class="{ on: settingsTab === 'about' }" @click="settingsTab = 'about'">{{ $t('term.about.tab') }}</button>
           </nav>
           <div class="setbody">
@@ -1579,6 +1643,17 @@ onBeforeUnmount(() => {
             <div v-if="skillsMsg" class="cfghint">{{ skillsMsg }}</div>
           </div>
           </template>
+          <template v-else-if="settingsTab === 'active'">
+            <div class="setsec">
+              <ActiveAgentsTable
+                :sessions="activeAgents"
+                :memory-by-session="memoryBySession"
+                :clearing="clearingAgents"
+                @end="endActiveAgent"
+                @cleanup="clearActiveAgents"
+              />
+            </div>
+          </template>
           <template v-else>
             <div class="setsec">
               <div class="aboutrow"><span class="aboutk">{{ $t('term.about.version') }}</span><span class="aboutv">{{ appVersion || '-' }}</span></div>
@@ -1630,6 +1705,19 @@ onBeforeUnmount(() => {
         </footer>
       </div>
     </div>
+    <el-dialog v-model="overloadOpen" :title="$t('term.active_overload_title')" width="820px" append-to-body @close="closeOverload">
+      <div class="cfghint warn">{{ $t('term.active_overload_warning', { count: activeAgents.length }) }}</div>
+      <ActiveAgentsTable
+        :sessions="activeAgents"
+        :memory-by-session="memoryBySession"
+        :clearing="clearingAgents"
+        @end="endActiveAgent"
+        @cleanup="clearActiveAgents"
+      />
+      <template #footer>
+        <el-button @click="closeOverload">{{ $t('term.active_overload_later') }}</el-button>
+      </template>
+    </el-dialog>
     <div v-if="syncingRename" :ref="setRenameMask" class="renamemask" tabindex="-1" @keydown.prevent @mousedown.prevent>
       <div class="renamemask-box"><span class="renamemask-spin" />{{ $t('term.rename_syncing') }}</div>
     </div>

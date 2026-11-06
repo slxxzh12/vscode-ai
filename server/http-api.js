@@ -9,6 +9,7 @@ import { createComposerPrefs } from './composer-prefs.js';
 import { createSessionProjects } from './session-projects.js';
 import { createWindowState } from './window-state.js';
 import { createStartupPrefs } from './startup-prefs.js';
+import { collectSessionMemory } from './session-memory.js';
 import { buildZip, safeZipName } from './collaboration/zip.js';
 import { createRemoteCoder } from './remote-coder-mount.js';
 import { pickFolder, pickAnyFile } from './native-dialog.js';
@@ -45,7 +46,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), startupPrefs = createStartupPrefs({}), startupAvailable = () => false, sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), startupPrefs = createStartupPrefs({}), startupAvailable = () => false, sessionManager = null, sessionMemory = collectSessionMemory, sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -453,6 +454,12 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       }
       if (url.pathname === '/api/sessions' && req.method === 'GET') {
         sendJson(res, 200, { sessions: sessionLedger ? sessionLedger.read().sessions : [] });
+        return;
+      }
+      if (url.pathname === '/api/sessions/memory' && req.method === 'GET') {
+        let memory = {};
+        try { memory = await sessionMemory(sessionManager); } catch { memory = {}; }
+        sendJson(res, 200, { memory });
         return;
       }
       if (url.pathname === '/api/session-projects' && req.method === 'GET') {

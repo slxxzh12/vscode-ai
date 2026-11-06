@@ -40,13 +40,20 @@ export async function restoreRecord({
   return { session, resumed: !!resumeCmd };
 }
 
+// 启动时最多自动恢复的会话数（按 updatedAt 取最新）。其余保持/标记为 exited，
+// 需要时从历史里按需恢复，避免一次拉起几十个 Agent 把内存和 CPU 打满。
+export const MAX_AUTO_RESTORE = 3;
+
 // 启动时按账本重建会话：逐条 restoreRecord，单条失败不阻断其它。
 export async function restoreSessions({
   ledger, sessionManager, agents = [], logger = console, resumeDelayMs = 1500, exists = fs.existsSync,
-  discover = null,
+  discover = null, maxRestore = MAX_AUTO_RESTORE,
 } = {}) {
-  const records = ledger.read().sessions || [];
-  const result = { restored: 0, skipped: [] };
+  const raw = ledger.read().sessions || [];
+  // 账本本身已按 updatedAt 降序；这里再排一次并保持稳定，确保取到最新的 3 个
+  const records = [...raw].sort((a, b) => (Number(b?.updatedAt) || 0) - (Number(a?.updatedAt) || 0));
+  const limit = Number.isFinite(maxRestore) ? Math.max(0, Math.floor(maxRestore)) : Infinity;
+  const result = { restored: 0, skipped: [], deferred: [] };
   const isAgentSessionIdTaken = (agentSessionId, exceptDevflowId) => {
     for (const row of records) {
       if (row.id === exceptDevflowId || !row.agentSessionId || row.agentSessionId !== agentSessionId) continue;
@@ -59,6 +66,12 @@ export async function restoreSessions({
     if (!rec || !rec.id || rec.kind === 'workflow') continue;
     if (rec.state === 'exited') continue;   // 关闭的会话只留在账本供按需恢复，不随启动自动拉起
     if (rec.cwd && !exists(rec.cwd)) { result.skipped.push({ id: rec.id, reason: 'cwd-missing' }); continue; }
+    if (result.restored >= limit) {
+      // 超出本次自动恢复上限：标记为 exited，避免一直显示 running 并在下次启动再次排队
+      result.deferred.push(rec.id);
+      ledger.upsert?.({ id: rec.id, state: 'exited' });
+      continue;
+    }
     try {
       await restoreRecord({ ledger, sessionManager, agents, logger, rec, resumeDelayMs, exists, isAgentSessionIdTaken, discover });
       result.restored += 1;
@@ -68,5 +81,6 @@ export async function restoreSessions({
       logger?.warn?.('session restore failed', rec.id, reason);
     }
   }
+  if (result.deferred.length) logger?.info?.(`session restore deferred: ${result.deferred.length} (max ${limit})`);
   return result;
 }

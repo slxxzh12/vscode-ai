@@ -67,7 +67,7 @@ export class SessionManager extends EventEmitter {
   }
   summary(s) {
     return { id: s.id, name: s.name, projectId: s.projectId, state: s.state, cwd: s.cwd,
-      cols: s.cols, rows: s.rows, exitCode: s.exitCode,
+      cols: s.cols, rows: s.rows, exitCode: s.exitCode, createdAt: s.createdAt,
       kind: s.kind || 'shell', agentId: s.agentId || null, restored: !!s.restored,
       resumed: s.resumed === true ? true : undefined };
   }

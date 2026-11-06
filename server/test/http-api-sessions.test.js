@@ -21,3 +21,12 @@ test('GET /api/sessions 返回账本会话', async () => {
   assert.equal(res.statusCode, 200);
   assert.deepEqual(JSON.parse(res.body).sessions.map((s) => s.id), ['s1']);
 });
+
+test('GET /api/sessions/memory 返回活动会话内存', async () => {
+  const sessionManager = { live: () => [{ id: 's1', pty: { pid: 1 } }] };
+  const sessionMemory = async () => ({ s1: { bytes: 1234, processes: 2 } });
+  const handler = createHttpApi({ projects: { listProjects: () => [] }, sessionManager, sessionMemory });
+  const res = await call(handler, '/api/sessions/memory');
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body).memory, { s1: { bytes: 1234, processes: 2 } });
+});

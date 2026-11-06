@@ -2,7 +2,7 @@ import { reactive } from 'vue';
 import { C2S, S2C } from '@devflow/shared';
 
 export type ConnStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
-export interface SessionSummary { id: string; name: string; projectId: string | null; state: 'running' | 'exited'; cwd: string; cols: number; rows: number; exitCode: number | null; kind?: 'agent' | 'shell' | 'workflow'; agentId?: string | null; restored?: boolean; resumed?: boolean; recreated?: boolean; }
+export interface SessionSummary { id: string; name: string; projectId: string | null; state: 'running' | 'exited'; cwd: string; cols: number; rows: number; exitCode: number | null; createdAt?: number; kind?: 'agent' | 'shell' | 'workflow'; agentId?: string | null; restored?: boolean; resumed?: boolean; recreated?: boolean; }
 export type Handler = (msg: any) => void;
 
 export interface UseTerminalOptions {
