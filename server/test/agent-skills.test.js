@@ -32,6 +32,13 @@ test('claudecode 映射到 ~/.claude/skills', () => {
   assert.equal(agentSkillsDir({ id: 'claudecode', cmd: 'claudecode' }), path.join(os.homedir(), '.claude', 'skills'));
 });
 
+test('pi 映射到 <PI_CODING_AGENT_DIR>/skills', () => {
+  const dir = path.join(os.tmpdir(), 'df-pi-cfg');
+  withEnv('PI_CODING_AGENT_DIR', dir, () => {
+    assert.equal(agentSkillsDir({ id: 'pi', cmd: 'pi', resume: 'pi' }), path.join(dir, 'skills'));
+  });
+});
+
 test('未知 agent：有 skillsDir 用配置，没有则 null', () => {
   const dir = path.join(os.tmpdir(), 'nga-skills');
   assert.equal(agentSkillsDir({ id: 'nga', cmd: 'nga.cmd', skillsDir: dir }), path.resolve(dir));

@@ -16,6 +16,7 @@ DevFlow 在**后端重启**或用户点击历史面板会话树的「打开」�
 1. `buildResumeCommand({ agent, agentSessionId })`：
    - 配了 `resumeCmd`：含 `{id}` → 用发现的 id 替换；不含 → 原样执行；缺 id 且含 `{id}` → 不注入。
    - 启用内建 opencode 适配器（`resume="opencode"`，或 agent 的 id/cmd 本身就是 opencode）→ `<cmd> --session <id>`（需要 `agentSessionId`）。
+   - 启用内建 Pi 适配器（`resume="pi"`，或 agent 的 id/cmd 本身就是 pi）→ `<cmd> --session <id>`（需要 `agentSessionId`）。
    - 否则 → `null`。
 2. 取不到续会话命令 → 退化为该 agent 的原始 `cmd`（**只重开外壳，不续上下文**）。
 
@@ -25,6 +26,8 @@ DevFlow 在**后端重启**或用户点击历史面板会话树的「打开」�
 - 内建 opencode 发现：`<cmd> session list --format json -n 30`，
   按 `directory === cwd` 且 `created` 落在会话创建时间 ±60s 的项取最接近的 id；
   **会排除已被其它活跃会话认领的 id，且发现串行化**（避免同目录多会话错配）。
+- 内建 Pi 发现：读 `~/.pi/agent/sessions/--<cwd转义>--/<timestamp>_<id>.jsonl` 的文件头，
+  按 `cwd` 与会话创建时间 ±60s 取最接近的 id，同样排除已认领 id。
 
 ## 配置方法
 
@@ -40,6 +43,7 @@ DevFlow 在**后端重启**或用户点击历史面板会话树的「打开」�
 ```
 
 - opencode 无需配置（内建，id/cmd 为 opencode 自动生效）。
+- pi 无需配置（内建，id/cmd 为 pi 或 `resume="pi"` 自动生效）；会话目录可用 `PI_CODING_AGENT_DIR` 覆盖。
 - 改名的 opencode（如 `nga`）用 `resume="opencode"`：发现与续接都用该 agent 的 `cmd`（`nga session list` / `nga --session <id>`）。
 - `claudecode` 的 `resumeCmd`/`resumeDiscover` 真值取决于各自 CLI，请按本机实际填写。
 - 改完**重启后端**生效。

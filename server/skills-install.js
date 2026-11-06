@@ -21,6 +21,17 @@ function isClaudeAgent(agent) {
   return CLAUDE_CMDS.has(id) || CLAUDE_CMDS.has(agentCmd(agent)) || String(agent?.resume || '').toLowerCase() === 'claude';
 }
 
+function isPiAgent(agent) {
+  const id = String(agent?.id || '').toLowerCase();
+  return id === 'pi' || agentCmd(agent) === 'pi' || String(agent?.resume || '').toLowerCase() === 'pi';
+}
+
+// Pi 的 agent 目录：默认 ~/.pi/agent（PI_CODING_AGENT_DIR 可覆盖），skills 在其下
+export function piAgentDir(env = process.env) {
+  const custom = String(env.PI_CODING_AGENT_DIR || '').trim();
+  return custom ? path.resolve(custom) : path.join(os.homedir(), '.pi', 'agent');
+}
+
 // 各 agent 的 skills 目录：toolDir 用于判断工具是否装在本机，skillsDir 为实际安装目标。
 // 内置 opencode / Claude Code（claudecode、codeagent 等同属 Claude 系，共用 ~/.claude/skills），
 // 再按 devflow.xml 的 agents 补充：opencode 系共用 opencode 目录、Claude 系共用 Claude 目录、
@@ -28,6 +39,7 @@ function isClaudeAgent(agent) {
 export function skillTargets(agents = []) {
   const opencodeRoot = opencodeConfigDir();
   const claudeRoot = path.join(os.homedir(), '.claude');
+  const piRoot = piAgentDir();
   const list = [
     {
       id: 'opencode',
@@ -40,6 +52,12 @@ export function skillTargets(agents = []) {
       label: 'Claude Code',
       toolDir: claudeRoot,
       dir: path.join(claudeRoot, 'skills'),
+    },
+    {
+      id: 'pi',
+      label: 'Pi',
+      toolDir: piRoot,
+      dir: path.join(piRoot, 'skills'),
     },
   ];
   const byDir = new Map(list.map((t) => [path.resolve(t.dir), t]));
@@ -58,6 +76,9 @@ export function skillTargets(agents = []) {
     } else if (isClaudeAgent(agent)) {
       dir = path.join(claudeRoot, 'skills');
       toolDir = claudeRoot;
+    } else if (isPiAgent(agent)) {
+      dir = path.join(piRoot, 'skills');
+      toolDir = piRoot;
     }
     if (!dir) continue;
     const key = path.resolve(dir);

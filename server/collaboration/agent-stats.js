@@ -122,6 +122,77 @@ export function isClaudeFamily(cmd) {
   return CLAUDE_CMDS.has(baseName(cmd));
 }
 
+// —— Pi：不走 CLI，解析 ~/.pi/agent/sessions/<cwd>/<timestamp>_<id>.jsonl ——
+// 会话每行一个 JSON；message 条目里的 message.usage / usage 条目 / compaction 等都可能带用量。
+export function isPiFamily(cmd) {
+  return baseName(cmd) === 'pi';
+}
+
+function piAgentDir({ home = os.homedir(), env = process.env } = {}) {
+  return String(env.PI_CODING_AGENT_DIR || '').trim() || path.join(home, '.pi', 'agent');
+}
+
+export function collectPiStats({ days = 60, home = os.homedir(), now = Date.now(), files = fs, env = process.env, agentDir = null } = {}) {
+  const root = path.join(agentDir || piAgentDir({ home, env }), 'sessions');
+  const cutoff = days > 0 ? now - days * 24 * 3600 * 1000 : 0;
+  const jsonl = [];
+  const walk = (dir, depth = 0) => {
+    if (depth > 4) return;
+    let entries;
+    try { entries = files.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p, depth + 1); continue; }
+      if (e.isFile?.() && e.name.endsWith('.jsonl')) jsonl.push(p);
+    }
+  };
+  walk(root);
+
+  const byModel = {};
+  let sessions = 0, messages = 0, input = 0, output = 0, cacheRead = 0, cacheWrite = 0, totalCost = 0;
+  let hasCost = false;
+  const addUsage = (usage, model) => {
+    if (!usage || typeof usage !== 'object') return;
+    const i = Number(usage.input) || 0;
+    const o = Number(usage.output) || 0;
+    input += i; output += o;
+    cacheRead += Number(usage.cacheRead) || 0;
+    cacheWrite += Number(usage.cacheWrite) || 0;
+    const costRaw = usage.cost && typeof usage.cost === 'object' ? usage.cost.total : undefined;
+    const cost = Number(costRaw);
+    if (Number.isFinite(cost)) { totalCost += cost; hasCost = true; }
+    const name = model || 'unknown';
+    const m = byModel[name] || (byModel[name] = { input: 0, output: 0 });
+    m.input += i; m.output += o;
+  };
+  for (const file of jsonl) {
+    let st;
+    try { st = files.statSync(file); } catch { continue; }
+    if (cutoff && Number(st.mtimeMs) < cutoff) continue;
+    sessions += 1;
+    let text;
+    try { text = files.readFileSync(file, 'utf8'); } catch { continue; }
+    for (const line of String(text).split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      let obj;
+      try { obj = JSON.parse(t); } catch { continue; }
+      if (obj.type === 'message') {
+        const msg = obj.message || {};
+        if (msg.role !== 'system') messages += 1;
+        addUsage(msg.usage, msg.model || msg.responseModel || obj.model);
+      } else {
+        addUsage(obj.usage, obj.model);
+      }
+    }
+  }
+  return {
+    sessions, messages, input, output, cacheRead, cacheWrite,
+    totalCost: hasCost ? totalCost : null,
+    byModel, days, collectedAt: now, source: 'pi-files',
+  };
+}
+
 export function collectClaudeStats({ days = 60, home = os.homedir(), now = Date.now(), files = fs } = {}) {
   const root = path.join(home, '.claude', 'projects');
   const cutoff = days > 0 ? now - days * 24 * 3600 * 1000 : 0;
@@ -295,11 +366,20 @@ export function probeAgentStats({
   home = os.homedir(),
   statsFile = null,                           // 采集原文落盘路径（如 <数据目录>/cache/collaboration/stats.txt）
 } = {}) {
-  // Claude 系：直接解析本机会话日志，不启 CLI
+  // Claude / Pi：直接解析本机会话日志，不启 CLI
   if (isClaudeFamily(cmd) && !String(statsCmd || '').trim()) {
     const m = collectClaudeStats({ days, home });
     return Promise.resolve({
       agent: cmd, days, cmdline: 'scan ~/.claude/projects/*/*.jsonl',
+      ok: true, error: '', code: null,
+      raw: `sessions=${m.sessions} messages=${m.messages} input=${m.input} output=${m.output}`,
+      stderr: '', parsed: m, bin: '', args: [], durationMs: 0, collectedAt: m.collectedAt,
+    });
+  }
+  if (isPiFamily(cmd) && !String(statsCmd || '').trim()) {
+    const m = collectPiStats({ days, home });
+    return Promise.resolve({
+      agent: cmd, days, cmdline: 'scan ~/.pi/agent/sessions/*/*.jsonl',
       ok: true, error: '', code: null,
       raw: `sessions=${m.sessions} messages=${m.messages} input=${m.input} output=${m.output}`,
       stderr: '', parsed: m, bin: '', args: [], durationMs: 0, collectedAt: m.collectedAt,
@@ -337,9 +417,12 @@ export function collectAgentStats({
   home = os.homedir(),
   statsFile = null,                           // 采集原文落盘路径（如 <数据目录>/cache/collaboration/stats.txt）
 } = {}) {
-  // Claude 系：直接解析本机会话日志（参考 claude 统计方式），不启 CLI、不闪窗
+  // Claude / Pi：直接解析本机会话日志（参考 claude 统计方式），不启 CLI、不闪窗
   if (isClaudeFamily(cmd) && !String(statsCmd || '').trim()) {
     return { agent: cmd, ...collectClaudeStats({ days, home }) };
+  }
+  if (isPiFamily(cmd) && !String(statsCmd || '').trim()) {
+    return { agent: cmd, ...collectPiStats({ days, home }) };
   }
   const spec = parseStatsCmd(statsCmd, days, { env })
     || { bin: resolveAgentBin(cmd, { env }), args: ['stats', '--days', String(days)] };

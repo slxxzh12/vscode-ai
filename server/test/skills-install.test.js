@@ -109,6 +109,36 @@ test('skillTargets 纳入配置 agent：opencode 系与 Claude 系按目录去�
   assert.equal(targets.filter((t) => t.id === 'claudecode').length, 1);
 });
 
+test('skillTargets 内置 pi：PI_CODING_AGENT_DIR 生效，目录存在才被检测', () => {
+  const root = tmp();
+  const prev = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = root;
+  try {
+    const targets = skillTargets([]);
+    const pi = targets.find((t) => t.id === 'pi');
+    assert.equal(pi.dir, path.join(root, 'skills'));
+    assert.ok(detectSkillTargets(targets).some((t) => t.id === 'pi'));
+  } finally {
+    if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prev;
+  }
+});
+
+test('skillTargets：配置里的 pi agent 复用同一个 pi skills 目录', () => {
+  const root = tmp();
+  const prev = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = root;
+  try {
+    const targets = skillTargets([{ id: 'pi', cmd: 'pi', resume: 'pi' }]);
+    const pi = targets.filter((t) => t.id === 'pi');
+    assert.equal(pi.length, 1, '内置 pi 与配置 pi 去重');
+    assert.equal(pi[0].dir, path.join(root, 'skills'));
+  } finally {
+    if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prev;
+  }
+});
+
 test('autoInstallMissingSkills 检测到缺失自动补齐并返回最新状态', () => {
   const { targets } = fakeTargets();
   const src = tmp();

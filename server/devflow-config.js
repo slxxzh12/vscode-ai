@@ -6,11 +6,13 @@ import { serializeWorkflow, decode } from '@devflow/shared/workflow-xml';
 import { downloadsDir } from './data-home.js';
 
 export const DEFAULT_AGENT = 'opencode';
+// 内置 agent 按名称字母序排列（设置面板/新建会话都沿用该顺序）
 export const DEFAULT_AGENTS = [
-  { id: 'opencode', name: 'OpenCode', cmd: 'opencode', statsCmd: 'opencode stats --days {days}' },
-  { id: 'claudecode', name: 'ClaudeCode', cmd: 'claudecode' },
+  { id: 'claudecode', name: 'ClaudeCode', cmd: 'claudecode', resume: 'claude' },
+  { id: 'codeagent', name: 'codeagent', cmd: 'codeagent', resume: 'claude' },
   { id: 'nga', name: 'nga', cmd: 'nga', resume: 'opencode', statsCmd: 'nga stats --days {days}' },
-  { id: 'codeagent', name: 'codeagent', cmd: 'codeagent' },
+  { id: 'opencode', name: 'OpenCode', cmd: 'opencode', statsCmd: 'opencode stats --days {days}' },
+  { id: 'pi', name: 'Pi', cmd: 'pi', resume: 'pi' },
 ];
 
 export function defaultConfigFile(baseDir) {
@@ -86,17 +88,19 @@ export function parseDevflowConfig(xml) {
   };
 }
 
+function agentTag(a) {
+  const attrs = [`id="${escXml(a.id)}"`, `name="${escXml(a.name)}"`, `cmd="${escXml(a.cmd)}"`];
+  if (a.resumeCmd) attrs.push(`resumeCmd="${escXml(a.resumeCmd)}"`);
+  if (a.resumeDiscover) attrs.push(`resumeDiscover="${escXml(a.resumeDiscover)}"`);
+  if (a.resume) attrs.push(`resume="${escXml(a.resume)}"`);
+  if (a.statsCmd) attrs.push(`statsCmd="${escXml(a.statsCmd)}"`);
+  if (a.skillsDir) attrs.push(`skillsDir="${escXml(a.skillsDir)}"`);
+  return `<agent ${attrs.join(' ')} />`;
+}
+
 export function serializeDevflowConfig(cfg) {
   const agents = cfg.agents.list
-    .map((a) => {
-      const attrs = [`id="${escXml(a.id)}"`, `name="${escXml(a.name)}"`, `cmd="${escXml(a.cmd)}"`];
-      if (a.resumeCmd) attrs.push(`resumeCmd="${escXml(a.resumeCmd)}"`);
-      if (a.resumeDiscover) attrs.push(`resumeDiscover="${escXml(a.resumeDiscover)}"`);
-      if (a.resume) attrs.push(`resume="${escXml(a.resume)}"`);
-      if (a.statsCmd) attrs.push(`statsCmd="${escXml(a.statsCmd)}"`);
-      if (a.skillsDir) attrs.push(`skillsDir="${escXml(a.skillsDir)}"`);
-      return `    <agent ${attrs.join(' ')} />`;
-    })
+    .map((a) => `    ${agentTag(a)}`)
     .join('\n');
   const wfs = cfg.workflows.map(serializeWorkflow).join('\n\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -122,15 +126,48 @@ export function ensureConfigFile(file) {
   return true;
 }
 
+// 把缺失的内置 agent 追加到 <agents> 末尾（保留用户已有内容与默认选择）。
+// 目的：升级后新增的内置 agent（如 pi）对既有实例也可见，无需用户手改 devflow.xml。
+export function ensureBuiltinAgents(file, builtins = DEFAULT_AGENTS) {
+  if (!file || !fs.existsSync(file)) return [];
+  try {
+    const xml = fs.readFileSync(file, 'utf8');
+    const block = xml.match(/<agents\b[^>]*>([\s\S]*?)<\/agents>/i);
+    if (!block) return [];
+    const existing = new Set();
+    const re = /<agent\b([^>]*?)\/?>/gi;
+    let m;
+    while ((m = re.exec(block[1]))) {
+      const id = decode(attr(m[1], 'id'));
+      if (id) existing.add(id);
+    }
+    const missing = (Array.isArray(builtins) ? builtins : []).filter((a) => a && a.id && !existing.has(a.id));
+    if (!missing.length) return [];
+    const closeAt = block.index + block[0].length - '</agents>'.length;
+    if (closeAt < 0) return [];
+    const lines = missing.map((a) => `    ${agentTag(a)}`).join('\n');
+    const before = xml.slice(0, closeAt).replace(/\s*$/, '');
+    const after = xml.slice(closeAt);
+    fs.writeFileSync(file, `${before}\n${lines}\n  ${after}`, 'utf8');
+    return missing.map((a) => a.id);
+  } catch {
+    return [];
+  }
+}
+
 // 解析运行时活动配置：优先 <dataHome>/ports/<端口>/downloads/devflow.xml；不存在则从仓库模板 seed（不覆盖已存在的）
 export function resolveActiveConfigFile(baseDir, port) {
   const dir = downloadsDir(port);
   const active = path.join(dir, 'devflow.xml');
-  if (fs.existsSync(active)) return active;
+  if (fs.existsSync(active)) {
+    ensureBuiltinAgents(active);
+    return active;
+  }
   fs.mkdirSync(dir, { recursive: true });        // 失败向上抛出 → 启动失败
   const template = defaultConfigFile(baseDir);
   if (fs.existsSync(template)) fs.copyFileSync(template, active);
   else fs.writeFileSync(active, serializeDevflowConfig(buildDefaultConfig()), 'utf8');
+  ensureBuiltinAgents(active);
   return active;
 }
 

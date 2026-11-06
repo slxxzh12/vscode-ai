@@ -6,8 +6,8 @@ import path from 'node:path';
 import {
   parseDevflowConfig, serializeDevflowConfig,
   loadDevflowConfig, ensureConfigFile, updateServerAttrs, buildDefaultConfig,
-  validateWorkflows, updateWorkflows, resolveActiveConfigFile,
-  updateAgentsDefault, setDefaultAgent,
+  validateWorkflows, updateWorkflows, resolveActiveConfigFile, ensureBuiltinAgents,
+  updateAgentsDefault, setDefaultAgent, DEFAULT_AGENTS,
 } from '../devflow-config.js';
 import { createWorkflowSeedStore } from '../workflow-seed.js';
 
@@ -64,6 +64,44 @@ test('ensureConfigFile 缺失时生成默认，二次不覆盖', () => {
   assert.equal(ensureConfigFile(f), true);
   assert.equal(fs.existsSync(f), true);
   assert.equal(ensureConfigFile(f), false);
+});
+
+test('默认 Agent 列表包含 pi 且按名称字母序', () => {
+  const names = DEFAULT_AGENTS.map((a) => a.name);
+  assert.deepEqual(names, ['ClaudeCode', 'codeagent', 'nga', 'OpenCode', 'Pi']);
+  assert.ok(DEFAULT_AGENTS.some((a) => a.id === 'pi' && a.cmd === 'pi' && a.resume === 'pi'));
+});
+
+test('ensureBuiltinAgents 把缺失的内置 agent 追加到 <agents>，保留其余内容', () => {
+  const f = tmpFile();
+  fs.writeFileSync(f, SAMPLE, 'utf8');
+  const added = ensureBuiltinAgents(f);
+  assert.ok(added.includes('pi'), '补上 pi');
+  const xml = fs.readFileSync(f, 'utf8');
+  assert.match(xml, /<agent id="pi" name="Pi" cmd="pi" resume="pi" \/>/);
+  assert.ok(xml.includes('<!-- keep me -->'));
+  assert.match(xml, /<agents default="nga">/);
+  assert.ok(xml.includes('<agent id="opencode" name="OpenCode" cmd="opencode" />'), '已有 agent 不重复');
+  assert.equal(ensureBuiltinAgents(f).length, 0, '二次调用不重复追加');
+});
+
+test('resolveActiveConfigFile 对已存在的活动配置也会补齐内置 agent', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-active-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-home-'));
+  const prev = process.env.DEVFLOW_DATA_HOME;
+  process.env.DEVFLOW_DATA_HOME = home;
+  try {
+    const port = 45678;
+    const dir = path.join(home, 'ports', String(port), 'downloads');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'devflow.xml'), SAMPLE, 'utf8');
+    const file = resolveActiveConfigFile(base, port);
+    const c = parseDevflowConfig(fs.readFileSync(file, 'utf8'));
+    assert.ok(c.agents.list.some((a) => a.id === 'pi'));
+  } finally {
+    if (prev === undefined) delete process.env.DEVFLOW_DATA_HOME;
+    else process.env.DEVFLOW_DATA_HOME = prev;
+  }
 });
 
 test('updateServerAttrs 只写 language/host，不再写 port，且保留注释', () => {
@@ -127,7 +165,11 @@ test('resolveActiveConfigFile 首次从模板复制到 ports/<端口>/downloads'
     fs.writeFileSync(path.join(root, 'config', 'devflow.xml'), SAMPLE, 'utf8');
     const active = resolveActiveConfigFile(root, 22222);
     assert.equal(active, path.join(data, 'ports', '22222', 'downloads', 'devflow.xml'));
-    assert.equal(fs.readFileSync(active, 'utf8'), SAMPLE);
+    const got = fs.readFileSync(active, 'utf8');
+    assert.ok(got.includes('<!-- keep me -->'), '模板内容已复制');
+    assert.ok(got.includes('<agent id="opencode" name="OpenCode" cmd="opencode" />'));
+    assert.ok(got.includes('<agent id="nga" name="nga" cmd="nga.cmd" />'));
+    assert.ok(got.includes('<agent id="pi" name="Pi" cmd="pi" resume="pi" />'), '缺失的内置 agent 自动补齐');
   });
 });
 

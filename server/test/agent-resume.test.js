@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   buildResumeCommand, parseSessionList, pickOpencodeSession, discoverAgentSessionId, isOpencodeAgent,
   isClaudeAgent, pickClaudeSession, discoverClaudeSessionId, claudeProjectSlugs,
+  isPiAgent, piSessionDirName, pickPiSession, discoverPiSessionId,
 } from '../agent-resume.js';
 
 const ITEMS = JSON.stringify([
@@ -124,6 +125,57 @@ test('discoverAgentSessionId：resume="claude" 走文件系统发现', async () 
   fs.writeFileSync(path.join(dir, 'uuid-9.jsonl'), '{}');
   const id = await discoverAgentSessionId({ agent: { id: 'claudecode', cmd: 'claudecode', resume: 'claude' }, cwd, since: 0, home });
   assert.equal(id, 'uuid-9');
+});
+
+test('isPiAgent：resume="pi" 或 id/cmd=pi 命中', () => {
+  assert.equal(isPiAgent({ id: 'pi', cmd: 'pi' }), true);
+  assert.equal(isPiAgent({ id: 'x', cmd: 'C:\\tools\\pi.exe', resume: 'pi' }), true);
+  assert.equal(isPiAgent({ id: 'pi', cmd: 'pi' }), true);
+  assert.equal(isPiAgent({ id: 'nga', cmd: 'nga' }), false);
+  assert.equal(isPiAgent(null), false);
+});
+
+test('buildResumeCommand：pi 用 --session <id>', () => {
+  const agent = { id: 'pi', cmd: 'pi', resume: 'pi' };
+  assert.equal(buildResumeCommand({ agent, agentSessionId: 'uuid-1' }), 'pi --session uuid-1');
+  assert.equal(buildResumeCommand({ agent, agentSessionId: null }), null);
+});
+
+test('piSessionDirName：去掉前导分隔符并把 / \\ : 换成 -', () => {
+  assert.equal(piSessionDirName('D:\\proj\\app'), '--D--proj-app--');
+  assert.equal(piSessionDirName('/path/to/project'), '--path-to-project--');
+  assert.equal(piSessionDirName(''), '');
+});
+
+test('pickPiSession：按时间窗取最接近 since 并支持 exclude', () => {
+  const entries = [{ id: 'a', timestamp: 1000 }, { id: 'b', timestamp: 5000 }, { id: 'c', timestamp: 90000 }];
+  assert.equal(pickPiSession(entries, { since: 4800 }), 'b');
+  assert.equal(pickPiSession(entries, { since: 4800, exclude: ['b'] }), 'a');
+  assert.equal(pickPiSession(entries, { since: 200000, now: 200000 }), null);
+});
+
+test('discoverPiSessionId：从 ~/.pi/agent/sessions/<slug>/*.jsonl 取最接近 since 的会话 id', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'df-pi-resume-'));
+  const cwd = 'D:\\proj\\app';
+  const dir = path.join(home, '.pi', 'agent', 'sessions', piSessionDirName(cwd));
+  fs.mkdirSync(dir, { recursive: true });
+  const t1 = Date.parse('2024-12-03T14:00:00.000Z');
+  const t2 = t1 + 30000;
+  fs.writeFileSync(path.join(dir, '1_u1.jsonl'), `${JSON.stringify({ type: 'session', id: 'u1', cwd, timestamp: new Date(t1).toISOString() })}\n`);
+  fs.writeFileSync(path.join(dir, '2_u2.jsonl'), `${JSON.stringify({ type: 'session', id: 'u2', cwd, timestamp: new Date(t2).toISOString() })}\n`);
+  assert.equal(discoverPiSessionId({ cwd, since: t2 - 1000, home }), 'u2');
+  assert.equal(discoverPiSessionId({ cwd, since: t2 - 1000, home, exclude: ['u2'] }), 'u1');
+  assert.equal(discoverPiSessionId({ cwd: 'D:\\other', since: t2, home }), null);
+});
+
+test('discoverAgentSessionId：resume="pi" 走文件系统发现', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'df-pi-resume2-'));
+  const cwd = 'D:\\proj\\app';
+  const dir = path.join(home, '.pi', 'agent', 'sessions', piSessionDirName(cwd));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '1_u9.jsonl'), `${JSON.stringify({ type: 'session', id: 'u9', cwd, timestamp: new Date().toISOString() })}\n`);
+  const id = await discoverAgentSessionId({ agent: { id: 'pi', cmd: 'pi', resume: 'pi' }, cwd, since: 0, home });
+  assert.equal(id, 'u9');
 });
 
 test('discoverAgentSessionId：resume="opencode" 时用 agent.cmd 执行 session list', async () => {

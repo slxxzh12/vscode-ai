@@ -3,11 +3,21 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath, isClaudeFamily, collectClaudeStats, resolveStatsCwd, readStatsFile, refreshStatsOutput } from '../collaboration/agent-stats.js';
+import { parseStats, parseNum, parseStatsCmd, collectAgentStats, probeAgentStats, resolveAgentBin, ensureAgentOnPath, isClaudeFamily, collectClaudeStats, isPiFamily, collectPiStats, resolveStatsCwd, readStatsFile, refreshStatsOutput } from '../collaboration/agent-stats.js';
 
 function claudeHome(linesByFile) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'df-claude-'));
   const dir = path.join(home, '.claude', 'projects', 'D--proj-app');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [name, lines] of Object.entries(linesByFile)) {
+    fs.writeFileSync(path.join(dir, name), lines.join('\n'), 'utf8');
+  }
+  return home;
+}
+
+function piHome(linesByFile) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'df-pi-'));
+  const dir = path.join(home, '.pi', 'agent', 'sessions', '--D--proj-app--');
   fs.mkdirSync(dir, { recursive: true });
   for (const [name, lines] of Object.entries(linesByFile)) {
     fs.writeFileSync(path.join(dir, name), lines.join('\n'), 'utf8');
@@ -84,6 +94,60 @@ test('collectClaudeStats：解析 ~/.claude/projects/*.jsonl 的 sessions/messag
   assert.equal(m.cacheRead, 5);
   assert.equal(m.cacheWrite, 2);
   assert.deepEqual(m.byModel['claude-sonnet'], { input: 130, output: 30 });
+});
+
+test('isPiFamily：pi 命中，其余不命中', () => {
+  assert.equal(isPiFamily('pi'), true);
+  assert.equal(isPiFamily('C:\\tools\\pi.exe'), true);
+  assert.equal(isPiFamily('opencode'), false);
+  assert.equal(isPiFamily('claudecode'), false);
+});
+
+test('collectPiStats：解析 ~/.pi/agent/sessions/*.jsonl 的用量与成本', () => {
+  const home = piHome({
+    '2024_sess1.jsonl': [
+      JSON.stringify({ type: 'session', version: 3, id: 'uuid-1', timestamp: '2024-12-03T14:00:00.000Z', cwd: 'D:\\proj\\app' }),
+      JSON.stringify({ type: 'message', id: 'a', message: { role: 'user', content: 'hi', timestamp: 1 } }),
+      JSON.stringify({ type: 'message', id: 'b', message: { role: 'assistant', model: 'claude-sonnet', usage: { input: 100, output: 20, cacheRead: 5, cacheWrite: 2, totalTokens: 127, cost: { total: 0.33 } }, timestamp: 2 } }),
+      JSON.stringify({ type: 'usage', id: 'c', kind: 'cache_warm', model: 'claude-sonnet', usage: { input: 0, output: 0, cacheRead: 50, cacheWrite: 0, totalTokens: 50, cost: { total: 0.05 } } }),
+      JSON.stringify({ type: 'message', id: 'd', message: { role: 'toolResult', usage: { input: 30, output: 10, totalTokens: 40, cost: { total: 0.1 } } } }),
+    ],
+  });
+  const m = collectPiStats({ home, days: 60 });
+  assert.equal(m.sessions, 1);
+  assert.equal(m.messages, 3, '只统计 message 条目；usage 条目不重复计消息');
+  assert.equal(m.input, 130);
+  assert.equal(m.output, 30);
+  assert.equal(m.cacheRead, 55);
+  assert.equal(m.cacheWrite, 2);
+  assert.equal(m.totalCost, 0.48);
+  assert.deepEqual(m.byModel['claude-sonnet'], { input: 100, output: 20 });
+  assert.deepEqual(m.byModel.unknown, { input: 30, output: 10 });
+});
+
+test('collectAgentStats：pi 走本机日志解析，不启 CLI', async () => {
+  const home = piHome({
+    'a.jsonl': [JSON.stringify({ type: 'message', id: 'a', message: { role: 'assistant', model: 'm', usage: { input: 7, output: 3 } } })],
+  });
+  let spawned = false;
+  const r = await collectAgentStats({ cmd: 'pi', home, execFileFn: () => { spawned = true; throw new Error('should not spawn'); } });
+  assert.equal(spawned, false);
+  assert.equal(r.agent, 'pi');
+  assert.equal(r.sessions, 1);
+  assert.equal(r.messages, 1);
+  assert.equal(r.input, 7);
+  assert.equal(r.output, 3);
+});
+
+test('probeAgentStats：pi 返回文件解析结果且 ok', async () => {
+  const home = piHome({
+    'a.jsonl': [JSON.stringify({ type: 'message', id: 'a', message: { role: 'assistant', usage: { input: 11, output: 4 } } })],
+  });
+  const r = await probeAgentStats({ cmd: 'pi', home });
+  assert.equal(r.ok, true);
+  assert.equal(r.parsed.input, 11);
+  assert.equal(r.parsed.output, 4);
+  assert.match(r.cmdline, /\.pi/);
 });
 
 test('collectAgentStats：claudecode 走本机日志解析，不启 CLI', async () => {
