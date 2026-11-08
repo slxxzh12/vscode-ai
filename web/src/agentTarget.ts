@@ -1,3 +1,10 @@
+// 已下线的内置 Agent：从服务端配置与浏览器缓存里一并剔掉
+export const RETIRED_AGENT_IDS = ['pi'] as const;
+
+export function isRetiredAgent(id: string | null | undefined): boolean {
+  return (RETIRED_AGENT_IDS as readonly string[]).includes(String(id || '').toLowerCase());
+}
+
 export interface TargetSession {
   id: string;
   kind?: 'agent' | 'shell' | 'workflow';

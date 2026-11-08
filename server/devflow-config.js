@@ -12,8 +12,10 @@ export const DEFAULT_AGENTS = [
   { id: 'codeagent', name: 'codeagent', cmd: 'codeagent', resume: 'claude' },
   { id: 'nga', name: 'nga', cmd: 'nga', resume: 'opencode', statsCmd: 'nga stats --days {days}' },
   { id: 'opencode', name: 'OpenCode', cmd: 'opencode', statsCmd: 'opencode stats --days {days}' },
-  { id: 'pi', name: 'Pi', cmd: 'pi', resume: 'pi' },
 ];
+
+// 已下线的内置 agent：不再出现在默认列表里，并从既有活动配置中移除。
+const RETIRED_AGENT_IDS = new Set(['pi']);
 
 export function defaultConfigFile(baseDir) {
   return path.join(baseDir, 'config', 'devflow.xml');
@@ -127,7 +129,7 @@ export function ensureConfigFile(file) {
 }
 
 // 把缺失的内置 agent 追加到 <agents> 末尾（保留用户已有内容与默认选择）。
-// 目的：升级后新增的内置 agent（如 pi）对既有实例也可见，无需用户手改 devflow.xml。
+// 目的：升级后新增的内置 agent 对既有实例也可见，无需用户手改 devflow.xml。
 export function ensureBuiltinAgents(file, builtins = DEFAULT_AGENTS) {
   if (!file || !fs.existsSync(file)) return [];
   try {
@@ -155,12 +157,34 @@ export function ensureBuiltinAgents(file, builtins = DEFAULT_AGENTS) {
   }
 }
 
+// 从活动配置中移除已下线的内置 agent（只删对应整行，保留其余内容）。
+export function removeRetiredAgents(file, retired = RETIRED_AGENT_IDS) {
+  if (!file || !fs.existsSync(file)) return [];
+  try {
+    const xml = fs.readFileSync(file, 'utf8');
+    const ids = retired instanceof Set ? retired : new Set(retired);
+    const removed = [];
+    const kept = [];
+    for (const line of xml.split(/\r?\n/)) {
+      const tag = line.match(/<agent\b([^>]*?)\/?>/i);
+      const id = tag ? decode(attr(tag[1], 'id')) : '';
+      if (id && ids.has(id)) removed.push(id);
+      else kept.push(line);
+    }
+    if (removed.length) fs.writeFileSync(file, kept.join('\n'), 'utf8');
+    return removed;
+  } catch {
+    return [];
+  }
+}
+
 // 解析运行时活动配置：优先 <dataHome>/ports/<端口>/downloads/devflow.xml；不存在则从仓库模板 seed（不覆盖已存在的）
 export function resolveActiveConfigFile(baseDir, port) {
   const dir = downloadsDir(port);
   const active = path.join(dir, 'devflow.xml');
   if (fs.existsSync(active)) {
     ensureBuiltinAgents(active);
+    removeRetiredAgents(active);
     return active;
   }
   fs.mkdirSync(dir, { recursive: true });        // 失败向上抛出 → 启动失败
@@ -168,6 +192,7 @@ export function resolveActiveConfigFile(baseDir, port) {
   if (fs.existsSync(template)) fs.copyFileSync(template, active);
   else fs.writeFileSync(active, serializeDevflowConfig(buildDefaultConfig()), 'utf8');
   ensureBuiltinAgents(active);
+  removeRetiredAgents(active);
   return active;
 }
 

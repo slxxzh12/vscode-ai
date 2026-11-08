@@ -29,7 +29,6 @@
     <agent id="codeagent" name="codeagent" cmd="codeagent" resume="claude" />
     <agent id="nga" name="nga" cmd="nga" resume="opencode" statsCmd="nga stats --days {days}" />
     <agent id="opencode" name="OpenCode" cmd="opencode" statsCmd="opencode stats --days {days}" />
-    <agent id="pi" name="Pi" cmd="pi" resume="pi" />
   </agents>
 
 </devflow>

@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { needsSelectedAgentSession, canReuseAgentSession } from './agentTarget';
+import { needsSelectedAgentSession, canReuseAgentSession, isRetiredAgent } from './agentTarget';
+
+describe('isRetiredAgent', () => {
+  it('pi 视为已下线，其它保留', () => {
+    expect(isRetiredAgent('pi')).toBe(true);
+    expect(isRetiredAgent('PI')).toBe(true);
+    expect(isRetiredAgent('opencode')).toBe(false);
+    expect(isRetiredAgent('')).toBe(false);
+  });
+});
 
 describe('needsSelectedAgentSession', () => {
   it('没有活动会话时需要为所选 Agent 建会话', () => {

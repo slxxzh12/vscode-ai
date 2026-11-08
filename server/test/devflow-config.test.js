@@ -7,7 +7,7 @@ import {
   parseDevflowConfig, serializeDevflowConfig,
   loadDevflowConfig, ensureConfigFile, updateServerAttrs, buildDefaultConfig,
   validateWorkflows, updateWorkflows, resolveActiveConfigFile, ensureBuiltinAgents,
-  updateAgentsDefault, setDefaultAgent, DEFAULT_AGENTS,
+  removeRetiredAgents, updateAgentsDefault, setDefaultAgent, DEFAULT_AGENTS,
 } from '../devflow-config.js';
 import { createWorkflowSeedStore } from '../workflow-seed.js';
 
@@ -66,26 +66,38 @@ test('ensureConfigFile 缺失时生成默认，二次不覆盖', () => {
   assert.equal(ensureConfigFile(f), false);
 });
 
-test('默认 Agent 列表包含 pi 且按名称字母序', () => {
+test('默认 Agent 列表不再包含 pi 且按名称字母序', () => {
   const names = DEFAULT_AGENTS.map((a) => a.name);
-  assert.deepEqual(names, ['ClaudeCode', 'codeagent', 'nga', 'OpenCode', 'Pi']);
-  assert.ok(DEFAULT_AGENTS.some((a) => a.id === 'pi' && a.cmd === 'pi' && a.resume === 'pi'));
+  assert.deepEqual(names, ['ClaudeCode', 'codeagent', 'nga', 'OpenCode']);
+  assert.ok(!DEFAULT_AGENTS.some((a) => a.id === 'pi'));
 });
 
 test('ensureBuiltinAgents 把缺失的内置 agent 追加到 <agents>，保留其余内容', () => {
   const f = tmpFile();
   fs.writeFileSync(f, SAMPLE, 'utf8');
   const added = ensureBuiltinAgents(f);
-  assert.ok(added.includes('pi'), '补上 pi');
+  assert.ok(added.includes('claudecode'), '补上 claudecode');
+  assert.ok(added.includes('codeagent'), '补上 codeagent');
+  assert.ok(!added.includes('pi'), '不再补 pi');
   const xml = fs.readFileSync(f, 'utf8');
-  assert.match(xml, /<agent id="pi" name="Pi" cmd="pi" resume="pi" \/>/);
+  assert.doesNotMatch(xml, /<agent id="pi"/);
   assert.ok(xml.includes('<!-- keep me -->'));
   assert.match(xml, /<agents default="nga">/);
   assert.ok(xml.includes('<agent id="opencode" name="OpenCode" cmd="opencode" />'), '已有 agent 不重复');
   assert.equal(ensureBuiltinAgents(f).length, 0, '二次调用不重复追加');
 });
 
-test('resolveActiveConfigFile 对已存在的活动配置也会补齐内置 agent', () => {
+test('removeRetiredAgents 从活动配置中删除已下线的 pi', () => {
+  const f = tmpFile();
+  fs.writeFileSync(f, `${SAMPLE.replace('</agents>', '    <agent id="pi" name="Pi" cmd="pi" resume="pi" />\n  </agents>')}`, 'utf8');
+  assert.deepEqual(removeRetiredAgents(f), ['pi']);
+  const xml = fs.readFileSync(f, 'utf8');
+  assert.doesNotMatch(xml, /<agent id="pi"/);
+  assert.ok(xml.includes('<agent id="opencode" name="OpenCode" cmd="opencode" />'), '其它 agent 保留');
+  assert.deepEqual(removeRetiredAgents(f), [], '二次调用无改动');
+});
+
+test('resolveActiveConfigFile 对已存在的活动配置补齐内置 agent 并移除已下线 agent', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-active-'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'devcfg-home-'));
   const prev = process.env.DEVFLOW_DATA_HOME;
@@ -94,10 +106,12 @@ test('resolveActiveConfigFile 对已存在的活动配置也会补齐内置 agen
     const port = 45678;
     const dir = path.join(home, 'ports', String(port), 'downloads');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'devflow.xml'), SAMPLE, 'utf8');
+    const seed = SAMPLE.replace('</agents>', '    <agent id="pi" name="Pi" cmd="pi" resume="pi" />\n  </agents>');
+    fs.writeFileSync(path.join(dir, 'devflow.xml'), seed, 'utf8');
     const file = resolveActiveConfigFile(base, port);
     const c = parseDevflowConfig(fs.readFileSync(file, 'utf8'));
-    assert.ok(c.agents.list.some((a) => a.id === 'pi'));
+    assert.ok(c.agents.list.some((a) => a.id === 'claudecode'));
+    assert.ok(!c.agents.list.some((a) => a.id === 'pi'));
   } finally {
     if (prev === undefined) delete process.env.DEVFLOW_DATA_HOME;
     else process.env.DEVFLOW_DATA_HOME = prev;
@@ -169,7 +183,8 @@ test('resolveActiveConfigFile 首次从模板复制到 ports/<端口>/downloads'
     assert.ok(got.includes('<!-- keep me -->'), '模板内容已复制');
     assert.ok(got.includes('<agent id="opencode" name="OpenCode" cmd="opencode" />'));
     assert.ok(got.includes('<agent id="nga" name="nga" cmd="nga.cmd" />'));
-    assert.ok(got.includes('<agent id="pi" name="Pi" cmd="pi" resume="pi" />'), '缺失的内置 agent 自动补齐');
+    assert.ok(got.includes('<agent id="codeagent" name="codeagent" cmd="codeagent" resume="claude" />'), '缺失的内置 agent 自动补齐');
+    assert.ok(!got.includes('<agent id="pi"'), '不再补齐已下线的 pi');
   });
 });
 
