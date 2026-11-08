@@ -21,7 +21,7 @@ export class SessionManager extends EventEmitter {
   }
   async create({ projectId = null, cwd = null, name = null, cols = 80, rows = 24,
                  id = null, kind = 'shell', agentId = null, agentCmd = null,
-                 createdAt = null, replay = null, env = null } = {}) {
+                 createdAt = null, lastActiveAt = null, replay = null, env = null } = {}) {
     const projRoot = projectId && this.projectResolver ? (this.projectResolver(projectId) || null) : null;
     const workdir = cwd || projRoot || process.cwd();
     // 项目目录可能已被删除/移动：此时不能把不存在的目录交给 node-pty（会抛 ERROR_DIRECTORY 267），
@@ -38,6 +38,7 @@ export class SessionManager extends EventEmitter {
       ring: new RingBuffer(this.ringMaxBytes), clients: new Set(),
       cols, rows, state: 'running', exitCode: null,
       createdAt: createdAt || Date.now(), seq: ++this._seq, ptyExited: false,
+      lastActiveAt: Number.isFinite(lastActiveAt) ? lastActiveAt : (createdAt || Date.now()),
       kind, agentId, agentCmd, restored: false,
     };
     if (typeof replay === 'string' && replay) session.ring.push(replay);
@@ -68,6 +69,7 @@ export class SessionManager extends EventEmitter {
   summary(s) {
     return { id: s.id, name: s.name, projectId: s.projectId, state: s.state, cwd: s.cwd,
       cols: s.cols, rows: s.rows, exitCode: s.exitCode, createdAt: s.createdAt,
+      lastActiveAt: s.lastActiveAt || s.createdAt || 0,
       kind: s.kind || 'shell', agentId: s.agentId || null, restored: !!s.restored,
       resumed: s.resumed === true ? true : undefined };
   }

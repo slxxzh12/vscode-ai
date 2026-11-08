@@ -7,10 +7,12 @@ import { restoreSessions, restoreRecord } from '../session-restore.js';
 function makeLedger(sessions, logs = {}) {
   return { read: () => ({ sessions }), readLog: (id) => logs[id] ?? null };
 }
+// 老用例用的是极小的合成时间戳；用真实 now 作为基准，避免被「久远会话不恢复」的年龄过滤误伤
+const NOW = Date.now();
 function rec(id, extra = {}) {
   return { id, name: `name-${id}`, projectId: 'p1', cwd: process.cwd(), kind: 'agent',
     agentId: 'opencode', agentCmd: 'opencode', agentSessionId: 'ses_1',
-    cols: 80, rows: 24, createdAt: 111, updatedAt: 222, state: 'running', ...extra };
+    cols: 80, rows: 24, createdAt: NOW - 2000, updatedAt: NOW - 1000, state: 'running', ...extra };
 }
 
 test('恢复：复用 id/cwd/name、预填回滚、agent 注入续会话命令', async () => {
@@ -31,7 +33,7 @@ test('恢复：复用 id/cwd/name、预填回滚、agent 注入续会话命令',
 test('恢复：默认最多自动恢复 3 个（按 updatedAt 取最新），其余标记 exited', async () => {
   const instances = [];
   const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
-  const sessions = [1, 2, 3, 4, 5].map((i) => rec(`s_${i}`, { updatedAt: i * 100 }));
+  const sessions = [1, 2, 3, 4, 5].map((i) => rec(`s_${i}`, { updatedAt: NOW + i * 100 }));
   const updates = [];
   const ledger = { read: () => ({ sessions }), readLog: () => null, upsert: (e) => updates.push(e) };
   const res = await restoreSessions({ ledger, sessionManager: sm, agents: [], resumeDelayMs: 0, exists: () => true });
@@ -157,4 +159,55 @@ test('restoreSessions：把 discover 透传给缺 id 的 agent 记录', async ()
   assert.equal(res.restored, 1);
   await new Promise((r) => setTimeout(r, 10));
   assert.equal(instances[0].pty.writes.includes('opencode --session ses_z\r'), true);
+});
+
+test('恢复：按会话日志 mtime 判断最近活跃（账本 updatedAt 过期时也能恢复对最近 3 个）', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const now = 10_000_000;
+  // 账本 updatedAt：s_newer_created_idle 最“新”，但日志显示它早已不用；s_recent_used 账本时间很旧但刚刚用过
+  const sessions = [
+    rec('s_recent_used', { updatedAt: 100, createdAt: 100 }),
+    rec('s_newer_created_idle', { updatedAt: 900, createdAt: 900 }),
+    rec('s_second', { updatedAt: 200, createdAt: 200 }),
+    rec('s_third', { updatedAt: 300, createdAt: 300 }),
+  ];
+  const mtimes = {
+    s_recent_used: now - 1000,
+    s_newer_created_idle: now - 500_000,
+    s_second: now - 2000,
+    s_third: now - 3000,
+  };
+  const ledger = { read: () => ({ sessions }), readLog: () => null, logMtime: (id) => mtimes[id] || 0, upsert: () => {} };
+  const res = await restoreSessions({
+    ledger, sessionManager: sm, agents: [], resumeDelayMs: 0, exists: () => true,
+    now: () => now, maxAgeMs: Infinity,
+  });
+  assert.equal(res.restored, 3);
+  assert.notEqual(sm.get('s_recent_used'), null);
+  assert.notEqual(sm.get('s_second'), null);
+  assert.notEqual(sm.get('s_third'), null);
+  assert.equal(sm.get('s_newer_created_idle'), null);
+  // 恢复出来的会话保留“上次活跃时间”，供前端选最近活跃的那个
+  assert.equal(sm.summary(sm.get('s_recent_used')).lastActiveAt, now - 1000);
+});
+
+test('恢复：久远会话超过 maxAgeMs 不自动恢复，并标记 exited', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const now = 10_000_000;
+  const sessions = [
+    rec('s_ancient', { updatedAt: now - 10_000, createdAt: now - 10_000 }),
+    rec('s_fresh', { updatedAt: now - 1000, createdAt: now - 1000 }),
+  ];
+  const updates = [];
+  const ledger = { read: () => ({ sessions }), readLog: () => null, logMtime: () => 0, upsert: (e) => updates.push(e) };
+  const res = await restoreSessions({
+    ledger, sessionManager: sm, agents: [], resumeDelayMs: 0, exists: () => true,
+    now: () => now, maxAgeMs: 5000,
+  });
+  assert.equal(res.restored, 1);
+  assert.notEqual(sm.get('s_fresh'), null);
+  assert.equal(sm.get('s_ancient'), null);
+  assert.ok(updates.some((u) => u.id === 's_ancient' && u.state === 'exited'));
 });

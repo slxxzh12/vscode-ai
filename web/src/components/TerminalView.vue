@@ -37,8 +37,8 @@ import PromptCollectAddon from '../prompts/PromptCollectAddon.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
 import { getComposerDraft, setComposerDraft } from '../composerDrafts';
 import { captureToPngDataUrl } from '../snapshot';
-import { pickRestoredAgent, restoredAgentIds } from '../sessionRestore';
-import { needsSelectedAgentSession, canReuseAgentSession } from '../agentTarget';
+import { pickRestoredAgent, restoredAgentIds, latestMessageBySession } from '../sessionRestore';
+import { needsSelectedAgentSession, canReuseAgentSession, isRetiredAgent } from '../agentTarget';
 import { copyText } from '../clipboard';
 import { MAX_RESTORE_TABS, restoreTabs, setRestoreTabs } from '../restorePrefs';
 import { isAgentSession, phoneHintKey } from '../remote-coder/phoneMode';
@@ -366,7 +366,7 @@ async function loadAgents() {
   try {
     const r = await fetch('/api/agents').then((x) => x.json());
     const list = Array.isArray(r?.agents)
-      ? r.agents.filter((a: any) => a && typeof a.id === 'string' && typeof a.cmd === 'string')
+      ? r.agents.filter((a: any) => a && typeof a.id === 'string' && typeof a.cmd === 'string' && !isRetiredAgent(a.id))
       : [];
     if (!list.length) return;
     defaultAgents.value = sortAgents(list.map((a: any) => ({ id: a.id, name: a.name || a.id, cmd: a.cmd })));
@@ -722,7 +722,7 @@ function loadCfg() {
     if (!raw) return;
     const c = JSON.parse(raw);
     if (Array.isArray(c.agents) && c.agents.length) {
-      const ok = c.agents.filter((a: any) => a && typeof a.id === 'string' && typeof a.cmd === 'string');
+      const ok = c.agents.filter((a: any) => a && typeof a.id === 'string' && typeof a.cmd === 'string' && !isRetiredAgent(a.id));
       if (ok.length) {
         const merged: AgentDef[] = ok.map((a: any) => ({ id: a.id, name: a.name || a.id, cmd: a.cmd }));
         const ids = new Set(merged.map((a) => a.id));
@@ -1122,7 +1122,8 @@ function onChipClick(c: Chip) {
   void submitComposer();
 }
 function chipText(s: string) {
-  const t = s.replace(/\s+/g, ' ').trim();
+  const first = String(s || '').split(/\r?\n/).find((line) => line.trim()) || '';
+  const t = first.replace(/\s+/g, ' ').trim();
   return t.length > 40 ? t.slice(0, 40) + '…' : t;
 }
 function pickStage(s: StageDef) {
@@ -1330,23 +1331,31 @@ function init() {
     if (props.phone) return;   // 手机模式：不自动 adopt/新建会话，交给用户点页签
     if (autoTried || props.terminal.state.activeSessionId) return;
     autoTried = true;
-    const adopted = pickRestoredAgent(props.terminal.state.sessions);
-    if (adopted) {
-      for (const id of restoredAgentIds(props.terminal.state.sessions)) markAgent(id);
-      agentSid.value = adopted.id;
-      agentProjectId.value = adopted.projectId ?? null;
-      agentAtStart.value = adopted.agentId || agentId.value;
-      agentStarted.value = true;
-      agentCliReady.value = true;                 // 服务端已注入续会话命令，不再重复注入
-      props.terminal.switchTo(adopted.id);
-      return;
-    }
-    const existing = props.terminal.state.sessions.find((s) => agentSids.value.has(s.id));
-    if (existing) {
-      agentSid.value = existing.id;                       // 重新挂载后绑定回固定 Agent 会话
-      agentProjectId.value = existing.projectId ?? null;
-      props.terminal.switchTo(existing.id);               // 复用已存在的 Agent 会话（项目不同也不自动重建）
-    }
+    // 先确保历史消息加载完，用「最后一条用户消息」判断用户刚在哪个窗口聊天，
+    // 避免多个恢复会话时按创建时间/日志输出误选到另一个窗口。
+    void msgHistory.load().then(() => {
+      if (props.phone || props.terminal.state.activeSessionId) return;
+      const adopted = pickRestoredAgent(
+        props.terminal.state.sessions,
+        latestMessageBySession(msgHistory.messages.value),
+      );
+      if (adopted) {
+        for (const id of restoredAgentIds(props.terminal.state.sessions)) markAgent(id);
+        agentSid.value = adopted.id;
+        agentProjectId.value = adopted.projectId ?? null;
+        agentAtStart.value = adopted.agentId || agentId.value;
+        agentStarted.value = true;
+        agentCliReady.value = true;                 // 服务端已注入续会话命令，不再重复注入
+        props.terminal.switchTo(adopted.id);
+        return;
+      }
+      const existing = props.terminal.state.sessions.find((s) => agentSids.value.has(s.id));
+      if (existing) {
+        agentSid.value = existing.id;                       // 重新挂载后绑定回固定 Agent 会话
+        agentProjectId.value = existing.projectId ?? null;
+        props.terminal.switchTo(existing.id);               // 复用已存在的 Agent 会话（项目不同也不自动重建）
+      }
+    });
   });
   unsubCfg = props.terminal.on(S2C.CONFIG_CHANGED, async () => {
     await loadAgents();

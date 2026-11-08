@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { openRestoredSession, pickRestoredAgent, restoredAgentIds } from './sessionRestore';
+import { openRestoredSession, pickRestoredAgent, restoredAgentIds, latestMessageBySession } from './sessionRestore';
 import type { SessionSummary } from './useTerminal';
 
 const s = (id: string, extra: Partial<SessionSummary> = {}): SessionSummary => ({
@@ -11,6 +11,28 @@ describe('sessionRestore', () => {
     const list = [s('s1'), s('s2', { restored: true, kind: 'shell' }), s('s3', { restored: true, kind: 'agent', agentId: 'opencode' })];
     expect(pickRestoredAgent(list)?.id).toBe('s3');
     expect(pickRestoredAgent([s('s1')])).toBeNull();
+  });
+
+  it('pickRestoredAgent 多个已恢复 agent 时选最近活跃的（不是创建时间最新）', () => {
+    const list = [
+      s('s1', { restored: true, kind: 'agent', createdAt: 900, lastActiveAt: 100 }),
+      s('s2', { restored: true, kind: 'agent', createdAt: 100, lastActiveAt: 900 }),
+      s('s3', { restored: true, kind: 'agent', createdAt: 500, lastActiveAt: 300 }),
+    ];
+    expect(pickRestoredAgent(list)?.id).toBe('s2');
+  });
+
+  it('pickRestoredAgent 优先选最后一条用户消息所在的会话（后台输出不算）', () => {
+    const list = [
+      s('s1', { restored: true, kind: 'agent', lastActiveAt: 900, createdAt: 900 }),
+      s('s2', { restored: true, kind: 'agent', lastActiveAt: 800, createdAt: 800 }),
+    ];
+    const latest = latestMessageBySession([
+      { sessionId: 's1', ts: 100 },
+      { sessionId: 's2', ts: 950 },
+    ]);
+    expect(latest).toEqual({ s1: 100, s2: 950 });
+    expect(pickRestoredAgent(list, latest)?.id).toBe('s2');
   });
 
   it('restoredAgentIds 返回全部已恢复 agent 会话 id', () => {

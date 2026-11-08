@@ -128,6 +128,16 @@ export function createSessionLedger({ file = null, logsDir = null, logDirFor = n
     if (!f) return null;
     try { return fs.readFileSync(f, 'utf8'); } catch { return null; }
   }
+  // 会话日志的最后活跃时间：有未刷盘缓冲说明刚有输出；否则取日志文件 mtime。
+  // 账本 updatedAt 只在创建/退出/发现 agent 会话时写，用户持续聊天时不会变，
+  // 所以“最近使用过哪些会话”要以日志活跃时间为准。
+  function logMtime(id) {
+    if (!id) return 0;
+    if (dirty.has(id)) return Date.now();
+    const f = logFile(id);
+    if (!f) return 0;
+    try { return fs.statSync(f).mtimeMs || 0; } catch { return 0; }
+  }
   function upsert(entry) {
     if (!entry || !entry.id) return store.read();
     const cur = store.read();
@@ -167,5 +177,5 @@ export function createSessionLedger({ file = null, logsDir = null, logDirFor = n
     }
     if (moved) logger?.info?.(`session logs migrated to per-project dirs: ${moved}`);
   }
-  return { read: store.read, reload: () => (store.reload ? store.reload() : store.read()), upsert, remove, close, appendLog, flushLog, flushAll, readLog, migrateLogs };
+  return { read: store.read, reload: () => (store.reload ? store.reload() : store.read()), upsert, remove, close, appendLog, flushLog, flushAll, readLog, logMtime, migrateLogs };
 }

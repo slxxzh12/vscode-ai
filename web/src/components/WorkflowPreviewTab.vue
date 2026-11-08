@@ -13,7 +13,8 @@ watch(current, () => { stageIndex.value = 0; });
 const chips = computed<string[]>(() => current.value?.stages[stageIndex.value]?.prompts || []);
 
 function chipText(s: string) {
-  const one = s.replace(/\s+/g, ' ').trim();
+  const first = String(s || '').split(/\r?\n/).find((line) => line.trim()) || '';
+  const one = first.replace(/\s+/g, ' ').trim();
   return one.length > 40 ? one.slice(0, 40) + '…' : one;
 }
 function flatIndex(start: number, offset: number) { return start + offset; }
