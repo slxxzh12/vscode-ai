@@ -1,3 +1,5 @@
+推送 GitHub
+
 请把当前分支代码推送到 github 远端（GitHub：https://github.com/slxxzh12/vscode-ai.git）。
 
 - 先执行 git remote -v 确认 github 地址。

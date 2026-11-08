@@ -1,3 +1,5 @@
+发布 Gitee
+
 请把当前版本的 release 包发布到 Gitee Releases（只发 Gitee）。
 
 - 发布地址与凭据从 env/gitee-release.ini 读取，不要在提示词、代码或日志里写死仓库地址与令牌。
