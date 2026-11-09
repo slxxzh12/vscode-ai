@@ -5,7 +5,8 @@
   "workspaces": [
     "shared",
     "server",
-    "web"
+    "web",
+    "packages/markdown-viewer"
   ],
   "scripts": {
     "dev": "node scripts/dev.js",

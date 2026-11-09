@@ -6,6 +6,7 @@
   "main": "index.js",
   "dependencies": {
     "@antv/x6": "^3.1.8",
+    "@devflow/markdown-viewer": "*",
     "@dagrejs/dagre": "^3.1.3",
     "esbuild": "^0.21.5",
     "highlight.js": "^11.10.0",

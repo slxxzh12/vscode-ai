@@ -49,16 +49,21 @@ export function readEchartsScript() {
   return echartsCached;
 }
 
-// 把 shared/markdown-client.js 及其依赖（markdown-charts.js）打成一个浏览器 ESM，
+function markdownViewerCoreDir() {
+  const require = createRequire(import.meta.url);
+  const pkgDir = path.dirname(require.resolve('@devflow/markdown-viewer/package.json'));
+  return path.join(pkgDir, 'src', 'core');
+}
+
+// 把包内 markdown-client.js 及其依赖（markdown-charts.js）打成一个浏览器 ESM，
 // 这样静态页面只需加载单文件，也不用手工维护多份资源路由。
 export function readMarkdownClientScript() {
-  const require = createRequire(import.meta.url);
-  const sharedDir = path.dirname(require.resolve('@devflow/shared'));
-  const file = path.join(sharedDir, 'markdown-client.js');
-  const charts = path.join(sharedDir, 'markdown-charts.js');
-  const flow = path.join(sharedDir, 'markdown-flowchart.js');
-  const ppt = path.join(sharedDir, 'markdown-ppt.js');
-  const pptExport = path.join(sharedDir, 'markdown-ppt-export.js');
+  const coreDir = markdownViewerCoreDir();
+  const file = path.join(coreDir, 'markdown-client.js');
+  const charts = path.join(coreDir, 'markdown-charts.js');
+  const flow = path.join(coreDir, 'markdown-flowchart.js');
+  const ppt = path.join(coreDir, 'markdown-ppt.js');
+  const pptExport = path.join(coreDir, 'markdown-ppt-export.js');
   const mtime = Math.max(
     fs.statSync(file).mtimeMs,
     fs.statSync(charts).mtimeMs,
@@ -69,7 +74,7 @@ export function readMarkdownClientScript() {
   if (!clientCached || mtime !== clientMtime) {
     const result = buildSync({
       entryPoints: [file],
-      absWorkingDir: sharedDir,
+      absWorkingDir: coreDir,
       bundle: true,
       format: 'esm',
       platform: 'browser',
@@ -87,12 +92,11 @@ export function readMarkdownClientScript() {
 let flowX6Cached = null;
 export function readFlowX6Script() {
   if (flowX6Cached) return flowX6Cached;
-  const require = createRequire(import.meta.url);
-  const sharedDir = path.dirname(require.resolve('@devflow/shared'));
-  const entry = path.join(sharedDir, 'markdown-flowchart-x6.js');
+  const coreDir = markdownViewerCoreDir();
+  const entry = path.join(coreDir, 'markdown-flowchart-x6.js');
   const result = buildSync({
     entryPoints: [entry],
-    absWorkingDir: sharedDir,
+    absWorkingDir: coreDir,
     bundle: true,
     format: 'esm',
     platform: 'browser',
@@ -107,12 +111,11 @@ export function readFlowX6Script() {
 let flowEditCached = null;
 export function readFlowEditScript() {
   if (flowEditCached) return flowEditCached;
-  const require = createRequire(import.meta.url);
-  const sharedDir = path.dirname(require.resolve('@devflow/shared'));
-  const entry = path.join(sharedDir, 'markdown-flowchart-editor.js');
+  const coreDir = markdownViewerCoreDir();
+  const entry = path.join(coreDir, 'markdown-flowchart-editor.js');
   const result = buildSync({
     entryPoints: [entry],
-    absWorkingDir: sharedDir,
+    absWorkingDir: coreDir,
     bundle: true,
     format: 'esm',
     platform: 'browser',

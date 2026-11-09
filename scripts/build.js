@@ -364,7 +364,9 @@ function collectSharedSpecs(dir, acc) {
     const src = fs.readFileSync(p, "utf8");
     const re = /["'](@devflow\/[^"'\s]+)["']/g;
     let m;
-    while ((m = re.exec(src))) acc.add(m[1]);
+    while ((m = re.exec(src))) {
+      if (!m[1].endsWith("/package.json")) acc.add(m[1]);
+    }
   }
 }
 const sharedSpecs = new Set();
@@ -380,7 +382,7 @@ const serverDeps = [
 // X6 仅用于浏览器端流程图，由 esbuild 打包；Node 侧不能直接 import（包的 ESM/CJS 混用会报错）。
 const BROWSER_ONLY_DEPS = new Set(["@antv/x6"]);
 const smokeDeps = serverDeps.filter((d) => !BROWSER_ONLY_DEPS.has(d));
-const flowX6Entry = path.join(APP, "node_modules", "@devflow", "shared", "markdown-flowchart-x6.js");
+const flowX6Entry = path.join(APP, "node_modules", "@devflow", "markdown-viewer", "src", "core", "markdown-flowchart-x6.js");
 const smokeCode = [
   "const deps = " + JSON.stringify(smokeDeps) + ";",
   "for (const d of deps) await import(d);",

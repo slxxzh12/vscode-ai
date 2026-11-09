@@ -1,1 +1,1 @@
-export function enhanceSimpleTables(container: HTMLElement): void;
+export * from '@devflow/markdown-viewer/core/markdown-table-sort';
