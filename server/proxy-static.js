@@ -3,6 +3,7 @@ import path from 'node:path';
 import { DIR_ICON, fileIcon } from '@devflow/shared/file-icon';
 import { isCsvFile, renderCsvDocument } from './csv-page.js';
 import { isMarkdownFile, renderMarkdownDocument } from './markdown-page.js';
+import { isMarkdownViewerAsset, serveMarkdownViewerAsset } from './markdown-viewer-assets.js';
 import {
   ECHARTS_SCRIPT_NAME, FLOW_EDIT_SCRIPT_NAME, FLOW_X6_SCRIPT_NAME, HTML_TO_IMAGE_SCRIPT_NAME, MARKDOWN_CLIENT_SCRIPT_NAME,
   MERMAID_SCRIPT_NAME, PPTXGEN_SCRIPT_NAME,
@@ -212,6 +213,11 @@ export function serveStatic({ root, req, res, urlPath = '/', extraHeaders = [], 
         return;
       }
       pathname = pathname.slice(prefix.length) || '/';
+    }
+    if (isMarkdownViewerAsset(pathname)) {
+      serveMarkdownViewerAsset(req, res, pathname);
+      done(200);
+      return;
     }
     // Markdown 页面用的脚本：按相对路径请求，不必落在站点目录里
     // Mermaid 本体 + ECharts 本体 + Web/静态页共用的增强代码（分组/图表/渲染）

@@ -161,3 +161,12 @@ export function createElementTableRenderer(
 ): TableRenderer {
   return (host, data) => mountTable(host, data, localeFor(locale(), messages()));
 }
+
+export function applyTableAttrs(table: HTMLTableElement, host: HTMLElement): void {
+  const width = table.getAttribute('data-md-table-width');
+  const headBg = table.getAttribute('data-md-table-head-bg');
+  const headColor = table.getAttribute('data-md-table-head-color');
+  if (width) host.style.setProperty('--md-table-width', width);
+  if (headBg) host.style.setProperty('--md-table-head-bg', headBg);
+  if (headColor) host.style.setProperty('--md-table-head-color', headColor);
+}

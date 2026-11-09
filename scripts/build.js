@@ -111,7 +111,11 @@ function newestMtime(dir) {
   return newest;
 }
 const distMtime = fs.statSync(path.join(ROOT, "web", "dist", "index.html")).mtimeMs;
-const srcMtime = Math.max(newestMtime(path.join(ROOT, "web", "src")), newestMtime(path.join(ROOT, "shared")));
+const srcMtime = Math.max(
+  newestMtime(path.join(ROOT, "web", "src")),
+  newestMtime(path.join(ROOT, "shared")),
+  newestMtime(path.join(ROOT, "packages", "markdown-viewer", "src")),
+);
 check(
   distMtime >= srcMtime,
   "web/dist is stale (web/src or shared changed after the last build) — run `npm run build:web` again",
@@ -119,6 +123,10 @@ check(
 check(
   fs.existsSync(path.join(ROOT, "shared", "index.js")),
   "missing shared/index.js",
+);
+check(
+  fs.existsSync(path.join(ROOT, "packages", "markdown-viewer", "dist", "standalone", "index.js")),
+  "markdown-viewer standalone dist missing; run `npm run build:mdv` first",
 );
 
 console.log("[build] 3/5 assembling " + APP);

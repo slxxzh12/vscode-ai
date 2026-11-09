@@ -12,6 +12,7 @@ import { Projects } from './projects.js';
 import { createLogger } from './log.js';
 import { revealInOs } from './reveal.js';
 import { createStaticServer } from './static.js';
+import { isMarkdownViewerAsset, serveMarkdownViewerAsset } from './markdown-viewer-assets.js';
 import { serveStatic } from './proxy-static.js';
 import { ensureDefaults, loadProjects } from './config.js';
 import { createCodeGroups } from './code-groups.js';
@@ -1614,6 +1615,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname.startsWith('/api/')) {
     await ws.httpApi(req, res);
+    return;
+  }
+  if (isMarkdownViewerAsset(url.pathname)) {
+    serveMarkdownViewerAsset(req, res, url.pathname);
     return;
   }
   createStaticServer(path.join(__dirname, '..', 'web', 'dist'))(req, res, () => {

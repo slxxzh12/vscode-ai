@@ -84,6 +84,7 @@
 ## 目录速览
 
 - `shared/` — WS 协议常量/类型（唯一事实源）；`server/` — Node ESM 后端（ws + node-pty，测试在 `server/test/`，`node --test`）；`web/` — Vue3+Vite+TS+xterm（vitest + vue-tsc）。
+- `packages/markdown-viewer/` — Markdown 渲染独立包（Vue 3 组件库）：`src/core/` 为框架无关内核（解析、Mermaid/ECharts、表格提取、流程图、PPT、词条），`src/vue/` 为 ElTable/主题/词条适配，`src/standalone.ts` 供静态页自举。`shared/markdown*` 仅保留兼容 re-export，新代码直接引用本包。
 - Postman 小工具：`server/postman-history.js`（curl 记录/目录树，存 `<端口数据目录>/tools/postman/`）；前端 `web/src/tools/postman/`（`usePostmanHistory.ts` 数据层 + `usePostmanWorkbench.ts` 模块级共享状态 + `postmanTreeSource.ts` 树适配器 + `PostmanSidebarBar.vue` 批量执行条 + `PostmanTool.vue` 右侧面板）。已迁到统一壳子（见下条）。
 - 小工具统一壳子（进行中）：小工具不再弹窗，而是作为主页面（explorer）的「工具页签」（`web/src/useCenter.ts` 的 `kind:'tool'`、id `t:<tool>`）——左侧 `aside` 显示该工具固定目录树、中央显示内容；入口为市场页/欢迎页磁贴 + 活动栏图标（`web/src/uiIntents.ts` 的 `pendingToolTab` → `App.vue` 切 rail + `center.openTool`）。
   - 统一树：`web/src/components/TreeView.vue`（唯一树组件，取代原 `FileTree`/`TreeNode`/`ItemTree`），数据源契约 `web/src/tree/treeSource.ts`，可见行纯函数 `treeRows.ts`，文件图标 `fileIcon.ts`；适配器 `projectTreeSource.ts`（项目文件）、`toolFileTreeSource.ts`（工具文件）。主页面「目录」页签已迁移（`HistoryList.vue` → `TreeView` + `projectTreeSource`）。

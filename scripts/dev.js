@@ -84,7 +84,21 @@ async function ensureAgent() {
   console.warn(`[dev] 未找到 agent "${cmd}"，机器用量采集会失败；请把它加入 PATH（opencode 可用 DEVFLOW_OPENCODE 覆盖）`);
 }
 
+function buildMarkdownViewer() {
+  const args = ["--prefix", "packages/markdown-viewer", "run", "build"];
+  const viaShell = process.platform === "win32";
+  const bin = viaShell ? (process.env.ComSpec || "cmd.exe") : NPM;
+  const finalArgs = viaShell ? ["/d", "/s", "/c", NPM, ...args] : args;
+  console.log("[dev] building @devflow/markdown-viewer...");
+  const r = spawnSync(bin, finalArgs, { cwd: ROOT, stdio: "inherit", env: process.env });
+  if (r.status !== 0) {
+    console.error("[dev] @devflow/markdown-viewer build failed");
+    process.exit(r.status || 1);
+  }
+}
+
 async function main() {
+  buildMarkdownViewer();
   await ensureAgent();
   console.log(`[dev] 访问地址: http://localhost:5173 （后端 http://127.0.0.1:${PORT}，日志 logs/）`);
   start("server", process.execPath, ["--watch", "server/index.js"], "dev-server.log");

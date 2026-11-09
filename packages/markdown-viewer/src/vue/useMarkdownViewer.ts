@@ -3,7 +3,7 @@ import { enhanceMarkdown as enhanceShared, type MermaidLike } from '../core/mark
 import { loadEcharts } from '../core/charts-loader';
 import { renderMarkdown, type RenderOptions } from '../core/render';
 import { resolveMessages, translate, type MarkdownLocale, type MarkdownMessages } from '../core/i18n';
-import { createElementTableRenderer, extractTable } from './table-renderer';
+import { applyTableAttrs, createElementTableRenderer, extractTable } from './table-renderer';
 
 export type MarkdownTheme = 'dark' | 'light' | 'auto';
 
@@ -14,6 +14,7 @@ export interface MarkdownViewerOptions extends Omit<RenderOptions, 'html'> {
   locale?: MarkdownLocale;
   messages?: Partial<MarkdownMessages>;
   flowchartEditable?: boolean;
+  ppt?: boolean;
   readAsset?: (rel: string) => Promise<string>;
 }
 
@@ -45,6 +46,10 @@ export function useMarkdownViewer(
 
   const enhance = async () => {
     if (disposed || !el.value) return;
+    const rawTables = Array.from(el.value.querySelectorAll('table'))
+      .filter((table) => !table.closest('.md-el-table, .el-table'));
+    const rawMermaid = el.value.querySelector('pre.mermaid:not([data-processed="true"])');
+    if (items.length && !rawTables.length && !rawMermaid) return;
     dispose();
     const opts = options();
     const locale = opts.locale || 'zh-CN';
@@ -70,6 +75,7 @@ export function useMarkdownViewer(
           if (!data) continue;
           const host = document.createElement('div');
           host.className = 'md-el-table';
+          applyTableAttrs(table, host);
           table.replaceWith(host);
           out.push({ host, ...renderer(host, data) });
         }

@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import './styles/index.css';
 import { useMarkdownViewer, type MarkdownViewerOptions } from './useMarkdownViewer';
+import { createPptController } from './ppt';
+import { resolveMessages } from '../core/i18n';
+import type { PptPresenter } from '../core/markdown-ppt.js';
 
 const props = withDefaults(defineProps<MarkdownViewerOptions>(), {
   content: '',
@@ -9,6 +12,7 @@ const props = withDefaults(defineProps<MarkdownViewerOptions>(), {
   theme: 'auto',
   locale: 'zh-CN',
   flowchartEditable: false,
+  ppt: false,
 });
 
 const emit = defineEmits<{ ready: []; error: [unknown]; linkClick: [string] }>();
@@ -26,8 +30,30 @@ useMarkdownViewer(body, () => ({
   assetSrc: props.assetSrc,
   extraStyleBlocks: props.extraStyleBlocks,
   flowchartEditable: props.flowchartEditable,
+  ppt: props.ppt,
   readAsset: props.readAsset,
 }));
+
+let ppt: PptPresenter | null = null;
+
+onMounted(() => {
+  if (!props.ppt || !props.content) return;
+  const messages = resolveMessages(props.locale || 'zh-CN', props.messages);
+  ppt = createPptController({
+    content: props.content,
+    title: 'Markdown',
+    locale: props.locale || 'zh-CN',
+    messages,
+    theme: theme.value === 'light' ? 'light' : 'dark',
+    readAsset: props.readAsset,
+    onError: (e) => emit('error', e),
+  });
+});
+
+onBeforeUnmount(() => {
+  ppt?.destroy();
+  ppt = null;
+});
 
 function onClick(event: MouseEvent) {
   const target = (event.target as HTMLElement | null)?.closest('a[data-md-link]');

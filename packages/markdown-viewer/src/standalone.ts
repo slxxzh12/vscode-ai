@@ -21,7 +21,7 @@ function readConfig(): StandaloneConfig {
 
 function mountOne(root: HTMLElement) {
   const cfg = readConfig();
-  const html = cfg.html ?? (cfg.content ? undefined : root.innerHTML);
+  const html = cfg.html ?? root.innerHTML;
   const host = document.createElement('div');
   root.replaceWith(host);
   createApp({
