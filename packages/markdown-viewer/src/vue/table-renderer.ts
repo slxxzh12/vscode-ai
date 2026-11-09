@@ -1,0 +1,163 @@
+import { computed, createApp, defineComponent, h, type PropType } from 'vue';
+import { ElConfigProvider, ElTable, ElTableColumn } from 'element-plus';
+import en from 'element-plus/es/locale/lang/en';
+import zhCn from 'element-plus/es/locale/lang/zh-cn';
+import type { MarkdownLocale, MarkdownMessages } from '../core/i18n';
+
+export type TableData = { headers: string[]; rows: string[][] };
+
+export interface TableRenderer {
+  (host: HTMLElement, data: TableData): { dispose(): void };
+}
+
+function isPlainCell(node: Element): node is HTMLTableCellElement {
+  const tag = node.tagName;
+  if (tag !== 'TH' && tag !== 'TD') return false;
+  const cell = node as HTMLTableCellElement;
+  return cell.rowSpan <= 1 && cell.colSpan <= 1;
+}
+
+function cellText(html: string): string {
+  const d = document.createElement('div');
+  d.innerHTML = html;
+  return (d.textContent || '').trim();
+}
+
+function filterOptions(rows: string[][], col: number): Array<{ text: string; value: string }> {
+  if (rows.length <= 20) return [];
+  const seen = new Map<string, string>();
+  for (const row of rows) {
+    const value = row[col] ?? '';
+    if (!seen.has(value)) seen.set(value, cellText(value) || '—');
+    if (seen.size > 200) return [];
+  }
+  if (seen.size > 50) return [];
+  return [...seen.entries()].map(([value, text]) => ({ text, value }));
+}
+
+function compareCells(a: string, b: string): number {
+  const sa = cellText(a);
+  const sb = cellText(b);
+  const na = Number(sa.replace(/,/g, ''));
+  const nb = Number(sb.replace(/,/g, ''));
+  if (sa && sb && Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+  return sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function columnMinWidth(headers: string[], rows: string[][], col: number): number {
+  let chars = cellText(headers[col] ?? '').length;
+  for (const row of rows) chars = Math.max(chars, cellText(row[col] ?? '').length);
+  return Math.min(360, Math.max(96, Math.round(chars * 12 + 32)));
+}
+
+function tableMinWidth(headers: string[], rows: string[][]): number {
+  return headers.reduce((sum, _, col) => sum + columnMinWidth(headers, rows, col), 0);
+}
+
+export function extractTable(table: HTMLTableElement): TableData | null {
+  if (table.closest('.el-table')) return null;
+  if (table.querySelector('table')) return null;
+  if (table.querySelector('pre, div, ul, ol, blockquote, p')) return null;
+  const headRow = table.querySelector('thead tr');
+  if (!headRow) return null;
+  const cells = Array.from(headRow.children);
+  if (!cells.length || !cells.every(isPlainCell)) return null;
+  const headers = cells.map((c) => c.innerHTML.trim());
+
+  const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+  if (!bodyRows.length) return null;
+  const rows: string[][] = [];
+  for (const tr of bodyRows) {
+    const tds = Array.from(tr.children);
+    if (tds.length !== headers.length || !tds.every(isPlainCell)) return null;
+    rows.push(tds.map((c) => c.innerHTML.trim()));
+  }
+  return { headers, rows };
+}
+
+function localeFor(locale: MarkdownLocale, messages: MarkdownMessages) {
+  if (locale === 'en') return en;
+  return {
+    ...zhCn,
+    el: {
+      ...zhCn.el,
+      table: { ...zhCn.el.table, confirmFilter: messages['table.confirm'] },
+    },
+  };
+}
+
+const TableHost = defineComponent({
+  props: {
+    headers: { type: Array as PropType<string[]>, required: true },
+    rows: { type: Array as PropType<string[][]>, required: true },
+    locale: { type: Object as PropType<typeof zhCn>, required: true },
+  },
+  setup(props) {
+    const data = computed(() =>
+      props.rows.map((cells) => {
+        const obj: Record<string, string> = {};
+        cells.forEach((cell, i) => {
+          obj[`c${i}`] = cell;
+        });
+        return obj;
+      }),
+    );
+    const filters = computed(() => props.headers.map((_, i) => filterOptions(props.rows, i)));
+    const widths = computed(() => props.headers.map((_, i) => columnMinWidth(props.headers, props.rows, i)));
+    const sortable = computed(() => props.rows.length > 20);
+    return () =>
+      h(ElConfigProvider, { locale: props.locale }, () =>
+        h(
+          ElTable,
+          {
+            data: data.value,
+            border: true,
+            stripe: true,
+            size: 'small',
+            fit: true,
+          },
+          () =>
+            props.headers.map((label, i) => {
+              const opts = filters.value[i];
+              return h(
+                ElTableColumn,
+                {
+                  key: i,
+                  prop: `c${i}`,
+                  minWidth: widths.value[i],
+                  sortable: sortable.value,
+                  sortMethod: sortable.value
+                    ? (a: Record<string, string>, b: Record<string, string>) =>
+                      compareCells(a[`c${i}`] ?? '', b[`c${i}`] ?? '')
+                    : undefined,
+                  filters: opts.length ? opts : undefined,
+                  filterMethod: opts.length
+                    ? (value: string, row: Record<string, string>) => row[`c${i}`] === value
+                    : undefined,
+                  filterPlacement: 'bottom-end',
+                },
+                {
+                  header: () => h('span', { innerHTML: label }),
+                  default: ({ row }: { row: Record<string, string> }) =>
+                    h('span', { innerHTML: row[`c${i}`] ?? '' }),
+                },
+              );
+            }),
+        ),
+      );
+  },
+});
+
+export function mountTable(host: HTMLElement, data: TableData, locale: typeof zhCn): { dispose(): void } {
+  host.style.setProperty('--md-table-inner-width', `${tableMinWidth(data.headers, data.rows)}px`);
+  const app = createApp(TableHost, { ...data, locale });
+  app.mount(host);
+  return { dispose: () => app.unmount() };
+}
+
+export function createElementTableRenderer(
+  locale: () => MarkdownLocale,
+  messages: () => MarkdownMessages,
+): TableRenderer {
+  return (host, data) => mountTable(host, data, localeFor(locale(), messages()));
+}

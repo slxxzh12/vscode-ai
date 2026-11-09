@@ -1,0 +1,346 @@
+.mdv .md-body {
+  --mdv-table-head-bg: #1e40af;
+  --mdv-table-head-text: #ffffff;
+  --md-table-row-alt-bg: var(--bg2);
+  --md-table-margin: 0.7em 0;   /* 居中改成：0.7em auto */
+  /* 可选：--md-table-width: 60%; 控制表格占可用宽度的比例 */
+  color: var(--tx); font-size: 14px; line-height: 1.7; font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; word-wrap: break-word;
+}
+.mdv .md-body > :first-child { margin-top: 0; }
+.mdv .md-body > [data-md-css] > :first-child,
+.mdv .md-body > [data-md-css] > style:first-child + * { margin-top: 0; }
+.mdv .md-body > :last-child { margin-bottom: 0; }
+.mdv .md-body h1, .mdv .md-body h2, .mdv .md-body h3, .mdv .md-body h4, .mdv .md-body h5, .mdv .md-body h6 { margin: 1.2em 0 0.6em; line-height: 1.3; font-weight: 600; color: var(--tx1); }
+.mdv .md-body h1 { font-size: 1.7em; padding-bottom: 0.3em; border-bottom: 1px solid var(--bd); }
+.mdv .md-body h2 { font-size: 1.4em; padding-bottom: 0.25em; border-bottom: 1px solid var(--bd); }
+.mdv .md-body h3 { font-size: 1.2em; }
+.mdv .md-body h4 { font-size: 1.05em; }
+.mdv .md-body p { margin: 0.7em 0; }
+.mdv .md-body a { color: var(--ac2); text-decoration: none; }
+.mdv .md-body a:hover { text-decoration: underline; }
+.mdv .md-body ul, .mdv .md-body ol { margin: 0.8em 0; padding-left: 0; }
+.mdv .md-body ul { list-style: none; }
+.mdv .md-body li { position: relative; margin: 0.3em 0; padding-left: 1.4em; }
+.mdv .md-body ul > li::before {
+  content: "";
+  position: absolute;
+  left: 0.3em;
+  top: 0.68em;
+  width: 0.42em;
+  height: 0.42em;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+  box-shadow: 0 0 0 3px rgba(76, 154, 255, 0.16);
+}
+.mdv .md-body ul ul > li::before {
+  width: 0.34em;
+  height: 0.34em;
+  border-radius: 2px;
+  background: var(--ac2);
+  box-shadow: none;
+  transform: rotate(45deg);
+}
+/* 有序列表做成 PPT 式的编号卡片 */
+.mdv .md-body ol { list-style: none; counter-reset: md-ol; }
+.mdv .md-body ol > li {
+  counter-increment: md-ol;
+  margin: 0.5em 0;
+  padding: 0.5em 0.9em 0.5em 3em;
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac2);
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--bg2), transparent 75%);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.mdv .md-body ol > li:hover {
+  border-color: var(--ac2);
+  transform: translateX(2px);
+}
+.mdv .md-body ol > li::before {
+  content: counter(md-ol);
+  position: absolute;
+  left: 9px;
+  top: 7px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ac2), var(--ac));
+  color: #fff;
+  font-size: 0.8em;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(47, 111, 235, 0.35);
+}
+/* 嵌套的有序列表保持轻量，不再套卡片 */
+.mdv .md-body ol ol { counter-reset: md-ol; margin: 0.4em 0; }
+.mdv .md-body ol ol > li,
+.mdv .md-body ul ol > li {
+  margin: 0.25em 0;
+  padding: 0.15em 0 0.15em 2em;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.mdv .md-body ol ol > li:hover,
+.mdv .md-body ul ol > li:hover { transform: none; border-color: transparent; }
+.mdv .md-body ol ol > li::before,
+.mdv .md-body ul ol > li::before {
+  top: 3px;
+  left: 1px;
+  width: 19px;
+  height: 19px;
+  background: var(--bg4);
+  color: var(--ac2);
+  box-shadow: none;
+}
+.mdv .md-body li > p { margin: 0.3em 0; }
+.mdv .md-body li > input[type="checkbox"] { margin-right: 0.4em; accent-color: var(--ac2); }
+.mdv .md-body li:has(> input[type="checkbox"])::before { display: none; }
+/* 嵌套列表加一条很淡的引导线，层次更清楚 */
+.mdv .md-body ul ul, .mdv .md-body ul ol, .mdv .md-body ol ul, .mdv .md-body ol ol {
+  margin: 0.3em 0;
+  padding-left: 1.1em;
+  border-left: 1px solid var(--bd);
+}
+.mdv .md-body blockquote { margin: 0.8em 0; padding: 0.1em 1em; color: var(--tx2); border-left: 3px solid var(--ac); background: var(--bg2); border-radius: 0 6px 6px 0; }
+.mdv .md-body hr { margin: 1.4em 0; border: none; border-top: 1px solid var(--bd); }
+/* Markdown 原始表格：块级 + 自适应宽度，既保留横向滚动，又避免 thead/tbody 之间出现空行 */
+.mdv .md-body table.md-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--bd);
+  border-radius: 0;
+  margin: var(--md-table-margin);
+  display: block;
+  width: var(--md-table-width, fit-content);
+  max-width: 100%;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.5;
+  background: transparent;
+}
+.mdv .md-body table.md-table th,
+.mdv .md-body table.md-table td {
+  border: none;
+  border-right: 1px solid var(--bd);
+  border-bottom: 1px solid var(--bd);
+  padding: 7px clamp(8px, 1.2vw, 14px);
+}
+.mdv .md-body table.md-table th:last-child,
+.mdv .md-body table.md-table td:last-child { border-right: none; }
+.mdv .md-body table.md-table th {
+  background: var(--mdv-table-head-bg);
+  color: var(--mdv-table-head-text);
+  font-weight: 600;
+}
+.mdv .md-body table.md-table tbody tr:last-child td { border-bottom: none; }
+.mdv .md-body table.md-table tbody tr:nth-child(2n) td { background: var(--md-table-row-alt-bg); }
+.mdv .md-body table.md-table tbody tr:hover td { background: var(--md-table-row-alt-bg); }
+.mdv .md-body table.md-table th.df-sortable { cursor: pointer; user-select: none; }
+.mdv .md-body table.md-table th.df-sortable::after { content: " ⇅"; opacity: .35; font-size: 10px; }
+.mdv .md-body table.md-table th.df-sort-asc::after { content: " ↑"; opacity: .9; }
+.mdv .md-body table.md-table th.df-sort-desc::after { content: " ↓"; opacity: .9; }
+/* 原始 HTML 表格（嵌套 / rowspan / colspan）：统一方形边框、斑马纹与垂直居中，不参与 Element Plus 增强 */
+.mdv .md-body table.md-raw-table {
+  border-collapse: collapse;
+  border: 1px solid var(--bd);
+  margin: var(--md-table-margin);
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.5;
+  background: transparent;
+}
+.mdv .md-body table.md-raw-table th,
+.mdv .md-body table.md-raw-table td {
+  border: 1px solid var(--bd);
+  padding: 7px clamp(8px, 1.2vw, 14px);
+  vertical-align: middle;
+}
+.mdv .md-body table.md-raw-table th {
+  background: var(--mdv-table-head-bg);
+  color: var(--mdv-table-head-text);
+  font-weight: 600;
+  text-align: center;
+}
+.mdv .md-body table.md-raw-table tbody tr:nth-child(2n) > td {
+  background: var(--md-table-row-alt-bg);
+}
+.mdv .md-body table.md-raw-table tbody tr:hover > td {
+  background: var(--md-table-row-alt-bg);
+}
+/* 嵌套表：去掉外层边框和斑马纹，保留内部网格，避免与外层抢视觉 */
+.mdv .md-body table.md-raw-table table.md-raw-table {
+  border: none;
+  margin: 0;
+  display: table;
+  width: auto;
+  overflow: visible;
+  font-size: 13px;
+}
+.mdv .md-body table.md-raw-table table.md-raw-table th,
+.mdv .md-body table.md-raw-table table.md-raw-table td {
+  padding: 5px 8px;
+}
+.mdv .md-body table.md-raw-table table.md-raw-table th {
+  background: var(--bg4);
+  color: var(--tx1);
+  text-align: left;
+}
+.mdv .md-body table.md-raw-table table.md-raw-table tbody tr:nth-child(2n) > td,
+.mdv .md-body table.md-raw-table table.md-raw-table tbody tr:hover > td {
+  background: transparent;
+}
+/* 无边框表：border="0" 或 class="md-borderless"，只去掉本层网格线，保留斑马纹 */
+.mdv .md-body table.md-raw-table.md-raw-table--borderless,
+.mdv .md-body table.md-raw-table.md-raw-table--borderless > thead > tr > th,
+.mdv .md-body table.md-raw-table.md-raw-table--borderless > tbody > tr > td,
+.mdv .md-body table.md-raw-table.md-raw-table--borderless > tfoot > tr > td {
+  border: none;
+}
+.mdv .md-body code { font-family: ui-monospace, Consolas, monospace; font-size: 0.88em; background: var(--bg4); padding: 0.15em 0.4em; border-radius: 4px; color: var(--hls); }
+.mdv .md-body pre { background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; overflow: auto; margin: 0.9em 0; }
+.mdv .md-body pre code { background: transparent; padding: 0; color: var(--tx); font-size: 12.5px; line-height: 1.55; display: block; }
+.mdv .md-body pre.hljs { padding: 12px 14px; }
+.mdv .md-body code.hljs { padding: 0; }
+.mdv .md-body img { max-width: 100%; border-radius: 6px; }
+/* 增强完成前先隐藏：避免原始 mermaid 代码 / 尺寸变化造成闪烁或跳变 */
+.mdv .md-body[data-df-pending] { visibility: hidden; }
+.mdv .md-body pre.mermaid[data-processed="false"] { visibility: hidden; }
+.mdv .md-body pre.mermaid-data[data-processed="false"] { visibility: hidden; }
+.mdv .md-body .mermaid-data-error {
+  color: var(--errtx);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12.5px;
+  padding: 8px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
+.mdv .md-body .mermaid { display: flex; justify-content: center; background: var(--bg3); border: 1px solid var(--bd); border-radius: 6px; padding: 6px; margin: 0.6em 0; }
+.mdv .md-body .mermaid svg { max-width: 100%; }
+/* Mermaid 流程图统一浅蓝：节点边框/底色、子图底色、连线 */
+.mdv .md-body .mermaid .node rect,
+.mdv .md-body .mermaid .node polygon,
+.mdv .md-body .mermaid .node circle,
+.mdv .md-body .mermaid .node ellipse {
+  fill: #e6f3ff !important;
+  stroke: #8ab8e6 !important;
+}
+.mdv .md-body .mermaid .nodeLabel,
+.mdv .md-body .mermaid .node .label,
+.mdv .md-body .mermaid .node text {
+  color: #1f2937 !important;
+  fill: #1f2937 !important;
+}
+.mdv .md-body .mermaid .cluster rect {
+  fill: #f2f8ff !important;
+  stroke: #a9ccef !important;
+}
+.mdv .md-body .mermaid .cluster-label,
+.mdv .md-body .mermaid .cluster span {
+  color: #1f4f7a !important;
+}
+.mdv .md-body .mermaid .edgePath .path {
+  stroke: #8ab8e6 !important;
+}
+.mdv .md-body .mermaid .marker {
+  fill: #8ab8e6 !important;
+  stroke: #8ab8e6 !important;
+}
+.mdv .md-body .mermaid-err { color: var(--errtx); font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; padding: 8px 12px; }
+/* ```mermaid row``` 连续图块：一行并排，窄屏自动换行 */
+.mdv .md-body .mermaid-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; margin: 0.9em 0; }
+.mdv .md-body .mermaid-row > svg,
+.mdv .md-body .mermaid-row > pre.mermaid,
+.mdv .md-body .mermaid-row > .md-echart { flex: 1 1 320px; min-width: 0; max-width: calc(50% - 8px); margin: 0; }
+.mdv .md-body .mermaid-row > svg { height: auto; }
+@media (max-width: 640px) {
+  .mdv .md-body .mermaid-row { flex-direction: column; }
+  .mdv .md-body .mermaid-row > svg,
+  .mdv .md-body .mermaid-row > pre.mermaid,
+  .mdv .md-body .mermaid-row > .md-echart { max-width: 100%; }
+}
+/* Element Plus 表格：保持普通方形表格，不使用蓝色/圆角装饰 */
+.mdv .md-body .md-el-table {
+  display: block;
+  width: var(--md-table-width, var(--md-table-inner-width, fit-content));
+  max-width: 100%;
+  margin: var(--md-table-margin);
+  border: 1px solid var(--bd);
+  border-radius: 0;
+  background: transparent;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.mdv .md-body .md-el-table::-webkit-scrollbar { width: 0; height: 0; display: none; }
+.mdv .md-body .md-el-table .el-scrollbar__bar.is-horizontal { display: none; }
+/* PPT 截图导出期间临时隐藏所有滚动条，避免滚动条被拍进幻灯片 */
+.df-no-scroll, .df-no-scroll * { scrollbar-width: none; -ms-overflow-style: none; }
+.df-no-scroll::-webkit-scrollbar,
+.df-no-scroll *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+.mdv .md-body .md-el-table .el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--mdv-table-head-bg);
+  --el-table-header-text-color: var(--mdv-table-head-text);
+  --el-table-text-color: var(--tx);
+  --el-table-border-color: var(--bd);
+  --el-table-row-hover-bg-color: var(--md-table-row-alt-bg);
+  width: 100% !important;
+  max-width: 100%;
+  border-radius: 0;
+  overflow: hidden;
+  background: transparent;
+  color: var(--tx);
+  font-size: 14px;
+}
+.mdv .md-body .md-el-table .el-table__cell { padding: 7px 0 !important; }
+.mdv .md-body .md-el-table .el-table .cell { padding: 0 clamp(8px, 1.2vw, 14px); line-height: 1.5; }
+.mdv .md-body .md-el-table .el-table__inner-wrapper::before,
+.mdv .md-body .md-el-table .el-table::before,
+.mdv .md-body .md-el-table .el-table--border::after { display: none; }
+.mdv .md-body .md-el-table .el-table th.el-table__cell {
+  background: var(--mdv-table-head-bg) !important;
+  color: var(--mdv-table-head-text);
+  font-weight: 600;
+  border-right: 1px solid var(--bd) !important;
+  border-bottom: 1px solid var(--bd) !important;
+}
+.mdv .md-body .md-el-table .el-table th.el-table__cell:last-child {
+  border-right: none !important;
+}
+.mdv .md-body .md-el-table .el-table td.el-table__cell {
+  border-right: none !important;
+  border-bottom: 1px solid var(--bd) !important;
+  transition: background 0.15s ease;
+}
+
+.mdv .md-body .md-el-table .el-table__row--striped td.el-table__cell { background: var(--md-table-row-alt-bg); }
+.mdv .md-body .md-el-table .el-table__body tr:hover > td.el-table__cell { background: var(--md-table-row-alt-bg) !important; }
+.mdv .md-body .md-el-table .el-table__body tr:last-child > td.el-table__cell { border-bottom: none !important; }
+.mdv .md-body .md-el-table .el-table__body td.el-table__cell:first-child { color: var(--tx1); }
+.mdv .md-body .md-el-table .caret-wrapper i,
+.mdv .md-body .md-el-table .el-table__column-filter-trigger i { color: var(--ac2); }
+.mdv .md-body .md-echart { width: 100%; height: 320px; margin: 0.9em 0; }
+
+/* 代码块内 hljs token 颜色（主题变量驱动） */
+.hljs { background: transparent; color: inherit; }
+.mdv .md-body .hljs-keyword, .mdv .md-body .hljs-selector-tag, .mdv .md-body .hljs-name { color: var(--hlk); }
+.mdv .md-body .hljs-string, .mdv .md-body .hljs-regexp, .mdv .md-body .hljs-addition { color: var(--hls); }
+.mdv .md-body .hljs-comment, .mdv .md-body .hljs-quote { color: var(--hlc); font-style: italic; }
+.mdv .md-body .hljs-number, .mdv .md-body .hljs-literal { color: var(--hln); }
+.mdv .md-body .hljs-title, .mdv .md-body .hljs-function .hljs-title, .mdv .md-body .hljs-title.class_ { color: var(--hlt); }
+.mdv .md-body .hljs-attr, .mdv .md-body .hljs-attribute, .mdv .md-body .hljs-variable, .mdv .md-body .hljs-template-variable { color: var(--hla); }
+.mdv .md-body .hljs-built_in, .mdv .md-body .hljs-type, .mdv .md-body .hljs-symbol, .mdv .md-body .hljs-bullet { color: var(--hlb); }

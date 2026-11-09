@@ -1,0 +1,40 @@
+.mdv {
+  --mdv-bg: #1e2227;
+  --mdv-bg-alt: #181d24;
+  --mdv-text: #d5dae1;
+  --mdv-text-strong: #e6e9ef;
+  --mdv-text-muted: #9aa4b2;
+  --mdv-border: #2a323e;
+  --mdv-accent: #4c9aff;
+  --mdv-code-bg: #141920;
+  --mdv-table-head-bg: #1e40af;
+  --mdv-table-head-text: #ffffff;
+  --mdv-error: #fca5a5;
+
+  /* 兼容旧 shared/markdown.css 使用的变量名 */
+  --bg0: var(--mdv-bg);
+  --bg1: var(--mdv-bg-alt);
+  --bg2: var(--mdv-bg-alt);
+  --bg3: var(--mdv-bg);
+  --tx: var(--mdv-text);
+  --tx1: var(--mdv-text-strong);
+  --tx2: var(--mdv-text-muted);
+  --bd: var(--mdv-border);
+  --ac: var(--mdv-accent);
+  --ac2: var(--mdv-accent);
+  --errtx: var(--mdv-error);
+}
+
+.mdv[data-mdv-theme='light'] {
+  --mdv-bg: #eef1f5;
+  --mdv-bg-alt: #f4f6f9;
+  --mdv-text: #1f2937;
+  --mdv-text-strong: #111827;
+  --mdv-text-muted: #4b5563;
+  --mdv-border: #d7dce3;
+  --mdv-accent: #2563eb;
+  --mdv-code-bg: #f0f2f5;
+  --mdv-table-head-bg: #1e40af;
+  --mdv-table-head-text: #ffffff;
+  --mdv-error: #b91c1c;
+}

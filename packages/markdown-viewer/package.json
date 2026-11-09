@@ -3,30 +3,112 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.js",
-  "types": "./src/index.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src/core",
+    "src/vue/styles"
+  ],
   "exports": {
-    ".": { "types": "./src/index.d.ts", "default": "./src/index.js" },
-    "./core/markdown": { "types": "./src/core/markdown.d.ts", "default": "./src/core/markdown.js" },
-    "./core/markdown-client": { "types": "./src/core/markdown-client.d.ts", "default": "./src/core/markdown-client.js" },
-    "./core/markdown-charts": { "types": "./src/core/markdown-charts.d.ts", "default": "./src/core/markdown-charts.js" },
-    "./core/markdown-css": { "types": "./src/core/markdown-css.d.ts", "default": "./src/core/markdown-css.js" },
-    "./core/markdown-flowchart": { "default": "./src/core/markdown-flowchart.js" },
-    "./core/markdown-flowchart-editor": { "types": "./src/core/markdown-flowchart-editor.d.ts", "default": "./src/core/markdown-flowchart-editor.js" },
-    "./core/markdown-flowchart-graph": { "types": "./src/core/markdown-flowchart-graph.d.ts", "default": "./src/core/markdown-flowchart-graph.js" },
-    "./core/markdown-flowchart-model": { "types": "./src/core/markdown-flowchart-model.d.ts", "default": "./src/core/markdown-flowchart-model.js" },
-    "./core/markdown-flowchart-x6": { "types": "./src/core/markdown-flowchart-x6.d.ts", "default": "./src/core/markdown-flowchart-x6.js" },
-    "./core/markdown-ppt": { "types": "./src/core/markdown-ppt.d.ts", "default": "./src/core/markdown-ppt.js" },
-    "./core/markdown-ppt-export": { "types": "./src/core/markdown-ppt-export.d.ts", "default": "./src/core/markdown-ppt-export.js" },
-    "./core/markdown-slides": { "types": "./src/core/markdown-slides.d.ts", "default": "./src/core/markdown-slides.js" },
-    "./core/markdown-table-sort": { "types": "./src/core/markdown-table-sort.d.ts", "default": "./src/core/markdown-table-sort.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./style.css": "./dist/style.css",
+    "./standalone": "./dist/standalone/index.js",
+    "./standalone/*": "./dist/standalone/*",
+    "./core": {
+      "types": "./src/core/index.d.ts",
+      "default": "./src/core/index.js"
+    },
+    "./core/markdown": {
+      "types": "./src/core/markdown.d.ts",
+      "default": "./src/core/markdown.js"
+    },
+    "./core/markdown-client": {
+      "types": "./src/core/markdown-client.d.ts",
+      "default": "./src/core/markdown-client.js"
+    },
+    "./core/markdown-charts": {
+      "types": "./src/core/markdown-charts.d.ts",
+      "default": "./src/core/markdown-charts.js"
+    },
+    "./core/markdown-css": {
+      "types": "./src/core/markdown-css.d.ts",
+      "default": "./src/core/markdown-css.js"
+    },
+    "./core/markdown-flowchart": {
+      "default": "./src/core/markdown-flowchart.js"
+    },
+    "./core/markdown-flowchart-editor": {
+      "types": "./src/core/markdown-flowchart-editor.d.ts",
+      "default": "./src/core/markdown-flowchart-editor.js"
+    },
+    "./core/markdown-flowchart-graph": {
+      "types": "./src/core/markdown-flowchart-graph.d.ts",
+      "default": "./src/core/markdown-flowchart-graph.js"
+    },
+    "./core/markdown-flowchart-model": {
+      "types": "./src/core/markdown-flowchart-model.d.ts",
+      "default": "./src/core/markdown-flowchart-model.js"
+    },
+    "./core/markdown-flowchart-x6": {
+      "types": "./src/core/markdown-flowchart-x6.d.ts",
+      "default": "./src/core/markdown-flowchart-x6.js"
+    },
+    "./core/markdown-ppt": {
+      "types": "./src/core/markdown-ppt.d.ts",
+      "default": "./src/core/markdown-ppt.js"
+    },
+    "./core/markdown-ppt-export": {
+      "types": "./src/core/markdown-ppt-export.d.ts",
+      "default": "./src/core/markdown-ppt-export.js"
+    },
+    "./core/markdown-slides": {
+      "types": "./src/core/markdown-slides.d.ts",
+      "default": "./src/core/markdown-slides.js"
+    },
+    "./core/markdown-table-sort": {
+      "types": "./src/core/markdown-table-sort.d.ts",
+      "default": "./src/core/markdown-table-sort.js"
+    },
     "./package.json": "./package.json"
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "scripts": {
+    "build": "vite build && vite build --config vite.standalone.config.ts",
+    "build:main": "vite build",
+    "build:standalone": "vite build --config vite.standalone.config.ts",
+    "test": "vitest run",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "element-plus": "^2.14.0",
+    "vue": "^3.5.0"
+  },
   "dependencies": {
     "@antv/x6": "^3.1.8",
     "@dagrejs/dagre": "^3.1.3",
+    "dompurify": "^3.4.15",
+    "echarts": "^6.1.0",
     "highlight.js": "^11.10.0",
-    "markdown-it": "^14.1.0"
+    "markdown-it": "^14.1.0",
+    "mermaid": "^11.17.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "@vue/test-utils": "^2.4.6",
+    "element-plus": "^2.14.5",
+    "happy-dom": "^15.11.7",
+    "typescript": "~5.6.0",
+    "vite": "^6.4.3",
+    "vite-plugin-dts": "^4.3.0",
+    "vitest": "^2.1.0",
+    "vue": "^3.5.42",
+    "vue-tsc": "^2.1.0"
   }
 }

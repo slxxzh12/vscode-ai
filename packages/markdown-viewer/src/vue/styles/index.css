@@ -1,0 +1,12 @@
+@import './variables.css';
+@import './markdown.css';
+@import './ppt.css';
+
+.mdv {
+  color: var(--mdv-text);
+  background: var(--mdv-bg);
+}
+
+.mdv-body {
+  color: var(--mdv-text);
+}
