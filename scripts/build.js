@@ -114,7 +114,7 @@ const distMtime = fs.statSync(path.join(ROOT, "web", "dist", "index.html")).mtim
 const srcMtime = Math.max(
   newestMtime(path.join(ROOT, "web", "src")),
   newestMtime(path.join(ROOT, "shared")),
-  newestMtime(path.join(ROOT, "packages", "markdown-viewer", "src")),
+  newestMtime(path.join(ROOT, "markdown-viewer", "src")),
 );
 check(
   distMtime >= srcMtime,
@@ -125,7 +125,7 @@ check(
   "missing shared/index.js",
 );
 check(
-  fs.existsSync(path.join(ROOT, "packages", "markdown-viewer", "dist", "standalone", "index.js")),
+  fs.existsSync(path.join(ROOT, "markdown-viewer", "dist", "standalone", "index.js")),
   "markdown-viewer standalone dist missing; run `npm run build:mdv` first",
 );
 
@@ -169,17 +169,6 @@ function copyServerTree(from, to, rel = "") {
   }
 }
 copyServerTree(path.join(ROOT, "server"), path.join(APP, "server"));
-// Mermaid：静态站点 Markdown 页直出的独立脚本（UMD 自包含），运行时不依赖 web 依赖树
-fs.mkdirSync(path.join(APP, "server", "vendor"), { recursive: true });
-fs.copyFileSync(
-  require.resolve("mermaid/dist/mermaid.min.js"),
-  path.join(APP, "server", "vendor", "mermaid.min.js"),
-);
-// ECharts 供静态站点 Markdown 的 xychart/pie 渲染，和 Web 端保持同一套图表实现
-fs.copyFileSync(
-  require.resolve("echarts/dist/echarts.min.js"),
-  path.join(APP, "server", "vendor", "echarts.min.js"),
-);
 cpDir(path.join(ROOT, "web", "dist"), path.join(APP, "web", "dist"));
 cpDir(
   path.join(ROOT, "config"),
@@ -388,7 +377,10 @@ const serverDeps = [
   ]),
 ].sort();
 // X6 仅用于浏览器端流程图，由 esbuild 打包；Node 侧不能直接 import（包的 ESM/CJS 混用会报错）。
-const BROWSER_ONLY_DEPS = new Set(["@antv/x6"]);
+// 这些包只用于浏览器/前端构建，不在 Node 侧直接 import：
+// - @antv/x6：流程图渲染/编辑
+// - @devflow/markdown-viewer：根入口是 Vue 组件（peer: vue/element-plus），Node 侧只通过 @devflow/shared 子路径消费 core
+const BROWSER_ONLY_DEPS = new Set(["@antv/x6", "@devflow/markdown-viewer"]);
 const smokeDeps = serverDeps.filter((d) => !BROWSER_ONLY_DEPS.has(d));
 const flowX6Entry = path.join(APP, "node_modules", "@devflow", "markdown-viewer", "src", "core", "markdown-flowchart-x6.js");
 const smokeCode = [

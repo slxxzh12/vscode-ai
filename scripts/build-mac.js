@@ -228,17 +228,6 @@ function buildArch(arch, nodeBin) {
   fs.writeFileSync(path.join(APP, "version.txt"), VERSION + "\n", "utf8");
 
   copyServerTree(path.join(ROOT, "server"), path.join(APP, "server"));
-  // Mermaid：静态站点 Markdown 页直出的独立脚本（UMD 自包含）
-  fs.mkdirSync(path.join(APP, "server", "vendor"), { recursive: true });
-fs.copyFileSync(
-  require.resolve("mermaid/dist/mermaid.min.js"),
-  path.join(APP, "server", "vendor", "mermaid.min.js"),
-);
-// ECharts 供静态站点 Markdown 的 xychart/pie 渲染，和 Web 端保持同一套图表实现
-fs.copyFileSync(
-  require.resolve("echarts/dist/echarts.min.js"),
-  path.join(APP, "server", "vendor", "echarts.min.js"),
-);
   cpDir(path.join(ROOT, "web", "dist"), path.join(APP, "web", "dist"));
   cpDir(
     path.join(ROOT, "config"),

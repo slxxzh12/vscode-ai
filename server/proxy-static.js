@@ -4,12 +4,6 @@ import { DIR_ICON, fileIcon } from '@devflow/shared/file-icon';
 import { isCsvFile, renderCsvDocument } from './csv-page.js';
 import { isMarkdownFile, renderMarkdownDocument } from './markdown-page.js';
 import { isMarkdownViewerAsset, serveMarkdownViewerAsset } from './markdown-viewer-assets.js';
-import {
-  ECHARTS_SCRIPT_NAME, FLOW_EDIT_SCRIPT_NAME, FLOW_X6_SCRIPT_NAME, HTML_TO_IMAGE_SCRIPT_NAME, MARKDOWN_CLIENT_SCRIPT_NAME,
-  MERMAID_SCRIPT_NAME, PPTXGEN_SCRIPT_NAME,
-  readEchartsScript, readFlowEditScript, readFlowX6Script, readHtmlToImageScript, readMarkdownClientScript,
-  readMermaidScript, readPptxgenScript,
-} from './mermaid-asset.js';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -216,36 +210,6 @@ export function serveStatic({ root, req, res, urlPath = '/', extraHeaders = [], 
     }
     if (isMarkdownViewerAsset(pathname)) {
       serveMarkdownViewerAsset(req, res, pathname);
-      done(200);
-      return;
-    }
-    // Markdown 页面用的脚本：按相对路径请求，不必落在站点目录里
-    // Mermaid 本体 + ECharts 本体 + Web/静态页共用的增强代码（分组/图表/渲染）
-    const assetName = path.basename(pathname);
-    const asset = assetName === MERMAID_SCRIPT_NAME
-      ? readMermaidScript()
-      : assetName === ECHARTS_SCRIPT_NAME
-        ? readEchartsScript()
-        : assetName === MARKDOWN_CLIENT_SCRIPT_NAME
-          ? readMarkdownClientScript()
-          : assetName === FLOW_X6_SCRIPT_NAME
-            ? readFlowX6Script()
-            : assetName === FLOW_EDIT_SCRIPT_NAME
-              ? readFlowEditScript()
-              : assetName === HTML_TO_IMAGE_SCRIPT_NAME
-              ? readHtmlToImageScript()
-              : assetName === PPTXGEN_SCRIPT_NAME
-                ? readPptxgenScript()
-                : null;
-    if (asset) {
-      const headers = mergeHeaders({
-        'content-type': 'text/javascript; charset=utf-8',
-        'content-length': String(asset.length),
-        // 增强脚本很小且会随开发变化，禁缓存；Mermaid/ECharts 本体保持长缓存
-        'cache-control': (assetName === MARKDOWN_CLIENT_SCRIPT_NAME || assetName === FLOW_X6_SCRIPT_NAME || assetName === FLOW_EDIT_SCRIPT_NAME) ? 'no-cache' : 'public, max-age=86400',
-      }, extraHeaders);
-      res.writeHead(200, headers);
-      res.end(req.method === 'HEAD' ? undefined : asset);
       done(200);
       return;
     }

@@ -85,7 +85,7 @@ async function ensureAgent() {
 }
 
 function buildMarkdownViewer() {
-  const args = ["--prefix", "packages/markdown-viewer", "run", "build"];
+  const args = ["--prefix", "markdown-viewer", "run", "build"];
   const viaShell = process.platform === "win32";
   const bin = viaShell ? (process.env.ComSpec || "cmd.exe") : NPM;
   const finalArgs = viaShell ? ["/d", "/s", "/c", NPM, ...args] : args;

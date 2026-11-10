@@ -6,13 +6,13 @@
     "shared",
     "server",
     "web",
-    "packages/markdown-viewer"
+    "markdown-viewer"
   ],
   "scripts": {
     "dev": "node scripts/dev.js",
     "dev:server": "set DEVFLOW_PORT=33333&& node --watch server/index.js",
     "dev:web": "npm run build:mdv && set DEVFLOW_PORT=33333&& npm --prefix web run dev",
-    "build:mdv": "npm --prefix packages/markdown-viewer run build",
+    "build:mdv": "npm --prefix markdown-viewer run build",
     "build:web": "npm run build:mdv && npm --prefix web run build",
     "build:portable": "node scripts/build.js",
     "build:portable:opencode": "node scripts/build-opencode.js",

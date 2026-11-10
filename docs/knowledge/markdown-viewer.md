@@ -6,9 +6,9 @@
 
 ## 结构
 
-- `packages/markdown-viewer/src/core/`：框架无关内核，不 import `vue` / `element-plus`。
-- `packages/markdown-viewer/src/vue/`：Vue 组件、ElTable 渲染器、词条与样式。
-- `packages/markdown-viewer/src/standalone.ts`：静态页自举入口，内置 Vue + Element Plus。
+- `markdown-viewer/src/core/`：框架无关内核，不 import `vue` / `element-plus`。
+- `markdown-viewer/src/vue/`：Vue 组件、ElTable 渲染器、词条与样式。
+- `markdown-viewer/src/standalone.ts`：静态页自举入口，内置 Vue + Element Plus。
 - `shared/markdown*`：兼容 shim，仅 `export *`，不再新增实现。
 
 ## 静态页接入
@@ -21,6 +21,6 @@
 ## 开发命令
 
 - 构建包：`npm run build:mdv`
-- 包测试：`npm --prefix packages/markdown-viewer test`
+- 包测试：`npm --prefix markdown-viewer test`
 - `npm run dev` / `npm run build:web` / `npm run test:web` 会自动先构建包。
-- 修改 `packages/markdown-viewer/src` 后需要重新 `npm run build:mdv`（Web 与静态页消费的是 `dist/`）。
+- 修改 `markdown-viewer/src` 后需要重新 `npm run build:mdv`（Web 与静态页消费的是 `dist/`）。
