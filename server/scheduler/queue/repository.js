@@ -42,10 +42,11 @@ export function createRepository(driver) {
     return rows[0] || null;
   }
 
-  async function listJobs({ topic = null, taskIds = null, status = null, partitionId = null, limit = 500 } = {}) {
+  async function listJobs({ topic = null, taskIds = null, status = null, partitionId = null, groupName = null, limit = 500 } = {}) {
     const where = [];
     const params = [];
     if (topic) { where.push('topic=?'); params.push(topic); }
+    if (groupName) { where.push('groupName=?'); params.push(groupName); }
     if (taskIds && taskIds.length) {
       where.push(`taskId IN (${taskIds.map(() => '?').join(',')})`);
       params.push(...taskIds);

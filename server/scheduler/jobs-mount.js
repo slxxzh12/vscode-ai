@@ -21,11 +21,13 @@ export function createJobsMount({ queue, registry = () => null, role = 'master',
         const status = url.searchParams.get('status');
         const partition = url.searchParams.get('partition');
         const taskId = url.searchParams.get('taskId');
+        const groupName = url.searchParams.get('groupName');
         const limit = Number(url.searchParams.get('limit')) || 500;
         const jobs = await queue.listJobs({
           status: status === null || status === '' ? null : Number(status),
           partitionId: partition === null || partition === '' ? null : Number(partition),
           taskIds: taskId ? [taskId] : null,
+          groupName: groupName || null,
           limit,
         });
         return sendJson(res, 200, {

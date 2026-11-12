@@ -113,6 +113,46 @@ export function createQueueService({ repo, topic = SCHED_QUEUE_TOPIC, now = () =
     return r.error ? r : { ok: true };
   }
 
+  // 外部触发（如 AI 命令执行站点）直接写入作业表：初始 status=RUNNING，worker 不会领取
+  async function enqueueExternalJob(job = {}) {
+    const at = Number(job.createTime) || now();
+    const count = await partitionCount();
+    const row = {
+      jobId: job.jobId,
+      parentJobId: job.parentJobId || null,
+      topic,
+      groupName: job.groupName || 'external',
+      taskId: job.taskId || null,
+      partitionId: Number.isInteger(job.partitionId) ? job.partitionId : hashPartition(topic, job.taskId || job.jobId, count),
+      uniqueKey: null,
+      activeKey: null,
+      classname: job.classname || 'external',
+      methodName: job.methodName || 'run',
+      paramStr: typeof job.paramStr === 'string' ? job.paramStr : JSON.stringify(job.paramStr || {}),
+      result: job.result == null ? null : (typeof job.result === 'string' ? job.result : JSON.stringify(job.result)),
+      status: Number.isInteger(job.status) ? job.status : S.RUNNING,
+      weight: Number(job.weight) || 0,
+      runtime: job.runtime ?? null,
+      maxRunMilliSecond: Number(job.maxRunMilliSecond) || 600000,
+      createIP: job.createIP || null,
+      workIP: job.workIP || null,
+      traceId: job.traceId || crypto.randomUUID(),
+      createTime: at,
+      lastUpdateTime: at,
+      createMachineId: job.createMachineId || null,
+      onlyLocal: 0,
+    };
+    const r = await repo.insertJob(row);
+    return r.error ? r : { job: row };
+  }
+
+  async function updateExternalJob(jobId, patch = {}) {
+    const row = { ...patch, lastUpdateTime: patch.lastUpdateTime ?? now() };
+    if (row.result != null && typeof row.result !== 'string') row.result = JSON.stringify(row.result);
+    const r = await repo.updateJob(jobId, row);
+    return r.error ? r : { ok: true };
+  }
+
   async function retry(jobId, { createIP = null, createMachineId = null } = {}) {
     const job = await repo.getJob(jobId);
     if (!job || job.status !== S.FAILED) return { error: 'not-failed' };
@@ -205,7 +245,7 @@ export function createQueueService({ repo, topic = SCHED_QUEUE_TOPIC, now = () =
   }
 
   return {
-    topic, repo, partitionCount, enqueueTask, approve, reject, cancel, claim, complete,
+    topic, repo, partitionCount, enqueueTask, enqueueExternalJob, updateExternalJob, approve, reject, cancel, claim, complete,
     retry, cleanupFinished, deleteTaskJobs, purgeTaskJobs, failRunningByWorker, recoverRunning,
     setPartitionCount, rehash, applyCallback, recordPrompt, getLatestPrompt, getPromptByHash, listPrompts, deleteTaskPrompts,
     getJob: (id) => repo.getJob(id),
