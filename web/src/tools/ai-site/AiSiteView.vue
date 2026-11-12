@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { ElMessageBox } from 'element-plus';
+import { computed, onMounted, ref } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { t } from '../../i18n';
 import { copyText } from '../../clipboard';
 import { useAiSite, type AiSiteConfig, type AiSiteUser } from './useAiSite';
@@ -32,6 +32,30 @@ function dateToExp(value: string): number {
 function isExpired(u: AiSiteUser): boolean {
   return Number(u.exp) > 0 && Date.now() >= Number(u.exp) * 1000;
 }
+function normPath(p: string | undefined): string {
+  return String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+function samePath(a: string | undefined, b: string | undefined): boolean {
+  const x = normPath(a);
+  return !!x && x === normPath(b);
+}
+
+const running = computed(() => api.status.value?.status === 'running');
+const statusType = computed(() => {
+  const s = api.status.value?.status;
+  return s === 'running' ? 'success' : s === 'error' ? 'danger' : 'info';
+});
+const statusText = computed(() => {
+  const s = api.status.value?.status;
+  if (s === 'running') return t('nginx.running');
+  if (s === 'error') return api.status.value?.error || t('nginx.error');
+  return t('nginx.stopped');
+});
+const usingDefault = computed(() => {
+  const f = form.value;
+  if (!f) return false;
+  return !!f.pluginRootDefault || samePath(f.pluginRoot, f.pluginRootDefaultPath);
+});
 
 function baseHost(): string {
   const c = form.value;
@@ -53,24 +77,30 @@ async function pickDir() {
     const r = await api.pickFolder();
     if (r.error) { msg.value = r.error === 'unsupported' ? t('nginx.pick_unsupported') : t('nginx.pick_failed', { msg: r.message || r.error }); return; }
     if (r.cancelled || !r.path || !form.value) return;
-    form.value = { ...form.value, pluginRoot: r.path };
+    form.value = { ...form.value, pluginRoot: r.path, pluginRootDefault: false };
   } catch (e) { msg.value = String((e as Error)?.message || e); }
+}
+
+function useDefaultDir() {
+  if (!form.value) return;
+  form.value = { ...form.value, pluginRoot: form.value.pluginRootDefaultPath || '', pluginRootDefault: true };
 }
 
 async function doSave() {
   if (!form.value) return;
   busy.value = true; msg.value = '';
   try {
-    const saved = await api.save(form.value);
+    const { pluginRootDefault: _pd, pluginRootDefaultPath: _pp, ...payload } = form.value;
+    const saved = await api.save(payload);
     form.value = { ...saved };
-    msg.value = t('nginx.saved_ok');
+    ElMessage.success(t('nginx.saved_ok'));
   } catch (e) { msg.value = String((e as Error)?.message || e); } finally { busy.value = false; }
 }
 
 async function toggle() {
   busy.value = true;
   try {
-    if (api.status.value?.status === 'running') await api.stop(); else await api.start();
+    if (running.value) await api.stop(); else await api.start();
     form.value = api.config.value ? { ...api.config.value } : null;
   } catch (e) { msg.value = String((e as Error)?.message || e); } finally { busy.value = false; }
 }
@@ -83,7 +113,7 @@ async function addUser() {
     newUser.value = '';
     newExpiry.value = defaultExpiry();
     await copyText(u.jwt);
-    msg.value = t('nginx.copied');
+    ElMessage.success(t('nginx.copied'));
   } catch (e) { msg.value = String((e as Error)?.message || e); }
 }
 
@@ -91,9 +121,8 @@ async function toggleUser(u: AiSiteUser) {
   try { await api.updateUser(u.id, { enabled: !u.enabled }); } catch (e) { msg.value = String((e as Error)?.message || e); }
 }
 
-async function onExpiryChange(u: AiSiteUser, e: Event) {
-  const value = (e.target as HTMLInputElement).value;
-  try { await api.updateUser(u.id, { expiresAt: dateToExp(value) }); } catch (e) { msg.value = String((e as Error)?.message || e); }
+async function onExpiryChange(u: AiSiteUser, value: any) {
+  try { await api.updateUser(u.id, { expiresAt: dateToExp(String(value || '')) }); } catch (e) { msg.value = String((e as Error)?.message || e); }
 }
 
 async function toggleRevoke(u: AiSiteUser) {
@@ -107,114 +136,168 @@ async function removeUser(u: AiSiteUser) {
   try { await api.removeUser(u.id); } catch (e) { msg.value = String((e as Error)?.message || e); }
 }
 
-async function copyAccess() { await copyText(accessUrl()); msg.value = t('nginx.copied'); }
+async function copyAccess() { await copyText(accessUrl()); ElMessage.success(t('nginx.copied')); }
 function openSite() { window.open(accessUrl(), '_blank', 'noopener'); }
-async function copyToken(u: AiSiteUser) { await copyText(u.jwt); msg.value = t('nginx.copied'); }
+async function copyToken(u: AiSiteUser) { await copyText(u.jwt); ElMessage.success(t('nginx.copied')); }
 </script>
 
 <template>
   <div v-if="form" class="aibody">
-    <section class="aicard">
-      <div class="aihead">
-        <b>{{ $t('ai_site.title') }}</b>
-        <span class="aistat" :class="api.status.value?.status">{{ api.status.value?.status }}</span>
-      </div>
-      <div class="airow">
-        <label class="aigrow">{{ $t('static_site.root_dir') }}
-          <input v-model="form.pluginRoot" class="aiin" data-field="plugin-root" :placeholder="$t('nginx.static_dir_ph')" />
-        </label>
-        <button class="aibtn" @click="pickDir">{{ $t('nginx.pick_dir') }}</button>
-      </div>
-      <div class="airow">
-        <label>{{ $t('nginx.mode') }}
-          <select v-model="form.mode" class="aiin" data-field="mode">
-            <option value="port">{{ $t('nginx.mode_port') }}</option>
-            <option value="path">{{ $t('nginx.mode_path') }}</option>
-          </select>
-        </label>
-        <label v-if="form.mode === 'port'">{{ $t('nginx.listen') }}
-          <input v-model.number="form.listenPort" type="number" class="aiin" min="1" max="65535" data-field="listen-port" />
-        </label>
-        <label v-else>{{ $t('nginx.path_prefix') }}
-          <input v-model="form.pathPrefix" class="aiin" placeholder="/ai" data-field="path-prefix" />
-        </label>
-        <label class="aichk"><input v-model="form.requireAuth" type="checkbox" data-field="require-auth" />{{ $t('ai_site.login.title') }}</label>
-      </div>
-      <div class="aiactions">
-        <button class="aibtn primary" :disabled="busy" @click="doSave">{{ $t('nginx.saved') }}</button>
-        <button class="aibtn" :class="{ start: api.status.value?.status !== 'running' }" :disabled="busy" @click="toggle">{{ api.status.value?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
-        <span class="aimsg">{{ msg }}</span>
-      </div>
-      <div class="aiurl">
-        <code>{{ accessUrl() }}</code>
-        <button class="aibtn" @click="copyAccess">{{ $t('nginx.copy') }}</button>
-        <button class="aibtn" @click="openSite">{{ $t('static_site.open') }}</button>
-      </div>
-    </section>
+    <el-card shadow="never" class="aicard">
+      <template #header>
+        <div class="head">
+          <div class="title">
+            <span class="dot" :class="api.status.value?.status" />
+            <span>{{ $t('ai_site.title') }}</span>
+            <el-tag size="small" :type="statusType" effect="plain">{{ statusText }}</el-tag>
+          </div>
+          <el-button :type="running ? 'danger' : 'success'" size="large" :loading="busy" @click="toggle">
+            {{ running ? $t('nginx.stop') : $t('nginx.start') }}
+          </el-button>
+        </div>
+      </template>
 
-    <section class="aicard">
-      <div class="aihead"><b>{{ $t('ai_site.login.title') }}</b></div>
-      <div class="airow">
-        <input v-model="newUser" class="aiin" data-field="new-user" :placeholder="$t('ai_site.login.username')" />
-        <label class="aiexp">{{ $t('ai_site.user.expires') }}
-          <input v-model="newExpiry" type="date" class="aiin" data-field="new-expiry" />
-        </label>
-        <button class="aibtn primary" data-action="add-user" @click="addUser">＋ {{ $t('ai_site.user.add') }}</button>
-      </div>
-      <p class="aihint">{{ $t('ai_site.user.jwt_hint') }}</p>
-      <div v-for="u in api.users.value" :key="u.id" class="aiuser">
-        <span class="ainame">{{ u.username }}</span>
-        <span v-if="u.revoked" class="abadge">{{ $t('ai_site.user.revoked') }}</span>
-        <span v-else-if="isExpired(u)" class="abadge">{{ $t('ai_site.user.expired') }}</span>
-        <span class="a muted">{{ u.uses }}</span>
-        <label class="aiexp">{{ $t('ai_site.user.expires') }}
-          <input type="date" class="aiin" :value="expToDate(u.exp)" @change="onExpiryChange(u, $event)" />
-        </label>
-        <button class="aibtn" data-action="copy-jwt" @click="copyToken(u)">{{ $t('ai_site.user.copy_jwt') }}</button>
-        <label class="aichk"><input type="checkbox" :checked="u.enabled" @change="toggleUser(u)" />{{ u.enabled ? 'on' : 'off' }}</label>
-        <button class="aibtn" :class="{ danger: !u.revoked }" @click="toggleRevoke(u)">{{ u.revoked ? $t('ai_site.user.unrevoke') : $t('ai_site.user.revoke') }}</button>
-        <button class="aibtn danger" @click="removeUser(u)">×</button>
-      </div>
-    </section>
+      <el-form label-position="top" class="aiform">
+        <el-form-item :label="$t('static_site.root_dir')">
+          <div class="dirrow">
+            <el-input
+              v-model="form.pluginRoot"
+              data-field="plugin-root"
+              :placeholder="form.pluginRootDefaultPath || $t('nginx.static_dir_ph')"
+              clearable
+            />
+            <el-button @click="pickDir">{{ $t('nginx.pick_dir') }}</el-button>
+            <el-button @click="useDefaultDir">{{ $t('ai_site.use_default_dir') }}</el-button>
+            <el-tag v-if="usingDefault" type="success" effect="plain">{{ $t('ai_site.default_dir') }}</el-tag>
+          </div>
+          <div class="hint">{{ $t('ai_site.default_dir_hint') }}</div>
+        </el-form-item>
 
-    <section class="aicard">
-      <div class="aihead"><b>{{ $t('ai_site.result.output') }}</b></div>
-      <div v-if="!api.plugins.value.length" class="a muted">{{ $t('ai_site.plugins.empty') }}</div>
-      <div v-for="p in api.plugins.value" :key="p.name" class="aiplugin">
-        <b>{{ p.title }}</b>
-        <span class="a muted">{{ p.name }} · {{ p.description }}</span>
+        <div class="grid3">
+          <el-form-item :label="$t('nginx.mode')">
+            <el-select v-model="form.mode" data-field="mode">
+              <el-option value="port" :label="$t('nginx.mode_port')" />
+              <el-option value="path" :label="$t('nginx.mode_path')" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="form.mode === 'port'" :label="$t('nginx.listen')">
+            <el-input-number v-model="form.listenPort" data-field="listen-port" :min="1" :max="65535" controls-position="right" />
+          </el-form-item>
+          <el-form-item v-else :label="$t('nginx.path_prefix')">
+            <el-input v-model="form.pathPrefix" data-field="path-prefix" placeholder="/ai" />
+          </el-form-item>
+          <el-form-item :label="$t('ai_site.login.title')">
+            <el-switch v-model="form.requireAuth" data-field="require-auth" />
+          </el-form-item>
+        </div>
+
+        <div class="actions">
+          <el-button type="primary" :loading="busy" @click="doSave">{{ $t('nginx.saved') }}</el-button>
+          <span v-if="msg" class="msg">{{ msg }}</span>
+        </div>
+
+        <el-form-item :label="$t('nginx.access_url')">
+          <el-input :model-value="accessUrl()" readonly class="urlinput">
+            <template #append>
+              <el-button @click="copyAccess">{{ $t('nginx.copy') }}</el-button>
+              <el-button @click="openSite">{{ $t('static_site.open') }}</el-button>
+            </template>
+          </el-input>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
+    <el-card shadow="never" class="aicard">
+      <template #header>
+        <div class="title">{{ $t('ai_site.login.title') }}</div>
+      </template>
+      <div class="adduser">
+        <el-input v-model="newUser" data-field="new-user" class="newuser" :placeholder="$t('ai_site.login.username')" />
+        <span data-field="new-expiry" class="expwrap">
+          <el-date-picker
+            v-model="newExpiry"
+            type="date"
+            value-format="YYYY-MM-DD"
+            :placeholder="$t('ai_site.user.expires')"
+          />
+        </span>
+        <el-button type="primary" data-action="add-user" @click="addUser">{{ $t('ai_site.user.add') }}</el-button>
       </div>
-    </section>
+      <div class="hint">{{ $t('ai_site.user.jwt_hint') }}</div>
+
+      <el-table :data="api.users.value" size="small" class="usertable" :empty-text="$t('ai_site.plugins.empty')">
+        <el-table-column :label="$t('ai_site.login.username')" prop="username" min-width="120" />
+        <el-table-column :label="$t('ai_site.user.status')" width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.revoked" type="danger" size="small">{{ $t('ai_site.user.revoked') }}</el-tag>
+            <el-tag v-else-if="isExpired(row)" type="warning" size="small">{{ $t('ai_site.user.expired') }}</el-tag>
+            <el-tag v-else :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? 'on' : 'off' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="$t('ai_site.user.uses')" prop="uses" width="90" align="center" />
+        <el-table-column :label="$t('ai_site.user.expires')" width="160">
+          <template #default="{ row }">
+            <el-date-picker
+              :model-value="expToDate(row.exp)"
+              type="date"
+              value-format="YYYY-MM-DD"
+              size="small"
+              class="expdate"
+              @change="(v: any) => onExpiryChange(row, v)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column :label="$t('ai_site.user.actions')" min-width="260">
+          <template #default="{ row }">
+            <el-button size="small" text type="primary" data-action="copy-jwt" @click="copyToken(row)">{{ $t('ai_site.user.copy_jwt') }}</el-button>
+            <el-switch :model-value="row.enabled" size="small" @change="() => toggleUser(row)" />
+            <el-button size="small" text :type="row.revoked ? 'success' : 'warning'" @click="toggleRevoke(row)">
+              {{ row.revoked ? $t('ai_site.user.unrevoke') : $t('ai_site.user.revoke') }}
+            </el-button>
+            <el-button size="small" text type="danger" @click="removeUser(row)">×</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card shadow="never" class="aicard">
+      <template #header>
+        <div class="title">{{ $t('ai_site.result.output') }}</div>
+      </template>
+      <el-table :data="api.plugins.value" size="small" :empty-text="$t('ai_site.plugins.empty')">
+        <el-table-column :label="$t('ai_site.plugin.title')" prop="title" min-width="140" />
+        <el-table-column :label="$t('ai_site.plugin.id')" prop="name" width="150" />
+        <el-table-column :label="$t('ai_site.plugin.description')" prop="description" min-width="240" show-overflow-tooltip />
+        <el-table-column :label="$t('ai_site.plugin.status')" width="100">
+          <template #default="{ row }">
+            <el-tag v-if="row.error" type="danger" size="small">{{ $t('ai_site.plugins.bad') }}</el-tag>
+            <el-tag v-else type="success" size="small">{{ $t('ai_site.plugin.ok') }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
   </div>
 </template>
 
 <style scoped>
-.aibody { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 10px; overflow: auto; padding: 8px 10px; box-sizing: border-box; }
-.aicard { border: 1px solid var(--bd); border-radius: 8px; background: var(--bg3); padding: 10px; display: flex; flex-direction: column; gap: 8px; flex: none; }
-.aihead { display: flex; align-items: center; gap: 8px; color: var(--tx1); }
-.aihead b { flex: 1; }
-.aistat { font-size: 12px; color: var(--tx3); }
-.aistat.running { color: #2ecc71; }
-.aistat.error { color: #e74c3c; }
-.airow { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-.airow label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--tx2); }
-.aigrow { flex: 1; min-width: 260px; }
-.aichk { flex-direction: row !important; align-items: center; gap: 6px; }
-.aiexp { flex-direction: row !important; align-items: center; gap: 6px; }
-.aiexp .aiin { width: auto; }
-.aihint { margin: 0; color: var(--tx4); font-size: 12px; }
-.abadge { color: var(--err); font-size: 11px; border: 1px solid var(--err); border-radius: 4px; padding: 0 4px; }
-.aiin { background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 6px; padding: 4px 6px; }
-.aiactions, .aiurl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.aiurl code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--tx3); background: var(--bg2); border: 1px solid var(--bd); border-radius: 6px; padding: 4px 6px; overflow-wrap: anywhere; }
-.aibtn { background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
-.aibtn.primary { border-color: var(--ac2); color: var(--ac2); }
-.aibtn.danger { border-color: var(--err); color: var(--err); }
-.aibtn.start { background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 600; font-size: 14px; padding: 8px 22px; border-radius: 8px; }
-.aibtn.start:hover { background: #15803d; border-color: #15803d; }
-.aimsg { color: var(--ac2); }
-.aiuser, .aiplugin { display: flex; gap: 8px; align-items: center; font-size: 12px; }
-.aiuser { flex-wrap: wrap; }
-.ainame { font-weight: 600; color: var(--tx2); }
-.a.muted { color: var(--tx4); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aibody { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; overflow: auto; padding: 10px 12px; box-sizing: border-box; }
+.aicard { flex: none; }
+.head { display: flex; align-items: center; gap: 12px; }
+.title { display: flex; align-items: center; gap: 8px; flex: 1; font-weight: 600; color: var(--tx1); }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--tx4); flex: none; }
+.dot.running { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .18); }
+.dot.error { background: #ef4444; }
+.aiform { display: flex; flex-direction: column; gap: 4px; }
+.dirrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; }
+.dirrow .el-input { flex: 1; min-width: 260px; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 16px; }
+.actions { display: flex; align-items: center; gap: 10px; margin: 2px 0 14px; }
+.msg { color: var(--err); font-size: 12px; }
+.urlinput { width: 100%; }
+.adduser { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.newuser { width: 220px; }
+.expwrap { display: inline-flex; }
+.hint { color: var(--tx4); font-size: 12px; line-height: 1.6; margin: 2px 0 10px; }
+.usertable { width: 100%; }
+.expdate { width: 140px; }
 </style>

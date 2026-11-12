@@ -46,8 +46,37 @@ test('config：插件根目录必须存在，前缀冲突拒绝', () => {
   assert.throws(() => s.save({ mode: 'path', pathPrefix: '/taken' }), (e) => e.code === 'bad-request');
 });
 
-test('config：未配置 pluginRoot 时使用默认 demo_plugins', () => {
+test('config：默认 pluginRoot 随应用走，不写入配置文件', () => {
   const def = path.join(os.tmpdir(), 'df-aisite-default-plugins');
-  const s = createAiSiteConfigStore({ file: tmpFile(), defaultPluginRoot: def });
+  const file = tmpFile();
+  const s = createAiSiteConfigStore({ file, defaultPluginRoot: def });
   assert.equal(s.get().pluginRoot, path.resolve(def));
+  assert.equal(s.get().pluginRootDefault, true);
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(raw.pluginRoot, '');
+  assert.equal(raw.pluginRootDefault, true);
+});
+
+test('config：用户自定义 pluginRoot 才保存；换应用默认目录不影响', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-custom-'));
+  const custom = path.join(root, 'my-plugins');
+  fs.mkdirSync(custom, { recursive: true });
+  const file = tmpFile();
+  const s = createAiSiteConfigStore({ file, defaultPluginRoot: path.join(root, 'demo_plugins') });
+  assert.equal(s.save({ pluginRoot: custom }).pluginRoot, path.resolve(custom));
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).pluginRoot, path.resolve(custom));
+  const next = createAiSiteConfigStore({ file, defaultPluginRoot: path.join(root, 'another-app', 'demo_plugins') });
+  assert.equal(next.get().pluginRoot, path.resolve(custom));
+  assert.equal(next.get().pluginRootDefault, false);
+  assert.equal(next.save({ pluginRoot: '', pluginRootDefault: true }).pluginRoot, path.join(root, 'another-app', 'demo_plugins'));
+});
+
+test('config：旧配置写死的 demo_plugins 路径迁移为默认目录', () => {
+  const file = tmpFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ pluginRoot: path.join(os.tmpdir(), 'old-app', 'demo_plugins') }), 'utf8');
+  const def = path.join(os.tmpdir(), 'new-app', 'demo_plugins');
+  const s = createAiSiteConfigStore({ file, defaultPluginRoot: def });
+  assert.equal(s.get().pluginRoot, def);
+  assert.equal(s.get().pluginRootDefault, true);
 });

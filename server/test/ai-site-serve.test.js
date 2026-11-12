@@ -74,6 +74,33 @@ test('serve：未登录跳登录页，JWT 登录后下发 cookie 并可执行', 
   } finally { srv.close(); }
 });
 
+test('serve: built run page and its assets', async () => {
+  setLocale('zh-CN');
+  const { pluginRoot, users, runner } = setup();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-webdist-'));
+  const webDist = path.join(root, 'webdist');
+  fs.mkdirSync(path.join(webDist, 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(webDist, 'ai-run.html'), '<!doctype html><div id="app">AI_RUN_MARK</div>');
+  fs.writeFileSync(path.join(webDist, 'assets', 'x.js'), 'console.log(1)');
+  const config = { pluginRoot, requireAuth: false, sessionSecret: 'k'.repeat(48), pathPrefix: '' };
+  const serve = createAiSiteServe({ getConfig: () => config, users, runner, logger: console, webDist });
+  const { srv, port } = await listen((req, res) => {
+    const url = new URL(req.url, 'http://x');
+    serve.handle(req, res, url, { base: '' });
+  });
+  try {
+    const run = runner.createRun({ pluginName: 'hello', pluginDir: path.join(pluginRoot, 'hello'), workflowPath: path.join(pluginRoot, 'hello', 'workflow', 'prompt.md'), values: {}, user: '' });
+    const page = await fetch(`http://127.0.0.1:${port}/__run/${run.id}`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /AI_RUN_MARK/);
+    const asset = await fetch(`http://127.0.0.1:${port}/assets/x.js`);
+    assert.equal(asset.status, 200);
+    assert.equal(await asset.text(), 'console.log(1)');
+    const missing = await fetch(`http://127.0.0.1:${port}/assets/nope.js`);
+    assert.equal(missing.status, 404);
+  } finally { srv.close(); }
+});
+
 test('serve: run meta and run terminal page', async () => {
   setLocale('zh-CN');
   const { pluginRoot, users, runner } = setup();

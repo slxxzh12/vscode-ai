@@ -2,6 +2,8 @@ import { ref, type Ref } from 'vue';
 
 export interface AiSiteConfig {
   pluginRoot: string;
+  pluginRootDefault?: boolean;
+  pluginRootDefaultPath?: string;
   mode: 'port' | 'path';
   listenHost: string;
   listenPort: number;

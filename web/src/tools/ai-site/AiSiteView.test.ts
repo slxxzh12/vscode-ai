@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { flushPromises } from '@vue/test-utils';
+import ElementPlus from 'element-plus';
 import { mountC } from '../../test-utils';
 import AiSiteView from './AiSiteView.vue';
 
 function okJson(body: unknown) { return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response); }
 
-const CONFIG = { pluginRoot: 'C:/plugins', mode: 'port', listenHost: '0.0.0.0', listenPort: 22300, pathPrefix: '/ai', enabled: true, requireAuth: true, sessionSecret: 'x' };
+const CONFIG = { pluginRoot: 'C:/plugins', pluginRootDefault: false, pluginRootDefaultPath: 'C:/app/demo_plugins', mode: 'port', listenHost: '0.0.0.0', listenPort: 22300, pathPrefix: '/ai', enabled: true, requireAuth: true, sessionSecret: 'x' };
 
 let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
@@ -25,7 +26,7 @@ beforeEach(() => {
 
 describe('AiSiteView', () => {
   it('展示配置、插件与用户使用次数', async () => {
-    const w = mountC(AiSiteView);
+    const w = mountC(AiSiteView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
     expect((w.find('[data-field="plugin-root"]').element as HTMLInputElement).value).toBe('C:/plugins');
     expect(w.text()).toContain('P1');
@@ -35,7 +36,7 @@ describe('AiSiteView', () => {
   });
 
   it('新增用户走 POST /api/ai-site/users', async () => {
-    const w = mountC(AiSiteView);
+    const w = mountC(AiSiteView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
     expect(w.find('[data-field="new-expiry"]').exists()).toBe(true);
     await w.find('[data-field="new-user"]').setValue('bob');

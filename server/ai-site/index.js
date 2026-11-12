@@ -11,11 +11,11 @@ function matchPrefix(prefix, pathname) {
   return pathname === prefix || pathname.startsWith(prefix + '/');
 }
 
-export function createAiSite({ dir, logger = console, isPrefixTaken = () => false, defaultPluginRoot = '', runnerOptions = {}, onRunState = () => {} } = {}) {
+export function createAiSite({ dir, logger = console, isPrefixTaken = () => false, defaultPluginRoot = '', webDist = '', runnerOptions = {}, onRunState = () => {} } = {}) {
   const configStore = createAiSiteConfigStore({ file: path.join(dir, 'config.json'), isPrefixTaken, defaultPluginRoot });
   const users = createAiSiteUsers({ file: path.join(dir, 'users.json'), getSecret: () => configStore.get().sessionSecret });
   const runner = createAiSiteRunner({ runsDir: path.join(dir, 'runs'), onStateChange: onRunState, ...runnerOptions });
-  const serve = createAiSiteServe({ getConfig: () => configStore.get(), users, runner, logger });
+  const serve = createAiSiteServe({ getConfig: () => configStore.get(), users, runner, logger, webDist });
   let server = null;
   let state = { status: 'stopped', error: null };
 

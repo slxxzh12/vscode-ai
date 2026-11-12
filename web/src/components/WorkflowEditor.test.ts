@@ -18,6 +18,30 @@ describe('WorkflowEditor', () => {
     expect(w.emitted('close')).toBeTruthy();
   });
 
+  it('展示当前工作流提示词目录，点击直接打开', async () => {
+    const calls: Array<{ url: string; opt?: RequestInit }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opt?: RequestInit) => {
+      calls.push({ url: String(url), opt });
+      if (String(url).startsWith('/api/workflows-tree')) {
+        return okJson({ root: 'C:/wf', tree: [{ name: 'W1', type: 'dir', path: '100_W/W1', abs: 'C:/wf/100_W/W1' }] });
+      }
+      if (String(url) === '/api/workflows-xml?local=1') {
+        return okJson({ workflows: [{ id: 'w1', label: 'W1', stages: [] }] });
+      }
+      return okJson({ ok: true });
+    }));
+    const w = mountC(WorkflowEditor);
+    await flushPromises();
+    await flushPromises();
+    expect(w.find('.wepath').text()).toContain('C:/wf/100_W/W1');
+    await w.find('.wepath').trigger('click');
+    await flushPromises();
+    const call = calls.find((c) => c.url === '/api/workflows-reveal');
+    expect(call).toBeTruthy();
+    expect(JSON.parse(String(call!.opt!.body))).toEqual({ path: '100_W/W1', local: true });
+    w.unmount();
+  });
+
   it('点击「打开提示词目录」调用 reveal 根目录', async () => {
     const calls: Array<{ url: string; opt?: RequestInit }> = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, opt?: RequestInit) => {

@@ -109,6 +109,8 @@ export function createAiSiteRunner({
       if (done) return;
       done = true;
       if (timer) clearTimeout(timer);
+      try { meta.child?.stdin?.end(); } catch { /* ignore */ }
+      meta.child = null;
       meta.finishedAt = Date.now();
       meta.exitCode = exitCode;
       meta.status = meta.error === 'timeout' ? 'timeout' : (spawnError || exitCode !== 0 ? 'error' : 'success');
@@ -120,13 +122,15 @@ export function createAiSiteRunner({
 
     try {
       child = spawnFn(wrapped.bin, wrapped.args, {
-        cwd: runDir, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: withAgentEnv(),
+        cwd: runDir, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env: withAgentEnv(),
       });
     } catch (e) {
       finish(-1, true, String(e && e.message || e));
       return publicMeta(meta);
     }
 
+    meta.child = child;
+    child.stdin?.on?.('error', () => { /* ignore closed stdin */ });
     const onData = (chunk) => {
       const text = String(chunk);
       meta.log = (meta.log + text).slice(-LOG_LIMIT);
@@ -152,6 +156,14 @@ export function createAiSiteRunner({
   function snapshot(id) {
     const m = runs.get(String(id || ''));
     return m ? { ...publicMeta(m), log: m.log } : null;
+  }
+
+  // 向运行中的进程写入用户输入（终端页底部的输入框）。
+  function write(id, text) {
+    const m = runs.get(String(id || ''));
+    const child = m && m.status === 'running' ? m.child : null;
+    if (!child || !child.stdin) return false;
+    try { child.stdin.write(String(text)); return true; } catch { return false; }
   }
 
   function subscribe(id, cb) {
@@ -187,5 +199,5 @@ export function createAiSiteRunner({
     return buildZip(entries);
   }
 
-  return { createRun, getRun, snapshot, subscribe, listFiles, readFile, zipOutput, prune };
+  return { createRun, getRun, snapshot, write, subscribe, listFiles, readFile, zipOutput, prune };
 }

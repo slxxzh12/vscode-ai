@@ -24,5 +24,13 @@ export default defineConfig({
       '/ws': { target: `ws://127.0.0.1:${PORT}`, ws: true },
     },
   },
-  build: { outDir: 'dist' },
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        'ai-run': path.resolve(__dirname, 'ai-run.html'),
+      },
+    },
+  },
 });

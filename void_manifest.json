@@ -1,0 +1,26 @@
+{
+  "format": "void_manifest",
+  "version": 1,
+  "name": "DF 测试任务 164743",
+  "type": "ai",
+  "enabled": false,
+  "schedule": {
+    "daily": {
+      "at": "09:30",
+      "weekdays": []
+    },
+    "interval": {
+      "unit": "day",
+      "every": 1
+    },
+    "mode": "interval"
+  },
+  "ai": {
+    "prompt": "用一句话说明你当前有哪些 skill。",
+    "source": "prompt"
+  },
+  "runtime": {
+    "nextRunAt": null,
+    "lastRun": null
+  }
+}

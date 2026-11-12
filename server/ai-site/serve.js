@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { loginPage, listPage, formPage, runPage } from './pages.js';
 import { listPlugins, readPlugin, readLogo } from './plugins.js';
@@ -46,7 +47,7 @@ function clientIp(req) {
   return String(ip).replace(/^::ffff:/, '');
 }
 
-export function createAiSiteServe({ getConfig, users, runner, logger = console }) {
+export function createAiSiteServe({ getConfig, users, runner, logger = console, webDist = '' }) {
   function authUser(req) {
     const cfg = getConfig();
     if (!cfg.requireAuth) return { id: '', username: 'anonymous' };
@@ -70,6 +71,19 @@ export function createAiSiteServe({ getConfig, users, runner, logger = console }
     const cfg = getConfig();
     const method = req.method || 'GET';
     const p = url.pathname;
+
+    // 执行页是 Vue + Element Plus 构建产物（web/dist/ai-run.html）；静态资源在端口模式下由本服务直出。
+    if (webDist && p.startsWith('/assets/')) {
+      const assetsRoot = path.resolve(webDist, 'assets');
+      const target = path.resolve(webDist, '.' + p);
+      const insideAssets = target === assetsRoot || target.startsWith(assetsRoot + path.sep);
+      let st = null;
+      try { st = insideAssets ? fs.statSync(target) : null; } catch { st = null; }
+      if (!st || !st.isFile()) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { 'Content-Type': staticContentType(target), 'Cache-Control': 'public, max-age=31536000, immutable' });
+      res.end(fs.readFileSync(target));
+      return;
+    }
 
     if (p === '/__login' && method === 'POST') {
       let body = '';
@@ -127,6 +141,8 @@ export function createAiSiteServe({ getConfig, users, runner, logger = console }
     if (runPageMatch && method === 'GET') {
       const runId = decodeURIComponent(runPageMatch[1]);
       if (!runner.getRun(runId)) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Not Found'); return; }
+      const built = webDist ? path.join(webDist, 'ai-run.html') : '';
+      if (built && fs.existsSync(built)) return sendHtml(res, 200, fs.readFileSync(built, 'utf8'));
       return sendHtml(res, 200, runPage({ base, runId }));
     }
 
@@ -169,6 +185,18 @@ export function createAiSiteServe({ getConfig, users, runner, logger = console }
       keep.unref?.();
       req.on('close', () => { clearInterval(keep); off(); if (!res.writableEnded) res.end(); });
       return;
+    }
+
+    const runInputMatch = p.match(/^\/__api\/runs\/([^/]+)\/input$/);
+    if (runInputMatch && method === 'POST') {
+      const runId = decodeURIComponent(runInputMatch[1]);
+      let body = {};
+      try { body = JSON.parse(await readBody(req)); } catch { return sendJson(res, 400, { error: 'bad-json' }); }
+      const text = String(body.text ?? '');
+      if (!text) return sendJson(res, 400, { error: 'empty' });
+      return runner.write(runId, text)
+        ? sendJson(res, 200, { ok: true })
+        : sendJson(res, 409, { error: 'not-running' });
     }
 
     const runMetaMatch = p.match(/^\/__api\/runs\/([^/]+)$/);

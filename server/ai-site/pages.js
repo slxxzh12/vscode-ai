@@ -93,66 +93,13 @@ function fieldHtml(f) {
 export function formPage({ base = '', plugin }) {
   const fields = (plugin.fields || []).map(fieldHtml).join('');
   const hasFile = (plugin.fields || []).some((f) => f.type === 'file');
-  const LABELS = {
-    running: t('ai_site.run.status.running'),
-    success: t('ai_site.run.status.success'),
-    error: t('ai_site.run.status.error'),
-    timeout: t('ai_site.run.status.timeout'),
-  };
   const script = `
 const base = ${JSON.stringify(base)};
 const form = document.getElementById('f');
 const statusEl = document.getElementById('status');
-const outEl = document.getElementById('out');
-const runLink = document.getElementById('runlink');
-const ziplink = document.getElementById('ziplink');
-const LABELS = ${JSON.stringify(LABELS)};
-const EMPTY = ${JSON.stringify(t('ai_site.result.empty'))};
-const DOWNLOAD = ${JSON.stringify(t('ai_site.result.download'))};
-let runId = '';
+const RUNNING = ${JSON.stringify(t('ai_site.form.running'))};
+const OPENED = ${JSON.stringify(t('ai_site.run.opened'))};
 const btn = form.querySelector('button[type=submit]');
-function setStatus(s){ statusEl.textContent = LABELS[s] || s || ''; }
-function renderFiles(files){
-  ziplink.style.display = '';
-  ziplink.href = base + '/__api/runs/' + encodeURIComponent(runId) + '/zip';
-  outEl.innerHTML = '';
-  if(!files.length){ outEl.innerHTML = '<li class="muted">' + EMPTY + '</li>'; return; }
-  for(const f of files){
-    const li = document.createElement('li');
-    const a = document.createElement('a');
-    a.href = base + '/__api/runs/' + encodeURIComponent(runId) + '/file?path=' + encodeURIComponent(f.path);
-    a.textContent = f.path + ' (' + f.size + 'B)';
-    a.target = '_blank';
-    const dl = document.createElement('a');
-    dl.href = a.href + '&download=1';
-    dl.textContent = DOWNLOAD;
-    li.appendChild(a); li.appendChild(dl);
-    outEl.appendChild(li);
-  }
-}
-async function loadFiles(){
-  try {
-    const r = await fetch(base + '/__api/runs/' + encodeURIComponent(runId) + '/files');
-    const j = await r.json();
-    renderFiles(j.items || []);
-  } catch (e) { /* ignore */ }
-}
-async function poll(){
-  if(!runId) return;
-  try {
-    const r = await fetch(base + '/__api/runs/' + encodeURIComponent(runId));
-    if(r.ok){
-      const m = await r.json();
-      setStatus(m.status);
-      if(m.status !== 'running'){
-        btn.disabled = false;
-        await loadFiles();
-        return;
-      }
-    }
-  } catch (e) { /* ignore */ }
-  setTimeout(poll, 800);
-}
 form.addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const values = {};
@@ -162,20 +109,19 @@ form.addEventListener('submit', async (ev) => {
     else values[el.name] = el.value;
   }
   const runTab = window.open('', '_blank');
-  btn.disabled = true; setStatus('running'); outEl.innerHTML = ''; ziplink.style.display = 'none';
+  btn.disabled = true; statusEl.textContent = RUNNING;
   try {
     const res = await fetch(base + '/__api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plugin: ${JSON.stringify(plugin.name)}, values }) });
     const j = await res.json();
     if (!res.ok || !j.runId) throw new Error(j.error || ('HTTP ' + res.status));
-    runId = j.runId;
-    const url = base + '/__run/' + encodeURIComponent(runId);
-    runLink.href = url; runLink.style.display = '';
+    const url = base + '/__run/' + encodeURIComponent(j.runId);
     if (runTab) runTab.location.href = new URL(url, location.href).href;
     else { location.href = url; return; }
-    poll();
+    statusEl.textContent = OPENED;
   } catch (e) {
     if (runTab) { try { runTab.close(); } catch (err) { /* ignore */ } }
     statusEl.textContent = String(e && e.message || e);
+  } finally {
     btn.disabled = false;
   }
 });
@@ -186,10 +132,9 @@ form.addEventListener('submit', async (ev) => {
 <p class="muted">${esc(plugin.description || '')}</p>
 <form id="f" class="card">${fields}
 ${hasFile ? `<p class="muted">${esc(t('ai_site.form.file_unsupported'))}</p>` : ''}
-<p><button type="submit">${esc(t('ai_site.form.run'))}</button> <span id="status" class="muted"></span> <a id="runlink" href="#" target="_blank" style="display:none">${esc(t('ai_site.run.reopen'))}</a></p>
+<p><button type="submit">${esc(t('ai_site.form.run'))}</button> <span id="status" class="muted"></span></p>
 </form>
-<h3>${esc(t('ai_site.result.output'))} <a href="#" id="ziplink" style="display:none">${esc(t('ai_site.result.zip'))}</a></h3>
-<ul class="out" id="out"><li class="muted">${esc(t('ai_site.result.empty'))}</li></ul>
+<p class="muted">${esc(t('ai_site.run.new_tab_hint'))}</p>
 </main><script>${script}</script>`);
 }
 

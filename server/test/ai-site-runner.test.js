@@ -67,6 +67,35 @@ test('runner：建 run 目录、写 input.json、复制 workflow、调用 agent'
   assert.match(fs.readFileSync(path.join(runDir, 'run.log'), 'utf8'), /hello/);
 });
 
+test('runner: write sends stdin while running and rejects after exit', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-run-write-'));
+  const pluginDir = setupPlugin(root);
+  const runsDir = path.join(root, 'runs');
+  const writes = [];
+  let child = null;
+  const runner = createAiSiteRunner({
+    runsDir,
+    resolveBin: () => 'opencode',
+    spawnFn: () => {
+      child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      child.stdin = { write: (s) => { writes.push(String(s)); }, end: () => { writes.push('END'); } };
+      return child;
+    },
+  });
+  const run = runner.createRun({
+    pluginName: 'translate', pluginDir,
+    workflowPath: path.join(pluginDir, 'workflow', 'prompt.md'), values: {}, user: '',
+  });
+  assert.equal(runner.write(run.id, 'hello\n'), true);
+  assert.deepEqual(writes, ['hello\n']);
+  child.emit('close', 0);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(runner.write(run.id, 'x'), false);
+});
+
 test('runner：保留最近 N 个 run', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-prune-'));
   const pluginDir = setupPlugin(root);

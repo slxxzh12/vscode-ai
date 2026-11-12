@@ -2,18 +2,17 @@
 import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue';
 import { t } from '../i18n';
 import type { Workflow } from '../workflowModel';
-import WorkflowFilesTab from './WorkflowFilesTab.vue';
 import WorkflowPreviewTab from './WorkflowPreviewTab.vue';
 
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>();
-const tabs = ['files', 'preview'] as const;
 const model = ref<Workflow[]>([]);
-const tab = ref<'files' | 'preview'>('files');
 const busy = ref(false);
 const msg = ref('');
 const reloadToken = ref(0);
 const refreshing = ref(false);
-const filesRef = ref<InstanceType<typeof WorkflowFilesTab> | null>(null);
+const promptsDir = ref('');
+const promptsPath = ref('');
+const promptsLoading = ref(false);
 
 const currentId = ref('');
 const current = computed<Workflow | null>(() => model.value.find((w) => w.id === currentId.value) || model.value[0] || null);
@@ -36,12 +35,28 @@ async function refreshModel() {
   if (model.value.some((w) => w.id === keep)) currentId.value = keep;
 }
 
+async function loadPromptsDir() {
+  if (!currentId.value) { promptsDir.value = ''; promptsPath.value = ''; return; }
+  promptsLoading.value = true;
+  try {
+    const r = await fetch(`/api/workflows-tree?workflowId=${encodeURIComponent(currentId.value)}&local=1`).then((x) => x.json());
+    const node = Array.isArray(r?.tree) ? r.tree[0] : null;
+    promptsPath.value = String(node?.path || '');
+    promptsDir.value = String(node?.abs || (r?.root && node?.path ? `${r.root}/${node.path}` : r?.root || ''));
+  } catch {
+    promptsDir.value = ''; promptsPath.value = '';
+  } finally {
+    promptsLoading.value = false;
+  }
+}
+watch([currentId, reloadToken], () => { void loadPromptsDir(); });
+
 async function refreshFromFiles() {
   refreshing.value = true;
   msg.value = '';
   try {
     await refreshModel();
-    if (tab.value === 'files') await filesRef.value?.reload();
+    await loadPromptsDir();
     msg.value = t('wfe.refreshed');
   } catch (e: any) {
     msg.value = t('wfe.failed', { msg: String(e?.message || e) });
@@ -107,7 +122,7 @@ async function openPromptsDir() {
     const res = await fetch('/api/workflows-reveal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: '', local: true }),
+      body: JSON.stringify({ path: promptsPath.value, local: true }),
     });
     if (!res.ok) {
       const j: any = await res.json().catch(() => ({}));
@@ -132,10 +147,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
     <div class="webox">
       <header class="weh">
         <span class="wtitle">{{ $t('wfe.title') }}</span>
-        <nav class="tabs">
-          <button v-for="k in tabs" :key="k" class="tab" :class="{ on: tab === k }" @click="tab = k">{{ $t('wfe.tab.' + k) }}</button>
-        </nav>
-        <button class="weopen" :title="$t('wfe.open_prompts_hint')" @click="openPromptsDir">{{ $t('wfe.open_prompts') }}</button>
+        <button class="weopen" :title="$t('wfe.open_prompts_hint')" @click="openPromptsDir">{{ $t('wfe.open_dir') }}</button>
         <button class="weopen wrefresh" :disabled="refreshing" :title="$t('wfe.refresh_from_files_hint')" @click="refreshFromFiles">{{ $t('wfe.refresh_from_files') }}</button>
         <button class="wex" @click="close">×</button>
       </header>
@@ -152,8 +164,13 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
           </div>
         </aside>
         <div class="wemain">
-          <WorkflowFilesTab v-if="tab === 'files'" ref="filesRef" :key="currentId + ':' + reloadToken" :workflow-id="currentId" @deleted="refreshModel" />
-          <WorkflowPreviewTab v-else :model="model" />
+          <div class="wepathbar">
+            <div class="wepathlabel">{{ $t('wfe.prompts_dir') }}</div>
+            <button v-if="promptsDir" class="wepath" :title="$t('wfe.open_dir_hint')" @click="openPromptsDir">{{ promptsDir }}</button>
+            <span v-else class="wepath empty">{{ promptsLoading ? $t('wfe.loading') : $t('wfe.prompts_dir_empty') }}</span>
+            <div class="wepathhint">{{ $t('wfe.prompts_edit_hint') }}</div>
+          </div>
+          <WorkflowPreviewTab :model="model" />
         </div>
       </div>
       <footer class="wef">
@@ -188,6 +205,12 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
 .wnname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wnempty { color: var(--tx6); font-size: 12px; padding: 12px 6px; }
 .wemain { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+.wepathbar { flex: none; display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--bd); border-radius: 6px; background: var(--bg2); }
+.wepathlabel { font-size: 11px; text-transform: uppercase; color: var(--ac2); }
+.wepath { align-self: flex-start; max-width: 100%; background: none; border: none; padding: 0; color: var(--ac2); font: 12px ui-monospace, Consolas, monospace; text-align: left; word-break: break-all; cursor: pointer; }
+.wepath:hover { text-decoration: underline; }
+.wepath.empty { color: var(--tx6); cursor: default; }
+.wepathhint { color: var(--tx4); font-size: 12px; }
 .wef { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--bd2); }
 .wemsg { flex: 1; min-width: 0; color: var(--tx3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .webtn { background: var(--bg5); color: var(--tx2); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
