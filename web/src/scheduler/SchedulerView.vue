@@ -41,9 +41,10 @@ function emptyForm() {
   };
 }
 function taskIcon(t: TaskView): string {
-  if (t.type === 'shell') return '⌨';
+  if (t.type === 'shell') return '⌘';
   if (t.type === 'ai') return t.ai?.source === 'file' ? '📄' : '🤖';
-  return '•';
+  if (t.type === 'docs') return '🔄';
+  return '·';
 }
 function openCreate() {
   editingId.value = null;
@@ -663,12 +664,16 @@ onBeforeUnmount(() => {
           <select v-model="form.type">
             <option value="shell">{{ $t('sched.type.shell') }}</option>
             <option value="ai">{{ $t('sched.type.ai') }}</option>
+            <option value="docs">{{ $t('sched.type.docs') }}</option>
           </select>
         </label>
         <label class="inline"><input type="checkbox" v-model="form.once" /> {{ $t('sched.field.once') }}</label>
         <template v-if="form.type === 'shell'">
           <label>{{ $t('sched.field.command') }} <CodeEditor v-model="form.command" class="sched-edit" language="cmd.sh" /></label>
           <div class="dim shell-hint">{{ $t('sched.shell.ai_hint') }}</div>
+        </template>
+        <template v-else-if="form.type === 'docs'">
+          <div class="dim shell-hint">{{ $t('sched.docs.hint') }}</div>
         </template>
         <template v-else-if="form.type === 'ai'">
           <label>{{ $t('sched.field.source') }}

@@ -44,7 +44,7 @@ describe('SchedulerView', () => {
     expect(w.find('.modal').exists()).toBe(true);
   });
 
-  it('类型只有普通命令和 AI 命令，普通命令提示会交给 AI', async () => {
+  it('类型支持普通命令、AI 命令和更新文档，普通命令提示会交给 AI', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url === '/api/scheduler/tasks') return ok({ tasks: [] });
       if (url === '/api/scheduler/summary') return ok({ total: 0, success: 0, failed: 0, running: 0, queued: 0, pending: 0 });
@@ -56,9 +56,11 @@ describe('SchedulerView', () => {
     await flushPromises();
     const typeSelect = w.find('.modal').findAll('select')[0];
     const values = typeSelect.findAll('option').map((o) => o.attributes('value'));
-    expect(values).toEqual(['shell', 'ai']);
+    expect(values).toEqual(['shell', 'ai', 'docs']);
     await typeSelect.setValue('shell');
     expect(w.find('.shell-hint').exists()).toBe(true);
+    await typeSelect.setValue('docs');
+    expect(w.find('.shell-hint').text()).toContain('git pull');
   });
 
   it('新增任务入口打开聊天页，发送提示词创建 AI 任务并执行', async () => {

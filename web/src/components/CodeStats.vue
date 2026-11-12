@@ -6,8 +6,11 @@ import { useProjects } from '../useProjects';
 import { useCodePrefs } from '../codePrefs';
 import { useCodeGroups } from '../codeGroups';
 import { t } from '../i18n';
+import { loadPipelineConfig, savePipelineConfig } from '../pipeline';
+import { detectDocDefaults } from '../docDefaults';
 import GitStat from './GitStat.vue';
 import RealCodeStat from './RealCodeStat.vue';
+import SecretScan from './SecretScan.vue';
 import GroupManager from './GroupManager.vue';
 import MemberUsageTable from '../collaboration/MemberUsageTable.vue';
 import UsageTrendChart from '../collaboration/UsageTrendChart.vue';
@@ -16,9 +19,10 @@ import TokenStatsView from '../collaboration/TokenStatsView.vue';
 import { useCollab } from '../collaboration/useCollab';
 import type { CollabUsage } from '../collaboration/types';
 import type { useTerminal } from '../useTerminal';
+import { DOC_SLOTS, createDocState, normalizeDocState, selectedDocDirs, type DocSlot, type DocState } from '../docUpdate';
 
-type StatTab = 'code' | 'group' | 'token';
-type CodeTab = 'git' | 'real' | 'usage';
+type StatTab = 'code' | 'group' | 'token' | 'docs';
+type CodeTab = 'git' | 'real' | 'scan' | 'usage';
 const props = defineProps<{ projectRoot?: string; tab?: StatTab; terminal?: ReturnType<typeof useTerminal> }>();
 const emit = defineEmits<{ (e: 'update:tab', v: StatTab): void }>();
 const projectsApi = useProjects();
@@ -36,7 +40,7 @@ const tab = computed<StatTab>({
 });
 watch(() => props.tab, (v) => { if (v) innerTab.value = v; });
 const codeTab = ref<CodeTab>('git');
-const topTabs: StatTab[] = ['group', 'token', 'code'];
+const topTabs: StatTab[] = ['docs', 'group', 'token', 'code'];
 const dirs = ref<string[]>(['']);
 const recents = ref<string[]>([]);
 const pickIndex = ref(-1);
@@ -47,12 +51,155 @@ const groupOpen = ref(false);
 let recentKey = 'devflow-codestat-recent';
 let dirsKey = 'devflow-codestat-dirs';
 let autoSaveTimer: ReturnType<typeof setTimeout> | undefined;
+
+// 「更新文档」页签：4 个目录（代码仓/知识库/方案仓/工作流）+ 勾选，记住上次选择。
+const docState = ref<DocState>(createDocState(''));
+let docKey = 'devflow-codestat-doc-dirs';
+let docSaveTimer: ReturnType<typeof setTimeout> | undefined;
+const docRunning = ref(false);
+const docError = ref('');
+const autoDev = ref(false);
+const autoMerge = ref(false);
+interface DocResult { dir: string; ok: boolean; code?: string; message?: string }
+const docResults = ref<DocResult[]>([]);
+const docHint = ref('');
+const docInitRunning = ref(false);
+const docInitHint = ref('');
+const SAMPLE_SLOTS: DocSlot[] = ['knowledge', 'solution', 'workflow', 'experience', 'skills', 'rules'];
+function saveDocState() { void persistDocState(); }
+async function persistDocState() {
+  try { localStorage.setItem(docKey, JSON.stringify(docState.value)); } catch { /* ignore */ }
+  try {
+    await fetch('/api/doc-update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(docState.value),
+    });
+  } catch { /* 离线时保留本地，下次修改再同步 */ }
+}
+watch(docState, () => { clearTimeout(docSaveTimer); docSaveTimer = setTimeout(saveDocState, 400); }, { deep: true });
+async function pickDocDir(slot: DocSlot) {
+  docError.value = '';
+  try {
+    const r = await projectsApi.pickFolder();
+    if (r.error) {
+      docError.value = r.error === 'unsupported' ? t('top.pick_unsupported') : t('top.add_failed', { msg: r.message || r.error });
+      return;
+    }
+    if (r.path) docState.value[slot].path = r.path;
+  } catch (e: any) {
+    docError.value = t('top.add_failed', { msg: e?.message || String(e) });
+  }
+}
+async function loadAutoDev() {
+  try {
+    const cfg = await loadPipelineConfig();
+    autoDev.value = cfg.autoDev;
+    autoMerge.value = cfg.autoMerge;
+  } catch {
+    autoDev.value = false;
+    autoMerge.value = false;
+  }
+}
+async function toggleAutoDev(v: boolean) {
+  try {
+    const cfg = await savePipelineConfig({ autoDev: v, autoMerge: autoMerge.value });
+    autoDev.value = cfg.autoDev;
+    autoMerge.value = cfg.autoMerge;
+  } catch {
+    autoDev.value = !v;
+    docError.value = t('pipeline.config_failed');
+  }
+}
+async function toggleAutoMerge(v: boolean) {
+  try {
+    const cfg = await savePipelineConfig({ autoDev: autoDev.value, autoMerge: v });
+    autoDev.value = cfg.autoDev;
+    autoMerge.value = cfg.autoMerge;
+  } catch {
+    autoMerge.value = !v;
+    docError.value = t('pipeline.config_failed');
+  }
+}
+function onAutoDevChange(e: Event) {
+  void toggleAutoDev((e.target as HTMLInputElement).checked);
+}
+function onAutoMergeChange(e: Event) {
+  void toggleAutoMerge((e.target as HTMLInputElement).checked);
+}
+async function applyDocDefaults() {
+  const root = docState.value.code.path.trim() || docState.value.solution.path.trim();
+  if (!root) { docError.value = t('codestat.docs.defaults_need_root'); return; }
+  try {
+    const paths = (await detectDocDefaults(root)).paths;
+    for (const s of DOC_SLOTS) {
+      docState.value[s].path = paths[s];
+      docState.value[s].selected = true;
+    }
+    docError.value = '';
+    docInitHint.value = '';
+    docHint.value = t('codestat.docs.defaults_done');
+    await persistDocState();
+  } catch (e: any) {
+    docError.value = t('top.add_failed', { msg: e?.message || String(e) });
+  }
+}
+onMounted(() => { void loadAutoDev(); });
+async function runInitSamples() {  const hasSample = SAMPLE_SLOTS.some((s) => docState.value[s].selected && docState.value[s].path.trim());
+  if (!hasSample) { docError.value = t('codestat.docs.init_need'); return; }
+  docInitRunning.value = true;
+  docError.value = '';
+  docInitHint.value = '';
+  await persistDocState();   // 同步给后台定时任务使用
+  try {
+    const res = await fetch('/api/doc-update/init-samples', { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const r = await res.json();
+    docInitHint.value = t('codestat.docs.init_done', { created: r?.created || 0, skipped: r?.skipped || 0 });
+    if (r?.failed) docError.value = t('codestat.docs.init_failed', { failed: r.failed });
+  } catch (e: any) {
+    docError.value = String(e?.message || e);
+  } finally {
+    docInitRunning.value = false;
+  }
+}
+async function runDocUpdate() {
+  const list = selectedDocDirs(docState.value);
+  if (!list.length) { docError.value = t('codestat.docs.need'); return; }
+  docRunning.value = true;
+  docError.value = '';
+  docHint.value = '';
+  docResults.value = [];
+  await persistDocState();   // 同步给后台定时任务使用
+  try {
+    const res = await fetch('/api/git/update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dirs: list }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const r = await res.json();
+    docResults.value = Array.isArray(r?.results) ? r.results : [];
+    const failed = docResults.value.filter((x) => !x.ok).length;
+    docHint.value = t('codestat.docs.done', { count: docResults.value.length, failed });
+  } catch (e: any) {
+    docError.value = String(e?.message || e);
+  } finally {
+    docRunning.value = false;
+  }
+}
 const unsubs: Array<() => void> = [];
 
 onMounted(async () => {
   const fp = await nodeFp();
   recentKey = `devflow-codestat-recent-${fp}`;
   dirsKey = `devflow-codestat-dirs-${fp}`;
+  docKey = `devflow-codestat-doc-dirs-${fp}`;
+  let localRaw: unknown = null;
+  try { localRaw = JSON.parse(localStorage.getItem(docKey) || 'null'); } catch { localRaw = null; }
+  let serverHas = false;
+  try {
+    const r = await fetch('/api/doc-update').then((x) => (x.ok ? x.json() : null));
+    serverHas = !!(r && DOC_SLOTS.some((s) => r[s] && typeof r[s].path === 'string' && r[s].path.trim()));
+    docState.value = normalizeDocState(serverHas ? r : localRaw, props.projectRoot || '');
+  } catch { docState.value = normalizeDocState(localRaw, props.projectRoot || ''); }
+  if (!serverHas && localRaw) void persistDocState();   // 老的本机选择迁移到服务端，供定时任务使用
   try {
     const a = JSON.parse(localStorage.getItem(recentKey) || '[]');
     recents.value = Array.isArray(a) ? a.filter((x) => typeof x === 'string').slice(0, 20) : [];
@@ -102,7 +249,7 @@ watch(dirs, () => {
   autoSaveTimer = setTimeout(persistDirs, 400);
 }, { deep: true });
 
-onBeforeUnmount(() => { clearTimeout(autoSaveTimer); unsubs.forEach((u) => u()); });
+onBeforeUnmount(() => { clearTimeout(autoSaveTimer); clearTimeout(docSaveTimer); unsubs.forEach((u) => u()); });
 
 function addDir() { pickIndex.value = -1; pickPath.value = ''; pickError.value = ''; pickOpen.value = true; }
 function removeDir(i: number) {
@@ -162,7 +309,7 @@ function remember(p: string) {
     </header>
 
     <div v-if="tab === 'code'" class="code-pane">
-    <div v-if="codeTab === 'git' || codeTab === 'real'" class="form">
+    <div v-if="codeTab === 'git' || codeTab === 'real' || codeTab === 'scan'" class="form">
       <div class="dirs">
         <span class="flabel">{{ $t('gitstat.repo_label') }}</span>
         <div v-for="(d, i) in dirs" :key="i" class="dirrow">
@@ -181,7 +328,7 @@ function remember(p: string) {
         <button class="add" @click="groupOpen = true">{{ $t('codestat.groups.manage') }}</button>
       </div>
       <div class="extbox">
-        <label class="fld grow">
+        <label v-if="codeTab !== 'scan'" class="fld grow">
           <span>{{ $t('codestat.f.exts_label') }}</span>
           <input v-model="prefs.exts" :placeholder="$t('codestat.f.exts_placeholder')" />
         </label>
@@ -201,6 +348,9 @@ function remember(p: string) {
         <RealCodeStat :dirs="dirs" :exts-text="prefs.exts" :exclude-dirs-text="prefs.excludeDirs"
           :exclude-test-files="prefs.excludeTestFiles" @ran="remember" />
       </el-tab-pane>
+      <el-tab-pane :label="$t('codestat.tab.scan')" name="scan">
+        <SecretScan :dirs="dirs" :exclude-dirs-text="prefs.excludeDirs" @ran="remember" />
+      </el-tab-pane>
       <el-tab-pane :label="$t('codestat.tab.usage')" name="usage">
         <div class="usage-pane">
           <div v-if="usageStale" class="cfghint">{{ $t('usage.pull_failed') }}</div>
@@ -211,6 +361,51 @@ function remember(p: string) {
     </el-tabs>
     </div>
 
+    <section v-else-if="tab === 'docs'" class="pane scroll">
+      <div class="docwrap">
+        <div class="dochint">{{ $t('codestat.docs.hint') }}</div>
+        <label class="docchk autodev">
+          <input type="checkbox" :checked="autoDev" @change="onAutoDevChange" />
+          <span>{{ $t('codestat.docs.auto_dev') }}</span>
+        </label>
+        <label class="docchk autodev" :class="{ dim: !autoDev }">
+          <input type="checkbox" :checked="autoMerge" :disabled="!autoDev" @change="onAutoMergeChange" />
+          <span>{{ $t('codestat.docs.auto_merge') }}</span>
+        </label>
+        <div class="dochint">{{ $t('pipeline.auto_dev_hint') }}</div>
+        <div v-if="autoMerge" class="dochint">{{ $t('pipeline.auto_merge_hint') }}</div>
+        <div class="docdefaults">
+          <button class="pick" @click="applyDocDefaults">{{ $t('codestat.docs.apply_defaults') }}</button>
+          <span class="dochint">{{ $t('codestat.docs.defaults_hint') }}</span>
+        </div>
+        <div v-for="s in DOC_SLOTS" :key="s" class="docrow">
+          <label class="docchk">
+            <input type="checkbox" v-model="docState[s].selected" />
+            <span>{{ $t('codestat.docs.' + s) }}</span>
+          </label>
+          <input class="docinput" v-model="docState[s].path" :placeholder="$t('codestat.docs.placeholder')" />
+          <button class="pick" @click="pickDocDir(s)">{{ $t('top.choose') }}</button>
+        </div>
+        <div class="docbigbtns">
+          <button class="bigbtn" :disabled="docInitRunning || docRunning" @click="runInitSamples">
+            {{ docInitRunning ? $t('codestat.docs.initializing') : $t('codestat.docs.init') }}
+          </button>
+          <button class="bigbtn" :disabled="docRunning || docInitRunning" @click="runDocUpdate">
+            {{ docRunning ? $t('codestat.docs.starting') : $t('codestat.docs.start_update') }}
+          </button>
+        </div>
+        <div v-if="docError" class="docerr">{{ docError }}</div>
+        <div v-if="docInitHint" class="docdone">{{ docInitHint }}</div>
+        <div v-if="docHint" class="docdone">{{ docHint }}</div>
+        <div v-if="docResults.length" class="docres">
+          <div v-for="r in docResults" :key="r.dir" class="docresrow" :class="{ ok: r.ok, bad: !r.ok }">
+            <span class="docstatus">{{ r.ok ? $t('codestat.docs.ok') : $t('codestat.docs.failed') }}</span>
+            <span class="docdir">{{ r.dir }}</span>
+            <span class="docmsg">{{ r.message || r.code || '' }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
     <section v-else-if="tab === 'group'" class="pane"><GroupView :collab="collab" /></section>
     <section v-else class="pane scroll"><TokenStatsView /></section>
 
@@ -271,6 +466,28 @@ function remember(p: string) {
 .usage-pane { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
 .usage-table { flex: 0 0 auto; }
 .usage-trend { flex: 1; min-height: 280px; }
+.docwrap { padding: 12px; display: flex; flex-direction: column; gap: 10px; max-width: 980px; }
+.dochint { color: var(--tx3); font-size: 12px; line-height: 1.6; }
+.docrow { display: flex; align-items: center; gap: 10px; }
+.docchk { display: inline-flex; align-items: center; gap: 6px; min-width: 118px; color: var(--tx2); font-size: 12px; cursor: pointer; }
+.autodev { min-width: 0; font-size: 13px; }
+.autodev.dim { opacity: .55; }
+.docdefaults { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.docchk input { cursor: pointer; }
+.docinput { flex: 1; min-width: 0; background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 6px 9px; font-size: 13px; }
+.docbigbtns { display: flex; flex-wrap: wrap; gap: 12px; }
+.bigbtn { flex: 1 1 220px; max-width: 320px; padding: 14px 22px; font-size: 14px; font-weight: 600; background: var(--bg4); color: var(--tx1); border: 1px solid var(--bd); border-radius: 6px; cursor: pointer; }
+.bigbtn:hover:not(:disabled) { border-color: var(--ac); color: var(--ac); }
+.bigbtn:disabled { opacity: .6; cursor: default; }
+.docdone { color: var(--tx3); font-size: 12px; line-height: 1.6; }
+.docerr { color: var(--err); font-size: 12px; }
+.docres { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--bd2); padding-top: 8px; }
+.docresrow { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.5; }
+.docstatus { flex: none; width: 44px; font-weight: 700; }
+.docresrow.ok .docstatus { color: var(--ok); }
+.docresrow.bad .docstatus { color: var(--err); }
+.docdir { flex: none; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tx2); font-family: ui-monospace, Consolas, monospace; }
+.docmsg { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; color: var(--tx3); font-family: ui-monospace, Consolas, monospace; }
 .mask { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .dlg { width: min(520px, 92vw); background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; padding: 16px; box-shadow: 0 8px 30px rgba(0, 0, 0, .4); }
 .dlgttl { color: var(--tx1); font-size: 14px; font-weight: 700; margin-bottom: 12px; }

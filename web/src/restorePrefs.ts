@@ -1,8 +1,8 @@
 import { ref } from 'vue';
 
-// 刷新后恢复的页签数（默认 5）与「最近点击」页签顺序，均存本机 localStorage。
+// 刷新后恢复的页签数（默认 8）与「最近点击」页签顺序，均存本机 localStorage。
 // 页签 id 与会话/文件页签一致：`s:<sessionId>` 或 `f:<projectId>|<path>`。
-export const DEFAULT_RESTORE_TABS = 5;
+export const DEFAULT_RESTORE_TABS = 8;
 export const MAX_RESTORE_TABS = 50;
 export const MAX_RECENT_TABS = 50;
 const RESTORE_KEY = 'devflow-restore-tabs';

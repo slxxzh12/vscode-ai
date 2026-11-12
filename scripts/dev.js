@@ -85,12 +85,12 @@ async function ensureAgent() {
 }
 
 function buildMarkdownViewer() {
-  const args = ["--prefix", "markdown-viewer", "run", "build"];
-  const viaShell = process.platform === "win32";
-  const bin = viaShell ? (process.env.ComSpec || "cmd.exe") : NPM;
-  const finalArgs = viaShell ? ["/d", "/s", "/c", NPM, ...args] : args;
-  console.log("[dev] building @devflow/markdown-viewer...");
-  const r = spawnSync(bin, finalArgs, { cwd: ROOT, stdio: "inherit", env: process.env });
+  console.log("[dev] building @devflow/markdown-viewer (incremental)...");
+  const r = spawnSync(process.execPath, [path.join(__dirname, "build-mdv.js")], {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: process.env,
+  });
   if (r.status !== 0) {
     console.error("[dev] @devflow/markdown-viewer build failed");
     process.exit(r.status || 1);

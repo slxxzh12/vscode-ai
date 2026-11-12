@@ -50,9 +50,9 @@ export async function restoreRecord({
   return { session, resumed: !!resumeCmd };
 }
 
-// 启动时最多自动恢复的会话数（按最近活跃时间取最新）。其余标记为 exited，
+// 启动时最多自动恢复的会话数（按最近活跃时间取最新，默认 8）。其余标记为 exited，
 // 需要时从历史里按需恢复，避免一次拉起几十个 Agent 把内存和 CPU 打满。
-export const MAX_AUTO_RESTORE = 3;
+export const MAX_AUTO_RESTORE = 8;
 // 超过这个时间没活跃过的会话不随启动自动恢复（久远历史只在历史面板里按需打开）。
 export const MAX_AUTO_RESTORE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 

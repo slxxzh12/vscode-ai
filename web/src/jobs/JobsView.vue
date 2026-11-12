@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { t } from '../i18n';
+import { loadPipelineConfig, retryPipelineUs } from '../pipeline';
 import { useJobs, type Job } from './useJobs';
 import { jobStatusLabel } from './format';
 import { renderRemoteMarkdown } from '../markdown';
@@ -84,6 +85,33 @@ const detailReportUrl = computed(() => {
   if (!detail.value) return '';
   try { return String(JSON.parse(detail.value.result || '{}').reportUrl || ''); } catch { return ''; }
 });
+interface UsDevItem {
+  us: string; status: string; branch?: string | null; commit?: string | null;
+  error?: string | null; logFiles?: string[]; commands?: Record<string, { exitCode?: number | null }>;
+  prUrl?: string | null; mergeStatus?: string | null; mergeProvider?: string | null;
+}
+const pipelineAutoDev = ref(false);
+async function loadPipelineAutoDev() {
+  try { pipelineAutoDev.value = (await loadPipelineConfig()).autoDev; } catch { pipelineAutoDev.value = false; }
+}
+const detailUsDev = computed<{ items: UsDevItem[]; failed?: number; skipped?: string } | null>(() => {
+  if (!detail.value) return null;
+  try { return JSON.parse(detail.value.result || '{}').usDev || null; } catch { return null; }
+});
+function usLogUrl(item: UsDevItem, file: string): string {
+  const jobId = detail.value?.jobId || '';
+  return `/api/pipeline/logs?jobId=${encodeURIComponent(jobId)}&us=${encodeURIComponent(item.us)}&file=${encodeURIComponent(file)}`;
+}
+function usErrorText(code: string): string {
+  const key = `pipeline.usdev.error.${code}`;
+  const text = t(key);
+  return text === key ? code : text;
+}
+async function retryUs(us: string) {
+  await retryPipelineUs(us);
+  await jobs.refresh();
+}
+onMounted(() => { void loadPipelineAutoDev(); });
 </script>
 
 <template>
@@ -164,6 +192,26 @@ const detailReportUrl = computed(() => {
       <div v-if="detailReportId" class="dim">{{ $t('sched.report.id') }}: {{ detailReportId }}</div>
       <div v-if="detailReportArchive" class="dim" :title="detailReportArchive">{{ $t('sched.report.archive') }}: {{ detailReportArchive }}</div>
       <div v-if="detailReportUrl" class="dim report-url"><a :href="detailReportUrl" target="_blank" rel="noopener">{{ detailReportUrl }}</a></div>
+      <div v-if="detailUsDev?.items?.length" class="usdev">
+        <h4>{{ $t('pipeline.usdev.title') }}</h4>
+        <div v-for="it in detailUsDev.items" :key="it.us" class="usrow">
+          <div class="ushead">
+            <b>{{ it.us }}</b>
+            <span class="dim">{{ $t('pipeline.usdev.status.' + it.status) }}</span>
+            <span v-if="it.branch" class="dim">{{ it.branch }}</span>
+            <span v-if="it.commit" class="dim">{{ it.commit.slice(0, 7) }}</span>
+          </div>
+          <div v-if="it.error" class="dim">{{ usErrorText(it.error) }}</div>
+          <div v-if="it.prUrl" class="uspr">
+            <a :href="it.prUrl" target="_blank" rel="noopener">{{ it.prUrl }}</a>
+            <span v-if="it.mergeStatus" class="dim">· {{ $t('pipeline.usdev.merge.' + it.mergeStatus) }}</span>
+          </div>
+          <div v-if="it.logFiles?.length" class="uslogs">
+            <a v-for="f in it.logFiles" :key="f" :href="usLogUrl(it, f)" target="_blank" rel="noopener">{{ f }}</a>
+          </div>
+          <button v-if="it.status === 'failed' && pipelineAutoDev" @click="retryUs(it.us)">{{ $t('pipeline.usdev.retry') }}</button>
+        </div>
+      </div>
       <div v-if="detailReport" ref="detailReportBody" class="report md-body" v-html="detailReportHtml" />
       <pre v-else class="report">{{ $t('sched.report.empty') }}</pre>
       <div class="acts">
@@ -206,6 +254,12 @@ const detailReportUrl = computed(() => {
 .job-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 360px; overflow: auto; padding: 14px; background: var(--panel-bg, #1e1e1e); border-left: 1px solid var(--border-color, #333); z-index: 20; }
 .job-drawer .close { float: right; }
 .job-drawer .report { white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 50vh; overflow: auto; }
+.usdev { margin: 10px 0; padding: 8px 0; border-top: 1px solid var(--border-color, #333); }
+.usdev h4 { margin: 0 0 8px; font-size: 13px; }
+.usrow { padding: 6px 0; font-size: 12px; border-bottom: 1px dashed var(--border-color, #333); }
+.ushead { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.uslogs { display: flex; gap: 8px; margin: 4px 0; }
+.uspr { margin: 4px 0; word-break: break-all; }
 .job-drawer .acts { display: flex; gap: 6px; margin-top: 10px; }
 .modal { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; gap: 8px; width: 320px; padding: 16px; background: var(--panel-bg, #1e1e1e); border: 1px solid var(--border-color, #333); border-radius: 8px; z-index: 30; }
 .modal label { display: flex; justify-content: space-between; gap: 8px; }

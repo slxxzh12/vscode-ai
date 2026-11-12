@@ -2,10 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { transformSync } from 'esbuild';
 import { collectGitChanges } from './git-log.js';
+import { updateGitDirs } from './git-update.js';
+import { initDocSamples } from './doc-samples.js';
+import { scanSecurityDirs } from './security/scan.js';
 import { collectCodeStats } from './code-count.js';
+import { scanSecrets } from './secret-scan.js';
 import { createCodeGroups } from './code-groups.js';
-import { createCodePrefs } from './code-prefs.js';
-import { createComposerPrefs } from './composer-prefs.js';
+import { createCodePrefs } from './code-prefs.js';import { createComposerPrefs } from './composer-prefs.js';
 import { createSessionProjects } from './session-projects.js';
 import { createWindowState } from './window-state.js';
 import { createStartupPrefs } from './startup-prefs.js';
@@ -46,7 +49,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), startupPrefs = createStartupPrefs({}), startupAvailable = () => false, sessionManager = null, sessionMemory = collectSessionMemory, sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), docUpdateStore = null, composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), startupPrefs = createStartupPrefs({}), startupAvailable = () => false, sessionManager = null, sessionMemory = collectSessionMemory, sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -416,6 +419,11 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         sendJson(res, 200, await collectGitChanges({ repo: body.repo, since: body.since, until: body.until, filter: body.filter }));
         return;
       }
+      if (url.pathname === '/api/git/update' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, await updateGitDirs(body.dirs));
+        return;
+      }
       if (url.pathname === '/api/code/groups' && req.method === 'GET') {
         sendJson(res, 200, codeGroups.read());
         return;
@@ -432,6 +440,26 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       if (url.pathname === '/api/code/prefs' && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, codePrefs.write(body));
+        return;
+      }
+      if (url.pathname === '/api/doc-update' && req.method === 'GET') {
+        sendJson(res, 200, docUpdateStore ? docUpdateStore.read() : {});
+        return;
+      }
+      if (url.pathname === '/api/doc-update' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, docUpdateStore ? docUpdateStore.write(body) : {});
+        return;
+      }
+      if (url.pathname === '/api/doc-update/init-samples' && req.method === 'POST') {
+        const state = docUpdateStore ? docUpdateStore.read() : null;
+        sendJson(res, 200, initDocSamples(state));
+        return;
+      }
+      if (url.pathname === '/api/security/scan' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const dirs = Array.isArray(body.dirs) ? body.dirs : (body.dir ? [body.dir] : []);
+        sendJson(res, 200, scanSecurityDirs(dirs));
         return;
       }
       if (url.pathname === '/api/composer/prefs' && req.method === 'GET') {
@@ -478,6 +506,11 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       if (url.pathname === '/api/code/stats' && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, await collectCodeStats({ dir: body.dir, filter: body.filter }));
+        return;
+      }
+      if (url.pathname === '/api/code/secret-scan' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, await scanSecrets({ dir: body.dir, excludeDirs: body.excludeDirs }));
         return;
       }
       if (url.pathname === '/api/export/zip' && req.method === 'POST') {

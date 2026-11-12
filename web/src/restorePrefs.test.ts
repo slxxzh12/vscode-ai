@@ -12,12 +12,12 @@ async function fresh() { vi.resetModules(); return import('./restorePrefs'); }
 describe('restorePrefs 纯函数', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('clampRestoreTabs：非法/小于 1 回退默认 5，超过上限截断，向下取整', () => {
-    expect(clampRestoreTabs(undefined)).toBe(5);
-    expect(clampRestoreTabs(null)).toBe(5);
-    expect(clampRestoreTabs('')).toBe(5);
-    expect(clampRestoreTabs(0)).toBe(5);
-    expect(clampRestoreTabs(-3)).toBe(5);
+  it('clampRestoreTabs：非法/小于 1 回退默认 8，超过上限截断，向下取整', () => {
+    expect(clampRestoreTabs(undefined)).toBe(8);
+    expect(clampRestoreTabs(null)).toBe(8);
+    expect(clampRestoreTabs('')).toBe(8);
+    expect(clampRestoreTabs(0)).toBe(8);
+    expect(clampRestoreTabs(-3)).toBe(8);
     expect(clampRestoreTabs(3.9)).toBe(3);
     expect(clampRestoreTabs(MAX_RESTORE_TABS + 100)).toBe(MAX_RESTORE_TABS);
   });
@@ -35,8 +35,8 @@ describe('restorePrefs 纯函数', () => {
   it('allowedRestoreIds：无历史返回 null（不限制）；否则取前 N 个', () => {
     expect(allowedRestoreIds([], 5)).toBeNull();
     expect([...allowedRestoreIds(['a', 'b', 'c'], 2)!]).toEqual(['a', 'b']);
-    const six = ['a', 'b', 'c', 'd', 'e', 'f'];
-    expect(allowedRestoreIds(six, 0)!.size).toBe(5);   // 0 → 默认 5
+    const many = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
+    expect(allowedRestoreIds(many, 0)!.size).toBe(8);   // 0 → 默认 8
   });
 });
 
@@ -48,8 +48,8 @@ describe('restorePrefs 存储', () => {
     stubStorage(store);
     const m = await fresh();
     expect(m.restoreTabs.value).toBe(8);
-    expect(m.setRestoreTabs(0)).toBe(5);
-    expect(store['devflow-restore-tabs']).toBe('5');
+    expect(m.setRestoreTabs(0)).toBe(8);
+    expect(store['devflow-restore-tabs']).toBe('8');
   });
 
   it('loadRecentTabs 过滤非字符串；saveRecentTabs 截断落盘', async () => {

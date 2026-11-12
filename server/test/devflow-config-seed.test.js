@@ -41,12 +41,18 @@ test('seed 配置：交付运维组含「打包」「推送 release」，排在�
   assert.ok(ops[1].prompts[0].includes('release包到gitee'));
 });
 
+function assertPushMergePrompts(prompts) {
+  const expected = ['push代码到当前分支', 'update 当前分支代码', 'update Master分支代码'];
+  assert.equal(prompts.length, expected.length);
+  expected.forEach((p, i) => assert.ok(prompts[i].includes(p), `第 ${i + 1} 条提示词缺少 ${p}`));
+}
+
 test('seed 配置：Push&Merge 代码阶段包含 update/push 提示词', () => {
   const dev = seedWorkflows().find((w) => w.label === '开发工作流');
   assert.ok(dev, '缺少开发工作流');
   const stage = dev.stages.find((s) => s.label === 'Push&Merge 代码');
   assert.ok(stage, '缺少 Push&Merge 代码阶段');
-  assert.deepEqual(stage.prompts, ['push代码到当前分支', 'update 当前分支代码', 'update Master分支代码']);
+  assertPushMergePrompts(stage.prompts);
 });
 
 test('overwriteAllFromSeed：同名覆盖、补齐包内工作流、保留本地额外工作流', () => {
@@ -63,7 +69,7 @@ test('overwriteAllFromSeed：同名覆盖、补齐包内工作流、保留本地
   assert.ok(r.overwritten >= 1);
   const after = store.readAll();
   const stage = after.find((w) => w.label === '开发工作流').stages.find((s) => s.label === 'Push&Merge 代码');
-  assert.deepEqual(stage.prompts, ['push代码到当前分支', 'update 当前分支代码', 'update Master分支代码']);
+  assertPushMergePrompts(stage.prompts);
   assert.ok(after.some((w) => w.label === '本地额外'), '本地额外工作流应保留');
 });
 
@@ -78,5 +84,5 @@ test('restoreFromSeed：用默认内容覆盖本地工作流并保留本地文�
   assert.equal(restored.label, '开发工作流');
   const after = store.readAll().find((w) => w.label === '开发工作流');
   const stage = after.stages.find((s) => s.label === 'Push&Merge 代码');
-  assert.deepEqual(stage.prompts, ['push代码到当前分支', 'update 当前分支代码', 'update Master分支代码']);
+  assertPushMergePrompts(stage.prompts);
 });

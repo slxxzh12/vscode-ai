@@ -6,9 +6,8 @@
 //
 // 说明：
 //   * 先跑 build:web，避免 web/dist 过期触发 build.js 的 stale 校验。
-//   * Windows：内置 opencode 包（build-opencode.js）+ 标准包（build.js）。
-//     顺序不能反——build-opencode.js 会重建基础目录并改名为 -opencode，
-//     先出 opencode 再出标准包，两个目录与两个 zip 才都在。
+//   * Windows：先出标准包（build.js），再用 --base 复制一份打内置 opencode 包
+//     （build-opencode.js）——只组装一次，两个目录与两个 zip 都保留。
 //   * macOS：build-mac.js 一次出 arm64 + x64 两个包。
 //   * 缺 soft/opencode-windows-x64.zip 时跳过 opencode 变体并告警，不整体失败。
 
@@ -63,15 +62,24 @@ if (web.status !== 0) {
 }
 
 if (process.platform === "win32") {
+  runNode("windows standard", "build.js", zipFlag);
   if (fs.existsSync(SOFT_ZIP)) {
-    runNode("windows bundled-opencode", "build-opencode.js", zipFlag);
+    const stdApp = path.join(
+      ROOT,
+      "dist-portable",
+      "vscode-ai-windows-" + process.arch + "-" + VERSION,
+    );
+    runNode("windows bundled-opencode", "build-opencode.js", [
+      "--base",
+      stdApp,
+      ...zipFlag,
+    ]);
   } else {
     console.warn(
       "[build-all] skip bundled-opencode package: missing " +
         path.relative(ROOT, SOFT_ZIP),
     );
   }
-  runNode("windows standard", "build.js", zipFlag);
 } else if (process.platform === "darwin") {
   runNode("macos arm64 + x64", "build-mac.js", zipFlag);
 } else {

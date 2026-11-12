@@ -14,12 +14,27 @@ function shellTask(over = {}) {
 test('validateTask 校验各字段', () => {
   assert.ok(validateTask(shellTask()).ok);
   assert.equal(validateTask({}).error, 'name required');
-  assert.equal(validateTask(shellTask({ type: 'x' })).error, 'type must be shell|ai');
+  assert.equal(validateTask(shellTask({ type: 'x' })).error, 'type must be shell|ai|docs');
   assert.equal(validateTask(shellTask({ type: 'ai', ai: { source: 'command' } })).error, 'ai.commandName required');
   assert.equal(validateTask(shellTask({ schedule: { mode: 'daily', daily: { at: 'x' } } })).error, 'daily.at must be HH:MM');
   assert.equal(validateTask(shellTask({ schedule: { mode: 'interval', interval: { every: 0, unit: 'minute' } } })).error, 'interval.every must be > 0');
   assert.ok(validateTask(shellTask({ type: 'ai', ai: { source: 'file' }, filePath: 'C:/x/run.md' })).ok);
   assert.equal(validateTask(shellTask({ type: 'ai', ai: { source: 'file' } })).error, 'ai.filePath required');
+  assert.ok(validateTask({ name: 'docs', type: 'docs', schedule: { mode: 'interval', interval: { every: 1, unit: 'minute' } } }).ok);
+});
+
+test('ensureTask：固定 id 幂等创建，已存在则复用', () => {
+  const dir = tmpDir();
+  const store = new SchedulerStore({ dir });
+  const input = { name: 'auto docs', enabled: true, type: 'docs', schedule: { mode: 'interval', interval: { every: 1, unit: 'minute' } } };
+  const a = store.ensureTask('auto_docs_update', input);
+  assert.equal(a.created, true);
+  assert.equal(a.task.id, 'auto_docs_update');
+  assert.equal(a.task.type, 'docs');
+  const b = store.ensureTask('auto_docs_update', { ...input, name: 'changed' });
+  assert.equal(b.created, false);
+  assert.equal(b.task.name, 'auto docs');
+  assert.equal(store.listTasks().filter((t) => t.id === 'auto_docs_update').length, 1);
 });
 
 test('createTask 生成 id 并持久化', () => {
@@ -161,8 +176,8 @@ test('只允许 shell / ai，旧 script/workflow 任务启动时删除', () => {
   const store = new SchedulerStore({ dir });
   assert.deepEqual(store.listTasks().map((t) => t.id), ['t_keep']);
   assert.deepEqual(store.removedTaskIds, ['t_script', 't_wf']);
-  assert.equal(validateTask({ name: 'w', type: 'workflow', schedule }).error, 'type must be shell|ai');
-  assert.equal(validateTask({ name: 's', type: 'script', schedule }).error, 'type must be shell|ai');
+  assert.equal(validateTask({ name: 'w', type: 'workflow', schedule }).error, 'type must be shell|ai|docs');
+  assert.equal(validateTask({ name: 's', type: 'script', schedule }).error, 'type must be shell|ai|docs');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'tasks.json'), 'utf8')).map((t) => t.id), ['t_keep']);
 });
 

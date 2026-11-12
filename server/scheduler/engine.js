@@ -2,7 +2,7 @@ import { computeNextRun } from './schedule.js';
 
 const TICK_MS = 1000;
 
-export function createEngine({ store, queue, logger = console, now = () => Date.now(), tickMs = TICK_MS, onStop = null } = {}) {
+export function createEngine({ store, queue, logger = console, now = () => Date.now(), tickMs = TICK_MS, onStop = null, createMachineId = null } = {}) {
   const nextAt = new Map();
   const listeners = new Set();
   let timer = null;
@@ -31,7 +31,7 @@ export function createEngine({ store, queue, logger = console, now = () => Date.
         if (nextAt.get(task.id) > t) continue;
         scheduleTask(task, t);
         try {
-          const r = await queue.enqueueTask(task, { trigger: 'schedule', scheduledAt: t });
+          const r = await queue.enqueueTask(task, { trigger: 'schedule', scheduledAt: t, createMachineId });
           if (r && r.error && r.error !== 'unique-conflict') logger.warn?.('scheduler enqueue failed', r.error);
         } catch (e) { logger.error('scheduler enqueue failed', e); }
       }
@@ -40,7 +40,7 @@ export function createEngine({ store, queue, logger = console, now = () => Date.
   function manualRun(taskId) {
     const task = store.getTask(taskId);
     if (!task) return Promise.resolve({ error: 'not-found' });
-    return queue.enqueueTask(task, { trigger: 'manual' });
+    return queue.enqueueTask(task, { trigger: 'manual', createMachineId });
   }
   function stop(taskId) { return onStop ? onStop(taskId) : Promise.resolve(false); }
   function start() { refreshAll(); if (!timer) { timer = setInterval(() => { void tick(); }, tickMs); timer.unref?.(); } }

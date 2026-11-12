@@ -20,13 +20,15 @@ import { localRootDocSource, localFileDocSource } from '../local/localDocSource'
 import type { DocSource } from '../tools/doc/docSource';
 import TextToolBody from '../tools/text/TextToolBody.vue';
 import Base64Tool from '../tools/base64/Base64Tool.vue';
+import SecurityTool from '../tools/security/SecurityTool.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
 import { t } from '../i18n';
 import { useVersion } from '../useVersion';
 import { useSkillsInstall } from '../useSkillsInstall';
-import { useUpgrade } from '../useUpgrade';
+import { useUpgrade, refreshUpgrade, clearUpgrade } from '../useUpgrade';
+import { autoCheckUpgrade, setAutoCheckUpgrade, upgradeAsked, setUpgradeAsked } from '../upgradePrefs';
 import { canRestart, restartHintKey, planConfirm, type PortRuntimeState } from './portRestart';
 import { getFileAssoc, setFileAssoc } from '../fileAssoc';
 import { buildChips, appendText, type Chip } from '../phaseChips';
@@ -38,7 +40,7 @@ import { useEnglishComposer } from '../useEnglishComposer';
 import { getComposerDraft, setComposerDraft } from '../composerDrafts';
 import { captureToPngDataUrl } from '../snapshot';
 import { pickRestoredAgent, restoredAgentIds, latestMessageBySession } from '../sessionRestore';
-import { needsSelectedAgentSession, canReuseAgentSession, isRetiredAgent } from '../agentTarget';
+import { needsSelectedAgentSession, needsAgentStart, canReuseAgentSession, isRetiredAgent, resolveAgentSelection } from '../agentTarget';
 import { copyText } from '../clipboard';
 import { MAX_RESTORE_TABS, restoreTabs, setRestoreTabs } from '../restorePrefs';
 import { isAgentSession, phoneHintKey } from '../remote-coder/phoneMode';
@@ -362,7 +364,7 @@ const defaultAgents = ref<AgentDef[]>(DEFAULT_AGENTS.map((a) => ({ ...a })));
 const defaultAgentId = ref('opencode');
 const agents = ref<AgentDef[]>(DEFAULT_AGENTS.map((a) => ({ ...a })));
 const agentId = ref('opencode');
-async function loadAgents() {
+async function loadAgents(preserveSelection = false) {
   try {
     const r = await fetch('/api/agents').then((x) => x.json());
     const list = Array.isArray(r?.agents)
@@ -373,7 +375,7 @@ async function loadAgents() {
     defaultAgentId.value = (typeof r.default === 'string' && defaultAgents.value.some((a) => a.id === r.default))
       ? r.default : defaultAgents.value[0].id;
     agents.value = defaultAgents.value.map((a) => ({ ...a }));
-    agentId.value = defaultAgentId.value;
+    agentId.value = resolveAgentSelection(agentId.value, agents.value.map((a) => a.id), defaultAgentId.value, preserveSelection);
   } catch { /* 保留最小兜底 */ }
 }
 const currentAgent = computed(() => agents.value.find((a) => a.id === agentId.value) || agents.value[0] || { id: '', name: '-', cmd: 'opencode' });
@@ -388,6 +390,8 @@ const agentAtStart = ref('opencode');   // 启动固定会话时所用的 agent 
 // 关于页只给发布目录，不指向具体版本的压缩包
 const RELEASES_URL = 'https://gitee.com/slxxzh12/vscode-ai/releases';
 const MOBILE_RELEASES_URL = 'https://gitee.com/slxxzh12/vscode-ai-mobile/releases';
+// 自动检查升级会访问的接口地址（与 server/upgrade.js 的 UPGRADE_API_URL 一致），需在界面上明示
+const UPGRADE_CHECK_URL = 'https://gitee.com/api/v5/repos/slxxzh12/vscode-ai/releases/latest';
 const settingsOpen = ref(false);
 const editorOpen = ref(false);
 const settingsTab = ref<'general' | 'active' | 'about'>('general');
@@ -454,6 +458,8 @@ async function clearActiveAgents() {
 }
 const firstRunHint = ref(false);
 const agentSecRef = ref<HTMLElement | null>(null);
+const upgradeSecRef = ref<HTMLElement | null>(null);
+const upgradeAskVisible = ref(false);
 // 刷新后恢复的页签数（设置面板即时生效，存 localStorage）
 const restoreTabsCount = ref(restoreTabs.value);
 function saveRestoreTabsCount() { restoreTabsCount.value = setRestoreTabs(restoreTabsCount.value); }
@@ -543,6 +549,19 @@ async function loadStartupPrefs() {
     hideServerBg.value = r?.hide !== false;
   } catch { /* ignore */ }
 }
+function onToggleAutoUpgrade(v: boolean) {
+  setAutoCheckUpgrade(v);
+  if (v) void refreshUpgrade();
+  else clearUpgrade();
+}
+// 首次征询用户是否允许联网检查新版本；未确认前不发起任何检测请求。
+function answerUpgradeAsk(enable: boolean) {
+  setAutoCheckUpgrade(enable);
+  setUpgradeAsked(true);
+  upgradeAskVisible.value = false;
+  if (enable) void refreshUpgrade();
+  else clearUpgrade();
+}
 async function setHideServerBg(v: boolean) {
   hideServerBg.value = v;
   startupMsg.value = '';
@@ -627,7 +646,10 @@ function onOpenSettings(e: Event) {
   loadSettings();
   loadFileAssoc();
   firstRunHint.value = firstRun;
-  if (firstRun) nextTick(() => agentSecRef.value?.scrollIntoView({ block: 'start' }));
+  upgradeAskVisible.value = !upgradeAsked.value;
+  if (firstRun || upgradeAskVisible.value) {
+    nextTick(() => (upgradeAskVisible.value ? upgradeSecRef.value : agentSecRef.value)?.scrollIntoView({ block: 'start' }));
+  }
 }
 
 // 新建会话：先输入任务名（可选）再选择要执行的命令；不再倒计时自动创建
@@ -766,11 +788,11 @@ function ensureAgentOrder() {
   props.center.tabs.value = [...arr];
 }
 function agentActive() {
-  return !!agentSid.value && props.terminal.state.sessions.some((s) => s.id === agentSid.value);
+  return !!agentSid.value && props.terminal.state.sessions.some((s) => s.id === agentSid.value && s.state === 'running');
 }
-async function startAgent() {
+async function startAgent(forceNew = false) {
   const reusable = props.terminal.state.sessions.find((s) => s.id === agentSid.value) || null;
-  if (reusable && agentActive() && canReuseAgentSession(reusable, agentId.value, props.projectId)) {
+  if (reusable && agentActive() && canReuseAgentSession(reusable, agentId.value, props.projectId, forceNew)) {
     props.terminal.switchTo(reusable.id);
     return;
   }
@@ -851,7 +873,7 @@ const showWelcome = computed(() => !props.phone && props.center.visibleTabs.valu
 function onWelcomeNewAgent() {
   if (props.phone) return;
   if (!props.projectId) { window.dispatchEvent(new CustomEvent('df-add-folder')); return; }
-  void startAgent();
+  void startAgent(true);   // 显式「新建 Agent」：不复用已有会话，不做数量限制
 }
 function onWelcomeAddDirectory() {
   if (props.phone) return;
@@ -859,7 +881,7 @@ function onWelcomeAddDirectory() {
 }
 function onWelcomeOpenTool(id: ToolId) {
   if (id === 'nginx') { requestProxyTab('nginx'); return; }
-  if (id === 'notepad' || id === 'yaml' || id === 'translate' || id === 'markdown' || id === 'js' || id === 'base64') { requestToolTab(id); return; }
+  if (id === 'notepad' || id === 'yaml' || id === 'translate' || id === 'markdown' || id === 'js' || id === 'base64' || id === 'security') { requestToolTab(id); return; }
   requestTool(id);
   window.location.hash = '#mobile';
 }
@@ -1267,8 +1289,7 @@ async function submitComposer() {
   const text = composerText.value.trim() || 'ok';
   composerText.value = '';
   const active = activeSession();
-  const fixedActive = !active || active.id === agentSid.value;
-  if (!props.phone && fixedActive && needsSelectedAgentSession(active, agentId.value)) {
+  if (!props.phone && needsAgentStart(active, agentSid.value, agentId.value)) {
     await startAgent();
     const target = activeSession();
     if (!target || needsSelectedAgentSession(target, agentId.value)) return;
@@ -1358,8 +1379,8 @@ function init() {
     });
   });
   unsubCfg = props.terminal.on(S2C.CONFIG_CHANGED, async () => {
-    await loadAgents();
-    loadCfg();
+    // 配置热更新（含本机刚「设为默认」触发的 fs.watch 广播）：保留当前选择，不能被在读的旧默认值覆盖。
+    await loadAgents(true);
     loadWorkflows();
     loadSettings();
   });
@@ -1465,19 +1486,25 @@ watch([agentId, agents, wfKind], saveCfg, { deep: true });
 watch(settingsOpen, (open, was) => {
   if (open) void loadSkillsStatus();
   if (was && !open) {
+    // 直接关闭设置面板视为「不同意」：不联网，且不再反复弹窗（之后可在设置里手动开启）。
+    if (upgradeAskVisible.value) answerUpgradeAsk(false);
     firstRunHint.value = false;
+    upgradeAskVisible.value = false;
     window.dispatchEvent(new Event('df-settings-closed'));
   }
 });
 async function setDefaultAgent(id: string) {
+  const prev = agentId.value;
   agentId.value = id;                    // 本机当前项目即时生效
   try {
     const res = await fetch('/api/agents/default', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    defaultAgentId.value = id;
     firstRunHint.value = false;
   } catch (e: any) {
+    agentId.value = prev;                // 写服务端失败：回到原来的选择，避免界面显示未生效的默认
     alert(t('term.agent_set_default_failed', { msg: e?.message || e }));
   }
 }
@@ -1577,6 +1604,15 @@ onBeforeUnmount(() => {
             </div>
             <div class="cfghint">{{ $t('term.agent_hint') }}</div>
           </div>
+          <div v-if="upgradeAskVisible" ref="upgradeSecRef" class="setsec">
+            <div class="settitle">{{ $t('term.upgrade_ask_title') }}</div>
+            <div class="cfghint">{{ $t('term.upgrade_ask_hint') }}</div>
+            <div class="cfghint">{{ $t('term.upgrade_ask_endpoint') }} <a class="aboutv link" :href="UPGRADE_CHECK_URL" target="_blank" rel="noopener">{{ UPGRADE_CHECK_URL }}</a></div>
+            <div class="cfgrow">
+              <button class="ghostcfg" @click="answerUpgradeAsk(true)">{{ $t('term.upgrade_ask_yes') }}</button>
+              <button class="ghostcfg" @click="answerUpgradeAsk(false)">{{ $t('term.upgrade_ask_no') }}</button>
+            </div>
+          </div>
           <div class="setsec">
             <div class="settitle">{{ $t('term.service') }}</div>
             <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="22222" @keyup.enter="confirmSettings" /><button class="ghostcfg" :disabled="!canRestart(portState) || restarting" @click="restartBackend">{{ $t('term.port_restart') }}</button></div>
@@ -1585,13 +1621,20 @@ onBeforeUnmount(() => {
             <div v-if="restartMsg" class="cfghint warn">{{ restartMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>
-          <div v-if="startupAvailable" class="setsec">
+          <div class="setsec">
             <div class="settitle">{{ $t('term.startup_bg') }}</div>
-            <label class="chkrow">
-              <input type="checkbox" :checked="hideServerBg" @change="setHideServerBg(($event.target as HTMLInputElement).checked)" />
-              <span>{{ $t('term.startup_hide_label') }}</span>
-            </label>
-            <div class="cfghint">{{ $t('term.startup_hide_hint') }}</div>
+            <div class="chkrow-group">
+              <label v-if="startupAvailable" class="chkrow">
+                <input type="checkbox" :checked="hideServerBg" @change="setHideServerBg(($event.target as HTMLInputElement).checked)" />
+                <span>{{ $t('term.startup_hide_label') }}</span>
+              </label>
+              <label v-if="!upgradeAskVisible" class="chkrow">
+                <input type="checkbox" :checked="autoCheckUpgrade" @change="onToggleAutoUpgrade(($event.target as HTMLInputElement).checked)" />
+                <span>{{ $t('term.upgrade_auto') }}</span>
+              </label>
+            </div>
+            <div v-if="startupAvailable" class="cfghint">{{ $t('term.startup_hide_hint') }}</div>
+            <div class="cfghint">{{ $t('term.upgrade_auto_hint') }}</div>
             <div v-if="startupMsg" class="cfghint warn">{{ startupMsg }}</div>
           </div>
           <div class="setsec">
@@ -1765,6 +1808,7 @@ onBeforeUnmount(() => {
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
       <TextToolBody v-else-if="activeToolName === 'translate'" />
       <Base64Tool v-else-if="activeToolName === 'base64'" />
+      <SecurityTool v-else-if="activeToolName === 'security'" />
       <PostmanTool v-else-if="activeToolName === 'postman'" />
       <NavicatTool v-else-if="activeToolName === 'navicat'" />
       <NginxTool v-else-if="activeToolName === 'nginx'" />
@@ -2024,6 +2068,7 @@ onBeforeUnmount(() => {
 .ghostcfg.on:disabled { opacity: 1; background: var(--ac); color: var(--onac); border-color: var(--ac); }
 .closecfg { color: var(--tx3); font-size: 12px; cursor: pointer; }
 .chkrow { display: flex; align-items: flex-start; gap: 8px; color: var(--tx2); font-size: 12px; line-height: 1.6; }
+.chkrow-group { display: flex; align-items: flex-start; gap: 22px; flex-wrap: wrap; }
 .chkrow input { margin-top: 2px; cursor: pointer; }
 .cfghint { color: var(--tx6); font-size: 11px; }
 .cfghint.warn { color: var(--warn2); }
@@ -2038,7 +2083,7 @@ onBeforeUnmount(() => {
 .renamemask-box { display: inline-flex; align-items: center; gap: 10px; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; padding: 12px 20px; color: var(--tx1); font-size: 13px; box-shadow: 0 10px 34px rgba(0,0,0,.45); }
 .renamemask-spin { width: 14px; height: 14px; flex: none; border: 2px solid color-mix(in srgb, var(--ac2) 35%, transparent); border-top-color: var(--ac2); border-radius: 50%; animation: renamemask-rotate .7s linear infinite; }
 @keyframes renamemask-rotate { to { transform: rotate(360deg); } }
-.setmodal { width: 1080px; max-width: 96vw; height: 92vh; max-height: 92vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
+.setmodal { width: 1280px; max-width: 98vw; height: 96vh; max-height: 96vh; background: var(--bg1); border: 1px solid var(--bd); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
 .seth { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg4); color: var(--tx1); font-weight: 700; flex: none; }
 .setx { background: none; border: none; color: var(--tx3); font-size: 16px; cursor: pointer; }
 .setmain { flex: 1; display: flex; min-height: 0; }

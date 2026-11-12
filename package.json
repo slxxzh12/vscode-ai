@@ -12,7 +12,7 @@
     "dev": "node scripts/dev.js",
     "dev:server": "set DEVFLOW_PORT=33333&& node --watch server/index.js",
     "dev:web": "npm run build:mdv && set DEVFLOW_PORT=33333&& npm --prefix web run dev",
-    "build:mdv": "npm --prefix markdown-viewer run build",
+    "build:mdv": "node scripts/build-mdv.js",
     "build:web": "npm run build:mdv && npm --prefix web run build",
     "build:portable": "node scripts/build.js",
     "build:portable:opencode": "node scripts/build-opencode.js",
@@ -21,7 +21,7 @@
     "test:server": "node --test \"server/test/*.test.js\"",
     "test:web": "npm run build:mdv && npm --prefix web run test",
     "test": "npm run test:server && npm run test:web",
-    "typecheck": "npm run build:mdv && npm --prefix web run typecheck",
+    "typecheck": "node scripts/build-mdv.js --dts && npm --prefix web run typecheck",
     "check:i18n": "node scripts/check-i18n.js",
     "count:code": "node scripts/count-code.js"
   },

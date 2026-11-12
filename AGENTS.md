@@ -61,14 +61,16 @@
 ## 打包顺序（先构建前端，再打绿色包）
 
 - **默认「几个版本一起打」**：`node scripts/build-all.js`（等价 `npm.cmd run build:portable:all`，支持 `--no-zip`）。它先跑 `build:web`，再按平台出全套——Windows 出「内置 opencode 包 + 标准包」，macOS 一次出 arm64 + x64；只有明确只要某个变体时才用下面的分项脚本。
-- Windows 下 build-all 先打 opencode 变体再打标准包：`build-opencode.js` 会重建基础目录并改名为 `-opencode`，顺序反过来会吞掉标准包目录。缺 `soft/opencode-windows-x64.zip` 时只告警跳过 opencode 变体，标准包照出。
+- Windows 下 build-all 先打标准包，再用 `build-opencode.js --base <标准包目录>` 复制一份打内置 opencode 包（只组装一次，不再重建/改名）。缺 `soft/opencode-windows-x64.zip` 时只告警跳过 opencode 变体，标准包照出。
 - 单独打绿色包前必须先 `npm.cmd run build:web`（产物 `web/dist`）。
+- `build:mdv` 走 `scripts/build-mdv.js`：按 `markdown-viewer/src` 与构建配置的 mtime 跳过未变化的重建；默认不生成 `.d.ts`（`npm.cmd run typecheck` 会带 `--dts` 生成）。`DEVFLOW_FORCE_BUILD_MDV=1` 强制重建。
+- zip 默认用 .NET `CompressionLevel::Fastest`（可用 `DEVFLOW_ZIP_LEVEL=Optimal|NoCompression` 覆盖）；`--no-zip` 仍可只出目录。
 - Windows / macOS **各用各的脚本，互不交叉**：node-pty 原生模块与 Node 运行时都按平台/架构绑定，禁止交叉组装。
 
 ### Windows
 
 - 一键打包：`node scripts/build.js`（等价 `npm.cmd run build:portable`），产物 `dist-portable/vscode-ai-windows-<arch>-<version>/`（目录）+ `vscode-ai-windows-<arch>-<version>.zip`（`<arch>` 由 `process.arch` 定，x64/arm64；`<version>` 为打包当天 `vYYYYMMDDHHmmss`，精确到秒）。产物根写入 `version.txt`，服务端启动日志与 `/api/version` 均读取该冻结版本。
-- 内置 opencode 的包（独立一套，仅 Windows x64）：`node scripts/build-opencode.js`（等价 `npm.cmd run build:portable:opencode`）。它先跑 `build.js --no-zip`，再把 `soft/opencode-windows-x64.zip` 的 `opencode.exe` 打进 `opencode/`，重写 `launch.ps1` 把包内目录插到 `PATH` 最前（web 终端/调度器/用量统计/远程执行都命中包内版本），产物 `vscode-ai-windows-x64-<version>-opencode/` + 同名 `.zip`。缺该 zip 会直接报错退出；直启 `runtime\node.exe server\index.js` 不注入 PATH。
+- 内置 opencode 的包（独立一套，仅 Windows x64）：`node scripts/build-opencode.js`（等价 `npm.cmd run build:portable:opencode`）。它先跑 `build.js --no-zip`（或 `--base <标准包目录>` 直接复用已打好的标准包，不再重复组装），再把 `soft/opencode-windows-x64.zip` 的 `opencode.exe` 打进 `opencode/`，重写 `launch.ps1` 把包内目录插到 `PATH` 最前（web 终端/调度器/用量统计/远程执行都命中包内版本），产物 `vscode-ai-windows-x64-<version>-opencode/` + 同名 `.zip`。缺该 zip 会直接报错退出；直启 `runtime\node.exe server\index.js` 不注入 PATH。
 - 绿色包原理：`env/node.exe` 自带运行时 + 拷贝已编译的 node-pty 原生 `.node` → 目标机免装 Node、免编译。**Node 与 node-pty ABI 必须同大版本**；`env/node.exe` 缺失时 build.js 会自动复制当前 node 过去。
 
 ### macOS

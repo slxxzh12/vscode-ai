@@ -25,7 +25,8 @@ import LocalDropOverlay from './local/LocalDropOverlay.vue';
 import LocalSidebar from './local/LocalSidebar.vue';
 import { startDesktopRemoteCoder } from './remote-coder/useDesktopRemoteCoder';
 import { useVersion } from './useVersion';
-import { useUpgrade, shouldPopup } from './useUpgrade';
+import { useUpgrade, shouldPopup, refreshUpgrade, upgradeBadgeText, upgradeOpenTarget } from './useUpgrade';
+import { upgradeAsked } from './upgradePrefs';
 import UpgradeDialog from './components/UpgradeDialog.vue';
 import SkillsInstallDialog from './components/SkillsInstallDialog.vue';
 import OpencodeInstallDialog from './components/OpencodeInstallDialog.vue';
@@ -125,7 +126,12 @@ async function installSkillsNow() {
 }
 const UPGRADE_POPUP_KEY = 'devflow-upgrade-popup-at';
 const UPGRADE_SKIP_KEY = 'devflow-upgrade-skip';
-function openUpgrade() { const u = upgradeInfo.value?.downloadUrl || upgradeInfo.value?.url; if (u) window.open(u, '_blank', 'noopener'); }
+let upgradeTimer: ReturnType<typeof setInterval> | null = null;
+function openUpgrade() {
+  void refreshUpgrade();                              // 打开时重新拉最新版本
+  const u = upgradeOpenTarget(upgradeInfo.value);     // releases 页面，始终最新，不固定版本
+  if (u) window.open(u, '_blank', 'noopener');
+}
 function markUpgradePopup() { try { localStorage.setItem(UPGRADE_POPUP_KEY, String(Date.now())); } catch { /* ignore */ } }
 function upgradeGo() { openUpgrade(); markUpgradePopup(); showUpgrade.value = false; }
 function upgradeClose() { markUpgradePopup(); showUpgrade.value = false; }
@@ -240,7 +246,7 @@ const NEW_WINDOW = (() => {
   } catch { return false; }
 })();
 const historyTab = ref<HistoryTab>(NEW_WINDOW ? 'messages' : 'tree');
-type StatTab = 'code' | 'group' | 'token';
+type StatTab = 'code' | 'group' | 'token' | 'docs';
 const statTab = ref<StatTab>('code');
 
 // —— URL hash 锚点：页签可刷新直达（#rail 或 #rail/sub）——
@@ -292,7 +298,7 @@ function applyHash() {
   rail.value = (historyAlias ? 'explorer' : r) as typeof rail.value;
   if ((r === 'explorer' || historyAlias) && isSideTab(sub)) historyTab.value = sub;
   // 代码统计内部子页（git/real/usage）统一落到顶层「代码统计」；群组/Token 是平级页签
-  if (r === 'stat') statTab.value = sub === 'group' || sub === 'token' ? sub : 'code';
+  if (r === 'stat') statTab.value = sub === 'group' || sub === 'token' || sub === 'docs' ? sub : 'code';
 }
 function currentHash() {
   if (rail.value === 'explorer') {
@@ -328,7 +334,7 @@ const sessionExtras = computed<SessionExtra[]>(() => {
 const sessionNames = computed(() => msgHistory.names.value);
 let windowRestored = false;             // 闸门：恢复完成前不写盘（避免空状态覆盖存档）
 let deepLinkOpened = false;             // ?open= 深链已打开文件：优先于存档的 activeTab
-// —— 刷新后只恢复最近点击的 N 个页签（会话+文件合计，默认 5，可在设置面板改）——
+// —— 刷新后只恢复最近点击的 N 个页签（会话+文件合计，默认 8，可在设置面板改）——
 // 同步读 localStorage，保证会话页签的可见集合在 TerminalView 首次收到 SESSION_LIST 前就定好。
 let recentTabs = loadRecentTabs();
 const bootAllowed = allowedRestoreIds(recentTabs, loadRestoreTabs());
@@ -851,9 +857,12 @@ onMounted(async () => {
     void processVoidProject();
     let shown = false;
     try { shown = localStorage.getItem(SETTINGS_AUTO_KEY) === '1'; } catch { /* ignore */ }
-    if (!shown && !showOpencodeInstall.value && (pendingAgentChoice.value || pendingFileAssoc.value)) {
+    const needFirstRun = !shown && (pendingAgentChoice.value || pendingFileAssoc.value);
+    // 未确认「自动检查升级」前一定要弹一次设置面板，用户确认后才允许联网检测。
+    const needUpgradeAsk = !upgradeAsked.value;
+    if (!showOpencodeInstall.value && (needUpgradeAsk || needFirstRun)) {
       try { localStorage.setItem(SETTINGS_AUTO_KEY, '1'); } catch { /* ignore */ }
-      openAgentSettings(true);
+      openAgentSettings(needFirstRun);
     }
   });
   void loadSessionProjects();
@@ -870,8 +879,10 @@ onMounted(async () => {
   window.addEventListener('beforeunload', persistWindowState);
   terminal.connect();
   stopRemoteCoder = startDesktopRemoteCoder();
+  upgradeTimer = setInterval(() => { void refreshUpgrade(); }, 30 * 60 * 1000);
 });
 onBeforeUnmount(() => {
+  if (upgradeTimer) { clearInterval(upgradeTimer); upgradeTimer = null; }
   stopRemoteCoder?.();
   stopRemoteCoder = null;
   stopOpencodePoll();
@@ -891,7 +902,7 @@ onBeforeUnmount(() => {
     <header class="top" :class="{ colored: !!currentDirColor }" :style="currentDirColor ? { background: currentDirColor } : undefined">
       <span class="logo">◈ {{ $t('brand.title') }}</span>
       <span v-if="appVersion" class="app-ver">{{ appVersion }}</span>
-      <button v-if="upgradeInfo?.hasUpdate" class="upg-badge" :title="$t('upgrade.new')" @click="openUpgrade">↑ {{ $t('upgrade.new') }}</button>
+      <button v-if="upgradeInfo?.hasUpdate" class="upg-badge" :title="upgradeBadgeText(upgradeInfo, $t('upgrade.new'))" @click="openUpgrade">↑ {{ upgradeBadgeText(upgradeInfo, $t('upgrade.new')) }}</button>
       <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
       <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="currentProjectInfo?.root || ''" @change="(e: any) => selectProject(e.target.value)">
         <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id" :title="it.project.root">

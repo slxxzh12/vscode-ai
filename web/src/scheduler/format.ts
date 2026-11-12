@@ -39,6 +39,7 @@ export function jobStatusClass(s: number): string {
 
 export function typeLabel(type: string): string {
   if (type === 'ai') return t('sched.type.ai');
+  if (type === 'docs') return t('sched.type.docs');
   return t('sched.type.shell');
 }
 

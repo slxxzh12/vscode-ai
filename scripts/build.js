@@ -30,6 +30,16 @@ const APP_NAME = "vscode-ai-windows-" + WIN_ARCH + "-" + VERSION;
 const APP = path.join(OUT_ROOT, APP_NAME);
 const ZIP = path.join(OUT_ROOT, APP_NAME + ".zip");
 const noZip = process.argv.includes("--no-zip");
+// 压缩级别：默认 Fastest（发布包体积略大但快很多）；可用 DEVFLOW_ZIP_LEVEL 覆盖。
+const ZIP_LEVEL = ["Fastest", "Optimal", "NoCompression"].includes(
+  String(process.env.DEVFLOW_ZIP_LEVEL || ""),
+)
+  ? String(process.env.DEVFLOW_ZIP_LEVEL)
+  : "Fastest";
+
+function psQuote(s) {
+  return "'" + String(s).replace(/'/g, "''") + "'";
+}
 const CFG_PORT = (() => {
   try {
     const xml = fs.readFileSync(
@@ -408,17 +418,22 @@ if (smoke.status !== 0) {
 console.log("[build]   ok runtime deps (" + serverDeps.join(", ") + ")");
 
 if (!noZip) {
-  console.log("[build] 5/5 zip");
+  console.log("[build] 5/5 zip (" + ZIP_LEVEL + ")");
   rm(ZIP);
+  const ps = [
+    "$ErrorActionPreference = 'Stop'",
+    "Add-Type -AssemblyName System.IO.Compression.FileSystem",
+    "[System.IO.Compression.ZipFile]::CreateFromDirectory(" +
+      psQuote(APP) +
+      ", " +
+      psQuote(ZIP) +
+      ", [System.IO.Compression.CompressionLevel]::" +
+      ZIP_LEVEL +
+      ", $true)",
+  ].join("; ");
   const r = spawnSync(
     "powershell",
-    [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-Command",
-      `Compress-Archive -Path '${APP}' -DestinationPath '${ZIP}' -CompressionLevel Optimal`,
-    ],
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
     { encoding: "utf8" },
   );
   if (r.status !== 0) {

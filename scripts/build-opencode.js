@@ -31,6 +31,18 @@ const ZIP = FINAL + ".zip";
 const SOFT_ZIP = path.join(ROOT, "soft", "opencode-windows-x64.zip");
 const ZIP_ENTRY = "opencode.exe";
 const noZip = process.argv.includes("--no-zip");
+const baseArgIdx = process.argv.indexOf("--base");
+const BASE_FROM =
+  baseArgIdx > -1 && process.argv[baseArgIdx + 1]
+    ? path.resolve(process.argv[baseArgIdx + 1])
+    : "";
+// --base：复用已打好的标准包，直接复制到 -opencode 目录，不再重复跑 build.js。
+const WORK = BASE_FROM ? FINAL : APP;
+const ZIP_LEVEL = ["Fastest", "Optimal", "NoCompression"].includes(
+  String(process.env.DEVFLOW_ZIP_LEVEL || ""),
+)
+  ? String(process.env.DEVFLOW_ZIP_LEVEL)
+  : "Fastest";
 const CFG_PORT = (() => {
   try {
     const xml = fs.readFileSync(path.join(ROOT, "config", "devflow.xml"), "utf8");
@@ -133,30 +145,44 @@ check(process.platform === "win32", "this script only runs on Windows");
 check(process.arch === "x64", "this script only supports x64 (soft/ has windows-x64 only)");
 check(fs.existsSync(SOFT_ZIP), "put the opencode release at soft/opencode-windows-x64.zip");
 
-console.log("[build-opencode] 1/5 build standard package (build.js --no-zip)");
-const build = spawnSync(
-  process.execPath,
-  [path.join(ROOT, "scripts", "build.js"), "--no-zip"],
-  { stdio: "inherit", env: { ...process.env, DEVFLOW_VERSION: VERSION } },
-);
-if (build.status !== 0) process.exit(build.status || 1);
+if (BASE_FROM) {
+  console.log("[build-opencode] 1/5 copy standard package (" + BASE_FROM + ")");
+  check(
+    path.resolve(BASE_FROM) !== path.resolve(FINAL),
+    "--base must not be the -opencode output dir",
+  );
+  check(
+    fs.existsSync(path.join(BASE_FROM, "server", "index.js")),
+    "--base is not a valid package dir: " + BASE_FROM,
+  );
+  rm(FINAL);
+  fs.cpSync(BASE_FROM, FINAL, { recursive: true, force: true });
+} else {
+  console.log("[build-opencode] 1/5 build standard package (build.js --no-zip)");
+  const build = spawnSync(
+    process.execPath,
+    [path.join(ROOT, "scripts", "build.js"), "--no-zip"],
+    { stdio: "inherit", env: { ...process.env, DEVFLOW_VERSION: VERSION } },
+  );
+  if (build.status !== 0) process.exit(build.status || 1);
+}
 
 console.log("[build-opencode] 2/5 embed opencode");
-const ocExe = path.join(APP, "opencode", ZIP_ENTRY);
+const ocExe = path.join(WORK, "opencode", ZIP_ENTRY);
 extractZipEntry(SOFT_ZIP, ZIP_ENTRY, ocExe);
 const ocVer = opencodeVersion(ocExe);
 console.log("[build-opencode]   bundled opencode " + ocVer);
 
 console.log("[build-opencode] 3/5 rewrite launch.ps1 (PATH prepend)");
 fs.writeFileSync(
-  path.join(APP, "script", "launch.ps1"),
+  path.join(WORK, "script", "launch.ps1"),
   "\uFEFF" + makeLaunchPs1({ port: CFG_PORT, opencodeDir: "opencode" }),
   "utf8",
 );
 
-console.log("[build-opencode] 4/5 annotate usage + rename");
+console.log("[build-opencode] 4/5 annotate usage");
 fs.appendFileSync(
-  path.join(APP, "使用说明.txt"),
+  path.join(WORK, "使用说明.txt"),
   [
     "",
     "本包内置 opencode " + ocVer + "，启动后优先使用包内版本（opencode\\opencode.exe）。",
@@ -165,9 +191,12 @@ fs.appendFileSync(
   ].join("\r\n"),
   "utf8",
 );
-rm(FINAL);
-rm(ZIP);
-renameWithRetry(APP, FINAL);
+// 独立运行（无 --base）时 build.js 产出的是标准目录，需要改名为 -opencode；
+// 用 --base 时已经直接复制到 FINAL，不能再删/改名。
+if (!BASE_FROM) {
+  rm(FINAL);
+  renameWithRetry(APP, FINAL);
+}
 
 console.log("[build-opencode] 5/5 verify output");
 const finalExe = path.join(FINAL, "opencode", ZIP_ENTRY);
@@ -177,15 +206,22 @@ check(ps1.includes("$env:PATH") && ps1.includes("opencode"), "launch.ps1 missing
 opencodeVersion(finalExe);
 
 if (!noZip) {
+  console.log("[build-opencode] zip (" + ZIP_LEVEL + ")");
+  rm(ZIP);
+  const ps = [
+    "$ErrorActionPreference = 'Stop'",
+    "Add-Type -AssemblyName System.IO.Compression.FileSystem",
+    "[System.IO.Compression.ZipFile]::CreateFromDirectory(" +
+      psQuote(FINAL) +
+      ", " +
+      psQuote(ZIP) +
+      ", [System.IO.Compression.CompressionLevel]::" +
+      ZIP_LEVEL +
+      ", $true)",
+  ].join("; ");
   const r = spawnSync(
     "powershell",
-    [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-Command",
-      "Compress-Archive -Path '" + FINAL + "' -DestinationPath '" + ZIP + "' -CompressionLevel Optimal",
-    ],
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
     { encoding: "utf8" },
   );
   if (r.status !== 0) {

@@ -13,7 +13,7 @@ export function createScheduler({
   opencodeDataDir = null, manifestRoot = null,
   machineId = 'local', hostport = '127.0.0.1:22222', publicBaseUrl = null, role = 'master', version = '',
   dbFile = null, pullQueueConfig = null, onJobEvent = () => {},
-  operatorOf = () => ({}), defaultOperator = null,
+  operatorOf = () => ({}), defaultOperator = null, docDirs = () => [], runUsDev = null,
 }) {
   const queue = createQueue({ dir, dbFile, logger });
   const store = new SchedulerStore({
@@ -31,7 +31,7 @@ export function createScheduler({
   let cleanupTimer = null;
   const ONCE_TTL_MS = 15 * 24 * 60 * 60 * 1000;
 
-  const engine = createEngine({ store, queue, logger, onStop: (id) => consumer?.stopTask(id) });
+  const engine = createEngine({ store, queue, logger, onStop: (id) => consumer?.stopTask(id), createMachineId: machineId });
 
   async function cleanupExpiredOnce() {
     const at = Date.now();
@@ -87,7 +87,7 @@ export function createScheduler({
       consumer = createConsumer({
         queue, store, runner: runner || createRunner(),
         aiPromptLoader: (name) => readAiCommand(name), worker: { id: `${machineId}:${queue.topic}`, hostport, machineId },
-        aiBin: agentCmd, opencodeDataDir, projectResolver, publicBaseUrl, logger,
+        aiBin: agentCmd, opencodeDataDir, projectResolver, publicBaseUrl, logger, docDirs, runUsDev,
         onEvent: (evt, payload) => onJobEvent(evt, payload),
       });
       registry.start({

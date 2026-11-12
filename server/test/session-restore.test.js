@@ -30,18 +30,16 @@ test('恢复：复用 id/cwd/name、预填回滚、agent 注入续会话命令',
   assert.equal(instances[1].pty.writes.includes('opencode\r'), true);                   // s_b 无 id：退化重开 agent
 });
 
-test('恢复：默认最多自动恢复 3 个（按 updatedAt 取最新），其余标记 exited', async () => {
+test('恢复：默认最多自动恢复 8 个（按 updatedAt 取最新），其余标记 exited', async () => {
   const instances = [];
   const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
-  const sessions = [1, 2, 3, 4, 5].map((i) => rec(`s_${i}`, { updatedAt: NOW + i * 100 }));
+  const sessions = Array.from({ length: 10 }, (_, i) => rec(`s_${i + 1}`, { updatedAt: NOW + (i + 1) * 100 }));
   const updates = [];
   const ledger = { read: () => ({ sessions }), readLog: () => null, upsert: (e) => updates.push(e) };
   const res = await restoreSessions({ ledger, sessionManager: sm, agents: [], resumeDelayMs: 0, exists: () => true });
-  assert.equal(res.restored, 3);
+  assert.equal(res.restored, 8);
   assert.deepEqual(res.deferred.sort(), ['s_1', 's_2']);
-  assert.equal(sm.get('s_5') !== null, true);
-  assert.equal(sm.get('s_4') !== null, true);
-  assert.equal(sm.get('s_3') !== null, true);
+  for (let i = 3; i <= 10; i++) assert.notEqual(sm.get(`s_${i}`), null);
   assert.equal(sm.get('s_2'), null);
   assert.equal(sm.get('s_1'), null);
   assert.deepEqual(updates.map((u) => u.id).sort(), ['s_1', 's_2']);
@@ -161,7 +159,7 @@ test('restoreSessions：把 discover 透传给缺 id 的 agent 记录', async ()
   assert.equal(instances[0].pty.writes.includes('opencode --session ses_z\r'), true);
 });
 
-test('恢复：按会话日志 mtime 判断最近活跃（账本 updatedAt 过期时也能恢复对最近 3 个）', async () => {
+test('恢复：按会话日志 mtime 判断最近活跃（账本 updatedAt 过期时也能按活跃度取 3 个）', async () => {
   const instances = [];
   const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
   const now = 10_000_000;
@@ -181,7 +179,7 @@ test('恢复：按会话日志 mtime 判断最近活跃（账本 updatedAt 过�
   const ledger = { read: () => ({ sessions }), readLog: () => null, logMtime: (id) => mtimes[id] || 0, upsert: () => {} };
   const res = await restoreSessions({
     ledger, sessionManager: sm, agents: [], resumeDelayMs: 0, exists: () => true,
-    now: () => now, maxAgeMs: Infinity,
+    now: () => now, maxAgeMs: Infinity, maxRestore: 3,
   });
   assert.equal(res.restored, 3);
   assert.notEqual(sm.get('s_recent_used'), null);

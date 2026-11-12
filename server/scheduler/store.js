@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { manifestDirOf, writeManifest, removeManifest, scanManifests, fromManifest, isDir } from './manifest.js';
 
-const TYPES = new Set(['shell', 'ai']);
+const TYPES = new Set(['shell', 'ai', 'docs']);
 const UNITS = new Set(['second', 'minute', 'hour', 'day']);
 const WEEKDAYS = new Set([1, 2, 3, 4, 5, 6, 7]);
 
@@ -26,7 +26,7 @@ function toAbs(p, cwd) {
 export function validateTask(input) {
   const t = input || {};
   if (!t.name || typeof t.name !== 'string') return { error: 'name required' };
-  if (!TYPES.has(t.type)) return { error: 'type must be shell|ai' };
+  if (!TYPES.has(t.type)) return { error: 'type must be shell|ai|docs' };
   if (t.type === 'shell' && typeof t.command !== 'string') return { error: 'command required' };
   if (t.type === 'ai') {
     const ai = t.ai || {};
@@ -181,6 +181,21 @@ export class SchedulerStore {
     this._syncManifest(task);
     this._notifyPromptChange(task, null, meta);
     return { task: { ...task } };
+  }
+  // 系统内置任务：按固定 id 幂等创建；已存在则原样复用（保留用户的启用/周期修改）。
+  ensureTask(id, input) {
+    const existing = this.getTask(id);
+    if (existing) return { task: existing, created: false };
+    const v = validateTask(input);
+    if (v.error) return { error: v.error };
+    const task = this._buildTask(input, { id });
+    if (this._cwdMissing(task)) return { error: 'cwd-missing' };
+    if (this._dirConflict(task)) return { error: 'dir-taken' };
+    this.tasks.push(task);
+    this.saveTasks();
+    this._syncManifest(task);
+    this._notifyPromptChange(task, null, {});
+    return { task: { ...task }, created: true };
   }
   updateTask(id, patch, meta = {}) {
     const i = this.tasks.findIndex((x) => x.id === id);

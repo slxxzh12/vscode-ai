@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { buildSpawnSpec } from '../runner.js';
+import { updateGitDirs } from '../../git-update.js';
 import { writeRunContext, ensureReport, writeRunResult, stripAnsi, archiveReport } from '../report.js';
 import { SchedulerJobStatus as S, SCHED_REPORT_MAX_BYTES } from '@devflow/shared/scheduler';
 import { t } from '../../i18n.js';
@@ -110,7 +111,7 @@ function aiStatusOf(ai) {
 export function createConsumer({
   queue, store, runner, aiPromptLoader = () => '',
   worker, logger = console, now = () => Date.now(), pollMs = 1000,
-  aiBin = 'opencode', opencodeDataDir = null, projectResolver = () => null, publicBaseUrl = null, onEvent = () => {},
+  aiBin = 'opencode', opencodeDataDir = null, projectResolver = () => null, publicBaseUrl = null, onEvent = () => {}, docDirs = () => [], runUsDev = null,
 }) {
   const shareBase = shareBaseOf(worker.hostport, publicBaseUrl);
   const loops = new Map();
@@ -196,7 +197,45 @@ export function createConsumer({
       })();
     };
     try {
-      if (task.type === 'shell') {
+      if (task.type === 'docs') {
+        const dirs = (typeof docDirs === 'function' ? docDirs() : []) || [];
+        if (!dirs.length) {
+          // 还没在「代码统计 → 更新文档」勾选目录：按空跑成功处理，避免每分钟刷失败记录
+          status = S.SUCCESS;
+          result = { exitCode: 0, durationMs: now() - startedAt, reason: 'no-dirs' };
+        } else {
+          const r = await updateGitDirs(dirs);
+          const failed = r.results.filter((x) => !x.ok);
+          status = failed.length ? S.FAILED : S.SUCCESS;
+          result = {
+            exitCode: failed.length ? 1 : 0,
+            error: failed.length ? failed.map((f) => `${f.dir}: ${f.message || f.code}`).join('\n') : null,
+            durationMs: now() - startedAt,
+            reason: failed.length ? 'failed' : 'success',
+            docResults: r.results,
+          };
+          try {
+            fs.mkdirSync(path.dirname(logPath), { recursive: true });
+            fs.appendFileSync(logPath, r.results.map((x) => `[${x.ok ? 'ok' : 'fail'}] ${x.dir}\n${x.message || ''}`).join('\n\n') + '\n', 'utf8');
+          } catch { /* best-effort */ }
+          if (runUsDev) {
+            try {
+              const usDev = await runUsDev({
+                runner, aiBin, opencodeDataDir, job, runId: job.jobId,
+                logDir: ctx.outputDir, deadline, remaining, now,
+                docResults: r.results,
+              });
+              if (usDev) {
+                result.usDev = usDev;
+                if (usDev.failed > 0) status = S.FAILED;
+              }
+            } catch (e) {
+              result.usDev = { items: [], failed: 1, error: String(e?.message || e) };
+              status = S.FAILED;
+            }
+          }
+        }
+      } else if (task.type === 'shell') {
         const shellRes = await runner.run({
           runId: job.jobId,
           spec: buildSpawnSpec(task, { cwd, runContextPath: ctx.contextPath }),

@@ -17,6 +17,9 @@ import { serveStatic } from './proxy-static.js';
 import { ensureDefaults, loadProjects } from './config.js';
 import { createCodeGroups } from './code-groups.js';
 import { createCodePrefs } from './code-prefs.js';
+import { createDocUpdateStore, selectedDocDirs } from './doc-update-store.js';
+import { createUsDev } from './pipeline/us-dev.js';
+import { createPipelineMount } from './pipeline/pipeline-mount.js';
 import { createComposerPrefs } from './composer-prefs.js';
 import { createSessionProjects } from './session-projects.js';
 import { createWindowState } from './window-state.js';
@@ -455,6 +458,13 @@ function buildWorkspace({ paths, port }) {
   const getStatsStartDir = () => statsStartDir || os.homedir();
   const codeGroups = createCodeGroups({ file: paths.codeGroupsFile, logger: log });
   const codePrefs = createCodePrefs({ file: paths.codePrefsFile, logger: log });
+  const docUpdateStore = createDocUpdateStore({ file: paths.docUpdateFile, logger: log });
+  const usDev = createUsDev({
+    dir: path.join(paths.dir, 'pipeline'),
+    docsState: () => docUpdateStore.read(),
+    templateFile: path.join(__dirname, '..', 'config', 'pipeline', 'us-prompt-template.md'),
+    logger: log,
+  });
   const composerPrefs = createComposerPrefs({ file: paths.composerPrefsFile, logger: log });
   const sessionProjects = createSessionProjects({ file: paths.sessionProjectsFile, logger: log });
   const windowState = createWindowState({ file: paths.windowStateFile, logger: log });
@@ -803,17 +813,39 @@ function buildWorkspace({ paths, port }) {
       employeeId: String(remoteUserOf(req)?.username || engine.pub.employeeId || identity.employeeId || engine.pub.username || identity.username || ''),
     }),
     defaultOperator: { createIP: '127.0.0.1', employeeId: String(engine.pub.employeeId || identity.employeeId || engine.pub.username || identity.username || '') },
+    docDirs: () => selectedDocDirs(docUpdateStore.read()),
+    runUsDev: usDev,
     onJobEvent: (evt, payload) => {
       broadcastSched(evt === 'run-end' ? SchedulerS2C.SCHED_RUN_END : SchedulerS2C.SCHED_RUN_START, payload);
     },
   });
   engine.setQueueConfigProvider?.(() => scheduler.queue.config.syncConfig());
+  // 内置「自动更新文档」任务：启动时确保存在，默认每分钟按「代码统计 → 更新文档」勾选的目录拉取最新提交。
+  try {
+    const r = scheduler.store.ensureTask('auto_docs_update', {
+      name: t('sched.docs.task_name'),
+      enabled: true,
+      type: 'docs',
+      schedule: { mode: 'interval', interval: { every: 1, unit: 'minute' } },
+      uniqueKey: 'auto_docs_update',
+      onlyLocal: true,
+      maxRunMilliSecond: 5 * 60 * 1000,
+    });
+    if (r && r.created) log.info('scheduler ensured auto docs update task');
+    scheduler.store.updateTask('auto_docs_update', { maxRunMilliSecond: 6 * 60 * 60 * 1000 });
+  } catch (e) { log.warn('ensure auto docs update task failed', (e && e.message) || e); }
   scheduler.store.setRuntimeProvider((id) => ({
     nextRunAt: scheduler.engine.nextRunAtOf(id),
     lastRun: null,
   }));
   scheduler.engine.onEvent((evt, payload) => {
     broadcastSched(SchedulerS2C.SCHED_TASKS_CHANGED, payload);
+  });
+  const pipelineMount = createPipelineMount({
+    dir: path.join(paths.dir, 'pipeline'),
+    docsState: () => docUpdateStore.read(),
+    scheduler,
+    logger: log,
   });
 
   const postmanHistory = createPostmanHistory({ dir: paths.postmanDir });
@@ -841,7 +873,7 @@ function buildWorkspace({ paths, port }) {
   const proxyMount = createProxyMount({ store: proxyStore, engine: proxyEngine, capture: proxyCapture, logger: log });
   const httpApi = createHttpApi({
     projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'),
-    codeGroups, codePrefs, composerPrefs, sessionProjects, windowState, startupPrefs,
+    codeGroups, codePrefs, docUpdateStore, composerPrefs, sessionProjects, windowState, startupPrefs,
     startupAvailable: () => process.platform === 'win32' && fs.existsSync(path.join(APP_DIR, 'start.bat')),
     sessionManager, sessionLedger, postmanHistory, notepadStore, fileStores,
   });
@@ -855,7 +887,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
+  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, pipelineMount, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
 }
 
 // ---- 工作区（端口档案）----
@@ -1597,6 +1629,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/translate')) { await ws.translateMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/usage/')) { await ws.usageMount(req, res, url); return; }
+  if (url.pathname.startsWith('/api/pipeline/')) { await ws.pipelineMount(req, res); return; }
   if (url.pathname.startsWith('/api/scheduler/jobs') || url.pathname === '/api/scheduler/workers' || url.pathname.startsWith('/api/scheduler/queue')) {
     await ws.scheduler.jobsMount(req, res); return;
   }
