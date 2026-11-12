@@ -75,7 +75,7 @@ function withTimeout(promise, ms, code = 'timeout') {
 }
 
 export function createNavicatExec({ connectTimeoutMs = 10000, statementTimeoutMs = 30000, maxRows = 200 } = {}) {
-  async function mysqlRun(profile, password, sql) {
+  async function mysqlRun(profile, password, sql, limit) {
     const mysql = await import('mysql2/promise');
     const conn = await mysql.createConnection({
       host: profile.host,
@@ -90,14 +90,14 @@ export function createNavicatExec({ connectTimeoutMs = 10000, statementTimeoutMs
       const [rows, fields] = await conn.query({ sql, timeout: statementTimeoutMs });
       if (Array.isArray(rows)) {
         const columns = (fields || []).map((f) => f.name);
-        const list = rows.slice(0, maxRows).map((r) => columns.map((c) => r[c]));
-        return { columns, rows: list, affected: null, truncated: rows.length > maxRows };
+        const list = rows.slice(0, limit).map((r) => columns.map((c) => r[c]));
+        return { columns, rows: list, affected: null, truncated: rows.length > limit };
       }
       return { columns: [], rows: [], affected: Number(rows?.affectedRows) || 0, truncated: false };
     } finally { await conn.end().catch(() => {}); }
   }
 
-  async function postgresRun(profile, password, sql) {
+  async function postgresRun(profile, password, sql, limit) {
     const pg = await import('pg');
     const client = new pg.Client({
       host: profile.host,
@@ -115,14 +115,14 @@ export function createNavicatExec({ connectTimeoutMs = 10000, statementTimeoutMs
       const one = Array.isArray(res) ? res[res.length - 1] : res;
       const columns = (one?.fields || []).map((f) => f.name);
       if (columns.length) {
-        const list = (one.rows || []).slice(0, maxRows).map((r) => columns.map((c) => r[c]));
-        return { columns, rows: list, affected: null, truncated: (one.rows || []).length > maxRows };
+        const list = (one.rows || []).slice(0, limit).map((r) => columns.map((c) => r[c]));
+        return { columns, rows: list, affected: null, truncated: (one.rows || []).length > limit };
       }
       return { columns: [], rows: [], affected: Number(one?.rowCount) || 0, truncated: false };
     } finally { await client.end().catch(() => {}); }
   }
 
-  async function sqliteRun(profile, sql) {
+  async function sqliteRun(profile, sql, limit) {
     if (!profile.database) throw err('bad-request', 'database file required');
     const { DatabaseSync } = await import('node:sqlite');
     const db = new DatabaseSync(profile.database);
@@ -136,7 +136,7 @@ export function createNavicatExec({ connectTimeoutMs = 10000, statementTimeoutMs
       const columns = typeof stmt.columns === 'function'
         ? stmt.columns().map((c) => c.name)
         : (raw[0] ? Object.keys(raw[0]) : []);
-      return capRows(raw, columns, maxRows);
+      return capRows(raw, columns, limit);
     } finally { db.close(); }
   }
 
@@ -165,11 +165,11 @@ export function createNavicatExec({ connectTimeoutMs = 10000, statementTimeoutMs
     try { return JSON.stringify(reply, null, 2); } catch { return String(reply); }
   }
 
-  async function run(profile, password, sql) {
+  async function run(profile, password, sql, limit = maxRows) {
     const start = Date.now();
-    const body = profile.type === 'mysql' ? mysqlRun(profile, password, sql)
-      : profile.type === 'postgres' ? postgresRun(profile, password, sql)
-        : profile.type === 'sqlite' ? sqliteRun(profile, sql)
+    const body = profile.type === 'mysql' ? mysqlRun(profile, password, sql, limit)
+      : profile.type === 'postgres' ? postgresRun(profile, password, sql, limit)
+        : profile.type === 'sqlite' ? sqliteRun(profile, sql, limit)
           : profile.type === 'redis' ? redisRun(profile, password, sql)
             : Promise.reject(err('bad-type'));
     const out = await body;
@@ -217,9 +217,10 @@ export function createNavicatExec({ connectTimeoutMs = 10000, statementTimeoutMs
     isWrite(profile, sql) {
       return profile.type === 'redis' ? isWriteRedis(tokenizeRedis(sql)) : isWriteSql(sql);
     },
-    async exec(profile, password, sql) {
+    async exec(profile, password, sql, opts) {
+      const limit = opts && Number.isFinite(Number(opts.maxRows)) ? Number(opts.maxRows) : maxRows;
       try {
-        return await withTimeout(run(profile, password, sql), statementTimeoutMs + connectTimeoutMs);
+        return await withTimeout(run(profile, password, sql, limit), statementTimeoutMs + connectTimeoutMs);
       } catch (e) {
         if (e && !e.code) e.code = 'exec';
         throw e;

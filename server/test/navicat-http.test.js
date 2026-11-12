@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import yauzl from 'yauzl';
 import { createNavicatCrypto } from '../navicat-crypto.js';
 import { createNavicatStore } from '../navicat-store.js';
 import { buildNcx, connectionString } from '../navicat-ncx.js';
@@ -31,6 +32,7 @@ async function start(opts = {}) {
   const mount = createNavicatMount({
     store, exec, ncx: { buildNcx, connectionString },
     ...(opts.pickFile ? { pickFile: opts.pickFile } : {}),
+    ...(opts.exporter ? { exporter: opts.exporter } : {}),
   });
   const server = http.createServer((req, res) => mount(req, res, new URL(req.url, 'http://localhost')));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -42,6 +44,27 @@ function call(port, method, p, body) {
     method, headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   }).then(async (res) => ({ status: res.status, body: await res.json() }));
+}
+
+function unzip(buf) {
+  return new Promise((resolve, reject) => {
+    yauzl.fromBuffer(buf, { lazyEntries: true }, (err, zipfile) => {
+      if (err) { reject(err); return; }
+      const out = {};
+      zipfile.on('entry', (entry) => {
+        if (/\/$/.test(entry.fileName)) { zipfile.readEntry(); return; }
+        zipfile.openReadStream(entry, (e, stream) => {
+          if (e) { reject(e); return; }
+          const chunks = [];
+          stream.on('data', (c) => chunks.push(c));
+          stream.on('end', () => { out[entry.fileName] = Buffer.concat(chunks).toString('utf8'); zipfile.readEntry(); });
+        });
+      });
+      zipfile.on('end', () => resolve(out));
+      zipfile.on('error', reject);
+      zipfile.readEntry();
+    });
+  });
 }
 
 const PROFILE = { name: 'A', type: 'mysql', host: 'h', port: '3306', user: 'u', database: 'd', password: 'p@ss' };
@@ -152,4 +175,28 @@ test('pick-file：返回路径 / 取消 / 不支持', async (t) => {
   t.after(() => C.server.close());
   const e = await call(C.port, 'POST', '/api/navicat/pick-file', {});
   assert.equal(e.body.error, 'unsupported');
+});
+
+test('export：返回 zip，含导出文件与 errors.txt', async (t) => {
+  const A = await start({
+    exporter: { build: async () => ({ files: [{ path: 'a.txt', data: 'hi' }], errors: ['warn'] }) },
+  });
+  t.after(() => A.server.close());
+  const id = (await call(A.port, 'POST', '/api/navicat/profiles', PROFILE)).body.item.id;
+  const res = await fetch(`http://127.0.0.1:${A.port}/api/navicat/export`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: [id], n: 5, formats: ['sql', 'csv'] }),
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'application/zip');
+  const files = await unzip(Buffer.from(await res.arrayBuffer()));
+  assert.equal(files['a.txt'], 'hi');
+  assert.match(files['errors.txt'], /warn/);
+});
+
+test('export：无 ids → 400', async (t) => {
+  const A = await start();
+  t.after(() => A.server.close());
+  const r = await call(A.port, 'POST', '/api/navicat/export', { ids: [] });
+  assert.equal(r.status, 400);
 });

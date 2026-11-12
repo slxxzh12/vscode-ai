@@ -60,4 +60,11 @@ describe('navicatTreeSource', () => {
     expect(rename).toHaveBeenCalledWith('1', 'A2');
     expect(remove).toHaveBeenCalledWith('1');
   });
+
+  it('failedIds 命中的连接根节点带 fail 状态', async () => {
+    const { src } = make({ failedIds: () => new Set(['1']) });
+    const roots = await src.loadChildren('');
+    expect(roots[0].status).toBe('fail');
+    expect(roots[1].status).toBeUndefined();
+  });
 });

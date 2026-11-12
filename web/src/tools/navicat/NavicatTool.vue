@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useNavicatWorkbench } from './useNavicatWorkbench';
+import NavicatExportDialog from './NavicatExportDialog.vue';
 import CodeEditor from '../../components/CodeEditor.vue';
 import type { NavicatType } from './useNavicat';
 
@@ -135,6 +136,8 @@ onMounted(() => { void load(); });
         <button class="nvbtn primary nv-save" :disabled="saving" @click="doSave">{{ $t('nv.ok') }}</button>
       </template>
     </el-dialog>
+
+    <NavicatExportDialog />
   </div>
 </template>
 

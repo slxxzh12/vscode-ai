@@ -5,6 +5,7 @@ import type { NavicatProfile } from './useNavicat';
 export interface NavicatTreeDeps {
   profiles: () => NavicatProfile[];
   profileById: (id: string) => NavicatProfile | null;
+  failedIds?: () => Set<string>;
   databases: (id: string) => Promise<string[]>;
   tables: (id: string, db: string) => Promise<string[]>;
   openConnection: (id: string) => void;
@@ -33,7 +34,13 @@ function searchTerms(query: string, caseSensitive: boolean): string[] {
 export function navicatTreeSource(deps: NavicatTreeDeps): TreeSource {
   return {
     async loadChildren(dirKey: string): Promise<TreeSourceNode[]> {
-      if (!dirKey) return deps.profiles().map((p) => ({ key: cKey(String(p.id)), name: p.name, kind: 'dir' as const }));
+      if (!dirKey) {
+        const failed = deps.failedIds?.() ?? new Set<string>();
+        return deps.profiles().map((p) => {
+          const id = String(p.id);
+          return { key: cKey(id), name: p.name, kind: 'dir' as const, ...(failed.has(id) ? { status: 'fail' as const } : {}) };
+        });
+      }
       const pl = parse(dirKey);
       const p = deps.profileById(pl.id);
       if (!p) return [];

@@ -52,6 +52,7 @@ export function useNavicat(): {
   reveal: (id: string) => Promise<string>;
   connstr: (id: string, withPassword: boolean) => Promise<string>;
   exportNcx: (ids: string[]) => Promise<string>;
+  exportData: (ids: string[], n: number, formats: string[]) => Promise<Blob>;
   listDatabases: (id: string) => Promise<string[]>;
   listTables: (id: string, database: string) => Promise<string[]>;
   pickFile: () => Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }>;
@@ -110,6 +111,19 @@ export function useNavicat(): {
     return String(j.xml || '');
   }
 
+  async function exportData(ids: string[], n: number, formats: string[]): Promise<Blob> {
+    const res = await fetch('/api/navicat/export', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ ids, n, formats }),
+    });
+    if (!res.ok) {
+      const j: any = await res.json().catch(() => ({}));
+      throw new Error(String(j?.message || j?.error || `HTTP ${res.status}`));
+    }
+    return res.blob();
+  }
+
   async function listDatabases(id: string): Promise<string[]> {
     const j = await jfetch(`/api/navicat/schema/databases?id=${encodeURIComponent(id)}`);
     return Array.isArray(j.items) ? j.items.map(String) : [];
@@ -125,5 +139,5 @@ export function useNavicat(): {
     return jfetch('/api/navicat/pick-file', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
   }
 
-  return { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx, listDatabases, listTables, pickFile };
+  return { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx, exportData, listDatabases, listTables, pickFile };
 }

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ElMessageBox } from 'element-plus';
 import { useNavicatWorkbench } from './useNavicatWorkbench';
@@ -85,5 +86,76 @@ describe('useNavicatWorkbench', () => {
     await wb.openSqliteFile('C:\\d\\a.db', 'a.db');
     expect(posts).toHaveLength(0);
     expect(wb.activeId.value).toBe('9');
+  });
+
+  it('importCsv：跳过重复，创建后逐个测试，失败记入 failedIds', async () => {
+    const csv = 'B,mysql://u@h2/db2\nDup,mysql://u@h/d\nbad line\nC,redis://h3:6379/0';
+    const posts: any[] = [];
+    const tests: string[] = [];
+    let seq = 2;
+    vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
+      const s = String(u);
+      if (s === '/api/navicat/profiles' && (!init || !init.method)) return okJson({ items: [P] });
+      if (s === '/api/navicat/profiles' && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        posts.push(body);
+        return okJson({ item: { ...body, id: String(seq++) } });
+      }
+      if (s === '/api/navicat/test') {
+        const body = JSON.parse(String(init?.body || '{}'));
+        tests.push(body.id);
+        if (body.id === '3') return { ok: false, status: 502, json: async () => ({ message: 'boom' }) };
+        return okJson({ ok: true });
+      }
+      return okJson({ items: [P] });
+    }));
+    const wb = useNavicatWorkbench();
+    wb.failedIds.value.clear();
+    await wb.importCsv({ text: async () => csv } as any);
+    expect(posts.map((p) => p.name)).toEqual(['B', 'C']);
+    expect(tests).toEqual(['2', '3']);
+    expect(wb.failedIds.value.has('3')).toBe(true);
+    expect(wb.importing.value).toBe(false);
+    expect(wb.msg.value).toContain('C: boom');
+  });
+
+  it('openExport：默认全选连接、N=30、SQL/CSV 都勾选', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (String(u) === '/api/navicat/profiles' ? okJson({ items: [P] }) : okJson({}))));
+    const wb = useNavicatWorkbench();
+    await wb.openExport();
+    expect(wb.exportIds.value).toEqual(['1']);
+    expect(wb.exportN.value).toBe(30);
+    expect(wb.exportSql.value).toBe(true);
+    expect(wb.exportCsv.value).toBe(true);
+    expect(wb.exportDlg.value).toBe(true);
+  });
+
+  it('doExportData：调用 /api/navicat/export 并触发下载', async () => {
+    const bodies: any[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
+      if (String(u) === '/api/navicat/profiles') return okJson({ items: [P] });
+      if (String(u) === '/api/navicat/export') {
+        bodies.push(JSON.parse(String(init?.body)));
+        return { ok: true, status: 200, blob: async () => new Blob(['zip']) };
+      }
+      return okJson({});
+    }));
+    if (!URL.createObjectURL) (URL as any).createObjectURL = () => 'blob:x';
+    if (!URL.revokeObjectURL) (URL as any).revokeObjectURL = () => {};
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const wb = useNavicatWorkbench();
+    wb.exportDlg.value = true;
+    wb.exportIds.value = ['1'];
+    wb.exportN.value = 5;
+    wb.exportSql.value = false;
+    wb.exportCsv.value = true;
+    await wb.doExportData();
+    expect(bodies).toEqual([{ ids: ['1'], n: 5, formats: ['csv'] }]);
+    expect(create).toHaveBeenCalled();
+    expect(revoke).toHaveBeenCalled();
+    expect(click).toHaveBeenCalled();
+    expect(wb.exportDlg.value).toBe(false);
   });
 });

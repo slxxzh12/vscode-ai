@@ -4,6 +4,7 @@ import { t } from '../../i18n';
 import { quoteIdent, useNavicat, type ExecResult, type NavicatProfile, type NavicatType } from './useNavicat';
 import { navicatTreeSource } from './navicatTreeSource';
 import { uniqueConnName } from './sqliteFile';
+import { dedupeKey, parseCsvProfiles } from './csvImport';
 import type { TreeSource } from '../../tree/treeSource';
 
 // Navicat 工作台：模块级单例，左侧工具条/树与右侧内容、连接弹窗共用同一份状态。
@@ -23,6 +24,15 @@ export interface NavicatWorkbench {
   form: Ref<NavicatProfile>;
   saving: Ref<boolean>;
   testing: Ref<boolean>;
+  importing: Ref<boolean>;
+  failedIds: Ref<Set<string>>;
+  exportDlg: Ref<boolean>;
+  exportIds: Ref<string[]>;
+  exportN: Ref<number>;
+  exportSql: Ref<boolean>;
+  exportCsv: Ref<boolean>;
+  exporting: Ref<boolean>;
+  exportMsg: Ref<string>;
   treeSource: TreeSource;
   load(): Promise<void>;
   onFolder(key: string): void;
@@ -32,6 +42,10 @@ export interface NavicatWorkbench {
   openEdit(p: NavicatProfile): Promise<void>;
   doSave(): Promise<void>;
   doTest(): Promise<void>;
+  importCsv(file: File): Promise<void>;
+  openExport(): Promise<void>;
+  toggleAllExport(on: boolean): void;
+  doExportData(): Promise<void>;
   onRemove(p: NavicatProfile): Promise<void>;
   doExec(): Promise<void>;
   copyConn(withPassword: boolean): Promise<void>;
@@ -66,6 +80,15 @@ export function useNavicatWorkbench(): NavicatWorkbench {
   const form = ref<NavicatProfile>(blank());
   const saving = ref(false);
   const testing = ref(false);
+  const importing = ref(false);
+  const failedIds = ref<Set<string>>(new Set());
+  const exportDlg = ref(false);
+  const exportIds = ref<string[]>([]);
+  const exportN = ref(30);
+  const exportSql = ref(true);
+  const exportCsv = ref(true);
+  const exporting = ref(false);
+  const exportMsg = ref('');
 
   const activeProfile = computed(() => nav.profiles.value.find((p) => p.id === activeId.value) || null);
   const profileById = (id: string) => nav.profiles.value.find((p) => String(p.id) === id) || null;
@@ -153,10 +176,104 @@ export function useNavicatWorkbench(): NavicatWorkbench {
     } catch (e) { dlgMsg.value = (e as Error).message; } finally { testing.value = false; }
   }
 
+  async function importCsv(file: File): Promise<void> {
+    if (!file) return;
+    importing.value = true;
+    msg.value = '';
+    try {
+      const parsed = parseCsvProfiles(await file.text());
+      if (!parsed.profiles.length) { msg.value = t('nv.import_empty'); return; }
+
+      await nav.load();
+      const seen = new Set(nav.profiles.value.map(dedupeKey));
+      const fresh: NavicatProfile[] = [];
+      let skipped = 0;
+      for (const p of parsed.profiles) {
+        const key = dedupeKey(p);
+        if (seen.has(key)) { skipped += 1; continue; }
+        seen.add(key);
+        fresh.push(p);
+      }
+
+      const created: NavicatProfile[] = [];
+      const saveFailLines: string[] = [];
+      for (const p of fresh) {
+        try { created.push(await nav.save(p)); }
+        catch (e) { saveFailLines.push(t('nv.import_fail_line', { name: p.name, msg: (e as Error).message })); }
+      }
+
+      let pass = 0;
+      let fail = 0;
+      const testFailLines: string[] = [];
+      for (let i = 0; i < created.length; i += 1) {
+        msg.value = t('nv.import_testing', { i: i + 1, n: created.length });
+        const c = created[i];
+        try {
+          await nav.test({ id: String(c.id || '') });
+          pass += 1;
+        } catch (e) {
+          fail += 1;
+          if (c.id) failedIds.value.add(String(c.id));
+          testFailLines.push(t('nv.import_fail_line', { name: c.name, msg: (e as Error).message }));
+        }
+      }
+
+      let summary = t('nv.import_done', {
+        ok: created.length, dup: skipped, bad: parsed.errors.length, pass, fail,
+      });
+      const details = [...saveFailLines, ...testFailLines];
+      if (details.length) summary += `\n${details.join('\n')}`;
+      msg.value = summary;
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('df-refresh-tree'));
+    } catch (e) {
+      msg.value = (e as Error).message;
+    } finally {
+      importing.value = false;
+    }
+  }
+
+  async function openExport(): Promise<void> {
+    await nav.load();
+    exportIds.value = nav.profiles.value.filter((p) => p.id).map((p) => String(p.id));
+    exportN.value = 30;
+    exportSql.value = true;
+    exportCsv.value = true;
+    exportMsg.value = '';
+    exportDlg.value = true;
+  }
+
+  function toggleAllExport(on: boolean) {
+    exportIds.value = on ? nav.profiles.value.filter((p) => p.id).map((p) => String(p.id)) : [];
+  }
+
+  async function doExportData(): Promise<void> {
+    if (!exportIds.value.length) { exportMsg.value = t('nv.export_pick_conn'); return; }
+    const formats = [exportSql.value ? 'sql' : '', exportCsv.value ? 'csv' : ''].filter(Boolean);
+    if (!formats.length) { exportMsg.value = t('nv.export_pick_format'); return; }
+    exporting.value = true;
+    exportMsg.value = '';
+    try {
+      const blob = await nav.exportData(exportIds.value, exportN.value, formats);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `navicat-export-${Date.now()}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      exportDlg.value = false;
+      msg.value = t('nv.exported');
+    } catch (e) {
+      exportMsg.value = (e as Error).message;
+    } finally {
+      exporting.value = false;
+    }
+  }
+
   async function onRemove(p: NavicatProfile) {
     try { await ElMessageBox.confirm(t('nv.delete_confirm'), t('nv.delete'), { type: 'warning' }); }
     catch { return; }
     await nav.remove(p.id!);
+    if (p.id) failedIds.value.delete(p.id);
     if (activeId.value === p.id) { activeId.value = ''; activeDatabase.value = ''; activeFolder.value = ''; result.value = null; }
   }
 
@@ -198,6 +315,7 @@ export function useNavicatWorkbench(): NavicatWorkbench {
   const treeSource = navicatTreeSource({
     profiles: () => nav.profiles.value,
     profileById,
+    failedIds: () => failedIds.value,
     databases: (id) => nav.listDatabases(id),
     tables: (id, db) => nav.listTables(id, db),
     openConnection: (id) => { const p = profileById(id); if (p) selectConn(p); },
@@ -209,8 +327,10 @@ export function useNavicatWorkbench(): NavicatWorkbench {
 
   cache = {
     profiles: nav.profiles, activeId, activeFolder, activeDatabase, activeProfile, sql, result, busy, msg,
-    dlg, dlgTab, dlgMsg, form, saving, testing, treeSource,
-    load: nav.load, onFolder, onTypeChange, pickTable, openNew, openEdit, doSave, doTest, onRemove, doExec, copyConn, doExport, editActive, browseFile, openSqliteFile,
+    dlg, dlgTab, dlgMsg, form, saving, testing, importing, failedIds,
+    exportDlg, exportIds, exportN, exportSql, exportCsv, exporting, exportMsg, treeSource,
+    load: nav.load, onFolder, onTypeChange, pickTable, openNew, openEdit, doSave, doTest, importCsv,
+    openExport, toggleAllExport, doExportData, onRemove, doExec, copyConn, doExport, editActive, browseFile, openSqliteFile,
   };
   return cache;
 }

@@ -1,5 +1,7 @@
 import { t } from './i18n.js';
 import { pickSqliteFile } from './native-dialog.js';
+import { createZip } from './zip-writer.js';
+import { createNavicatExport } from './navicat-export.js';
 
 const MAX_BODY = 2 * 1024 * 1024;
 
@@ -30,7 +32,15 @@ function sendErr(res, code) {
 }
 
 // /api/navicat/*：连接档案 CRUD + 测试/执行 + 连接串/导出
-export function createNavicatMount({ store, exec, ncx, pickFile = pickSqliteFile, logger = console }) {
+export function createNavicatMount({ store, exec, ncx, pickFile = pickSqliteFile, exporter, logger = console }) {
+  const exp = exporter || createNavicatExport({ exec });
+
+  function stamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  }
+
   async function route(req, res, url) {
     const m = req.method;
     const seg = url.pathname.replace(/^\/api\/navicat\/?/, '').split('/').filter(Boolean);
@@ -78,6 +88,30 @@ export function createNavicatMount({ store, exec, ncx, pickFile = pickSqliteFile
         return { ...p, password: store.password(p.id) };
       });
       return sendJson(res, 200, { xml: ncx.buildNcx(entries) });
+    }
+
+    if (head === 'export' && m === 'POST') {
+      const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      if (!ids.length) return sendErr(res, 'bad-request');
+      const n = Math.min(Math.max(Number(body.n) || 30, 1), 1000);
+      const formats = (Array.isArray(body.formats) ? body.formats : ['sql', 'csv'])
+        .filter((f) => f === 'sql' || f === 'csv');
+      if (!formats.length) return sendErr(res, 'bad-request');
+      const items = ids.map((id) => {
+        const p = store.get(id);
+        return { profile: p, password: store.password(p.id) };
+      });
+      const { files, errors } = await exp.build({ items, n, formats });
+      if (errors.length) files.push({ path: 'errors.txt', data: errors.join('\n') });
+      const zip = createZip(files);
+      const name = `navicat-export-${stamp()}.zip`;
+      res.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${name}"`,
+        'Content-Length': String(zip.length),
+      });
+      res.end(zip);
+      return undefined;
     }
 
     if (head === 'test' && m === 'POST') {
