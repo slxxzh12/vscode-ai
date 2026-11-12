@@ -27,6 +27,7 @@ import { createStartupPrefs } from './startup-prefs.js';
 import { createSessionLedger } from './session-ledger.js';
 import { restoreSessions, restoreRecord } from './session-restore.js';
 import { discoverAgentSessionId } from './agent-resume.js';
+import { buildResumeCommand } from './agent-resume.js';
 import { createAgentStartupGuard } from './agent-startup-guard.js';
 import { claimedAgentSessionIds, findClaimOwner } from './session-claims.js';
 import { CollabStore } from './collaboration/store.js';
@@ -821,6 +822,31 @@ function buildWorkspace({ paths, port }) {
     },
   });
   engine.setQueueConfigProvider?.(() => scheduler.queue.config.syncConfig());
+  // 任务队列「继续会话」：按作业记录的 agent 会话 ID 恢复/新建会话，并注入续会话命令。
+  async function resumeJobSession(jobId) {
+    const job = await scheduler.queue.getJob(jobId);
+    if (!job) return { ok: false, error: 'not-found' };
+    let snap = {}; try { snap = JSON.parse(job.paramStr || '{}'); } catch { snap = {}; }
+    let result = {}; try { result = JSON.parse(job.result || '{}'); } catch { result = {}; }
+    const agentSessionId = String(result.sessionId || result.ngaSessionId || snap.sessionId || '');
+    if (!agentSessionId) return { ok: false, error: 'no-session' };
+    const existing = (sessionLedger.read().sessions || []).find((s) => s.agentSessionId === agentSessionId);
+    if (existing && existing.id) {
+      const r = await restoreSessionById(existing.id, { name: existing.name });
+      if (r && r.ok) return { ok: true, sessionId: r.session.id, agentSessionId, resumed: !!r.resumed };
+    }
+    const projectRoot = snap.task?.projectId ? (projects.listProjects().find((p) => p.id === snap.task.projectId)?.root || '') : '';
+    const cwd = String(snap.runDir || snap.task?.cwd || projectRoot || '');
+    if (!cwd || !fs.existsSync(cwd)) return { ok: false, error: 'cwd-missing' };
+    const session = await sessionManager.create({
+      cwd, kind: 'agent', agentId: agent?.id || null, agentCmd: agent?.cmd || 'opencode',
+      projectId: snap.task?.projectId || null, name: snap.task?.name || '',
+    });
+    sessionLedger.upsert({ id: session.id, agentSessionId, updatedAt: Date.now() });
+    const cmd = buildResumeCommand({ agent, agentSessionId });
+    if (cmd) setTimeout(() => { try { sessionManager.write(session.id, `${cmd}\r`); } catch { /* ignore */ } }, 1200);
+    return { ok: true, sessionId: session.id, agentSessionId, resumed: !!cmd };
+  }
   // 内置「自动更新文档」任务：启动时确保存在，默认每分钟按「代码统计 → 更新文档」勾选的目录拉取最新提交。
   try {
     const r = scheduler.store.ensureTask('auto_docs_update', {
@@ -882,13 +908,13 @@ function buildWorkspace({ paths, port }) {
       const runOut = path.join(st.runDir, 'output');
       const base = {
         groupName: 'ai-site', taskId: st.id, classname: 'ai-site', methodName: 'run',
-        createIP: `${HOST}:${port}`, workIP: `${HOST}:${port}`, createMachineId: engine.pub.machineId,
+        createIP: st.ip || `${HOST}:${port}`, workIP: `${HOST}:${port}`, createMachineId: engine.pub.machineId,
       };
-      const result = { runId: st.id, sessionId: st.sessionId || '', executor: st.user || 'system', logPath: runLog, outputDir: runOut };
+      const result = { runId: st.id, sessionId: st.sessionId || '', executor: st.user || 'system', ip: st.ip || '', logPath: runLog, outputDir: runOut };
       if (st.phase === 'start') {
         void scheduler.queue.enqueueExternalJob({
           jobId, ...base, status: 3, createTime: st.startedAt,
-          paramStr: { task: { name: st.pluginTitle || st.plugin }, plugin: st.plugin, user: st.user, executor: st.user || 'system', runId: st.id, sessionId: '', runDir: st.runDir },
+          paramStr: { task: { name: st.pluginTitle || st.plugin }, plugin: st.plugin, user: st.user, executor: st.user || 'system', ip: st.ip || '', runId: st.id, sessionId: '', runDir: st.runDir },
           result,
         }).catch((e) => log.warn?.('ai-site queue enqueue failed', (e && e.message) || e));
       } else {
@@ -916,7 +942,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, pipelineMount, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, aiSite, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
+  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, pipelineMount, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, resumeJobSession, navicatMount, proxyStore, proxyEngine, proxyMount, aiSite, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
 }
 
 // ---- 工作区（端口档案）----
@@ -1666,6 +1692,15 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/collab')) { await ws.collabMount(req, res); return; }
   if (url.pathname.startsWith('/api/usage/')) { await ws.usageMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/pipeline/')) { await ws.pipelineMount(req, res); return; }
+  if (url.pathname.startsWith('/api/scheduler/jobs') && /\/resume$/.test(url.pathname) && req.method === 'POST') {
+    const id = decodeURIComponent(url.pathname.split('/')[4] || '');
+    let out;
+    try { out = await ws.resumeJobSession(id); }
+    catch (e) { out = { ok: false, error: String((e && e.message) || e) }; }
+    res.writeHead(out.ok ? 200 : 400, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(out));
+    return;
+  }
   if (url.pathname.startsWith('/api/scheduler/jobs') || url.pathname === '/api/scheduler/workers' || url.pathname.startsWith('/api/scheduler/queue')) {
     await ws.scheduler.jobsMount(req, res); return;
   }

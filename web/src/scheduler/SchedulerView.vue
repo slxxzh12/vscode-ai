@@ -638,7 +638,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <JobsView v-else />
+    <JobsView v-else :terminal="props.terminal" :on-open-session="props.onOpenSession" />
     </template>
 
     <SchedulerReportView

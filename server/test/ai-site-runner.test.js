@@ -47,8 +47,10 @@ test('runnerï¼šå»º run ç›®å½•ã€å†™ input.jsonã€å¤åˆ¶ workflowã€è°ƒç”¨ agent'
     workflowPath: path.join(pluginDir, 'workflow', 'prompt.md'),
     values: { text: 'hi' },
     user: 'alice',
+    ip: '1.2.3.4',
   });
   assert.ok(run.id);
+  assert.equal(run.ip, '1.2.3.4');
   assert.equal(run.status, 'running');
   const runDir = path.join(runsDir, run.id);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(runDir, 'input.json'), 'utf8')), { text: 'hi' });
@@ -102,7 +104,7 @@ test('runnerï¼šoutput æ–‡ä»¶åˆ—è¡¨ã€è¯»å–é˜²ç©¿è¶Šã€zip', async () => {
   assert.equal(zip.subarray(0, 2).toString('utf8'), 'PK');
 });
 
-test('runner£ºonStateChange »Øµ÷ start/finish', async () => {
+test('runnerï¿½ï¿½onStateChange ï¿½Øµï¿½ start/finish', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-state-'));
   const pluginDir = setupPlugin(root);
   const runsDir = path.join(root, 'runs');
@@ -115,16 +117,16 @@ test('runner£ºonStateChange »Øµ÷ start/finish', async () => {
       return c;
     },
   });
-  runner.createRun({ pluginName: 'translate', pluginTitle: '·­ÒëÖúÊÖ', pluginDir, workflowPath: path.join(pluginDir, 'workflow', 'prompt.md'), values: {}, user: 'u1' });
+  runner.createRun({ pluginName: 'translate', pluginTitle: 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½', pluginDir, workflowPath: path.join(pluginDir, 'workflow', 'prompt.md'), values: {}, user: 'u1' });
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(events[0].phase, 'start');
-  assert.equal(events[0].pluginTitle, '·­ÒëÖúÊÖ');
+  assert.equal(events[0].pluginTitle, 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½');
   assert.equal(events.at(-1).phase, 'finish');
   assert.equal(events.at(-1).status, 'success');
   assert.equal(events.at(-1).user, 'u1');
 });
 
-test('runner£º´ÓÊä³ö½âÎö sessionID£¬¼ÇÂ¼Ö´ÐÐÈËÓë runId', async () => {
+test('runnerï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ sessionIDï¿½ï¿½ï¿½ï¿½Â¼Ö´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ runId', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-session-'));
   const pluginDir = setupPlugin(root);
   const runsDir = path.join(root, 'runs');
@@ -137,7 +139,7 @@ test('runner£º´ÓÊä³ö½âÎö sessionID£¬¼ÇÂ¼Ö´ÐÐÈËÓë runId', async () => {
       return c;
     },
   });
-  const run = runner.createRun({ pluginName: 'translate', pluginTitle: '·­ÒëÖúÊÖ', pluginDir, workflowPath: path.join(pluginDir, 'workflow', 'prompt.md'), values: {}, user: 'u1' });
+  const run = runner.createRun({ pluginName: 'translate', pluginTitle: 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½', pluginDir, workflowPath: path.join(pluginDir, 'workflow', 'prompt.md'), values: {}, user: 'u1' });
   await new Promise((r) => setTimeout(r, 20));
   const fin = events.at(-1);
   assert.equal(fin.phase, 'finish');
@@ -147,7 +149,7 @@ test('runner£º´ÓÊä³ö½âÎö sessionID£¬¼ÇÂ¼Ö´ÐÐÈËÓë runId', async () => {
   assert.equal(JSON.parse(fs.readFileSync(path.join(runsDir, run.id, 'run.json'), 'utf8')).sessionId, 'ses_abc');
 });
 
-test('runner£º½âÎö²»µ½ sessionID Ê±Áô¿Õ£¨runId ÓÉ¶ÓÁÐ²à¼ÇÂ¼£©', async () => {
+test('runnerï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ sessionID Ê±ï¿½ï¿½ï¿½Õ£ï¿½runId ï¿½É¶ï¿½ï¿½Ð²ï¿½ï¿½Â¼ï¿½ï¿½', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-noses-'));
   const pluginDir = setupPlugin(root);
   const runner = createAiSiteRunner({ runsDir: path.join(root, 'runs'), resolveBin: () => 'opencode', spawnFn: () => { throw new Error('no-spawn'); } });

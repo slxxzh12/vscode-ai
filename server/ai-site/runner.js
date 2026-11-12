@@ -58,7 +58,7 @@ export function createAiSiteRunner({
 
   function publicMeta(meta) {
     return {
-      id: meta.id, plugin: meta.plugin, user: meta.user, sessionId: meta.sessionId || '',
+      id: meta.id, plugin: meta.plugin, user: meta.user, ip: meta.ip || '', sessionId: meta.sessionId || '',
       startedAt: meta.startedAt, finishedAt: meta.finishedAt,
       exitCode: meta.exitCode, status: meta.status, error: meta.error,
     };
@@ -70,7 +70,7 @@ export function createAiSiteRunner({
     for (const cb of run.listeners) { try { cb(event); } catch { /* ignore */ } }
   }
 
-  function createRun({ pluginName, pluginTitle = pluginName, pluginDir, workflowPath, values = {}, user = '' }) {
+  function createRun({ pluginName, pluginTitle = pluginName, pluginDir, workflowPath, values = {}, user = '', ip = '' }) {
     const id = crypto.randomUUID();
     const runDir = path.join(runsDir, id);
     fs.mkdirSync(path.join(runDir, 'output'), { recursive: true });
@@ -85,7 +85,7 @@ export function createAiSiteRunner({
     fs.writeFileSync(path.join(runDir, 'input.json'), JSON.stringify(values, null, 2), 'utf8');
 
     const meta = {
-      id, plugin: pluginName, user, startedAt: Date.now(), finishedAt: 0,
+      id, plugin: pluginName, user, ip, startedAt: Date.now(), finishedAt: 0,
       exitCode: null, status: 'running', error: null, sessionId: '',
       listeners: new Set(), events: [], log: '',
     };

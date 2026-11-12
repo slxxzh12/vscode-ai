@@ -40,6 +40,11 @@ function cookieFor(secret, userId, base) {
 function clearCookie(base) {
   return `${COOKIE}=; HttpOnly; SameSite=Lax; Path=${base || '/'}; Max-Age=0`;
 }
+function clientIp(req) {
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const ip = xff || (req.socket && req.socket.remoteAddress) || '';
+  return String(ip).replace(/^::ffff:/, '');
+}
 
 export function createAiSiteServe({ getConfig, users, runner, logger = console }) {
   function authUser(req) {
@@ -130,7 +135,7 @@ export function createAiSiteServe({ getConfig, users, runner, logger = console }
         run = runner.createRun({
           pluginName: plugin.name, pluginTitle: plugin.title, pluginDir: plugin.dir,
           workflowPath: path.join(plugin.dir, plugin.workflow),
-          values: clean, user: user.id || 'anonymous',
+          values: clean, user: user.id || 'anonymous', ip: clientIp(req),
         });
       } catch (e) {
         logger?.warn?.('ai-site run failed', (e && e.message) || e);

@@ -8,10 +8,28 @@ import { renderRemoteMarkdown } from '../markdown';
 import { useMarkdownEnhance } from '../markdown-enhance/useEnhance';
 
 const jobs = useJobs();
+const props = defineProps<{ terminal?: any; onOpenSession?: (sessionId: string) => void }>();
+const resuming = ref(false);
 let timer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => { void jobs.refresh(); void loadWorkers(); void loadConfig(); timer = setInterval(() => { void jobs.refresh(); void loadWorkers(); }, 2000); });
 onUnmounted(() => { if (timer) clearInterval(timer); });
 const detail = ref<Job | null>(null);
+async function resumeSession() {
+  const job = detail.value;
+  if (!job) return;
+  resuming.value = true;
+  try {
+    const r = await fetch(`/api/scheduler/jobs/${encodeURIComponent(job.jobId)}/resume`, { method: 'POST' }).then((x) => x.json());
+    if (!r || !r.ok || !r.sessionId) {
+      alert(t(r && r.error === 'no-session' ? 'jobs.resume.no_session' : 'jobs.resume.failed'));
+      return;
+    }
+    try { await props.terminal?.listSessions?.(); } catch { /* ignore */ }
+    detail.value = null;
+    props.onOpenSession?.(r.sessionId);
+  } catch { alert(t('jobs.resume.failed')); }
+  finally { resuming.value = false; }
+}
 const sortedJobs = computed(() => [...jobs.state.jobs].sort((a, b) =>
   (b.createTime || 0) - (a.createTime || 0) || String(b.jobId).localeCompare(String(a.jobId))));
 const userJobs = computed(() => sortedJobs.value.filter((j) => j.groupName === 'ai-site'));
@@ -233,6 +251,7 @@ onMounted(() => { void loadPipelineAutoDev(); });
       <div>jobId: {{ detail.jobId }}</div>
       <div>{{ $t('jobs.col.executor') }}: {{ executorOf(detail) }}</div>
       <div>{{ $t('jobs.col.session') }}: {{ sessionIdOf(detail) || '—' }}</div>
+      <div>{{ $t('jobs.col.ip') }}: {{ detail.createIP || '—' }}</div>
       <div>parentJobId: {{ detail.parentJobId || '—' }}</div>
       <div>traceId: {{ detail.traceId || '—' }}</div>
       <div>partition: P{{ detail.partitionId }}</div>
@@ -266,6 +285,7 @@ onMounted(() => { void loadPipelineAutoDev(); });
       <div v-if="detailReport" ref="detailReportBody" class="report md-body" v-html="detailReportHtml" />
       <pre v-else class="report">{{ $t('sched.report.empty') }}</pre>
       <div class="acts">
+        <button v-if="detail && sessionIdOf(detail) && onOpenSession" :disabled="resuming" @click="resumeSession">{{ $t('jobs.action.resume_session') }}</button>
         <button v-if="detail.status === 4" @click="jobs.approve(detail.jobId)">{{ $t('jobs.action.approve') }}</button>
         <button v-if="detail.status === 4" @click="jobs.reject(detail.jobId)">{{ $t('jobs.action.reject') }}</button>
         <button v-if="detail.status === 0 || detail.status === 3" @click="jobs.cancel(detail.jobId)">{{ $t('jobs.action.cancel') }}</button>

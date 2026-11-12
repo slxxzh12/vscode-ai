@@ -376,6 +376,9 @@ async function editHistorySession(sid: string) {
 }
 // 定时任务「打开运行会话」：把运行中的 agent 会话作为主区内容打开
 function openLiveSession(sid: string) {
+  rail.value = 'explorer';
+  const s = terminal.state.sessions.find((x) => x.id === sid);
+  if (s) center.ensureSession(s.id, s.name || s.id, s.state || 'running', s.projectId ?? null);
   center.activateSession(sid);
   terminal.switchTo(sid);
 }
