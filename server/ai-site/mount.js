@@ -53,13 +53,17 @@ export function createAiSiteMount({ configStore, users, apply, status, pluginsRo
         return sendJson(res, 200, { items: listPlugins(pluginsRoot()) });
       }
       if (head === 'users' && !seg[1]) {
-        if (method === 'GET') return sendJson(res, 200, { items: users.list() });
+        if (method === 'GET') return sendJson(res, 200, { items: users.list(), blacklist: users.blacklist() });
         if (method === 'POST') return sendJson(res, 200, { ok: true, item: users.create(body) });
         if (method === 'PATCH') return sendJson(res, 200, { ok: true, item: users.update(String(body.id || ''), body) });
         if (method === 'DELETE') {
           const id = String(url.searchParams.get('id') || '');
           return sendJson(res, 200, { ok: users.remove(id) });
         }
+      }
+      if (head === 'revoke' && method === 'POST') {
+        const out = users.revoke(String(body.username || ''), body.revoked !== false);
+        return sendJson(res, 200, { ok: true, ...out });
       }
       return sendJson(res, 404, { error: 'not-found' });
     } catch (e) {

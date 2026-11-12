@@ -50,13 +50,14 @@ export function normalizeConfig(input, prev = {}, { isPrefixTaken = () => false,
   return { pluginRoot, mode, listenHost, listenPort, pathPrefix, requireAuth, enabled, sessionSecret };
 }
 
-export function createAiSiteConfigStore({ file, isPrefixTaken = () => false } = {}) {
+export function createAiSiteConfigStore({ file, isPrefixTaken = () => false, defaultPluginRoot = '' } = {}) {
   let cfg = null;
 
   function load() {
     if (cfg) return cfg;
     let raw = {};
     try { raw = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { raw = {}; }
+    if (!raw.pluginRoot && defaultPluginRoot) raw.pluginRoot = defaultPluginRoot;
     cfg = normalizeConfig(raw, {}, { isPrefixTaken, checkRoot: false });
     if (!fs.existsSync(file)) persist();
     return cfg;

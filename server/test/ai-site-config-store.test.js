@@ -45,3 +45,9 @@ test('config：插件根目录必须存在，前缀冲突拒绝', () => {
   assert.throws(() => s.save({ pluginRoot: path.join(dir, 'nope') }), (e) => e.code === 'bad-static-dir');
   assert.throws(() => s.save({ mode: 'path', pathPrefix: '/taken' }), (e) => e.code === 'bad-request');
 });
+
+test('config：未配置 pluginRoot 时使用默认 demo_plugins', () => {
+  const def = path.join(os.tmpdir(), 'df-aisite-default-plugins');
+  const s = createAiSiteConfigStore({ file: tmpFile(), defaultPluginRoot: def });
+  assert.equal(s.get().pluginRoot, path.resolve(def));
+});

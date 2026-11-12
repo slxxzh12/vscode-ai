@@ -1,0 +1,15 @@
+{
+  "codeDir": "",
+  "branchPrefix": "feature/",
+  "commands": {
+    "test": "",
+    "build": "",
+    "package": ""
+  },
+  "rules": [
+    "不要执行 git commit、git push，不要修改 git 配置。",
+    "把改动留在工作区，由代码流水线负责提交与推送。",
+    "只修改与本次方案相关的文件，不要删除或覆盖无关文件。",
+    "可以运行测试验证，但不要引入无法安装的依赖。"
+  ]
+}

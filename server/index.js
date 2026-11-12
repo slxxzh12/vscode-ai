@@ -900,6 +900,7 @@ function buildWorkspace({ paths, port }) {
   const proxyMount = createProxyMount({ store: proxyStore, engine: proxyEngine, capture: proxyCapture, logger: log });
   const aiSite = createAiSite({
     dir: paths.aiSiteDir,
+    defaultPluginRoot: path.join(APP_DIR, 'demo_plugins'),
     logger: log,
     isPrefixTaken: (prefix) => proxyStore.list().some((r) => r.mode === 'path' && (r.pathPrefix === prefix || r.pathPrefix.startsWith(prefix + '/') || prefix.startsWith(r.pathPrefix + '/'))),
     onRunState: (st) => {

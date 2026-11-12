@@ -42,7 +42,7 @@ test('mount：配置读写、插件预览、用户增删改', async () => {
     save(patch) { this.cfg = { ...this.cfg, ...patch }; return { ...this.cfg }; },
   };
   const { createAiSiteUsers } = await import('../ai-site/users.js');
-  const users = createAiSiteUsers({ file: path.join(root, 'users.json') });
+  const users = createAiSiteUsers({ file: path.join(root, 'users.json'), getSecret: () => 'k'.repeat(48) });
   const mount = createAiSiteMount({
     configStore: store, users, pluginsRoot: () => pluginRoot,
     apply: async () => { applied.push(1); }, status: () => ({ status: 'stopped' }),
@@ -61,8 +61,16 @@ test('mount：配置读写、插件预览、用户增删改', async () => {
 
   const created = await call(mount, { method: 'POST', path: '/api/ai-site/users', body: { username: 'alice' } });
   assert.equal(created.status, 200);
-  assert.ok(created.body.item.token);
+  assert.ok(created.body.item.jwt);
   const id = created.body.item.id;
+
+  const rev = await call(mount, { method: 'POST', path: '/api/ai-site/revoke', body: { username: 'alice' } });
+  assert.equal(rev.status, 200);
+  assert.deepEqual(rev.body.blacklist, ['alice']);
+  const list = await call(mount, { path: '/api/ai-site/users' });
+  assert.equal(list.body.items[0].revoked, true);
+  const back = await call(mount, { method: 'POST', path: '/api/ai-site/revoke', body: { username: 'alice', revoked: false } });
+  assert.deepEqual(back.body.blacklist, []);
 
   const updated = await call(mount, { method: 'PATCH', path: '/api/ai-site/users', body: { id, enabled: false } });
   assert.equal(updated.body.item.enabled, false);

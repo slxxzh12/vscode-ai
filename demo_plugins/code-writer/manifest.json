@@ -1,0 +1,21 @@
+{
+  "name": "写代码",
+  "description": "按 workflow/config.json 的代码仓与命令，先切到当前 git 用户分支，再读取本次方案目录开始编码",
+  "workflow": "workflow/workflow.md",
+  "logo": "logo.svg",
+  "fields": [
+    {
+      "key": "solutionDir",
+      "label": "本次方案目录",
+      "type": "text",
+      "required": true,
+      "placeholder": "例如：<方案仓>/docs/version/US000001-2021-需求名称"
+    },
+    {
+      "key": "codeDir",
+      "label": "代码仓目录覆盖",
+      "type": "text",
+      "placeholder": "留空则使用 workflow/config.json 里的 codeDir"
+    }
+  ]
+}

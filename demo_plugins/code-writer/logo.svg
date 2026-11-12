@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="写代码">
+  <rect width="64" height="64" rx="14" fill="#0b3d91"/>
+  <polyline points="24,22 14,32 24,42" fill="none" stroke="#7ee787" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="40,22 50,32 40,42" fill="none" stroke="#7ee787" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="36" y1="18" x2="28" y2="46" stroke="#f0f6fc" stroke-width="4" stroke-linecap="round"/>
+</svg>

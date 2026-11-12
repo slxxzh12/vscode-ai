@@ -238,6 +238,10 @@ function buildArch(arch, nodeBin) {
   if (fs.existsSync(path.join(ROOT, "demo_ppt"))) {
     cpDir(path.join(ROOT, "demo_ppt"), path.join(APP, "demo_ppt"));
   }
+  // demo_plugins/ 是「AI 小工具」的默认插件目录，随包提供示例
+  if (fs.existsSync(path.join(ROOT, "demo_plugins"))) {
+    cpDir(path.join(ROOT, "demo_plugins"), path.join(APP, "demo_plugins"));
+  }
   // 项目级技能与工作流（.void）随包发布；排除本机检测状态
   if (fs.existsSync(path.join(ROOT, ".void"))) {
     cpDir(
@@ -318,6 +322,10 @@ function buildArch(arch, nodeBin) {
   if (fs.existsSync(path.join(ROOT, "demo_ppt"))) {
     check(fs.existsSync(path.join(APP, "demo_ppt")), "missing demo_ppt/");
     console.log("[build-mac]   ok demo_ppt  (demo_ppt/)");
+  }
+  if (fs.existsSync(path.join(ROOT, "demo_plugins"))) {
+    check(fs.existsSync(path.join(APP, "demo_plugins")), "missing demo_plugins/");
+    console.log("[build-mac]   ok demo_plugins  (demo_plugins/)");
   }
 
   // 运行时依赖自检：以包内 server/ 的视角逐个 import，并真正调用一次 esbuild 原生二进制。

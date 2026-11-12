@@ -40,8 +40,7 @@ export function loginPage({ base = '', error = false }) {
   return shell(t('ai_site.login.title'),
     `<header><h1>${esc(t('ai_site.login.title'))}</h1></header>
 <main><form class="card" method="POST" action="${esc(action)}">
-<label>${esc(t('ai_site.login.username'))}</label><input name="username" autocomplete="username" />
-<label>${esc(t('ai_site.login.token'))}</label><input name="token" type="password" autocomplete="current-password" />
+<label>${esc(t('ai_site.login.token'))}</label><input name="token" type="password" autocomplete="off" />
 ${error ? `<p class="err">${esc(t('ai_site.login.error'))}</p>` : ''}
 <p><button type="submit">${esc(t('ai_site.login.submit'))}</button></p>
 </form></main>`);

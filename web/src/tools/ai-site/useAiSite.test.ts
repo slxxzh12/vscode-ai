@@ -10,7 +10,7 @@ beforeEach(() => {
   fetchMock = vi.fn((u: string) => {
     if (String(u) === '/api/ai-site/config') return okJson({ config: { pluginRoot: 'C:/p', mode: 'port', listenPort: 22300, pathPrefix: '/ai', enabled: true, requireAuth: true, listenHost: '0.0.0.0', sessionSecret: 'x' }, status: { status: 'running' } });
     if (String(u) === '/api/ai-site/plugins') return okJson({ items: [{ name: 'p1', title: 'P1' }] });
-    if (String(u) === '/api/ai-site/users') return okJson({ items: [{ id: 'u1', username: 'alice', uses: 2 }] });
+    if (String(u) === '/api/ai-site/users') return okJson({ items: [{ id: 'u1', username: 'alice', jwt: 'a.b.c', exp: 1, revoked: false, uses: 2 }] });
     return okJson({});
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -41,5 +41,22 @@ describe('useAiSite', () => {
     const r = await api.pickFolder();
     expect(r.path).toBe('C:/plugins');
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/projects/pick');
+  });
+
+  it('createUser 带 expiresAt；revokeUser 走 /api/ai-site/revoke', async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    fetchMock.mockImplementation((u: string, opt?: RequestInit) => {
+      calls.push([String(u), opt]);
+      if (String(u) === '/api/ai-site/users' && opt?.method === 'POST') return okJson({ item: { id: 'u2', username: 'bob', jwt: 'x.y.z' } });
+      if (String(u) === '/api/ai-site/users') return okJson({ items: [] });
+      return okJson({ ok: true });
+    });
+    const api = useAiSite();
+    await api.createUser('bob', 1234567890000);
+    const post = calls.find(([u, o]) => u === '/api/ai-site/users' && o?.method === 'POST');
+    expect(JSON.parse(String(post![1]!.body))).toEqual({ username: 'bob', expiresAt: 1234567890000 });
+    await api.revokeUser('bob', true);
+    const rev = calls.find(([u]) => u === '/api/ai-site/revoke');
+    expect(JSON.parse(String(rev![1]!.body))).toEqual({ username: 'bob', revoked: true });
   });
 });

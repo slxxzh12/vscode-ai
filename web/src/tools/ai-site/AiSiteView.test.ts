@@ -15,8 +15,8 @@ beforeEach(() => {
     const s = String(u);
     if (s === '/api/ai-site/config') return okJson({ config: CONFIG, status: { status: 'running', error: null } });
     if (s === '/api/ai-site/plugins') return okJson({ items: [{ name: 'p1', title: 'P1', description: 'd' }] });
-    if (s === '/api/ai-site/users' && opt?.method === 'POST') return okJson({ ok: true, item: { id: 'u2', username: 'bob', token: 't2', enabled: true, uses: 0, lastLoginAt: 0, lastRunAt: 0 } });
-    if (s === '/api/ai-site/users') return okJson({ items: [{ id: 'u1', username: 'alice', token: 't', enabled: true, uses: 2, lastLoginAt: 0, lastRunAt: 0 }] });
+    if (s === '/api/ai-site/users' && opt?.method === 'POST') return okJson({ ok: true, item: { id: 'u2', username: 'bob', jwt: 'a.b.c', jti: 'j2', iat: 1, exp: Math.floor(Date.now() / 1000) + 86400, revoked: false, enabled: true, uses: 0, lastLoginAt: 0, lastRunAt: 0 } });
+    if (s === '/api/ai-site/users') return okJson({ items: [{ id: 'u1', username: 'alice', jwt: 'a.b.c', jti: 'j1', iat: 1, exp: Math.floor(Date.now() / 1000) + 86400, revoked: false, enabled: true, uses: 2, lastLoginAt: 0, lastRunAt: 0 }] });
     if (s.startsWith('/api/projects/pick')) return okJson({ path: 'C:/plugins' });
     return okJson({ ok: true });
   });
@@ -37,11 +37,15 @@ describe('AiSiteView', () => {
   it('新增用户走 POST /api/ai-site/users', async () => {
     const w = mountC(AiSiteView);
     await flushPromises();
+    expect(w.find('[data-field="new-expiry"]').exists()).toBe(true);
     await w.find('[data-field="new-user"]').setValue('bob');
     await w.find('[data-action="add-user"]').trigger('click');
     await flushPromises();
     const post = fetchMock.mock.calls.find((c) => String(c[0]) === '/api/ai-site/users' && (c[1] as RequestInit)?.method === 'POST');
     expect(post).toBeTruthy();
+    const body = JSON.parse(String((post![1] as RequestInit).body));
+    expect(body.username).toBe('bob');
+    expect(body.expiresAt).toBeGreaterThan(Date.now());
     w.unmount();
   });
 });

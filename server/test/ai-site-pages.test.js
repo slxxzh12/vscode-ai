@@ -12,12 +12,12 @@ const PLUGIN = {
   ],
 };
 
-test('pages：登录页包含表单与用户名/token 字段', () => {
+test('pages：登录页只需 JWT token 字段', () => {
   setLocale('zh-CN');
   const html = loginPage({ base: '/ai' });
   assert.match(html, /<form[^>]+action="\/ai\/__login"/);
-  assert.match(html, /name="username"/);
   assert.match(html, /name="token"/);
+  assert.doesNotMatch(html, /name="username"/);
 });
 
 test('pages：列表页展示 logo/name/description 与链接', () => {

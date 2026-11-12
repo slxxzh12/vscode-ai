@@ -60,7 +60,10 @@ export function createAiSiteServe({ getConfig, users, runner, logger = console }
     if (sig.length !== expect.length) return null;
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return null;
     const u = users.get(userId);
-    return u && u.enabled ? u : null;
+    if (!u || !u.enabled) return null;
+    if (users.isExpired && users.isExpired(u)) return null;
+    if (users.isRevoked && users.isRevoked(u.username)) return null;
+    return u;
   }
 
   async function handle(req, res, url, { base = '' } = {}) {
@@ -72,7 +75,7 @@ export function createAiSiteServe({ getConfig, users, runner, logger = console }
       let body = '';
       try { body = await readBody(req); } catch { return sendJson(res, 400, { error: 'bad-request' }); }
       const form = new URLSearchParams(body);
-      const u = users.findByLogin(form.get('username') || '', form.get('token') || '');
+      const u = users.findByJwt(form.get('token') || '');
       if (!u) return sendHtml(res, 401, loginPage({ base, error: true }));
       res.writeHead(302, { 'Set-Cookie': cookieFor(cfg.sessionSecret, u.id, base), Location: `${base}/` });
       res.end();
@@ -135,7 +138,7 @@ export function createAiSiteServe({ getConfig, users, runner, logger = console }
         run = runner.createRun({
           pluginName: plugin.name, pluginTitle: plugin.title, pluginDir: plugin.dir,
           workflowPath: path.join(plugin.dir, plugin.workflow),
-          values: clean, user: user.id || 'anonymous', ip: clientIp(req),
+          values: clean, user: user.username || user.id || 'anonymous', ip: clientIp(req),
         });
       } catch (e) {
         logger?.warn?.('ai-site run failed', (e && e.message) || e);

@@ -1,0 +1,21 @@
+{
+  "name": "问候语生成器",
+  "description": "根据输入的名字与风格生成一段问候语，产物写入 output/hello.md",
+  "workflow": "workflow.md",
+  "fields": [
+    {
+      "key": "name",
+      "label": "名字",
+      "type": "text",
+      "required": true,
+      "placeholder": "例如：小明"
+    },
+    {
+      "key": "style",
+      "label": "风格",
+      "type": "select",
+      "options": ["正式", "轻松", "幽默"],
+      "default": "轻松"
+    }
+  ]
+}

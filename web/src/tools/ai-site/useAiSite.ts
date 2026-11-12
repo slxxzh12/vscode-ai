@@ -11,7 +11,7 @@ export interface AiSiteConfig {
   sessionSecret: string;
 }
 export interface AiSiteStatus { status: 'running' | 'stopped' | 'error'; error: string | null; mode?: string; enabled?: boolean }
-export interface AiSiteUser { id: string; username: string; token: string; enabled: boolean; uses: number; lastLoginAt: number; lastRunAt: number }
+export interface AiSiteUser { id: string; username: string; jwt: string; jti: string; iat: number; exp: number; revoked: boolean; enabled: boolean; uses: number; lastLoginAt: number; lastRunAt: number }
 export interface AiSitePlugin { name: string; title: string; description: string; hasLogo: boolean; fields: unknown[]; error: string | null }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -32,8 +32,9 @@ export interface AiSiteApi {
   save: (patch: Partial<AiSiteConfig>) => Promise<AiSiteConfig>;
   start: () => Promise<void>;
   stop: () => Promise<void>;
-  createUser: (username: string) => Promise<AiSiteUser>;
-  updateUser: (id: string, patch: Partial<AiSiteUser>) => Promise<AiSiteUser>;
+  createUser: (username: string, expiresAt?: number) => Promise<AiSiteUser>;
+  updateUser: (id: string, patch: { enabled?: boolean; username?: string; expiresAt?: number }) => Promise<AiSiteUser>;
+  revokeUser: (username: string, revoked: boolean) => Promise<void>;
   removeUser: (id: string) => Promise<void>;
   pickFolder: () => Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }>;
 }
@@ -81,16 +82,21 @@ export function useAiSite(): AiSiteApi {
     status.value = j.status as AiSiteStatus;
   }
 
-  async function createUser(username: string): Promise<AiSiteUser> {
-    const j = await jfetch('/api/ai-site/users', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username }) });
+  async function createUser(username: string, expiresAt?: number): Promise<AiSiteUser> {
+    const j = await jfetch('/api/ai-site/users', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, expiresAt }) });
     await loadUserList();
     return j.item as AiSiteUser;
   }
 
-  async function updateUser(id: string, patch: Partial<AiSiteUser>): Promise<AiSiteUser> {
+  async function updateUser(id: string, patch: { enabled?: boolean; username?: string; expiresAt?: number }): Promise<AiSiteUser> {
     const j = await jfetch('/api/ai-site/users', { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ id, ...patch }) });
     await loadUserList();
     return j.item as AiSiteUser;
+  }
+
+  async function revokeUser(username: string, revoked: boolean): Promise<void> {
+    await jfetch('/api/ai-site/revoke', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ username, revoked }) });
+    await loadUserList();
   }
 
   async function removeUser(id: string): Promise<void> {
@@ -102,5 +108,5 @@ export function useAiSite(): AiSiteApi {
     return jfetch('/api/projects/pick', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
   }
 
-  return { config, status, users, plugins, load, save, start, stop, createUser, updateUser, removeUser, pickFolder };
+  return { config, status, users, plugins, load, save, start, stop, createUser, updateUser, revokeUser, removeUser, pickFolder };
 }

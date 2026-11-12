@@ -11,9 +11,9 @@ function matchPrefix(prefix, pathname) {
   return pathname === prefix || pathname.startsWith(prefix + '/');
 }
 
-export function createAiSite({ dir, logger = console, isPrefixTaken = () => false, runnerOptions = {}, onRunState = () => {} } = {}) {
-  const configStore = createAiSiteConfigStore({ file: path.join(dir, 'config.json'), isPrefixTaken });
-  const users = createAiSiteUsers({ file: path.join(dir, 'users.json') });
+export function createAiSite({ dir, logger = console, isPrefixTaken = () => false, defaultPluginRoot = '', runnerOptions = {}, onRunState = () => {} } = {}) {
+  const configStore = createAiSiteConfigStore({ file: path.join(dir, 'config.json'), isPrefixTaken, defaultPluginRoot });
+  const users = createAiSiteUsers({ file: path.join(dir, 'users.json'), getSecret: () => configStore.get().sessionSecret });
   const runner = createAiSiteRunner({ runsDir: path.join(dir, 'runs'), onStateChange: onRunState, ...runnerOptions });
   const serve = createAiSiteServe({ getConfig: () => configStore.get(), users, runner, logger });
   let server = null;

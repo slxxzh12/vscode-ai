@@ -24,9 +24,10 @@ function setup() {
   fs.mkdirSync(path.join(p, 'workflow'), { recursive: true });
   fs.writeFileSync(path.join(p, 'manifest.json'), JSON.stringify({ name: 'Hello', workflow: 'workflow/prompt.md', fields: [{ key: 'x', label: 'X', type: 'text', required: true }] }));
   fs.writeFileSync(path.join(p, 'workflow', 'prompt.md'), 'PROMPT');
-  const users = createAiSiteUsers({ file: path.join(root, 'users.json') });
+  const secret = 'k'.repeat(48);
+  const users = createAiSiteUsers({ file: path.join(root, 'users.json'), getSecret: () => secret });
   const runner = createAiSiteRunner({ runsDir: path.join(root, 'runs'), resolveBin: () => 'opencode', spawnFn: () => fakeChild() });
-  return { root, pluginRoot, users, runner };
+  return { root, pluginRoot, users, runner, secret };
 }
 
 function listen(handler) {
@@ -34,10 +35,10 @@ function listen(handler) {
   return new Promise((resolve) => srv.listen(0, '127.0.0.1', () => resolve({ srv, port: srv.address().port })));
 }
 
-test('serve：未登录跳登录页，登录后可看插件列表并执行', async () => {
+test('serve：未登录跳登录页，JWT 登录后下发 cookie 并可执行', async () => {
   setLocale('zh-CN');
-  const { pluginRoot, users, runner } = setup();
-  const config = { pluginRoot, requireAuth: true, sessionSecret: 'k'.repeat(48), pathPrefix: '' };
+  const { pluginRoot, users, runner, secret } = setup();
+  const config = { pluginRoot, requireAuth: true, sessionSecret: secret, pathPrefix: '' };
   const serve = createAiSiteServe({ getConfig: () => config, users, runner, logger: console });
   const { srv, port } = await listen((req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -46,13 +47,13 @@ test('serve：未登录跳登录页，登录后可看插件列表并执行', asy
   try {
     const r1 = await fetch(`http://127.0.0.1:${port}/`, { redirect: 'manual' });
     assert.equal(r1.status, 200);
-    assert.match(await r1.text(), /name="username"/);
+    assert.match(await r1.text(), /name="token"/);
 
     const u = users.create({ username: 'alice' });
     const r2 = await fetch(`http://127.0.0.1:${port}/__login`, {
       method: 'POST', redirect: 'manual',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `username=alice&token=${encodeURIComponent(u.token)}`,
+      body: `token=${encodeURIComponent(u.jwt)}`,
     });
     assert.equal(r2.status, 302);
     const cookie = String(r2.headers.get('set-cookie')).split(';')[0];
@@ -68,6 +69,36 @@ test('serve：未登录跳登录页，登录后可看插件列表并执行', asy
     const j = await r4.json();
     assert.ok(j.runId);
     assert.equal(users.list()[0].uses, 1);
+    // 运行记录的用户名来自 JWT 的 sub
+    assert.equal(runner.getRun(j.runId).user, 'alice');
+  } finally { srv.close(); }
+});
+
+test('serve：JWT 错误或被吊销则不登录', async () => {
+  setLocale('zh-CN');
+  const { pluginRoot, users, runner, secret } = setup();
+  const config = { pluginRoot, requireAuth: true, sessionSecret: secret, pathPrefix: '' };
+  const serve = createAiSiteServe({ getConfig: () => config, users, runner, logger: console });
+  const { srv, port } = await listen((req, res) => {
+    const url = new URL(req.url, 'http://x');
+    serve.handle(req, res, url, { base: '' });
+  });
+  try {
+    const u = users.create({ username: 'bob' });
+    const bad = await fetch(`http://127.0.0.1:${port}/__login`, {
+      method: 'POST', redirect: 'manual',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'token=wrong',
+    });
+    assert.equal(bad.status, 401);
+
+    users.revoke('bob');
+    const revoked = await fetch(`http://127.0.0.1:${port}/__login`, {
+      method: 'POST', redirect: 'manual',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `token=${encodeURIComponent(u.jwt)}`,
+    });
+    assert.equal(revoked.status, 401);
   } finally { srv.close(); }
 });
 

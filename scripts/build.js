@@ -189,6 +189,10 @@ cpDir(
 if (fs.existsSync(path.join(ROOT, "demo_ppt"))) {
   cpDir(path.join(ROOT, "demo_ppt"), path.join(APP, "demo_ppt"));
 }
+// demo_plugins/ 是「AI 小工具」的默认插件目录，随包提供示例
+if (fs.existsSync(path.join(ROOT, "demo_plugins"))) {
+  cpDir(path.join(ROOT, "demo_plugins"), path.join(APP, "demo_plugins"));
+}
 // 项目级技能与工作流（.void）随包发布；排除本机检测状态
 if (fs.existsSync(path.join(ROOT, ".void"))) {
   cpDir(
@@ -353,6 +357,10 @@ if (fs.existsSync(path.join(ROOT, ".void", "skills"))) {
 if (fs.existsSync(path.join(ROOT, "demo_ppt"))) {
   check(fs.existsSync(path.join(APP, "demo_ppt")), "missing demo_ppt/");
   console.log("[build]   ok demo_ppt  (demo_ppt/)");
+}
+if (fs.existsSync(path.join(ROOT, "demo_plugins"))) {
+  check(fs.existsSync(path.join(APP, "demo_plugins")), "missing demo_plugins/");
+  console.log("[build]   ok demo_plugins  (demo_plugins/)");
 }
 
 // 运行时依赖自检：收集 server 代码真正 import 的每一个运行时依赖

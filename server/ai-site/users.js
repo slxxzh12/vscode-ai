@@ -1,24 +1,39 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { genUserToken, normalizeUsername } from '../remote-users.js';
+import { normalizeUsername } from '../remote-users.js';
+import { signJwt, verifyJwt } from '../llm-jwt.js';
+
+const DAY = 86400000;
+const DEFAULT_DAYS = 30;
 
 function err(code, message) { const e = new Error(message || code); e.code = code; return e; }
-function safeEqual(a, b) {
-  const ba = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
-  if (ba.length !== bb.length) return false;
-  try { return crypto.timingSafeEqual(ba, bb); } catch { return false; }
+
+// 「有效日期」：接受毫秒时间戳或可解析的日期字符串；为空/非法则回退为 now+N 天。
+export function normalizeExpiry(value, now = Date.now()) {
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) return n;
+  const parsed = Date.parse(String(value || ''));
+  if (Number.isFinite(parsed)) return parsed;
+  return now + DEFAULT_DAYS * DAY;
+}
+
+export function isExpired(user, now = Date.now()) {
+  return Number(user?.exp) > 0 && Math.floor(now / 1000) >= Number(user.exp);
 }
 
 function normalizeStored(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const id = String(raw.id || '').trim();
   const username = String(raw.username || '').trim();
-  const token = String(raw.token || '').trim();
-  if (!id || !username || !token) return null;
+  if (!id || !username) return null;
   return {
-    id, username, token,
+    id,
+    username,
+    jwt: String(raw.jwt || ''),
+    jti: String(raw.jti || ''),
+    iat: Number(raw.iat) || 0,
+    exp: Number(raw.exp) || 0,
     enabled: raw.enabled !== false,
     createdAt: Number(raw.createdAt) || 0,
     updatedAt: Number(raw.updatedAt) || 0,
@@ -28,30 +43,72 @@ function normalizeStored(raw) {
   };
 }
 
-export function createAiSiteUsers({ file } = {}) {
+export function createAiSiteUsers({ file, getSecret = () => '' } = {}) {
   let list = null;
+  let blacklist = null;
+
+  function issue(username, expiresAt, now = Date.now()) {
+    const exp = Math.floor(normalizeExpiry(expiresAt, now) / 1000);
+    const jti = crypto.randomUUID();
+    const iat = Math.floor(now / 1000);
+    return { jwt: signJwt({ sub: username, jti, exp }, getSecret(), { now }), jti, iat, exp };
+  }
 
   function load() {
-    if (list) return list;
-    try {
-      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-      list = (Array.isArray(raw?.users) ? raw.users : []).map(normalizeStored).filter(Boolean);
-    } catch { list = []; }
+    if (list && blacklist) return list;
+    let raw = {};
+    try { raw = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { raw = {}; }
+    list = (Array.isArray(raw?.users) ? raw.users : []).map(normalizeStored).filter(Boolean);
+    blacklist = new Set((Array.isArray(raw?.blacklist) ? raw.blacklist : [])
+      .map((s) => String(s || '').trim().toLowerCase()).filter(Boolean));
+    // 旧档案（随机 token，无 JWT）迁移为 30 天有效的 JWT
+    let changed = false;
+    for (const u of list) {
+      if (!u.jwt || !u.jti || !u.exp) {
+        Object.assign(u, issue(u.username, Date.now() + DEFAULT_DAYS * DAY));
+        changed = true;
+      }
+    }
+    if (changed) { try { persist(); } catch { /* ignore */ } }
     return list;
   }
 
   function persist() {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ users: list }, null, 2), 'utf8');
+    fs.writeFileSync(tmp, JSON.stringify({ users: list, blacklist: [...blacklist] }, null, 2), 'utf8');
     fs.renameSync(tmp, file);
   }
 
-  function view(u) { return { ...u }; }
+  function isRevoked(username) {
+    load();
+    return blacklist.has(String(username || '').trim().toLowerCase());
+  }
+
+  function view(u) { return { ...u, revoked: isRevoked(u.username) }; }
 
   function ensureUnique(username, selfId) {
     const uname = username.toLowerCase();
     if (load().some((x) => x.id !== selfId && x.username.toLowerCase() === uname)) throw err('duplicate-username', 'username exists');
+  }
+
+  function findByJwt(jwt) {
+    let payload;
+    try { payload = verifyJwt(String(jwt || ''), getSecret()); } catch { return null; }
+    const u = load().find((x) => x.jti === payload.jti && x.enabled);
+    if (!u || payload.sub !== u.username || isExpired(u) || isRevoked(u.username)) return null;
+    u.lastLoginAt = Date.now();
+    try { persist(); } catch { /* ignore */ }
+    return view(u);
+  }
+
+  function revoke(username, revoked = true) {
+    load();
+    const name = String(username || '').trim().toLowerCase();
+    if (!name) throw err('bad-request', 'username required');
+    if (revoked) blacklist.add(name); else blacklist.delete(name);
+    persist();
+    return { blacklist: [...blacklist] };
   }
 
   return {
@@ -65,8 +122,9 @@ export function createAiSiteUsers({ file } = {}) {
       ensureUnique(username, null);
       const ts = Date.now();
       const u = {
-        id: crypto.randomUUID(), username, token: genUserToken(), enabled: input.enabled !== false,
-        createdAt: ts, updatedAt: ts, lastLoginAt: 0, lastRunAt: 0, uses: 0,
+        id: crypto.randomUUID(), username, ...issue(username, input.expiresAt, ts),
+        enabled: input.enabled !== false, createdAt: ts, updatedAt: ts,
+        lastLoginAt: 0, lastRunAt: 0, uses: 0,
       };
       load().push(u);
       persist();
@@ -78,13 +136,19 @@ export function createAiSiteUsers({ file } = {}) {
       if (i < 0) throw err('not-found', 'user not found');
       const username = patch.username === undefined ? arr[i].username : normalizeUsername(patch.username);
       ensureUnique(username, arr[i].id);
-      arr[i] = {
+      const ts = Date.now();
+      const next = {
         ...arr[i], username,
         enabled: patch.enabled === undefined ? arr[i].enabled : !!patch.enabled,
-        updatedAt: Date.now(),
+        updatedAt: ts,
       };
+      if (patch.username !== undefined || patch.expiresAt !== undefined) {
+        const expiresAt = patch.expiresAt !== undefined ? patch.expiresAt : Number(arr[i].exp) * 1000;
+        Object.assign(next, issue(username, expiresAt, ts));
+      }
+      arr[i] = next;
       persist();
-      return view(arr[i]);
+      return view(next);
     },
     remove(id) {
       const arr = load();
@@ -94,22 +158,13 @@ export function createAiSiteUsers({ file } = {}) {
       persist();
       return true;
     },
-    findByLogin(username, token) {
-      const name = String(username || '').trim().toLowerCase();
-      const tk = String(token || '');
-      if (!name || !tk) return null;
-      const u = load().find((x) => x.enabled && x.username.toLowerCase() === name && safeEqual(tk, x.token));
-      if (!u) return null;
-      u.lastLoginAt = Date.now();
-      try { persist(); } catch { /* ignore */ }
-      return view(u);
-    },
-    findByToken(token) {
-      const tk = String(token || '');
-      if (!tk) return null;
-      const u = load().find((x) => x.enabled && safeEqual(tk, x.token));
-      return u ? view(u) : null;
-    },
+    // 首次登录：校验 JWT 签名/有效期，并确认用户与 jti 匹配且未停用。
+    findByJwt,
+    findByToken: findByJwt,
+    isExpired(user, now) { return isExpired(user, now); },
+    isRevoked,
+    revoke,
+    blacklist() { load(); return [...blacklist]; },
     recordUse(id, at = Date.now()) {
       const u = load().find((x) => x.id === String(id || ''));
       if (!u) return null;

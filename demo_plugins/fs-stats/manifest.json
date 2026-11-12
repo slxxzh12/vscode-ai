@@ -1,0 +1,15 @@
+{
+  "name": "目录文件统计",
+  "description": "多文件工作流：第一步统计 .js 文件数量，第二步汇总所有文件总大小，结果写入 output/report.md",
+  "workflow": "workflow/workflow.md",
+  "logo": "logo.svg",
+  "fields": [
+    {
+      "key": "dir",
+      "label": "目标目录",
+      "type": "text",
+      "placeholder": "留空或 . = 当前目录",
+      "default": "."
+    }
+  ]
+}
