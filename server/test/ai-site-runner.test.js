@@ -101,3 +101,25 @@ test('runnerï¼šoutput æ–‡ä»¶åˆ—è¡¨ã€è¯»å–é˜²ç©¿è¶Šã€zip', async () => {
   const zip = runner.zipOutput(run.id);
   assert.equal(zip.subarray(0, 2).toString('utf8'), 'PK');
 });
+
+test('runner£ºonStateChange »Øµ÷ start/finish', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-state-'));
+  const pluginDir = setupPlugin(root);
+  const runsDir = path.join(root, 'runs');
+  const events = [];
+  const runner = createAiSiteRunner({
+    runsDir, resolveBin: () => 'opencode', onStateChange: (e) => events.push(e),
+    spawnFn: () => {
+      const c = fakeChild();
+      setTimeout(() => { c.stdout.emit('data', 'ok'); c.emit('close', 0); }, 0);
+      return c;
+    },
+  });
+  runner.createRun({ pluginName: 'translate', pluginTitle: '·­ÒëÖúÊÖ', pluginDir, workflowPath: path.join(pluginDir, 'workflow', 'prompt.md'), values: {}, user: 'u1' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(events[0].phase, 'start');
+  assert.equal(events[0].pluginTitle, '·­ÒëÖúÊÖ');
+  assert.equal(events.at(-1).phase, 'finish');
+  assert.equal(events.at(-1).status, 'success');
+  assert.equal(events.at(-1).user, 'u1');
+});

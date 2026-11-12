@@ -38,6 +38,7 @@ export function createAiSiteRunner({
   timeoutMs = Number(process.env.DEVFLOW_AI_SITE_TIMEOUT_MS || 10 * 60 * 1000),
   keepRuns = 50,
   resolveBin = resolveAgentBin,
+  onStateChange = () => {},
 } = {}) {
   const runs = new Map();
 
@@ -69,7 +70,7 @@ export function createAiSiteRunner({
     for (const cb of run.listeners) { try { cb(event); } catch { /* ignore */ } }
   }
 
-  function createRun({ pluginName, pluginDir, workflowPath, values = {}, user = '' }) {
+  function createRun({ pluginName, pluginTitle = pluginName, pluginDir, workflowPath, values = {}, user = '' }) {
     const id = crypto.randomUUID();
     const runDir = path.join(runsDir, id);
     fs.mkdirSync(path.join(runDir, 'output'), { recursive: true });
@@ -90,6 +91,7 @@ export function createAiSiteRunner({
     };
     fs.writeFileSync(path.join(runDir, 'run.json'), JSON.stringify(publicMeta(meta), null, 2), 'utf8');
     runs.set(id, meta);
+    try { onStateChange({ ...publicMeta(meta), phase: 'start', pluginTitle, runDir }); } catch { /* ignore */ }
 
     const bin = resolveBin(agentCmd);
     const wrapped = wrapCmdBin(bin, ['run', prompt]);
@@ -113,6 +115,7 @@ export function createAiSiteRunner({
       if (errMsg) meta.error = errMsg;
       try { fs.writeFileSync(path.join(runDir, 'run.json'), JSON.stringify(publicMeta(meta), null, 2), 'utf8'); } catch { /* ignore */ }
       emit(meta, { type: 'done', status: meta.status, exitCode: meta.exitCode, error: meta.error });
+      try { onStateChange({ ...publicMeta(meta), phase: 'finish', pluginTitle, runDir }); } catch { /* ignore */ }
     }
 
     try {
