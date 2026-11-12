@@ -532,6 +532,19 @@ test('/api/code/stats POST 坏 dir 400、不存在 404', async (t) => {
   assert.equal(nf.status, 404);
 });
 
+test('/api/code/secret-scan POST 返回命中与脱敏结果', async (t) => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'a.js'), 'const u = "https://user:pass@example.com/x";\n');
+  const server = await start(new Projects({ projects: [] }));
+  t.after(() => server.close());
+  const r = await post(server, '/api/code/secret-scan', { dir });
+  assert.equal(r.status, 200);
+  const j = JSON.parse(r.body);
+  assert.equal(j.totals.findings, 1);
+  assert.equal(j.findings[0].rule, 'credential-url');
+  assert.ok(!j.findings[0].match.includes('pass@example'));
+});
+
 test('/api/export/zip 返回可回读的 zip', async (t) => {
   const server = await start(new Projects({ projects: [] }));
   t.after(() => server.close());
