@@ -58,7 +58,7 @@ export function createAiSiteRunner({
 
   function publicMeta(meta) {
     return {
-      id: meta.id, plugin: meta.plugin, user: meta.user,
+      id: meta.id, plugin: meta.plugin, user: meta.user, sessionId: meta.sessionId || '',
       startedAt: meta.startedAt, finishedAt: meta.finishedAt,
       exitCode: meta.exitCode, status: meta.status, error: meta.error,
     };
@@ -86,7 +86,7 @@ export function createAiSiteRunner({
 
     const meta = {
       id, plugin: pluginName, user, startedAt: Date.now(), finishedAt: 0,
-      exitCode: null, status: 'running', error: null,
+      exitCode: null, status: 'running', error: null, sessionId: '',
       listeners: new Set(), events: [], log: '',
     };
     fs.writeFileSync(path.join(runDir, 'run.json'), JSON.stringify(publicMeta(meta), null, 2), 'utf8');
@@ -130,6 +130,10 @@ export function createAiSiteRunner({
     const onData = (chunk) => {
       const text = String(chunk);
       meta.log = (meta.log + text).slice(-LOG_LIMIT);
+      if (!meta.sessionId) {
+        const m = meta.log.match(/"sessionID"\s*:\s*"([^"]+)"/);
+        if (m) meta.sessionId = m[1];
+      }
       try { fs.appendFileSync(logPath, text, 'utf8'); } catch { /* ignore */ }
       emit(meta, { type: 'chunk', data: text });
     };

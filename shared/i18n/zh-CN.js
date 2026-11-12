@@ -1765,6 +1765,8 @@ export const messages = {
   'jobs.user.title': '用户触发任务',
   'jobs.user.empty': '暂无用户触发任务',
   'jobs.user.user': '用户',
+  'jobs.col.executor': '执行人',
+  'jobs.col.session': '会话',
   'nav.mobile': '应用市场',
   'market.title': '应用市场',
   'market.clients': '客户端',

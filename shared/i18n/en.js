@@ -1765,6 +1765,8 @@ export const messages = {
   'jobs.user.title': 'User-triggered tasks',
   'jobs.user.empty': 'No user-triggered tasks',
   'jobs.user.user': 'User',
+  'jobs.col.executor': 'Executor',
+  'jobs.col.session': 'Session',
   'nav.mobile': 'App Market',
   'market.title': 'App Market',
   'market.clients': 'Clients',

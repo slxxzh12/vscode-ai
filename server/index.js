@@ -884,18 +884,18 @@ function buildWorkspace({ paths, port }) {
         groupName: 'ai-site', taskId: st.id, classname: 'ai-site', methodName: 'run',
         createIP: `${HOST}:${port}`, workIP: `${HOST}:${port}`, createMachineId: engine.pub.machineId,
       };
-      const result = { runId: st.id, logPath: runLog, outputDir: runOut };
+      const result = { runId: st.id, sessionId: st.sessionId || '', executor: st.user || 'system', logPath: runLog, outputDir: runOut };
       if (st.phase === 'start') {
         void scheduler.queue.enqueueExternalJob({
           jobId, ...base, status: 3, createTime: st.startedAt,
-          paramStr: { task: { name: st.pluginTitle || st.plugin }, plugin: st.plugin, user: st.user, runId: st.id, runDir: st.runDir },
+          paramStr: { task: { name: st.pluginTitle || st.plugin }, plugin: st.plugin, user: st.user, executor: st.user || 'system', runId: st.id, sessionId: '', runDir: st.runDir },
           result,
         }).catch((e) => log.warn?.('ai-site queue enqueue failed', (e && e.message) || e));
       } else {
         void scheduler.queue.updateExternalJob(jobId, {
           status: st.status === 'success' ? 1 : 2,
           runtime: Math.max(0, Number(st.finishedAt) - Number(st.startedAt)),
-          result: { ...result, status: st.status, error: st.error },
+          result: { ...result, sessionId: st.sessionId || '', status: st.status, error: st.error },
         }).catch((e) => log.warn?.('ai-site queue update failed', (e && e.message) || e));
       }
     },

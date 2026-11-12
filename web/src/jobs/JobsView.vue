@@ -14,6 +14,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 const detail = ref<Job | null>(null);
 const sortedJobs = computed(() => [...jobs.state.jobs].sort((a, b) =>
   (b.createTime || 0) - (a.createTime || 0) || String(b.jobId).localeCompare(String(a.jobId))));
+const userJobs = computed(() => sortedJobs.value.filter((j) => j.groupName === 'ai-site'));
 const workers = ref<any[]>([]);
 const isMaster = ref(false);
 const configOpen = ref(false);
@@ -63,6 +64,25 @@ function reportOf(job: Job): string {
     }
     return '';
   } catch { return ''; }
+}
+function paramOf(job: Job): any {
+  try { return JSON.parse(job.paramStr || '{}'); } catch { return {}; }
+}
+function resultOf(job: Job): any {
+  try { return JSON.parse(job.result || '{}'); } catch { return {}; }
+}
+function executorOf(job: Job): string {
+  const p = paramOf(job);
+  const r = resultOf(job);
+  return String(p.executor || r.executor || (job.groupName === 'ai-site' ? p.user : '') || 'system');
+}
+function sessionIdOf(job: Job): string {
+  const r = resultOf(job);
+  const p = paramOf(job);
+  return String(r.sessionId || r.ngaSessionId || p.sessionId || '');
+}
+function userOf(job: Job): string {
+  return executorOf(job);
 }
 function ngaSessionOf(job: Job | null): string {
   if (!job) return '';
@@ -144,6 +164,29 @@ onMounted(() => { void loadPipelineAutoDev(); });
         {{ w.hostport }} · {{ w.role }} · {{ w.online ? $t('jobs.worker.online') : $t('jobs.worker.offline') }} · P{{ w.partitionIds }}
       </span>
     </section>
+    <section v-if="userJobs.length" class="user-jobs">
+      <div class="uj-title">{{ $t('jobs.user.title') }}</div>
+      <el-table :data="userJobs" size="small" stripe class="jobs-table" @row-click="(row: Job) => (detail = row)">
+        <el-table-column :label="$t('sched.col.status')" width="96">
+          <template #default="{ row }"><el-tag size="small" :type="jobTagType(row.status)">{{ jobStatusLabel(row.status) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column :label="$t('sched.col.name')" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ taskNameOf(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.executor')" width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ executorOf(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.session')" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ sessionIdOf(row) || '—' }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.time')" width="180">
+          <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.job')" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }"><span class="jid">{{ row.jobId }}</span></template>
+        </el-table-column>
+      </el-table>
+    </section>
     <div class="job-list">
       <el-table
         :data="sortedJobs"
@@ -160,6 +203,12 @@ onMounted(() => { void loadPipelineAutoDev(); });
         </el-table-column>
         <el-table-column :label="$t('sched.col.name')" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ taskNameOf(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.executor')" width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ executorOf(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="$t('jobs.col.session')" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ sessionIdOf(row) || '—' }}</template>
         </el-table-column>
         <el-table-column :label="$t('jobs.col.partition')" width="80">
           <template #default="{ row }">P{{ row.partitionId }}</template>
@@ -182,6 +231,8 @@ onMounted(() => { void loadPipelineAutoDev(); });
       <button class="close" @click="detail = null">×</button>
       <h3>{{ $t('jobs.detail.title') }}</h3>
       <div>jobId: {{ detail.jobId }}</div>
+      <div>{{ $t('jobs.col.executor') }}: {{ executorOf(detail) }}</div>
+      <div>{{ $t('jobs.col.session') }}: {{ sessionIdOf(detail) || '—' }}</div>
       <div>parentJobId: {{ detail.parentJobId || '—' }}</div>
       <div>traceId: {{ detail.traceId || '—' }}</div>
       <div>partition: P{{ detail.partitionId }}</div>
@@ -249,6 +300,8 @@ onMounted(() => { void loadPipelineAutoDev(); });
 .workers { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; opacity: .8; }
 .worker.off { opacity: .45; }
 .job-list { border: 1px solid var(--border-color, #333); border-radius: 6px; overflow: hidden; }
+.user-jobs { margin-bottom: 12px; border: 1px solid var(--border-color, #333); border-radius: 6px; overflow: hidden; }
+.user-jobs .uj-title { padding: 8px 10px; font-weight: 600; border-bottom: 1px solid var(--border-color, #333); }
 .jobs-table { width: 100%; cursor: pointer; }
 .jid { opacity: .55; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .job-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 360px; overflow: auto; padding: 14px; background: var(--panel-bg, #1e1e1e); border-left: 1px solid var(--border-color, #333); z-index: 20; }

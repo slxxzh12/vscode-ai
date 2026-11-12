@@ -23,6 +23,8 @@ export function buildSnapshot(task, trigger, scheduledAt, createMachineId) {
     trigger,
     scheduledAt: scheduledAt || null,
     createMachineId: createMachineId || null,
+    executor: 'system',
+    sessionId: '',
   };
 }
 

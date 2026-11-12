@@ -123,3 +123,34 @@ test('runner：onStateChange 回调 start/finish', async () => {
   assert.equal(events.at(-1).status, 'success');
   assert.equal(events.at(-1).user, 'u1');
 });
+
+test('runner：从输出解析 sessionID，记录执行人与 runId', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-session-'));
+  const pluginDir = setupPlugin(root);
+  const runsDir = path.join(root, 'runs');
+  const events = [];
+  const runner = createAiSiteRunner({
+    runsDir, resolveBin: () => 'opencode', onStateChange: (e) => events.push(e),
+    spawnFn: () => {
+      const c = fakeChild();
+      setTimeout(() => { c.stdout.emit('data', '{"sessionID":"ses_abc"}'); c.emit('close', 0); }, 0);
+      return c;
+    },
+  });
+  const run = runner.createRun({ pluginName: 'translate', pluginTitle: '翻译助手', pluginDir, workflowPath: path.join(pluginDir, 'workflow', 'prompt.md'), values: {}, user: 'u1' });
+  await new Promise((r) => setTimeout(r, 20));
+  const fin = events.at(-1);
+  assert.equal(fin.phase, 'finish');
+  assert.equal(fin.sessionId, 'ses_abc');
+  assert.equal(fin.id, run.id);
+  assert.equal(fin.user, 'u1');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(runsDir, run.id, 'run.json'), 'utf8')).sessionId, 'ses_abc');
+});
+
+test('runner：解析不到 sessionID 时留空（runId 由队列侧记录）', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-aisite-noses-'));
+  const pluginDir = setupPlugin(root);
+  const runner = createAiSiteRunner({ runsDir: path.join(root, 'runs'), resolveBin: () => 'opencode', spawnFn: () => { throw new Error('no-spawn'); } });
+  const run = runner.createRun({ pluginName: 'translate', pluginDir, workflowPath: path.join(pluginDir, 'workflow', 'prompt.md'), values: {}, user: '' });
+  assert.equal(run.sessionId, '');
+});
