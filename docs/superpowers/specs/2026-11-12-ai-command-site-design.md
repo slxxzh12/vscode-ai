@@ -203,3 +203,16 @@
 - 「任务队列」页面新增「用户触发任务」列表区块：从同一份作业数据里筛 `groupName='ai-site'`，
   展示插件名、用户、状态、时间、耗时；点击进入现有详情抽屉，日志走 `result.logPath`。
 - 使用次数仍由 AI 站点自己的 `users.json` 统计；队列记录只用于展示与生命周期。
+
+## 补充：执行人 / 会话 / 发起 IP 与「继续会话」
+
+- 队列作业记录（`t_sched_job`）额外保存：
+  - `executor`：AI 站点触发 = 登录用户名；定时/系统触发 = `system`。
+  - `sessionId`：从 agent 输出解析到的 opencode `sessionID`；解析不到时留空，同时记录 `runId`（AI 站点 run 标识）兜底。
+  - `createIP`：AI 站点取请求来源 IP（优先 `X-Forwarded-For`，否则 socket 地址）；定时任务沿用原有 createIP。
+  - 以上字段写入 `paramStr` 与 `result`（JSON），队列列表、用户触发任务列表、详情抽屉均展示。
+- 「继续会话」：队列详情里对带 `sessionId` 的作业提供入口。
+  - 若会话账本已存在该 `agentSessionId`，直接 `restoreSessionById` 恢复原 devflow 会话。
+  - 否则按作业的 cwd（AI 站点 = runDir；定时任务 = 任务 cwd/项目根）新建 agent 会话，
+    用 `buildResumeCommand` 注入 `<agent> --session <id>`（或 `--resume`），并把 `agentSessionId`
+    回写会话账本；前端打开该会话并切到聊天页继续下发指令。
