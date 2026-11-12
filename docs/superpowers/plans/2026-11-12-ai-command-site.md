@@ -2506,3 +2506,119 @@ git commit -m "chore(ai-site): æ ¡éªŒä¿®å¤"
 - å ä½ç¬¦æ‰«æï¼šæ—  TBD/TODOï¼›æ¯ä¸ªä»£ç æ­¥éª¤ç»™äº†å®Œæ•´ä»£ç ã€‚
 - ç±»å‹ä¸€è‡´æ€§ï¼š`createAiSiteServe({ getConfig, users, runner, logger })`ã€`runner.createRun({ pluginName, pluginDir, workflowPath, values, user })`ã€`runner.listFiles/readFile/zipOutput`ã€`configStore.get/save` åœ¨å„ä»»åŠ¡ä¸­ä¸€è‡´ã€‚
 - å·²çŸ¥åå·®ï¼ˆæœ‰æ„ï¼‰ï¼šå…ˆå¤åˆ¶ workflow å†å†™ `input.json`ï¼ˆé¿å…æ’ä»¶è‡ªå¸¦ input.json è¦†ç›–ç”¨æˆ·è¾“å…¥ï¼‰ï¼›`formPage` çš„ zip é“¾æ¥ç”¨å‰ç«¯èµ‹å€¼ runIdã€‚
+
+---
+
+### Task 14£¨²¹³äĞèÇó£©: ÈÎÎñ¶ÓÁĞ¡¸ÓÃ»§´¥·¢ÈÎÎñ¡¹ÁĞ±í
+
+> ÒÑÍê³Éºó¶Ë£º`queue.enqueueExternalJob` / `updateExternalJob`£¨status=3 Èë±í¡¢worker ²»ÁìÈ¡£©¡¢
+> `listJobs` Ö§³Ö `groupName`¡¢runner `onStateChange` »Øµ÷¡¢`jobs-mount` Ö§³Ö `?groupName=`
+>£¨¼û commit 41c2555 / de2cda8£©¡£
+
+**Files:**
+- Modify: `server/index.js`£¨buildWorkspace Àï createAiSite ´« `onRunState`£¬Í¬²½Ğ´¶ÓÁĞ£©
+- Modify: `server/ai-site/index.js`£¨°Ñ `onRunState` Í¸´«¸ø runner£©
+- Modify: `web/src/jobs/JobsView.vue`£¨ĞÂÔö¡¸ÓÃ»§´¥·¢ÈÎÎñ¡¹ÁĞ±íÇø¿é£©
+- Modify: `shared/i18n/zh-CN.js`¡¢`shared/i18n/en.js`£¨`jobs.user.*` ´ÊÌõ£©
+
+- [ ] **Step 1: `server/ai-site/index.js` Í¸´« `onRunState`**
+
+`createAiSite({ dir, logger, isPrefixTaken, runnerOptions = {}, onRunState = () => {} })`£¬
+´´½¨ runner Ê±£º
+
+```js
+  const runner = createAiSiteRunner({ runsDir: path.join(dir, 'runs'), onStateChange: onRunState, ...runnerOptions });
+```
+
+- [ ] **Step 2: `server/index.js` ´« `onRunState` Ğ´¶ÓÁĞ**
+
+```js
+  const aiSite = createAiSite({
+    dir: paths.aiSiteDir,
+    logger: log,
+    isPrefixTaken: (prefix) => proxyStore.list().some((r) => r.mode === 'path' && (r.pathPrefix === prefix || r.pathPrefix.startsWith(prefix + '/') || prefix.startsWith(r.pathPrefix + '/'))),
+    onRunState: (st) => {
+      const jobId = `ai_${st.id}`;
+      const base = { groupName: 'ai-site', taskId: st.id, classname: 'ai-site', methodName: 'run', createIP: `${HOST}:${port}`, workIP: `${HOST}:${port}`, createMachineId: engine.pub.machineId };
+      const result = { runId: st.id, logPath: path.join(st.runDir, 'run.log'), outputDir: path.join(st.runDir, 'output') };
+      if (st.phase === 'start') {
+        void scheduler.queue.enqueueExternalJob({
+          jobId, ...base, status: 3, createTime: st.startedAt,
+          paramStr: { task: { name: st.pluginTitle || st.plugin }, plugin: st.plugin, user: st.user, runId: st.id, runDir: st.runDir },
+          result,
+        }).catch((e) => log.warn?.('ai-site queue enqueue failed', (e && e.message) || e));
+      } else {
+        void scheduler.queue.updateExternalJob(jobId, {
+          status: st.status === 'success' ? 1 : 2,
+          runtime: Math.max(0, st.finishedAt - st.startedAt),
+          result: { ...result, status: st.status, error: st.error },
+        }).catch((e) => log.warn?.('ai-site queue update failed', (e && e.message) || e));
+      }
+    },
+  });
+```
+
+- [ ] **Step 3: ¡¸ÓÃ»§´¥·¢ÈÎÎñ¡¹ÁĞ±íÇø¿é**
+
+`JobsView.vue` ¼Ó£º
+
+```ts
+const userJobs = computed(() => sortedJobs.value.filter((j) => j.groupName === 'ai-site'));
+function userOf(job: Job): string {
+  try { return JSON.parse(job.paramStr || '{}').user || '¡ª'; } catch { return '¡ª'; }
+}
+```
+
+Ä£°åÔÚ `<div class="job-list">` Ö®Ç°¼ÓÒ»¸öÇø¿é£¨µã»÷ĞĞ½øÈëÏÖÓĞÏêÇé£©£º
+
+```html
+<section class="user-jobs">
+  <div class="uj-title">{{ $t('jobs.user.title') }}</div>
+  <div v-if="!userJobs.length" class="dim">{{ $t('jobs.user.empty') }}</div>
+  <el-table v-else :data="userJobs" size="small" stripe @row-click="(row: Job) => (detail = row)">
+    <el-table-column :label="$t('sched.col.status')" width="96">
+      <template #default="{ row }"><el-tag size="small" :type="jobTagType(row.status)">{{ jobStatusLabel(row.status) }}</el-tag></template>
+    </el-table-column>
+    <el-table-column :label="$t('sched.col.name')" min-width="180" show-overflow-tooltip>
+      <template #default="{ row }">{{ taskNameOf(row) }}</template>
+    </el-table-column>
+    <el-table-column :label="$t('jobs.user.user')" width="120">
+      <template #default="{ row }">{{ userOf(row) }}</template>
+    </el-table-column>
+    <el-table-column :label="$t('jobs.col.time')" width="180">
+      <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
+    </el-table-column>
+    <el-table-column :label="$t('jobs.col.job')" min-width="150" show-overflow-tooltip>
+      <template #default="{ row }"><span class="jid">{{ row.jobId }}</span></template>
+    </el-table-column>
+  </el-table>
+</section>
+```
+
+- [ ] **Step 4: ´ÊÌõ£¨ÖĞÓ¢¶Ô³Æ£©**
+
+zh-CN£º
+
+```js
+  'jobs.user.title': 'ÓÃ»§´¥·¢ÈÎÎñ',
+  'jobs.user.empty': 'ÔİÎŞÓÃ»§´¥·¢ÈÎÎñ',
+  'jobs.user.user': 'ÓÃ»§',
+```
+
+en£º
+
+```js
+  'jobs.user.title': 'User-triggered tasks',
+  'jobs.user.empty': 'No user-triggered tasks',
+  'jobs.user.user': 'User',
+```
+
+- [ ] **Step 5: Ğ£Ñé²¢Ìá½»**
+
+Run: `npm.cmd run check:i18n`¡¢`npm.cmd run test:web`¡¢`npm.cmd run test:server`
+Expected: Í¨¹ı¡£
+
+```bash
+git add server/index.js server/ai-site/index.js web/src/jobs/JobsView.vue shared/i18n/zh-CN.js shared/i18n/en.js
+git commit -m "feat(ai-site): ÈÎÎñ¶ÓÁĞÕ¹Ê¾ÓÃ»§´¥·¢ÈÎÎñÁĞ±í"
+```

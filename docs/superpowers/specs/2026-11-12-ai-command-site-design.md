@@ -189,3 +189,17 @@
 
 - æ–°å¢ `server/ai-site/`ï¼ˆé…ç½®/ç”¨æˆ·/æ’ä»¶/æ‰§è¡Œ/é¡µé¢/è·¯ç”±/ç®¡ç† APIï¼‰ã€‚
 - æ–°å¢ `web/src/tools/ai-site/`ï¼ˆé¡µç­¾è§†å›¾ + æ•°æ®å±‚ï¼‰ã€‚
+
+## ²¹³ä£ºÈÎÎñ¶ÓÁĞ¼¯³É£¨ÓÃ»§´¥·¢ÈÎÎñÁĞ±í£©
+
+- AI Õ¾µãÃ¿´ÎÖ´ĞĞÍ¬²½Ğ´Èëµ÷¶È¶ÓÁĞ±í `t_sched_job`£º
+  - `jobId = ai_<runId>`£¨Î¨Ò»£©£»`topic` Óëµ÷¶È×÷ÒµÏàÍ¬£»`groupName = 'ai-site'`£»
+    `taskId = runId`£»`classname = 'ai-site'`£»`methodName = 'run'`¡£
+  - Èë±í¼´ `status = 3`£¨ÔËĞĞÖĞ£©£¬worker Ö»ÁìÈ¡ `status=0`£¬Òò´Ë²»»á±»µ÷¶È worker Ö´ĞĞ¡£
+  - `paramStr = { task: { name: ²å¼ş±êÌâ }, plugin, user, runId, runDir }`£¬¹©¶ÓÁĞ±íÏÔÊ¾ÈÎÎñÃû¡£
+  - `result = { runId, logPath, outputDir, error? }`£¬¹©¶ÓÁĞÏêÇé×ßÏÖÓĞ log ½Ó¿Ú¡£
+  - ½áÊøÊ±°Ñ×´Ì¬¸üĞÂÎª `1`£¨³É¹¦£©/`2`£¨Ê§°Ü/³¬Ê±£©£¬Ğ´Èë `runtime`¡£
+- ¶ÓÁĞ·şÎñĞÂÔö `enqueueExternalJob` / `updateExternalJob`£»`listJobs` Ö§³Ö°´ `groupName` ¹ıÂË¡£
+- ¡¸ÈÎÎñ¶ÓÁĞ¡¹Ò³ÃæĞÂÔö¡¸ÓÃ»§´¥·¢ÈÎÎñ¡¹ÁĞ±íÇø¿é£º´ÓÍ¬Ò»·İ×÷ÒµÊı¾İÀïÉ¸ `groupName='ai-site'`£¬
+  Õ¹Ê¾²å¼şÃû¡¢ÓÃ»§¡¢×´Ì¬¡¢Ê±¼ä¡¢ºÄÊ±£»µã»÷½øÈëÏÖÓĞÏêÇé³éÌë£¬ÈÕÖ¾×ß `result.logPath`¡£
+- Ê¹ÓÃ´ÎÊıÈÔÓÉ AI Õ¾µã×Ô¼ºµÄ `users.json` Í³¼Æ£»¶ÓÁĞ¼ÇÂ¼Ö»ÓÃÓÚÕ¹Ê¾ÓëÉúÃüÖÜÆÚ¡£
