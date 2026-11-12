@@ -17,7 +17,7 @@ function baseHost(): string {
   if (c.mode === 'port') return `http://${location.hostname}:${c.listenPort}`;
   return `${location.origin}${c.pathPrefix}`;
 }
-const accessUrl = () => `${baseHost()}/`;
+function accessUrl(): string { return `${baseHost()}/`; }
 
 onMounted(async () => {
   try {
@@ -75,7 +75,7 @@ async function removeUser(u: AiSiteUser) {
 
 async function copyAccess() { await copyText(accessUrl()); msg.value = t('nginx.copied'); }
 function openSite() { window.open(accessUrl(), '_blank', 'noopener'); }
-function copyToken(u: AiSiteUser) { void copyText(u.token); msg.value = t('nginx.copied'); }
+async function copyToken(u: AiSiteUser) { await copyText(u.token); msg.value = t('nginx.copied'); }
 </script>
 
 <template>
@@ -99,10 +99,10 @@ function copyToken(u: AiSiteUser) { void copyText(u.token); msg.value = t('nginx
           </select>
         </label>
         <label v-if="form.mode === 'port'">{{ $t('nginx.listen') }}
-          <input v-model.number="form.listenPort" type="number" class="aiin" min="1" max="65535" />
+          <input v-model.number="form.listenPort" type="number" class="aiin" min="1" max="65535" data-field="listen-port" />
         </label>
         <label v-else>{{ $t('nginx.path_prefix') }}
-          <input v-model="form.pathPrefix" class="aiin" data-field="path-prefix" placeholder="/ai" />
+          <input v-model="form.pathPrefix" class="aiin" placeholder="/ai" data-field="path-prefix" />
         </label>
         <label class="aichk"><input v-model="form.requireAuth" type="checkbox" data-field="require-auth" />{{ $t('ai_site.login.title') }}</label>
       </div>
@@ -124,7 +124,6 @@ function copyToken(u: AiSiteUser) { void copyText(u.token); msg.value = t('nginx
         <input v-model="newUser" class="aiin" data-field="new-user" :placeholder="$t('ai_site.login.username')" />
         <button class="aibtn primary" data-action="add-user" @click="addUser">+</button>
       </div>
-      <div v-if="!api.users.value.length" class="a muted">{{ $t('ai_site.plugins.empty') }}</div>
       <div v-for="u in api.users.value" :key="u.id" class="aiuser">
         <span class="ainame">{{ u.username }}</span>
         <span class="a muted">{{ u.uses }}</span>

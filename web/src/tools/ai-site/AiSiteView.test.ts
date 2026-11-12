@@ -15,10 +15,10 @@ beforeEach(() => {
     const s = String(u);
     if (s === '/api/ai-site/config') return okJson({ config: CONFIG, status: { status: 'running', error: null } });
     if (s === '/api/ai-site/plugins') return okJson({ items: [{ name: 'p1', title: 'P1', description: 'd' }] });
-    if (s === '/api/ai-site/users' && (!opt || opt.method !== 'POST')) return okJson({ items: [{ id: 'u1', username: 'alice', token: 't', enabled: true, uses: 2, lastLoginAt: 0, lastRunAt: 0 }] });
-    if (s === '/api/ai-site/users') return okJson({ ok: true, item: { id: 'u2', username: 'bob', token: 't2' } });
+    if (s === '/api/ai-site/users' && opt?.method === 'POST') return okJson({ ok: true, item: { id: 'u2', username: 'bob', token: 't2', enabled: true, uses: 0, lastLoginAt: 0, lastRunAt: 0 } });
+    if (s === '/api/ai-site/users') return okJson({ items: [{ id: 'u1', username: 'alice', token: 't', enabled: true, uses: 2, lastLoginAt: 0, lastRunAt: 0 }] });
     if (s.startsWith('/api/projects/pick')) return okJson({ path: 'C:/plugins' });
-    return okJson({});
+    return okJson({ ok: true });
   });
   vi.stubGlobal('fetch', fetchMock);
 });
