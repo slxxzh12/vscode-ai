@@ -55,11 +55,13 @@ export function portPaths(port, { root = dataHome() } = {}) {
     navicatDir: path.join(dir, 'tools', 'navicat'),
     proxyDir: path.join(dir, 'proxy'),
     proxyCapturesDir: path.join(dir, 'proxy', 'captures'),
+    aiSiteDir: path.join(dir, 'ai-site'),
+    aiSiteRunsDir: path.join(dir, 'ai-site', 'runs'),
   };
 }
 
 export function ensurePortDirs(paths) {
-  for (const d of [paths.dir, paths.projectsDataDir, paths.schedulerDir, paths.collabDir, paths.statsCacheDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.workflowsDir, paths.skillsRoot, paths.sessionLogsDir, paths.postmanDir, paths.notepadDir, paths.yamlDir, paths.jsDir, paths.translateDir, paths.markdownDir, paths.navicatDir, paths.proxyDir, paths.proxyCapturesDir]) {
+  for (const d of [paths.dir, paths.projectsDataDir, paths.schedulerDir, paths.collabDir, paths.statsCacheDir, paths.uploadDir, paths.downloadDir, paths.downloadsDir, paths.workflowsDir, paths.skillsRoot, paths.sessionLogsDir, paths.postmanDir, paths.notepadDir, paths.yamlDir, paths.jsDir, paths.translateDir, paths.markdownDir, paths.navicatDir, paths.proxyDir, paths.proxyCapturesDir, paths.aiSiteDir, paths.aiSiteRunsDir]) {
     fs.mkdirSync(d, { recursive: true });
   }
   return paths;

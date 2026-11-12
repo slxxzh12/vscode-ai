@@ -45,6 +45,8 @@ test('portPaths 全部落在 ports/<端口> 下', () => {
   assert.equal(p.jsDir, path.join(base, 'tools', 'js'));
   assert.equal(p.translateDir, path.join(base, 'tools', 'translate'));
   assert.equal(p.navicatDir, path.join(base, 'tools', 'navicat'));
+  assert.equal(p.aiSiteDir, path.join(base, 'ai-site'));
+  assert.equal(p.aiSiteRunsDir, path.join(base, 'ai-site', 'runs'));
   assert.equal(portRoot(44444, root), base);
 });
 
