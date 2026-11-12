@@ -3,7 +3,9 @@ import path from 'node:path';
 import { transformSync } from 'esbuild';
 import { collectGitChanges } from './git-log.js';
 import { updateGitDirs } from './git-update.js';
-import { initDocSamples } from './doc-samples.js';
+import { initDocSamples, SAMPLE_SLOTS } from './doc-samples.js';
+import { ensureDocsAgents, docsRepoRootOf } from './docs-agents.js';
+import { detectDocDefaults } from './pipeline/doc-defaults.js';
 import { scanSecurityDirs } from './security/scan.js';
 import { collectCodeStats } from './code-count.js';
 import { scanSecrets } from './secret-scan.js';
@@ -452,8 +454,27 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         return;
       }
       if (url.pathname === '/api/doc-update/init-samples' && req.method === 'POST') {
-        const state = docUpdateStore ? docUpdateStore.read() : null;
-        sendJson(res, 200, initDocSamples(state));
+        let state = docUpdateStore ? docUpdateStore.read() : null;
+        if (state && docUpdateStore) {
+          const root = String(state.code?.path || state.solution?.path || '').trim();
+          if (root) {
+            const d = detectDocDefaults(root, { create: true });
+            if (!d.error) {
+              let changed = false;
+              for (const slot of SAMPLE_SLOTS) {
+                if (!state[slot].path.trim()) {
+                  state[slot].path = d.paths[slot];
+                  state[slot].selected = true;
+                  changed = true;
+                }
+              }
+              if (changed) state = docUpdateStore.write(state);
+            }
+          }
+        }
+        const out = initDocSamples(state);
+        out.agents = ensureDocsAgents(docsRepoRootOf(state || {}));
+        sendJson(res, 200, out);
         return;
       }
       if (url.pathname === '/api/security/scan' && req.method === 'POST') {

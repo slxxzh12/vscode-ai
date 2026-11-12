@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { loginPage, listPage, formPage } from './pages.js';
+import { loginPage, listPage, formPage, runPage } from './pages.js';
 import { listPlugins, readPlugin, readLogo } from './plugins.js';
 import { staticContentType } from '../proxy-static.js';
 
@@ -122,6 +122,14 @@ export function createAiSiteServe({ getConfig, users, runner, logger = console }
       return sendHtml(res, 200, formPage({ base, plugin }));
     }
 
+    // 执行终端：独立页签展示实时输出，不再挤在表单页里。
+    const runPageMatch = p.match(/^\/__run\/([^/]+)$/);
+    if (runPageMatch && method === 'GET') {
+      const runId = decodeURIComponent(runPageMatch[1]);
+      if (!runner.getRun(runId)) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Not Found'); return; }
+      return sendHtml(res, 200, runPage({ base, runId }));
+    }
+
     if (p === '/__api/run' && method === 'POST') {
       let body = {};
       try { body = JSON.parse(await readBody(req)); } catch { return sendJson(res, 400, { error: 'bad-json' }); }
@@ -161,6 +169,14 @@ export function createAiSiteServe({ getConfig, users, runner, logger = console }
       keep.unref?.();
       req.on('close', () => { clearInterval(keep); off(); if (!res.writableEnded) res.end(); });
       return;
+    }
+
+    const runMetaMatch = p.match(/^\/__api\/runs\/([^/]+)$/);
+    if (runMetaMatch && method === 'GET') {
+      const runId = decodeURIComponent(runMetaMatch[1]);
+      const run = runner.snapshot(runId);
+      if (!run) return sendJson(res, 404, { error: 'not-found' });
+      return sendJson(res, 200, run);
     }
 
     const filesMatch = p.match(/^\/__api\/runs\/([^/]+)\/files$/);

@@ -282,7 +282,7 @@ function statusText() {
       <span class="ngname">{{ form.name || $t('nginx.new') }}</span>
       <span class="ngmode">{{ form.mode === 'port' ? form.listenHost + ':' + form.listenPort : form.pathPrefix }}</span>
       <span v-if="activeStatus" class="ngstat" :class="activeStatus.status">{{ statusText() }}</span>
-      <button v-if="id" class="ngbtn" @click.stop="toggle">{{ activeStatus?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
+      <button v-if="id" class="ngbtn" :class="{ start: activeStatus?.status !== 'running' }" @click.stop="toggle">{{ activeStatus?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
       <span class="ngchev" :title="collapsed ? $t('nginx.expand') : $t('nginx.collapse')">{{ collapsed ? '▸' : '▾' }}</span>
     </div>
 
@@ -412,7 +412,7 @@ function statusText() {
 
       <div class="ngactions">
         <button class="ngbtn primary" :disabled="busy" @click="doSave">{{ $t('nginx.saved') }}</button>
-        <button v-if="id" class="ngbtn" @click="toggle">{{ activeStatus?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
+        <button v-if="id" class="ngbtn" :class="{ start: activeStatus?.status !== 'running' }" @click="toggle">{{ activeStatus?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
         <button class="ngbtn" @click="doDelete">{{ $t('nginx.delete') }}</button>
         <span v-if="msg" class="ngmsg">{{ msg }}</span>
       </div>
@@ -523,6 +523,8 @@ function statusText() {
 .ngrwitem { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; border-bottom: 1px dashed var(--bd); }
 .ngbtn { background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 .ngbtn.primary { border-color: var(--ac2); color: var(--ac2); }
+.ngbtn.start { background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 600; font-size: 14px; padding: 8px 22px; border-radius: 8px; }
+.ngbtn.start:hover { background: #15803d; border-color: #15803d; }
 .ngactions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .ngmsg { color: var(--ac2); }
 .ngurl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

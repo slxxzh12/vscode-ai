@@ -874,6 +874,7 @@ function buildWorkspace({ paths, port }) {
     scheduler,
     logger: log,
   });
+  pipelineMount.syncWatch?.();   // 上次开启的「监控方案变化」在重启后继续运行
 
   const postmanHistory = createPostmanHistory({ dir: paths.postmanDir });
   const notepadStore = createNotepadStore({ dir: paths.notepadDir });

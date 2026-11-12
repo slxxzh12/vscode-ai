@@ -18,6 +18,7 @@ test('us-detect：只识别 US+6位编号+4位年份的一级目录并排序', (
     fs.mkdirSync(path.join(root, name));
   }
   assert.equal(US_RE.test('US000001-2021-增加用户'), true);
+  assert.equal(US_RE.test('US000001-20260315-增加用户'), true);
   assert.equal(US_RE.test('us000001-2021-x'), true);
   assert.equal(US_RE.test('US12-2021-x'), false);
   assert.deepEqual(listUsDirs(root), ['US000001-2021-A', 'US000002-2022-B']);

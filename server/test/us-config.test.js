@@ -12,21 +12,29 @@ function tmpFile() {
 
 test('us-config：文件不存在时默认关闭', () => {
   const store = createUsConfigStore({ file: tmpFile() });
-  assert.deepEqual(store.read(), { autoDev: false, autoMerge: false });
+  assert.deepEqual(store.read(), { autoDev: false, autoMerge: false, watch: false });
 });
 
 test('us-config：写入后读回布尔值', () => {
   const file = tmpFile();
   const store = createUsConfigStore({ file });
-  store.write({ autoDev: true, autoMerge: true });
-  assert.deepEqual(store.read(), { autoDev: true, autoMerge: true });
+  store.write({ autoDev: true, autoMerge: true, watch: true });
+  assert.deepEqual(store.read(), { autoDev: true, autoMerge: true, watch: true });
   store.write({ autoDev: 'yes', autoMerge: 1 });
-  assert.deepEqual(store.read(), { autoDev: false, autoMerge: false });
+  assert.deepEqual(store.read(), { autoDev: false, autoMerge: false, watch: false });
+});
+
+test('us-config：watch 依赖 autoDev，自动开发关闭时监控也关闭', () => {
+  const store = createUsConfigStore({ file: tmpFile() });
+  store.write({ autoDev: false, watch: true });
+  assert.equal(store.read().watch, false);
+  store.write({ autoDev: true, watch: true });
+  assert.equal(store.read().watch, true);
 });
 
 test('us-config：损坏文件回退默认值', () => {
   const file = tmpFile();
   fs.writeFileSync(file, '{bad', 'utf8');
   const store = createUsConfigStore({ file, logger: { warn() {} } });
-  assert.deepEqual(store.read(), { autoDev: false, autoMerge: false });
+  assert.deepEqual(store.read(), { autoDev: false, autoMerge: false, watch: false });
 });

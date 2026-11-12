@@ -459,7 +459,6 @@ async function clearActiveAgents() {
 const firstRunHint = ref(false);
 const agentSecRef = ref<HTMLElement | null>(null);
 const upgradeSecRef = ref<HTMLElement | null>(null);
-const upgradeAskVisible = ref(false);
 // 刷新后恢复的页签数（设置面板即时生效，存 localStorage）
 const restoreTabsCount = ref(restoreTabs.value);
 function saveRestoreTabsCount() { restoreTabsCount.value = setRestoreTabs(restoreTabsCount.value); }
@@ -554,12 +553,10 @@ function onToggleAutoUpgrade(v: boolean) {
   if (v) void refreshUpgrade();
   else clearUpgrade();
 }
-// 首次征询用户是否允许联网检查新版本；未确认前不发起任何检测请求。
-function answerUpgradeAsk(enable: boolean) {
-  setAutoCheckUpgrade(enable);
+// 设置面板关闭即视为用户已确认当前勾选状态；确认前不发起任何检测请求。
+function confirmUpgradeChoice() {
   setUpgradeAsked(true);
-  upgradeAskVisible.value = false;
-  if (enable) void refreshUpgrade();
+  if (autoCheckUpgrade.value) void refreshUpgrade();
   else clearUpgrade();
 }
 async function setHideServerBg(v: boolean) {
@@ -646,9 +643,9 @@ function onOpenSettings(e: Event) {
   loadSettings();
   loadFileAssoc();
   firstRunHint.value = firstRun;
-  upgradeAskVisible.value = !upgradeAsked.value;
-  if (firstRun || upgradeAskVisible.value) {
-    nextTick(() => (upgradeAskVisible.value ? upgradeSecRef.value : agentSecRef.value)?.scrollIntoView({ block: 'start' }));
+  // 首次启动先让用户在设置里看到「自动检查升级」勾选框（默认勾选），确认后才联网。
+  if (firstRun || !upgradeAsked.value) {
+    nextTick(() => (!upgradeAsked.value ? upgradeSecRef.value : agentSecRef.value)?.scrollIntoView({ block: 'start' }));
   }
 }
 
@@ -1486,10 +1483,9 @@ watch([agentId, agents, wfKind], saveCfg, { deep: true });
 watch(settingsOpen, (open, was) => {
   if (open) void loadSkillsStatus();
   if (was && !open) {
-    // 直接关闭设置面板视为「不同意」：不联网，且不再反复弹窗（之后可在设置里手动开启）。
-    if (upgradeAskVisible.value) answerUpgradeAsk(false);
+    // 关闭设置面板时确认勾选状态：勾选才联网，之后不再反复确认。
+    if (!upgradeAsked.value) confirmUpgradeChoice();
     firstRunHint.value = false;
-    upgradeAskVisible.value = false;
     window.dispatchEvent(new Event('df-settings-closed'));
   }
 });
@@ -1604,15 +1600,6 @@ onBeforeUnmount(() => {
             </div>
             <div class="cfghint">{{ $t('term.agent_hint') }}</div>
           </div>
-          <div v-if="upgradeAskVisible" ref="upgradeSecRef" class="setsec">
-            <div class="settitle">{{ $t('term.upgrade_ask_title') }}</div>
-            <div class="cfghint">{{ $t('term.upgrade_ask_hint') }}</div>
-            <div class="cfghint">{{ $t('term.upgrade_ask_endpoint') }} <a class="aboutv link" :href="UPGRADE_CHECK_URL" target="_blank" rel="noopener">{{ UPGRADE_CHECK_URL }}</a></div>
-            <div class="cfgrow">
-              <button class="ghostcfg" @click="answerUpgradeAsk(true)">{{ $t('term.upgrade_ask_yes') }}</button>
-              <button class="ghostcfg" @click="answerUpgradeAsk(false)">{{ $t('term.upgrade_ask_no') }}</button>
-            </div>
-          </div>
           <div class="setsec">
             <div class="settitle">{{ $t('term.service') }}</div>
             <div class="cfgrow"><span>{{ $t('term.port') }}</span><input v-model.number="serverPort" type="number" min="1" max="65535" placeholder="22222" @keyup.enter="confirmSettings" /><button class="ghostcfg" :disabled="!canRestart(portState) || restarting" @click="restartBackend">{{ $t('term.port_restart') }}</button></div>
@@ -1621,20 +1608,21 @@ onBeforeUnmount(() => {
             <div v-if="restartMsg" class="cfghint warn">{{ restartMsg }}</div>
             <div class="cfghint">{{ $t('term.service_hint') }}</div>
           </div>
-          <div class="setsec">
+          <div ref="upgradeSecRef" class="setsec">
             <div class="settitle">{{ $t('term.startup_bg') }}</div>
             <div class="chkrow-group">
               <label v-if="startupAvailable" class="chkrow">
                 <input type="checkbox" :checked="hideServerBg" @change="setHideServerBg(($event.target as HTMLInputElement).checked)" />
                 <span>{{ $t('term.startup_hide_label') }}</span>
               </label>
-              <label v-if="!upgradeAskVisible" class="chkrow">
+              <label class="chkrow">
                 <input type="checkbox" :checked="autoCheckUpgrade" @change="onToggleAutoUpgrade(($event.target as HTMLInputElement).checked)" />
                 <span>{{ $t('term.upgrade_auto') }}</span>
               </label>
             </div>
             <div v-if="startupAvailable" class="cfghint">{{ $t('term.startup_hide_hint') }}</div>
             <div class="cfghint">{{ $t('term.upgrade_auto_hint') }}</div>
+            <div class="cfghint">{{ $t('term.upgrade_endpoint') }} <a class="aboutv link" :href="UPGRADE_CHECK_URL" target="_blank" rel="noopener">{{ UPGRADE_CHECK_URL }}</a></div>
             <div v-if="startupMsg" class="cfghint warn">{{ startupMsg }}</div>
           </div>
           <div class="setsec">

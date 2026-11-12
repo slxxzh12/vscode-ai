@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
-export const US_RE = /^US\d{6}-\d{4}-/i;
+// 方案文件夹：US + 6 位编号 - 日期 - 名称；日期兼容 YYYYMMDD 与旧的 YYYY。
+export const US_RE = /^US\d{6}-(?:\d{8}|\d{4})-/i;
 
 export function listUsDirs(dir) {
   try {

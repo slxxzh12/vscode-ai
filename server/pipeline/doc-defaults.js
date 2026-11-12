@@ -23,16 +23,27 @@ function isDir(p) {
   try { return fs.statSync(p).isDirectory(); } catch { return false; }
 }
 
-export function detectDocDefaults(root) {
+export function detectDocDefaults(root, { create = false } = {}) {
   const base = path.resolve(String(root || ''));
   if (!isDir(base)) return { error: 'bad-root' };
   const paths = { code: base };
   const detected = {};
+  const created = [];
+  const failed = [];
   for (const [slot, candidates] of Object.entries(CANDIDATES)) {
     const hit = candidates.find((rel) => isDir(path.join(base, rel))) || '';
     const rel = hit || FALLBACK[slot];
-    paths[slot] = path.join(base, rel);
+    const target = path.join(base, rel);
+    paths[slot] = target;
     detected[slot] = hit;
+    if (create && !isDir(target)) {
+      try {
+        fs.mkdirSync(target, { recursive: true });
+        created.push(target);
+      } catch (e) {
+        failed.push({ slot, path: target, error: (e && e.code) || 'create_failed' });
+      }
+    }
   }
-  return { root: base, paths, detected };
+  return { root: base, paths, detected, created, failed };
 }

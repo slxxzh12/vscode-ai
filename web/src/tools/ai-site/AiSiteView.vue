@@ -142,7 +142,7 @@ async function copyToken(u: AiSiteUser) { await copyText(u.jwt); msg.value = t('
       </div>
       <div class="aiactions">
         <button class="aibtn primary" :disabled="busy" @click="doSave">{{ $t('nginx.saved') }}</button>
-        <button class="aibtn" :disabled="busy" @click="toggle">{{ api.status.value?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
+        <button class="aibtn" :class="{ start: api.status.value?.status !== 'running' }" :disabled="busy" @click="toggle">{{ api.status.value?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
         <span class="aimsg">{{ msg }}</span>
       </div>
       <div class="aiurl">
@@ -210,6 +210,8 @@ async function copyToken(u: AiSiteUser) { await copyText(u.jwt); msg.value = t('
 .aibtn { background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 .aibtn.primary { border-color: var(--ac2); color: var(--ac2); }
 .aibtn.danger { border-color: var(--err); color: var(--err); }
+.aibtn.start { background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 600; font-size: 14px; padding: 8px 22px; border-radius: 8px; }
+.aibtn.start:hover { background: #15803d; border-color: #15803d; }
 .aimsg { color: var(--ac2); }
 .aiuser, .aiplugin { display: flex; gap: 8px; align-items: center; font-size: 12px; }
 .aiuser { flex-wrap: wrap; }

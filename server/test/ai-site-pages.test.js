@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLocale } from '../i18n.js';
-import { loginPage, listPage, formPage } from '../ai-site/pages.js';
+import { loginPage, listPage, formPage, runPage } from '../ai-site/pages.js';
 
 const PLUGIN = {
   name: 'translate', title: '翻译助手', description: '翻译文本', logo: 'logo.png', hasLogo: true,
@@ -35,4 +35,12 @@ test('pages：表单页按字段类型渲染', () => {
   assert.match(html, /<option value="中文"/);
   assert.match(html, /<input[^>]+type="number"[^>]+name="n"/);
   assert.match(html, /\/__api\/run/);
+  assert.match(html, /\/__run\//);
+});
+
+test('pages：执行终端页轮询运行状态并渲染输出', () => {
+  const html = runPage({ base: '/ai', runId: 'r1' });
+  assert.match(html, /\/__api\/runs\//);
+  assert.match(html, /id="term"/);
+  assert.match(html, /rundot/);
 });

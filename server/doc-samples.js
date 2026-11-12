@@ -39,13 +39,19 @@ export function initDocSamples(state, { templateDir = DEFAULT_TEMPLATE_DIR } = {
     const dir = String(state?.[slot]?.path || '').trim();
     if (!state?.[slot]?.selected || !dir) continue;
 
-    const res = { slot, dir, ok: true, created: [], skipped: [] };
+    const res = { slot, dir, ok: true, created: [], skipped: [], createdDir: false };
     if (!isDir(dir)) {
-      res.ok = false;
-      res.error = 'missing_dir';
-      results.push(res);
-      failed++;
-      continue;
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        res.createdDir = true;
+      } catch (e) {
+        res.ok = false;
+        res.error = (e && e.code) || 'missing_dir';
+        res.message = (e && e.message) || String(e);
+        results.push(res);
+        failed++;
+        continue;
+      }
     }
 
     const srcDir = path.join(templateDir, slot);

@@ -60,6 +60,11 @@ const docRunning = ref(false);
 const docError = ref('');
 const autoDev = ref(false);
 const autoMerge = ref(false);
+const watchOn = ref(false);
+const watchBusy = ref(false);
+const watchPending = ref(0);
+const watchLastScan = ref(0);
+let watchTimer: ReturnType<typeof setInterval> | undefined;
 interface DocResult { dir: string; ok: boolean; code?: string; message?: string }
 const docResults = ref<DocResult[]>([]);
 const docHint = ref('');
@@ -99,11 +104,42 @@ async function loadAutoDev() {
     autoMerge.value = false;
   }
 }
+async function loadWatch() {
+  try {
+    const r = await fetch('/api/pipeline/watch').then((x) => (x.ok ? x.json() : null));
+    if (!r) return;
+    watchOn.value = !!r.running;
+    watchPending.value = Number(r.pending || 0);
+    watchLastScan.value = Number(r.lastScanAt || 0);
+  } catch { /* ignore */ }
+}
+async function toggleWatch() {
+  watchBusy.value = true;
+  docError.value = '';
+  try {
+    const r = await fetch('/api/pipeline/watch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !watchOn.value }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+    watchOn.value = !!j.running;
+    watchPending.value = Number(j.pending || 0);
+    watchLastScan.value = Number(j.lastScanAt || 0);
+    if (j.config) { autoDev.value = !!j.config.autoDev; autoMerge.value = !!j.config.autoMerge; }
+    docHint.value = watchOn.value ? t('codestat.docs.watch_started') : t('codestat.docs.watch_stopped');
+  } catch (e: any) {
+    docError.value = t('pipeline.config_failed');
+  } finally {
+    watchBusy.value = false;
+  }
+}
 async function toggleAutoDev(v: boolean) {
   try {
     const cfg = await savePipelineConfig({ autoDev: v, autoMerge: autoMerge.value });
     autoDev.value = cfg.autoDev;
     autoMerge.value = cfg.autoMerge;
+    await loadWatch();
   } catch {
     autoDev.value = !v;
     docError.value = t('pipeline.config_failed');
@@ -125,26 +161,38 @@ function onAutoDevChange(e: Event) {
 function onAutoMergeChange(e: Event) {
   void toggleAutoMerge((e.target as HTMLInputElement).checked);
 }
+function agentsHint(r: any): string {
+  const a = r?.agents;
+  if (!a?.ok) return '';
+  return a.action === 'created' || a.action === 'appended' ? ' · ' + t('codestat.docs.init_agents') : '';
+}
 async function applyDocDefaults() {
   const root = docState.value.code.path.trim() || docState.value.solution.path.trim();
   if (!root) { docError.value = t('codestat.docs.defaults_need_root'); return; }
   try {
-    const paths = (await detectDocDefaults(root)).paths;
+    const r = await detectDocDefaults(root, { create: true });
+    const paths = r.paths;
     for (const s of DOC_SLOTS) {
       docState.value[s].path = paths[s];
       docState.value[s].selected = true;
     }
-    docError.value = '';
+    docError.value = r.failed?.length ? t('codestat.docs.defaults_failed', { failed: r.failed.length }) : '';
     docInitHint.value = '';
-    docHint.value = t('codestat.docs.defaults_done');
+    docHint.value = t('codestat.docs.defaults_done_created', { created: r.created?.length || 0 }) + agentsHint(r);
     await persistDocState();
   } catch (e: any) {
     docError.value = t('top.add_failed', { msg: e?.message || String(e) });
   }
 }
-onMounted(() => { void loadAutoDev(); });
-async function runInitSamples() {  const hasSample = SAMPLE_SLOTS.some((s) => docState.value[s].selected && docState.value[s].path.trim());
-  if (!hasSample) { docError.value = t('codestat.docs.init_need'); return; }
+onMounted(() => {
+  void loadAutoDev();
+  void loadWatch();
+  watchTimer = setInterval(() => { void loadWatch(); }, 5000);
+});
+async function runInitSamples() {
+  const hasSample = SAMPLE_SLOTS.some((s) => docState.value[s].selected && docState.value[s].path.trim());
+  const hasRoot = !!(docState.value.code.path.trim() || docState.value.solution.path.trim());
+  if (!hasSample && !hasRoot) { docError.value = t('codestat.docs.init_need'); return; }
   docInitRunning.value = true;
   docError.value = '';
   docInitHint.value = '';
@@ -153,8 +201,12 @@ async function runInitSamples() {  const hasSample = SAMPLE_SLOTS.some((s) => do
     const res = await fetch('/api/doc-update/init-samples', { method: 'POST' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const r = await res.json();
-    docInitHint.value = t('codestat.docs.init_done', { created: r?.created || 0, skipped: r?.skipped || 0 });
+    docInitHint.value = t('codestat.docs.init_done', { created: r?.created || 0, skipped: r?.skipped || 0 }) + agentsHint(r);
     if (r?.failed) docError.value = t('codestat.docs.init_failed', { failed: r.failed });
+    try {
+      const st = await fetch('/api/doc-update').then((x) => (x.ok ? x.json() : null));
+      if (st) docState.value = normalizeDocState(st, props.projectRoot || '');
+    } catch { /* 忽略刷新失败，保留当前选择 */ }
   } catch (e: any) {
     docError.value = String(e?.message || e);
   } finally {
@@ -249,7 +301,7 @@ watch(dirs, () => {
   autoSaveTimer = setTimeout(persistDirs, 400);
 }, { deep: true });
 
-onBeforeUnmount(() => { clearTimeout(autoSaveTimer); clearTimeout(docSaveTimer); unsubs.forEach((u) => u()); });
+onBeforeUnmount(() => { clearTimeout(autoSaveTimer); clearTimeout(docSaveTimer); if (watchTimer) clearInterval(watchTimer); unsubs.forEach((u) => u()); });
 
 function addDir() { pickIndex.value = -1; pickPath.value = ''; pickError.value = ''; pickOpen.value = true; }
 function removeDir(i: number) {
@@ -390,9 +442,14 @@ function remember(p: string) {
           <button class="bigbtn" :disabled="docInitRunning || docRunning" @click="runInitSamples">
             {{ docInitRunning ? $t('codestat.docs.initializing') : $t('codestat.docs.init') }}
           </button>
-          <button class="bigbtn" :disabled="docRunning || docInitRunning" @click="runDocUpdate">
-            {{ docRunning ? $t('codestat.docs.starting') : $t('codestat.docs.start_update') }}
+          <button class="bigbtn" :class="{ watching: watchOn }" :disabled="watchBusy || docInitRunning" @click="toggleWatch">
+            {{ watchBusy ? $t('codestat.docs.starting') : (watchOn ? $t('codestat.docs.watch_stop') : $t('codestat.docs.watch_start')) }}
           </button>
+        </div>
+        <div v-if="watchOn" class="dochint">
+          {{ $t('codestat.docs.watch_running') }}
+          <template v-if="watchPending"> · {{ $t('codestat.docs.watch_pending', { count: watchPending }) }}</template>
+          <template v-if="watchLastScan"> · {{ $t('codestat.docs.watch_last', { time: new Date(watchLastScan).toLocaleTimeString() }) }}</template>
         </div>
         <div v-if="docError" class="docerr">{{ docError }}</div>
         <div v-if="docInitHint" class="docdone">{{ docInitHint }}</div>
@@ -479,6 +536,8 @@ function remember(p: string) {
 .bigbtn { flex: 1 1 220px; max-width: 320px; padding: 14px 22px; font-size: 14px; font-weight: 600; background: var(--bg4); color: var(--tx1); border: 1px solid var(--bd); border-radius: 6px; cursor: pointer; }
 .bigbtn:hover:not(:disabled) { border-color: var(--ac); color: var(--ac); }
 .bigbtn:disabled { opacity: .6; cursor: default; }
+.bigbtn.watching { background: #16a34a; border-color: #16a34a; color: #fff; }
+.bigbtn.watching:hover:not(:disabled) { border-color: #15803d; color: #fff; }
 .docdone { color: var(--tx3); font-size: 12px; line-height: 1.6; }
 .docerr { color: var(--err); font-size: 12px; }
 .docres { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--bd2); padding-top: 8px; }

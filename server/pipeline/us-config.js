@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const DEFAULT_US_CONFIG = { autoDev: false, autoMerge: false };
+export const DEFAULT_US_CONFIG = { autoDev: false, autoMerge: false, watch: false };
 
 export function normalizeUsConfig(raw) {
-  return { autoDev: raw?.autoDev === true, autoMerge: raw?.autoMerge === true };
+  const autoDev = raw?.autoDev === true;
+  // 方案监控依赖自动编码能力：自动开发关闭时监控也一并关闭。
+  return { autoDev, autoMerge: raw?.autoMerge === true, watch: autoDev && raw?.watch === true };
 }
 
 export function createUsConfigStore({ file, logger = console } = {}) {

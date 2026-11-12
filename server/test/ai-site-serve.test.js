@@ -74,6 +74,29 @@ test('serve：未登录跳登录页，JWT 登录后下发 cookie 并可执行', 
   } finally { srv.close(); }
 });
 
+test('serve: run meta and run terminal page', async () => {
+  setLocale('zh-CN');
+  const { pluginRoot, users, runner } = setup();
+  const config = { pluginRoot, requireAuth: false, sessionSecret: 'k'.repeat(48), pathPrefix: '' };
+  const serve = createAiSiteServe({ getConfig: () => config, users, runner, logger: console });
+  const { srv, port } = await listen((req, res) => {
+    const url = new URL(req.url, 'http://x');
+    serve.handle(req, res, url, { base: '' });
+  });
+  try {
+    const run = runner.createRun({ pluginName: 'hello', pluginDir: path.join(pluginRoot, 'hello'), workflowPath: path.join(pluginRoot, 'hello', 'workflow', 'prompt.md'), values: {}, user: '' });
+    await new Promise((r) => setTimeout(r, 20));
+    const meta = await fetch(`http://127.0.0.1:${port}/__api/runs/${run.id}`).then((x) => x.json());
+    assert.equal(meta.status, 'success');
+    assert.equal(meta.log, 'ok');
+    const page = await fetch(`http://127.0.0.1:${port}/__run/${run.id}`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /id="term"/);
+    const missing = await fetch(`http://127.0.0.1:${port}/__run/nope`);
+    assert.equal(missing.status, 404);
+  } finally { srv.close(); }
+});
+
 test('serve：JWT 错误或被吊销则不登录', async () => {
   setLocale('zh-CN');
   const { pluginRoot, users, runner, secret } = setup();

@@ -35,7 +35,7 @@ test('初始化样例：向勾选的知识/经验/方案/流程/skills/rules 写
   assert.ok(out.created > 0);
   assert.ok(fs.existsSync(path.join(dirs.knowledge, 'demo', '01-术语表.md')));
   assert.ok(fs.existsSync(path.join(dirs.experience, 'demo', '01-经验-权限校验.md')));
-  assert.ok(fs.existsSync(path.join(dirs.solution, 'US000001-2021-增加一个用户管理系统', '02-方案设计.md')));
+  assert.ok(fs.existsSync(path.join(dirs.solution, 'US000001-20260315-增加一个用户管理系统', '02-方案设计.md')));
   assert.ok(fs.existsSync(path.join(dirs.workflow, 'demo', '标准开发流程.md')));
   assert.ok(fs.existsSync(path.join(dirs.skills, 'demo', '示例技能-接口联调.md')));
   assert.ok(fs.existsSync(path.join(dirs.rules, 'demo', '示例规则-代码提交规范.md')));
@@ -54,15 +54,18 @@ test('初始化样例：已存在的文件不覆盖，计入 skipped', () => {
   assert.ok(out.skipped >= 1);
 });
 
-test('初始化样例：目录不存在时该项失败，其余继续', () => {
+test('初始化样例：目录不存在时自动创建，其余继续', () => {
   const root = tmpRoot();
   const dirs = mkdirs(root, ['experience']);
   const state = stateOf(dirs);
-  state.knowledge = { path: path.join(root, 'missing'), selected: true };
+  const missing = path.join(root, 'missing');
+  state.knowledge = { path: missing, selected: true };
   const out = initDocSamples(state);
   const knowledge = out.results.find((r) => r.slot === 'knowledge');
-  assert.equal(knowledge.ok, false);
-  assert.equal(knowledge.error, 'missing_dir');
+  assert.equal(knowledge.ok, true);
+  assert.equal(knowledge.createdDir, true);
+  assert.ok(fs.existsSync(missing));
+  assert.ok(fs.existsSync(path.join(missing, 'demo', '01-术语表.md')));
   assert.ok(out.created > 0);
   assert.ok(fs.existsSync(path.join(dirs.experience, 'demo', '01-经验-权限校验.md')));
 });

@@ -164,7 +164,7 @@ function statusText() {
       <span class="ssname">{{ displayName }}</span>
       <span class="ssmode">{{ form.mode === 'port' ? form.listenHost + ':' + form.listenPort : form.pathPrefix }}</span>
       <span v-if="activeStatus" class="ssstat" :class="activeStatus.status">{{ statusText() }}</span>
-      <button v-if="id" class="ssbtn" @click.stop="toggle">{{ activeStatus?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
+      <button v-if="id" class="ssbtn" :class="{ start: activeStatus?.status !== 'running' }" @click.stop="toggle">{{ activeStatus?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
       <span class="sschev" :title="collapsed ? $t('nginx.expand') : $t('nginx.collapse')">{{ collapsed ? '▸' : '▾' }}</span>
     </div>
 
@@ -199,7 +199,7 @@ function statusText() {
 
       <div class="ssactions">
         <button class="ssbtn primary" :disabled="busy" @click="doSave">{{ $t('nginx.saved') }}</button>
-        <button v-if="id" class="ssbtn" @click="toggle">{{ activeStatus?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
+        <button v-if="id" class="ssbtn" :class="{ start: activeStatus?.status !== 'running' }" @click="toggle">{{ activeStatus?.status === 'running' ? $t('nginx.stop') : $t('nginx.start') }}</button>
         <button class="ssbtn" @click="doDelete">{{ $t('nginx.delete') }}</button>
         <span v-if="msg" class="ssmsg">{{ msg }}</span>
       </div>
@@ -235,6 +235,8 @@ function statusText() {
 .sshint { font-size: 12px; color: var(--tx4); }
 .ssbtn { background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 .ssbtn.primary { border-color: var(--ac2); color: var(--ac2); }
+.ssbtn.start { background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 600; font-size: 14px; padding: 8px 22px; border-radius: 8px; }
+.ssbtn.start:hover { background: #15803d; border-color: #15803d; }
 .ssactions, .ssurl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .ssurl code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--tx3); background: var(--bg2); border: 1px solid var(--bd); border-radius: 6px; padding: 4px 6px; overflow-wrap: anywhere; }
 .ssstat.running { color: #2ecc71; }

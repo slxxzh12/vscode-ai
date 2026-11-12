@@ -4,6 +4,8 @@ export interface DocDefaultsResult {
   root?: string;
   paths: Record<DocSlot, string>;
   detected?: Partial<Record<DocSlot, string>>;
+  created?: string[];
+  failed?: Array<{ slot: DocSlot; path: string; error: string }>;
   error?: string;
 }
 
@@ -25,8 +27,9 @@ export function defaultDocPaths(root: string): Record<DocSlot, string> {
   };
 }
 
-export async function detectDocDefaults(root: string): Promise<DocDefaultsResult> {
-  const res = await fetch(`/api/pipeline/defaults?root=${encodeURIComponent(root)}`);
+export async function detectDocDefaults(root: string, { create = false } = {}): Promise<DocDefaultsResult> {
+  const q = `root=${encodeURIComponent(root)}${create ? '&create=1' : ''}`;
+  const res = await fetch(`/api/pipeline/defaults?${q}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || res.statusText);
   return data;

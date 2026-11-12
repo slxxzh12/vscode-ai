@@ -40,6 +40,27 @@ test('doc-defaults：没识别到配置目录时回退到默认结构', () => {
   assert.equal(r.detected.skills, '');
 });
 
+test('doc-defaults：create 时创建缺失的默认目录', () => {
+  const root = tmpRoot();
+  const r = detectDocDefaults(root, { create: true });
+  assert.equal(r.failed.length, 0);
+  for (const rel of ['docs/knowledge', 'docs/version', 'docs/learn', 'docs/memory', 'skills', 'docs/rules']) {
+    assert.ok(fs.statSync(path.join(root, rel)).isDirectory());
+  }
+  assert.equal(r.created.length, 6);
+});
+
+test('doc-defaults：create 不重复创建已存在的目录', () => {
+  const root = tmpRoot();
+  fs.mkdirSync(path.join(root, 'docs/knowledge'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.opencode/skills'), { recursive: true });
+  const r = detectDocDefaults(root, { create: true });
+  assert.ok(!r.created.includes(path.join(root, 'docs/knowledge')));
+  assert.ok(!r.created.includes(path.join(root, '.opencode/skills')));
+  assert.ok(fs.existsSync(path.join(root, '.opencode/skills')));
+  assert.ok(!fs.existsSync(path.join(root, 'skills')));
+});
+
 test('doc-defaults：根目录不存在返回错误', () => {
   assert.equal(detectDocDefaults(path.join(tmpRoot(), 'missing')).error, 'bad-root');
 });

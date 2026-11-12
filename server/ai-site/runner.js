@@ -149,6 +149,11 @@ export function createAiSiteRunner({
     return m ? publicMeta(m) : null;
   }
 
+  function snapshot(id) {
+    const m = runs.get(String(id || ''));
+    return m ? { ...publicMeta(m), log: m.log } : null;
+  }
+
   function subscribe(id, cb) {
     const m = runs.get(String(id || ''));
     if (!m) return () => {};
@@ -182,5 +187,5 @@ export function createAiSiteRunner({
     return buildZip(entries);
   }
 
-  return { createRun, getRun, subscribe, listFiles, readFile, zipOutput, prune };
+  return { createRun, getRun, snapshot, subscribe, listFiles, readFile, zipOutput, prune };
 }

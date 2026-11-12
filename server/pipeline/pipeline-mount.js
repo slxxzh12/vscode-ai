@@ -4,6 +4,8 @@ import { createUsConfigStore } from './us-config.js';
 import { createUsStateStore, resetBaseline } from './us-state.js';
 import { US_RE, listUsDirs } from './us-detect.js';
 import { detectDocDefaults } from './doc-defaults.js';
+import { createSolutionWatch } from './solution-watch.js';
+import { ensureDocsAgents, docsRepoRootOf } from '../docs-agents.js';
 
 const LOG_FILES = new Set(['ai.log', 'test.log', 'build.log', 'package.log']);
 const JOB_RE = /^j_[A-Za-z0-9]+$/;
@@ -44,14 +46,23 @@ export function createPipelineMount({
 }) {
   const config = createUsConfigStore({ file: path.join(dir, 'config.json'), logger });
   const state = createUsStateStore({ file: path.join(dir, 'us-state.json'), logger });
+  const watch = createSolutionWatch({ configStore: config, stateStore: state, docsState, scheduler, logger });
 
-  return async function mount(req, res) {
+  function resetWatchBaseline() {
+    const ds = docsState() || {};
+    const solutionDir = ds.solution?.selected ? String(ds.solution.path || '').trim() : '';
+    if (solutionDir && fs.existsSync(solutionDir)) state.write(resetBaseline(solutionDir, listUsDirs(solutionDir)));
+  }
+
+  async function mount(req, res) {
     const url = new URL(req.url, 'http://localhost');
     try {
       if (url.pathname === '/api/pipeline/defaults' && req.method === 'GET') {
         const root = String(url.searchParams.get('root') || '').trim();
         if (!root) return sendJson(res, 400, { error: 'bad-root' });
-        const r = detectDocDefaults(root);
+        const create = url.searchParams.get('create') === '1';
+        const r = detectDocDefaults(root, { create });
+        if (create && !r.error) r.agents = ensureDocsAgents(docsRepoRootOf(root));
         return sendJson(res, r.error ? 400 : 200, r);
       }
       if (url.pathname === '/api/pipeline/config' && req.method === 'GET') {
@@ -61,12 +72,27 @@ export function createPipelineMount({
         const body = await readBody(req);
         const before = config.read();
         const next = config.write({ ...before, ...body });
-        if (!before.autoDev && next.autoDev) {
-          const ds = docsState() || {};
-          const solutionDir = ds.solution?.selected ? String(ds.solution.path || '').trim() : '';
-          if (solutionDir && fs.existsSync(solutionDir)) state.write(resetBaseline(solutionDir, listUsDirs(solutionDir)));
-        }
+        if (!before.autoDev && next.autoDev) resetWatchBaseline();
+        watch.sync();
         return sendJson(res, 200, next);
+      }
+      if (url.pathname === '/api/pipeline/watch' && req.method === 'GET') {
+        return sendJson(res, 200, watch.status());
+      }
+      if (url.pathname === '/api/pipeline/watch' && req.method === 'POST') {
+        const body = await readBody(req);
+        const cfg = config.read();
+        if (body.enabled === false) {
+          const next = config.write({ ...cfg, watch: false });
+          watch.stop();
+          return sendJson(res, 200, { ...watch.status(), config: next });
+        }
+        // 启动监控：同时开启自动编码，并把当前已有方案记为基线（只处理之后新增的方案）。
+        const next = config.write({ ...cfg, autoDev: true, watch: true });
+        resetWatchBaseline();
+        watch.start();
+        await watch.scan();
+        return sendJson(res, 200, { ...watch.status(), config: next });
       }
       if (url.pathname === '/api/pipeline/retry' && req.method === 'POST') {
         const body = await readBody(req);
@@ -96,5 +122,9 @@ export function createPipelineMount({
       logger?.error?.('pipeline http', e);
       return sendJson(res, 500, { error: 'internal', message: String(e?.message || e) });
     }
-  };
+  }
+
+  mount.watch = watch;
+  mount.syncWatch = () => watch.sync();
+  return mount;
 }

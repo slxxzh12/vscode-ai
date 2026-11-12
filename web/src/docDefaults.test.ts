@@ -31,4 +31,9 @@ describe('docDefaults', () => {
     expect(r.paths.skills).toBe('/repo/.opencode/skills');
     expect(fetch).toHaveBeenCalledWith('/api/pipeline/defaults?root=D%3A%5Crepo');
   });
+
+  it('create 时带上创建参数', async () => {
+    await detectDocDefaults('D:\\repo', { create: true });
+    expect(fetch).toHaveBeenCalledWith('/api/pipeline/defaults?root=D%3A%5Crepo&create=1');
+  });
 });
