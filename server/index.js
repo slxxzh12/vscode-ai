@@ -99,6 +99,7 @@ import { createProxyStore, deepseekFlashSample } from './proxy-store.js';
 import { createProxyCapture } from './proxy-capture.js';
 import { createProxyEngine } from './proxy-engine.js';
 import { createProxyMount } from './proxy-mount.js';
+import { createAiSite } from './ai-site/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -871,6 +872,34 @@ function buildWorkspace({ paths, port }) {
   const proxyCapture = createProxyCapture({ rootDir: paths.proxyCapturesDir, onEvent: broadcastNginx });
   const proxyEngine = createProxyEngine({ store: proxyStore, capture: proxyCapture, httpServer: server, onEvent: broadcastNginx, logger: log });
   const proxyMount = createProxyMount({ store: proxyStore, engine: proxyEngine, capture: proxyCapture, logger: log });
+  const aiSite = createAiSite({
+    dir: paths.aiSiteDir,
+    logger: log,
+    isPrefixTaken: (prefix) => proxyStore.list().some((r) => r.mode === 'path' && (r.pathPrefix === prefix || r.pathPrefix.startsWith(prefix + '/') || prefix.startsWith(r.pathPrefix + '/'))),
+    onRunState: (st) => {
+      const jobId = `ai_${st.id}`;
+      const runLog = path.join(st.runDir, 'run.log');
+      const runOut = path.join(st.runDir, 'output');
+      const base = {
+        groupName: 'ai-site', taskId: st.id, classname: 'ai-site', methodName: 'run',
+        createIP: `${HOST}:${port}`, workIP: `${HOST}:${port}`, createMachineId: engine.pub.machineId,
+      };
+      const result = { runId: st.id, logPath: runLog, outputDir: runOut };
+      if (st.phase === 'start') {
+        void scheduler.queue.enqueueExternalJob({
+          jobId, ...base, status: 3, createTime: st.startedAt,
+          paramStr: { task: { name: st.pluginTitle || st.plugin }, plugin: st.plugin, user: st.user, runId: st.id, runDir: st.runDir },
+          result,
+        }).catch((e) => log.warn?.('ai-site queue enqueue failed', (e && e.message) || e));
+      } else {
+        void scheduler.queue.updateExternalJob(jobId, {
+          status: st.status === 'success' ? 1 : 2,
+          runtime: Math.max(0, Number(st.finishedAt) - Number(st.startedAt)),
+          result: { ...result, status: st.status, error: st.error },
+        }).catch((e) => log.warn?.('ai-site queue update failed', (e && e.message) || e));
+      }
+    },
+  });
   const httpApi = createHttpApi({
     projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'),
     codeGroups, codePrefs, docUpdateStore, composerPrefs, sessionProjects, windowState, startupPrefs,
@@ -887,7 +916,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, pipelineMount, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
+  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, pipelineMount, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, navicatMount, proxyStore, proxyEngine, proxyMount, aiSite, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
 }
 
 // ---- 工作区（端口档案）----
@@ -905,6 +934,7 @@ function initWorkspace(paths, port) {
     gateway = createGateway({ httpServer: server, sessionManager: ws.sessionManager, workflowRunner: ws.workflowRunner, requireAuthWs, log, restoreSessionById: ws.restoreSessionById });
   }
   void ws.proxyEngine.startEnabled().catch((e) => log.warn('proxy start failed', (e && e.message) || e));
+  void ws.aiSite.start().catch((e) => log.warn('ai-site start failed', (e && e.message) || e));
   void restoreSessions({
     ledger: ws.sessionLedger,
     sessionManager: ws.sessionManager,
@@ -947,6 +977,12 @@ function initWorkspace(paths, port) {
 const server = http.createServer(async (req, res) => {
   if (!(await requireAuthHttp(req, res))) { res.writeHead(401); res.end(); return; }
   const url = new URL(req.url, 'http://localhost');
+
+  // AI 命令执行站点（路径模式）优先拦截：走站点自己的登录鉴权，不受 devflow 远程门禁影响
+  if (ws && ws.aiSite && ws.aiSite.matchPath(url.pathname)) {
+    ws.aiSite.handleHttp(req, res, url);
+    return;
+  }
 
   // 远程访问门禁：非回环客户端必须持有效 Cookie；链接（?access=）不再免密，一律需输入访问密码
   if (!isLocalReq(req)) {
@@ -1636,6 +1672,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/scheduler')) { await ws.scheduler.mount(req, res); return; }
   if (url.pathname.startsWith('/api/navicat')) { await ws.navicatMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/nginx')) { await ws.proxyMount(req, res, url); return; }
+  if (url.pathname.startsWith('/api/ai-site')) { await ws.aiSite.mount(req, res, url); return; }
   if (url.pathname === '/api/demo-site' || url.pathname.startsWith('/api/demo-site/')) {
     serveStatic({
       root: path.join(__dirname, 'demo-site'),
@@ -1779,6 +1816,8 @@ function startListening(port = currentPort) {
         workflowsDir: path.join(stateRoot, 'workflows'),
         historyFile: path.join(stateRoot, 'message-history.jsonc'),
         skillsRoot: process.env.DEVFLOW_COLLAB_SKILLS || path.join(stateRoot, 'skills-opencode'),
+        aiSiteDir: path.join(stateRoot, 'ai-site'),
+        aiSiteRunsDir: path.join(stateRoot, 'ai-site', 'runs'),
       });
       initWorkspace(paths, actual);
       return;
