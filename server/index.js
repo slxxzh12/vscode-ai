@@ -952,6 +952,7 @@ function buildWorkspace({ paths, port }) {
     scanner: diskCleanScanner,
     cleaner: diskCleanCleaner,
     validateCustomDir,
+    listCategories,
     forbiddenRoots: [APP_DIR, paths.dir, os.homedir(), process.env.SystemRoot || ''],
     logger: log,
   });
