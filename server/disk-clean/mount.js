@@ -40,6 +40,7 @@ export function createDiskCleanMount({
   overview = defaultOverview,
   validateCustomDir = () => ({ ok: true }),
   forbiddenRoots = [],
+  listCategories = () => [],
 } = {}) {
   const supported = platform === 'win32';
 
@@ -53,6 +54,11 @@ export function createDiskCleanMount({
     }
 
     if (head === 'overview' && req.method === 'GET') { sendJson(res, 200, overview()); return; }
+
+    if (head === 'categories' && req.method === 'GET') {
+      sendJson(res, 200, { items: listCategories({ customDirs: store.readSettings().customDirs }) });
+      return;
+    }
 
     if (head === 'settings') {
       if (req.method === 'GET') { sendJson(res, 200, store.readSettings()); return; }

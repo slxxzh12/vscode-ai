@@ -69,10 +69,15 @@ test('mount：scan / clean 参数与状态', async (t) => {
     get: (id) => (id === 'j1' ? { status: 'done', removed: 1, bytes: 2, failed: [], skipped: 0 } : null),
   };
   const store = { readSettings: () => ({ exclusions: { dirs: [], patterns: [] }, customDirs: [] }), writeSettings: (v) => v, readHistory: () => [] };
-  const mount = createDiskCleanMount({ platform: 'win32', store, scanner, cleaner, overview: () => ({ drive: 'C:', total: 100, free: 50 }) });
+  const mount = createDiskCleanMount({
+    platform: 'win32', store, scanner, cleaner,
+    overview: () => ({ drive: 'C:', total: 100, free: 50 }),
+    listCategories: () => [{ id: 'npm', group: 'app', risk: 'safe', defaultChecked: true, needsAdmin: false, minAgeDays: 0 }],
+  });
   const server = await start(mount);
   t.after(() => server.close());
   assert.deepEqual(json(await req(server, '/api/disk-clean/overview')), { drive: 'C:', total: 100, free: 50 });
+  assert.deepEqual(json(await req(server, '/api/disk-clean/categories')).items[0].id, 'npm');
   assert.deepEqual(json(await req(server, '/api/disk-clean/scan', { method: 'POST', body: {} })), { scanId: 's1' });
   assert.equal((await req(server, '/api/disk-clean/scan/nope')).status, 410);
   assert.deepEqual(json(await req(server, '/api/disk-clean/clean', { method: 'POST', body: { scanId: 's1', categoryIds: ['npm'] } })), { jobId: 'j1' });
