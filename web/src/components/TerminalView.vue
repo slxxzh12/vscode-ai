@@ -21,6 +21,7 @@ import type { DocSource } from '../tools/doc/docSource';
 import TextToolBody from '../tools/text/TextToolBody.vue';
 import Base64Tool from '../tools/base64/Base64Tool.vue';
 import SecurityTool from '../tools/security/SecurityTool.vue';
+import DiskCleanTool from '../tools/disk-clean/DiskCleanTool.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
@@ -1797,6 +1798,7 @@ onBeforeUnmount(() => {
       <TextToolBody v-else-if="activeToolName === 'translate'" />
       <Base64Tool v-else-if="activeToolName === 'base64'" />
       <SecurityTool v-else-if="activeToolName === 'security'" />
+      <DiskCleanTool v-else-if="activeToolName === 'disk-clean'" />
       <PostmanTool v-else-if="activeToolName === 'postman'" />
       <NavicatTool v-else-if="activeToolName === 'navicat'" />
       <NginxTool v-else-if="activeToolName === 'nginx'" />
