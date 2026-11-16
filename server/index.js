@@ -101,6 +101,12 @@ import { createProxyCapture } from './proxy-capture.js';
 import { createProxyEngine } from './proxy-engine.js';
 import { createProxyMount } from './proxy-mount.js';
 import { createAiSite } from './ai-site/index.js';
+import { createDiskCleanStore } from './disk-clean/store.js';
+import { createDiskCleanScanner } from './disk-clean/scan.js';
+import { createDiskCleanCleaner } from './disk-clean/clean.js';
+import { createDiskCleanMount } from './disk-clean/mount.js';
+import { listCategories, resolveTargets } from './disk-clean/catalog.js';
+import { validateCustomDir } from './disk-clean/validate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const log = createLogger('[server]');
@@ -929,6 +935,26 @@ function buildWorkspace({ paths, port }) {
       }
     },
   });
+  const diskCleanStore = createDiskCleanStore({ dir: paths.diskCleanDir });
+  const diskCleanScanner = createDiskCleanScanner({
+    listCategories,
+    resolveTargets,
+    readSettings: () => diskCleanStore.readSettings(),
+  });
+  const diskCleanCleaner = createDiskCleanCleaner({
+    jobsDir: path.join(paths.diskCleanDir, 'jobs'),
+    resolveTargets,
+    appendHistory: (entry) => diskCleanStore.appendHistory(entry),
+    logger: log,
+  });
+  const diskCleanMount = createDiskCleanMount({
+    store: diskCleanStore,
+    scanner: diskCleanScanner,
+    cleaner: diskCleanCleaner,
+    validateCustomDir,
+    forbiddenRoots: [APP_DIR, paths.dir, os.homedir(), process.env.SystemRoot || ''],
+    logger: log,
+  });
   const httpApi = createHttpApi({
     projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'),
     codeGroups, codePrefs, docUpdateStore, composerPrefs, sessionProjects, windowState, startupPrefs,
@@ -945,7 +971,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, pipelineMount, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, resumeJobSession, navicatMount, proxyStore, proxyEngine, proxyMount, aiSite, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
+  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, pipelineMount, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, resumeJobSession, navicatMount, proxyStore, proxyEngine, proxyMount, aiSite, diskCleanStore, diskCleanMount, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
 }
 
 // ---- 工作区（端口档案）----
@@ -1711,6 +1737,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/navicat')) { await ws.navicatMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/nginx')) { await ws.proxyMount(req, res, url); return; }
   if (url.pathname.startsWith('/api/ai-site')) { await ws.aiSite.mount(req, res, url); return; }
+  if (url.pathname.startsWith('/api/disk-clean')) { await ws.diskCleanMount(req, res, url); return; }
   if (url.pathname === '/api/demo-site' || url.pathname.startsWith('/api/demo-site/')) {
     serveStatic({
       root: path.join(__dirname, 'demo-site'),

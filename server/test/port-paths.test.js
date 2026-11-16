@@ -64,3 +64,10 @@ test('ensurePortDirs 幂等创建必需子目录', () => {
   }
   ensurePortDirs(p);   // 第二次不抛
 });
+
+test('portPaths：包含 disk-clean 数据目录并自动创建', () => {
+  const root = tmpRoot();
+  const p = ensurePortDirs(portPaths(2222, { root }));
+  assert.equal(p.diskCleanDir, path.join(root, 'ports', '2222', 'disk-clean'));
+  assert.ok(fs.existsSync(p.diskCleanDir));
+});
