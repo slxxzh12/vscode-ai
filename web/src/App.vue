@@ -28,6 +28,7 @@ import { useVersion } from './useVersion';
 import { useUpgrade, shouldPopup, refreshUpgrade, upgradeBadgeText, upgradeOpenTarget } from './useUpgrade';
 import { upgradeAsked } from './upgradePrefs';
 import UpgradeDialog from './components/UpgradeDialog.vue';
+import VoidLogo from './components/VoidLogo.vue';
 import SkillsInstallDialog from './components/SkillsInstallDialog.vue';
 import OpencodeInstallDialog from './components/OpencodeInstallDialog.vue';
 import { useSkillsInstall } from './useSkillsInstall';
@@ -40,7 +41,7 @@ import { openRestoredSession } from './sessionRestore';
 import { useLedgerSessions } from './ledgerSessions';
 import type { SessionExtra } from './sessionTree';
 import { allowedRestoreIds, loadRecentTabs, loadRestoreTabs, pushRecentTab, saveRecentTabs } from './restorePrefs';
-import { pendingToolTab, clearPendingToolTab, pendingProxyTab, requestProxyTab, requestStartAgent } from './uiIntents';
+import { pendingToolTab, clearPendingToolTab, pendingProxyTab, requestProxyTab, requestStartAgent, pendingAgentRun, requestAgentPrompt } from './uiIntents';
 import { parseSchedulerPromptFromSearch, requestSchedulerPrompt, SCHEDULER_PROMPT_PARAMS, parseSchedulerEditFromSearch, requestSchedulerEdit, SCHEDULER_EDIT_PARAMS } from './scheduler/schedulerIntent';
 import { useNavicatWorkbench } from './tools/navicat/useNavicatWorkbench';
 import { shouldOpenInNavicat } from './tools/navicat/sqliteFile';
@@ -223,6 +224,10 @@ function onDirColorChange(e: Event) {
 }
 const projects = ref<ProjectInfo[]>([]);
 const currentProject = ref<string | null>(null);
+const gitBranch = ref('');
+const gitBranches = ref<string[]>([]);
+const branchSelRef = ref<HTMLSelectElement | null>(null);
+const projMenuOpen = ref(false);
 const rail = ref<'explorer' | 'stat' | 'scheduler' | 'proxy' | 'mobile'>('explorer');
 // 工具页签意图：切到 explorer 并打开对应工具页签（磁贴 / 活动栏图标触发）
 watch(pendingToolTab, (id) => {
@@ -338,9 +343,11 @@ let deepLinkOpened = false;             // ?open= 深链已打开文件：优先
 // 同步读 localStorage，保证会话页签的可见集合在 TerminalView 首次收到 SESSION_LIST 前就定好。
 let recentTabs = loadRecentTabs();
 const bootAllowed = allowedRestoreIds(recentTabs, loadRestoreTabs());
-const visibleSessionIds = bootAllowed
+const bootSessionIds = bootAllowed
   ? [...bootAllowed].filter((id) => id.startsWith('s:')).map((id) => id.slice(2))
   : null;                                // null = 无历史，不限制（保持旧行为）
+// 启动恢复：直接按「最近点击」恢复会话页签，不再区分当前工作目录
+const visibleSessionIds = computed(() => bootSessionIds);
 const liveProjectBySession = computed(() => {
   const out: Record<string, string | null> = {};
   for (const s of terminal.state.sessions) out[s.id] = s.projectId ?? null;
@@ -418,7 +425,9 @@ async function restoreWindowState(projectsReady: Promise<void>) {
   if (plan.historyTab) historyTab.value = plan.historyTab;
   if (typeof plan.msgFilter === 'boolean') msgFilter.value = plan.msgFilter;
   if (plan.msgAllStyle) msgAllStyle.value = plan.msgAllStyle;
-  const tabs = bootAllowed ? plan.tabs.filter((t) => bootAllowed.has(`f:${t.projectId}|${t.path}`)) : plan.tabs;
+  const pid = currentProject.value;
+  const tabs = (bootAllowed ? plan.tabs.filter((t) => bootAllowed.has(`f:${t.projectId}|${t.path}`)) : plan.tabs)
+    .filter((t) => !pid || t.projectId === pid);
   const opened = tabs.map((t) => `f:${t.projectId}|${t.path}`);
   // 恢复出来的文件页签只挂到页签栏，不抢占激活（否则会把深链/用户已打开的文件顶掉）
   for (const t of tabs) center.openFile(t.projectId, t.path, t.label, false);
@@ -573,7 +582,43 @@ watch(currentProjectInfo, (info) => {
   currentDirColorId.value = root ? assignDirColor(root) : '';
   try { void fetch('/api/usage/cwd', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root }) }); } catch { /* ignore */ }
 }, { immediate: true });
-// 顶栏展示：优先「选中文件的绝对路径」，无选中文件则显示项目根绝对路径
+// 顶栏项目下拉里展示当前目录的 git 分支（本地 + 远端），点击即可切换
+async function loadGitBranches() {
+  const id = currentProject.value || '';
+  if (!id || !currentProjectInfo.value?.root) { gitBranch.value = ''; gitBranches.value = []; return; }
+  const r = await projectsApi.branches(id).catch(() => ({ current: '', branches: [] }));
+  if ((currentProject.value || '') !== id) return;
+  gitBranch.value = r.current;
+  gitBranches.value = r.branches;
+}
+watch(currentProjectInfo, () => {
+  gitBranch.value = '';
+  gitBranches.value = [];
+  void loadGitBranches();
+}, { immediate: true });
+// 每次打开目录下拉都刷新一次，避免外部 git 操作后列表过期
+watch(projMenuOpen, (open) => { if (open) void loadGitBranches(); });
+// 切换分支：乐观更新，失败回滚并提示（工作区有改动时 git 会拒绝）
+async function selectGitBranch(branch: string): Promise<boolean> {
+  const pid = currentProject.value || '';
+  const prev = gitBranch.value;
+  if (!pid || !branch || branch === prev) return true;
+  gitBranch.value = branch;
+  const r = await projectsApi.checkout(pid, branch);
+  if (r.ok) {
+    window.dispatchEvent(new CustomEvent('df-refresh-tree'));
+    void loadGitBranches();
+    return true;
+  }
+  gitBranch.value = prev;
+  await nextTick();
+  if (branchSelRef.value) branchSelRef.value.value = prev;
+  alert(t('top.branch_switch_failed', { msg: r.message || r.error || '' }));
+  return false;
+}
+async function pickBranchFromMenu(branch: string) {
+  if (await selectGitBranch(branch)) projMenuOpen.value = false;
+}
 const displayPath = computed(() => {
   const root = currentProjectInfo.value?.root || '';
   if (!root) return '';
@@ -682,26 +727,51 @@ async function loadProjects() {
     noProjectPrompted.value = true;
     openAddFolder();
   }
+  void projectsApi.setCurrent(currentProject.value || '');
 }
 function selectProject(id: string) {
   currentProject.value = id;
   if (id) touchRecent(id);
+  void projectsApi.setCurrent(id || '');
 }
-async function removeCurrentProject() {
-  const proj = currentProjectInfo.value;
+// 敏感信息扫描 → 用提示词启动 Agent：确保目录是项目、选中它、跳到首页，再交给 TerminalView 新开 Agent
+function sameProjectRoot(a: string, b: string): boolean {
+  const n = (s: string) => String(s || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  return !!a && n(a) === n(b);
+}
+watch(pendingAgentRun, async (v) => {
+  if (!v) return;
+  pendingAgentRun.value = null;
+  try {
+    let proj = projects.value.find((p) => sameProjectRoot(p.root, v.dir));
+    if (!proj) { proj = await projectsApi.add(v.dir); await loadProjects(); }
+    if (!proj) return;
+    selectProject(proj.id);
+    rail.value = 'explorer';
+    await nextTick();
+    requestAgentPrompt(v.prompt);
+  } catch (e) {
+    alert(t('top.add_folder_failed', { msg: (e as Error).message || String(e) }));
+  }
+}, { immediate: true });
+async function removeProjectById(id: string) {
+  const proj = projects.value.find((p) => p.id === id);
   if (!proj) return;
   if (!window.confirm(t('top.remove_folder_confirm', { name: proj.name }))) return;
   try {
-    await projectsApi.remove(proj.id);
-    const remaining = projects.value.filter((p) => p.id !== proj.id);
+    await projectsApi.remove(id);
+    const remaining = projects.value.filter((p) => p.id !== id);
     projects.value = remaining;
-    const kept = recents.value.filter((r) => r.id !== proj.id);
+    const kept = recents.value.filter((r) => r.id !== id);
     recents.value = kept;
     saveRecents(kept);
-    const byId = new Set(remaining.map((p) => p.id));
-    const next = kept.slice().sort((a, b) => b.ts - a.ts).find((r) => byId.has(r.id));
-    currentProject.value = next ? next.id : (remaining[0]?.id || null);
-    if (currentProject.value) touchRecent(currentProject.value);
+    if (currentProject.value === id) {
+      const byId = new Set(remaining.map((p) => p.id));
+      const next = kept.slice().sort((a, b) => b.ts - a.ts).find((r) => byId.has(r.id));
+      currentProject.value = next ? next.id : (remaining[0]?.id || null);
+      if (currentProject.value) touchRecent(currentProject.value);
+      void projectsApi.setCurrent(currentProject.value || '');
+    }
   } catch (e) { alert(t('top.remove_folder_failed', { msg: (e as Error).message || String(e) })); }
 }
 const addOpen = ref(false);
@@ -903,24 +973,68 @@ onBeforeUnmount(() => {
   <ElConfigProvider :locale="elementLocale">
   <div class="app" ref="appRef">
     <header class="top" :class="{ colored: !!currentDirColor }" :style="currentDirColor ? { background: currentDirColor } : undefined">
-      <span class="logo">◈ {{ $t('brand.title') }}</span>
-      <span v-if="appVersion" class="app-ver">{{ appVersion }}</span>
-      <button v-if="upgradeInfo?.hasUpdate" class="upg-badge" :title="upgradeBadgeText(upgradeInfo, $t('upgrade.new'))" @click="openUpgrade">↑ {{ upgradeBadgeText(upgradeInfo, $t('upgrade.new')) }}</button>
-      <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">＋</button>
-      <select v-if="orderedProjects.length" :value="currentProject || ''" class="proj-sel" :title="currentProjectInfo?.root || ''" @change="(e: any) => selectProject(e.target.value)">
-        <option v-for="it in orderedProjects" :key="it.project.id" :value="it.project.id" :title="it.project.root">
-          {{ it.project.name }}{{ it.ts ? ' · ' + fmtRecent(it.ts) : '' }}
-        </option>
-      </select>
-      <button v-if="currentProjectInfo" class="rmproj" :title="$t('top.remove_folder')" @click="removeCurrentProject">×</button>
-      <span v-if="displayPath" class="projpath" :title="displayPath + '\n' + $t('top.path_open_dir')" @dblclick="revealDisplayPath">{{ displayPath }}</span>
-      <div class="spacer" />
-      <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
-      <select v-if="currentProjectInfo" :value="currentDirColorId" class="color-sel" :title="$t('top.color.title')" @change="onDirColorChange">
-        <option v-for="c in colorOptions" :key="c.id" :value="c.id">{{ $t(c.key) }}</option>
-      </select>
-      <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
-      <button class="theme-btn" :title="theme === 'dark' ? $t('app.theme.to_light') : $t('app.theme.to_dark')" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
+      <div class="top-left">
+        <span class="logo" :title="$t('brand.title')">
+          <VoidLogo class="logo-icon" />
+        </span>
+        <button v-if="upgradeInfo?.hasUpdate" class="upg-badge" :title="upgradeBadgeText(upgradeInfo, $t('upgrade.new'))" @click="openUpgrade">↑ {{ upgradeBadgeText(upgradeInfo, $t('upgrade.new')) }}</button>
+        <button class="addproj" :title="$t('top.add_folder')" @click="openAddFolder">
+          <span class="addproj-plus">＋</span><span class="addproj-label">{{ $t('top.add_workspace') }}</span>
+        </button>
+        <div v-if="orderedProjects.length" class="proj-block">
+          <el-popover v-model:visible="projMenuOpen" placement="bottom-start" trigger="click" :width="340" popper-class="proj-pop">
+            <template #reference>
+              <button class="proj-trigger" :title="currentProjectInfo?.root || ''">
+                <span class="proj-trigger-name">{{ currentProjectInfo?.name || '' }}</span>
+                <span class="proj-caret">▾</span>
+              </button>
+            </template>
+            <div class="proj-list">
+              <div
+                v-for="it in orderedProjects"
+                :key="it.project.id"
+                class="proj-item"
+                :class="{ on: it.project.id === currentProject }"
+                @click="selectProject(it.project.id); projMenuOpen = false"
+              >
+                <span class="proj-item-name">{{ it.project.name }}</span>
+                <span v-if="it.ts" class="proj-item-ts">{{ fmtRecent(it.ts) }}</span>
+                <button class="proj-item-del" :title="$t('top.remove_folder')" @click.stop="removeProjectById(it.project.id)">×</button>
+              </div>
+            </div>
+            <div class="proj-branches">
+              <div class="proj-branches-head">
+                <span>{{ $t('top.git_branches') }}</span>
+                <span v-if="gitBranch" class="proj-branches-cur">{{ gitBranch }}</span>
+              </div>
+              <div v-if="gitBranches.length" class="proj-branches-list">
+                <button
+                  v-for="b in gitBranches"
+                  :key="b"
+                  class="proj-branch-item"
+                  :class="{ on: b === gitBranch }"
+                  :title="b"
+                  @click="pickBranchFromMenu(b)"
+                >{{ b }}</button>
+              </div>
+              <div v-else class="proj-branches-empty">{{ $t('top.no_branches') }}</div>
+            </div>
+          </el-popover>
+        </div>
+        <span v-if="displayPath" class="projpath" :title="displayPath + '\n' + $t('top.path_open_dir')" @dblclick="revealDisplayPath">{{ displayPath }}</span>
+      </div>
+      <div class="top-center">
+        <span class="brand-center">{{ $t('brand.title') }}</span>
+        <span v-if="appVersion" class="app-ver">{{ appVersion }}</span>
+      </div>
+      <div class="top-right">
+        <span v-if="terminal.state.status === 'reconnecting'" class="net">{{ $t('app.reconnecting') }}</span>
+        <select v-if="currentProjectInfo" :value="currentDirColorId" class="color-sel" :title="$t('top.color.title')" @change="onDirColorChange">
+          <option v-for="c in colorOptions" :key="c.id" :value="c.id">{{ $t(c.key) }}</option>
+        </select>
+        <button class="lang-btn" :title="$t('lang.switch')" @click="toggleLang">{{ locale === 'en' ? $t('lang.zh_short') : $t('lang.en_short') }}</button>
+        <button class="theme-btn" :title="theme === 'dark' ? $t('app.theme.to_light') : $t('app.theme.to_dark')" @click="toggle">{{ theme === 'dark' ? '☀' : '🌙' }}</button>
+      </div>
     </header>
 
     <div class="main">
@@ -996,26 +1110,51 @@ onBeforeUnmount(() => {
 .app { display: flex; flex-direction: column; height: 100%; position: relative; }
 .upg-badge { background: var(--warn); color: #fff; border: none; border-radius: 8px; padding: 1px 8px; font-size: 11px; font-weight: 700; cursor: pointer; }
 .upg-badge:hover { filter: brightness(1.08); }
-.top { display: flex; align-items: center; gap: 12px; min-height: 42px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--bd); flex: none; }
-.logo { color: var(--ac3); font-weight: 700; white-space: nowrap; }
+.top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; min-height: 42px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--bd); flex: none; }
+.top-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.top-right { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.top-center { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.brand-center { color: #fff; font-weight: 700; font-size: 13px; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.top-center .app-ver { color: rgba(255,255,255,.88); }
+.logo { display: flex; align-items: center; color: var(--ac3); flex: none; }
+.logo-icon { width: 22px; height: 22px; display: block; }
 .app-ver { color: var(--tx3); font-size: 12px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
-.addproj { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
+.addproj { display: inline-flex; align-items: center; gap: 4px; background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; line-height: 1.2; white-space: nowrap; }
+.addproj-plus { font-size: 16px; line-height: 1; }
 .addproj:hover { border-color: var(--ac2); color: var(--ac2); }
-.rmproj { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 7px; cursor: pointer; font-size: 13px; line-height: 1.2; }
-.rmproj:hover { border-color: var(--danger, #d9534f); color: var(--danger, #d9534f); }
-.projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; flex: 0 1 auto; min-width: 0; white-space: normal; word-break: break-all; line-height: 1.35; cursor: pointer; padding: 6px 0; }
+.projpath { color: var(--tx5); font-size: 11px; font-family: ui-monospace, Consolas, monospace; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.35; cursor: pointer; padding: 6px 0; }
 .projpath:hover { color: var(--tx2); }
-.proj-sel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; max-width: 320px; }
+.proj-block { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: none; }
+.proj-trigger { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 13px; line-height: 1.2; }
+.proj-trigger:hover { border-color: var(--ac2); }
+.proj-trigger-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-caret { color: var(--tx4); font-size: 10px; flex: none; }
+.proj-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; }
+.proj-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; color: var(--tx2); }
+.proj-item:hover { background: var(--bg4); }
+.proj-item.on { color: var(--ac2); }
+.proj-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-item-ts { flex: none; color: var(--tx4); font-size: 11px; }
+.proj-item-del { flex: none; border: none; background: none; color: var(--tx4); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+.proj-item-del:hover { color: var(--danger, #d9534f); }
+.proj-branches { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--bd); }
+.proj-branches-head { display: flex; align-items: center; gap: 8px; padding: 2px 8px 6px; color: var(--tx4); font-size: 11px; text-transform: uppercase; }
+.proj-branches-cur { margin-left: auto; color: var(--ac2); text-transform: none; font-family: ui-monospace, Consolas, monospace; }
+.proj-branches-list { display: flex; flex-direction: column; gap: 2px; max-height: 200px; overflow: auto; }
+.proj-branch-item { display: block; width: 100%; text-align: left; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--tx2); padding: 5px 8px; cursor: pointer; font: 12px ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-branch-item:hover { background: var(--bg4); }
+.proj-branch-item.on { border-color: var(--ac2); color: var(--ac2); }
+.proj-branches-empty { padding: 2px 8px 6px; color: var(--tx5); font-size: 12px; }
 .spacer { flex: 1; }
 .theme-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 9px; cursor: pointer; font-size: 14px; line-height: 1; }
 .theme-btn:hover { border-color: var(--ac2); }
 .lang-btn { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 12px; line-height: 1; }
 .lang-btn:hover { border-color: var(--ac2); }
 .color-sel { background: var(--bg5); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1; }
-.top.colored .logo, .top.colored .projpath, .top.colored .net, .top.colored .app-ver { color: #fff; }
-.top.colored .lang-btn, .top.colored .theme-btn, .top.colored .addproj, .top.colored .rmproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
-.top.colored .color-sel, .top.colored .proj-sel { background: var(--bg1); color: var(--tx); border-color: rgba(255,255,255,.45); }
-.top.colored .color-sel option, .top.colored .proj-sel option { color: #111; background: #fff; }
+.top.colored .logo, .top.colored .projpath, .top.colored .net { color: #fff; }
+.top.colored .lang-btn, .top.colored .theme-btn, .top.colored .addproj { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.45); }
+.top.colored .color-sel { background: var(--bg1); color: var(--tx); border-color: rgba(255,255,255,.45); }
+.top.colored .color-sel option { color: #111; background: #fff; }
 .net { color: var(--warn); font-size: 12px; }
 .main { flex: 1; display: flex; min-height: 0; }
 .activity { width: 40px; background: var(--bg6); border-right: 1px solid var(--bd); display: flex; flex-direction: column; align-items: center; padding-top: 6px; gap: 2px; flex: none; }

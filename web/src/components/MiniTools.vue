@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { watch } from 'vue';
-import { MINI_TOOLS, type ToolId } from '../tools/catalog';
+import { MINI_TOOLS, groupMiniTools, type ToolId } from '../tools/catalog';
 import { pendingTool, clearPendingTool, requestToolTab, requestProxyTab } from '../uiIntents';
 
 const TOOLS = MINI_TOOLS;
+const GROUPS = groupMiniTools();
 
 function openTool(id: ToolId) {
   if (TOOLS.find((x) => x.id === id)?.disabled) return;
@@ -20,16 +21,21 @@ watch(pendingTool, (id) => {
 
 <template>
   <div class="mt">
-    <div class="mtrow">
-      <button v-for="x in TOOLS" :key="x.id" class="mticon" :disabled="x.disabled" :title="x.disabled && x.hint ? $t(x.hint) : $t(x.labelKey)" @click="openTool(x.id)">
-        <span class="mtglyph">{{ x.icon }}</span><span class="mtname">{{ $t(x.labelKey) }}</span>
-      </button>
+    <div v-for="g in GROUPS" :key="g.id" class="mtgroup">
+      <div class="mtgtitle">{{ $t(g.labelKey) }}</div>
+      <div class="mtrow">
+        <button v-for="x in g.tools" :key="x.id" class="mticon" :disabled="x.disabled" :title="x.disabled && x.hint ? $t(x.hint) : $t(x.labelKey)" @click="openTool(x.id)">
+          <span class="mtglyph">{{ x.icon }}</span><span class="mtname">{{ $t(x.labelKey) }}</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.mt { margin: 0 0 16px; }
+.mt { margin: 0 0 16px; display: flex; flex-direction: column; gap: 14px; }
+.mtgroup { display: flex; flex-direction: column; gap: 8px; }
+.mtgtitle { color: var(--tx4); font-size: 12px; font-weight: 600; }
 .mtrow { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px; }
 .mticon { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: var(--bg2); border: 1px solid var(--bd); color: var(--tx2); border-radius: 16px; padding: 22px 12px; cursor: pointer; font-size: 15px; }
 .mticon:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }

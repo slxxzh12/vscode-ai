@@ -3,6 +3,7 @@
 
 const BOM = '\uFEFF';
 const SYSTEM_DBS = new Set(['information_schema', 'mysql', 'performance_schema', 'sys']);
+const PG_SYSTEM_DBS = new Set(['postgres', 'template0', 'template1']);
 
 export function quoteIdent(type, name) {
   const s = String(name ?? '');
@@ -70,6 +71,16 @@ export function pickIdColumn(columns) {
   return list.length ? String(list[0].name) : '';
 }
 
+// 抽样排序键：优先用全部主键列（支持联合主键），其次 id，再退第一列。
+export function pickIdColumns(columns) {
+  const list = Array.isArray(columns) ? columns : [];
+  const pk = list.filter((c) => c.pk).map((c) => String(c.name));
+  if (pk.length) return pk;
+  const byId = list.find((c) => String(c.name).toLowerCase() === 'id');
+  if (byId) return [String(byId.name)];
+  return list.length ? [String(list[0].name)] : [];
+}
+
 function baseName(p) {
   return String(p || '').split(/[\\/]/).filter(Boolean).pop() || '';
 }
@@ -116,34 +127,34 @@ async function tableMeta(exec, profile, password, db, table) {
   return { ddl: String(ddlRes.rows?.[0]?.[0] || ''), columns };
 }
 
-async function sampleTable(exec, profile, password, db, table, idCol, n) {
+async function sampleTable(exec, profile, password, db, table, idCols, n, sample = true) {
   const type = profile.type;
   const p = { ...profile, database: type === 'sqlite' ? profile.database : db };
   const t = quoteIdent(type, table);
-  const order = idCol ? ` ORDER BY ${quoteIdent(type, idCol)}` : '';
+  if (sample === false) {
+    // 不抽样：导出整表（受驱动上限保护，仍会一次性读入内存）。
+    const all = await exec.exec(p, password, `SELECT * FROM ${t}`, { maxRows: Number.MAX_SAFE_INTEGER });
+    return { columns: Array.isArray(all.columns) ? all.columns : [], rows: all.rows || [] };
+  }
+  const keys = Array.isArray(idCols) ? idCols.filter(Boolean) : [];
+  const order = keys.length ? ` ORDER BY ${keys.map((c) => quoteIdent(type, c)).join(', ')}` : '';
   const head = await exec.exec(p, password, `SELECT * FROM ${t}${order} LIMIT ${n}`, { maxRows: n });
   const columns = Array.isArray(head.columns) ? head.columns : [];
   const rows = (head.rows || []).slice();
-  if (!idCol) return { columns, rows };
+  if (!keys.length) return { columns, rows };
 
+  // 按主键取「最小 n 条 + 最大 n 条」；联合主键用整组键去重。
   const tail = await exec.exec(p, password, `SELECT * FROM ${t}${order} DESC LIMIT ${n}`, { maxRows: n });
-  const idx = columns.indexOf(idCol);
-  const seen = new Set(rows.map((r) => (idx >= 0 ? String(r[idx]) : JSON.stringify(r))));
+  const idxs = keys.map((c) => columns.indexOf(c));
+  const keyOf = (r) => (idxs.every((i) => i >= 0) ? JSON.stringify(idxs.map((i) => r[i])) : JSON.stringify(r));
+  const seen = new Set(rows.map(keyOf));
   for (const r of (tail.rows || []).slice().reverse()) {
-    const key = idx >= 0 ? String(r[idx]) : JSON.stringify(r);
+    const key = keyOf(r);
     if (seen.has(key)) continue;
     seen.add(key);
     rows.push(r);
   }
   return { columns, rows };
-}
-
-function schemaCsv(dbName, table, columns) {
-  const lines = [csvRow(['database', 'table', 'column', 'position', 'type', 'nullable', 'default', 'is_primary_key'])];
-  (columns || []).forEach((c, i) => {
-    lines.push(csvRow([dbName, table, c.name, i + 1, c.type, c.nullable ? 'YES' : 'NO', c.def == null ? '' : c.def, c.pk ? 'YES' : 'NO']));
-  });
-  return BOM + lines.join('\r\n') + '\r\n';
 }
 
 function dataCsv(sample) {
@@ -162,7 +173,7 @@ function buildInserts(type, table, sample) {
   return `-- ${table}\n${lines.join('\n')}`;
 }
 
-async function exportConnection(exec, profile, password, { n, formats }, errors) {
+async function exportConnection(exec, profile, password, { n, formats, sample = true, onProgress, shouldStop, counter }, errors) {
   const type = profile.type;
   if (type === 'redis') {
     errors.push(`${profile.name}: redis connections are not exported`);
@@ -184,11 +195,24 @@ async function exportConnection(exec, profile, password, { n, formats }, errors)
       dbs = all.filter((d) => !SYSTEM_DBS.has(d)).map((d) => ({ name: d, database: d }));
     }
   } else {
-    dbs = [{ name: profile.database || 'postgres', database: profile.database || '' }];
+    // PostgreSQL：指定了库只导该库；未指定则导出全部业务库。
+    if (profile.database) {
+      dbs = [{ name: profile.database, database: profile.database }];
+    } else {
+      let all = [];
+      try { all = await exec.listDatabases(profile, password); }
+      catch (e) { errors.push(`${profile.name}: list databases failed: ${e.message}`); return files; }
+      dbs = all.filter((d) => !PG_SYSTEM_DBS.has(d)).map((d) => ({ name: d, database: d }));
+    }
   }
 
+  let dbIndex = 0;
   for (const db of dbs) {
+    if (shouldStop?.()) throw new Error('cancelled');
+    dbIndex += 1;
+    counter.dbsDone += 1;
     const dbDir = `${connDir}/${safeName(db.name)}`;
+    onProgress?.({ connection: profile.name || profile.id || '', db: db.name, dbIndex, dbTotal: dbs.length, tablesDone: counter.tablesDone, phase: 'db' });
     let tables = [];
     try {
       const listProfile = type === 'sqlite' ? profile : { ...profile, database: db.database };
@@ -200,18 +224,21 @@ async function exportConnection(exec, profile, password, { n, formats }, errors)
 
     const schemaParts = [`-- ${profile.name} / ${db.name}`, ''];
     const dataParts = [`-- ${profile.name} / ${db.name}`, ''];
-    for (const table of tables) {
+    for (let ti = 0; ti < tables.length; ti += 1) {
+      const table = tables[ti];
+      if (shouldStop?.()) throw new Error('cancelled');
+      counter.tablesDone += 1;
+      onProgress?.({ connection: profile.name || profile.id || '', db: db.name, dbIndex, dbTotal: dbs.length, table, tableIndex: ti + 1, tableTotal: tables.length, tablesDone: counter.tablesDone, phase: 'table' });
       try {
         const meta = await tableMeta(exec, profile, password, db.database, table);
-        const idCol = pickIdColumn(meta.columns);
-        const sample = await sampleTable(exec, profile, password, db.database, table, idCol, n);
+        const idCols = pickIdColumns(meta.columns);
+        const sampled = await sampleTable(exec, profile, password, db.database, table, idCols, n, sample);
         if (formats.includes('sql')) {
           schemaParts.push(meta.ddl || `-- ${table}: DDL unavailable`, '');
-          dataParts.push(buildInserts(type, table, sample), '');
+          dataParts.push(buildInserts(type, table, sampled), '');
         }
         if (formats.includes('csv')) {
-          files.push({ path: `${dbDir}/csv/${safeName(table)}.schema.csv`, data: schemaCsv(db.name, table, meta.columns) });
-          files.push({ path: `${dbDir}/csv/${safeName(table)}.data.csv`, data: dataCsv(sample) });
+          files.push({ path: `${dbDir}/csv/${safeName(table)}.data.csv`, data: dataCsv(sampled) });
         }
       } catch (e) {
         errors.push(`${profile.name}/${db.name}/${table}: ${e.message}`);
@@ -229,15 +256,16 @@ async function exportConnection(exec, profile, password, { n, formats }, errors)
 
 export function createNavicatExport({ exec }) {
   return {
-    async build({ items, n = 30, formats = ['sql', 'csv'] }) {
+    async build({ items, n = 30, formats = ['sql', 'csv'], sample = true, onProgress = null, shouldStop = null }) {
       const limit = Math.min(Math.max(Number(n) || 30, 1), 1000);
       const fmts = (Array.isArray(formats) ? formats : []).filter((f) => f === 'sql' || f === 'csv');
       const use = fmts.length ? fmts : ['sql', 'csv'];
       const files = [];
       const errors = [];
+      const counter = { dbsDone: 0, tablesDone: 0 };
       for (const item of items || []) {
         try {
-          files.push(...(await exportConnection(exec, item.profile, item.password, { n: limit, formats: use }, errors)));
+          files.push(...(await exportConnection(exec, item.profile, item.password, { n: limit, formats: use, sample, onProgress, shouldStop, counter }, errors)));
         } catch (e) {
           errors.push(`${item.profile?.name || item.profile?.id || '?'}: ${e.message}`);
         }

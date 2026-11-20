@@ -3,7 +3,7 @@ import { useLocalSources } from './local/useLocalSources';
 
 export interface CenterTab {
   id: string;
-  kind: 'session' | 'file' | 'tool' | 'local';
+  kind: 'session' | 'file' | 'tool' | 'local' | 'run';
   label: string;
   sub?: string;
   projectId?: string | null;
@@ -23,8 +23,8 @@ export function useCenter() {
   const active = computed(() => tabs.value.find((t) => t.id === activeId.value) || null);
   const activeKind = computed(() => active.value?.kind ?? 'session');
   const scopeProjectId = ref<string | null>(null);
-  const sameScope = (a: string | null | undefined, b: string | null | undefined) => (a ?? '') === (b ?? '');
-  const visibleTabs = computed(() => tabs.value.filter((t) => t.kind !== 'session' || sameScope(t.projectId, scopeProjectId.value)));
+  // 会话页签不再按工作目录过滤：启动恢复的最近会话跨目录也全部展示，页签由用户自行关闭。
+  const visibleTabs = computed(() => tabs.value);
   const activeSessionTab = computed(() => visibleTabs.value.find((t) => t.kind === 'session') || null);
 
   function setActive(id: string | null) {
@@ -63,6 +63,11 @@ export function useCenter() {
   function openTool(tool: string, label?: string) {
     const id = tid(tool);
     upsert({ id, kind: 'tool', label: label ?? tool, tool });
+    setActive(id);
+  }
+  function openRun(runId: string, label: string) {
+    const id = `r:${runId}`;
+    upsert({ id, kind: 'run', label });
     setActive(id);
   }
   function openLocalRoot(label: string) {
@@ -113,5 +118,5 @@ export function useCenter() {
     if (activeId.value === id) { const s = activeSessionTab.value; setActive(s ? s.id : null); }
   }
 
-  return { tabs, activeId, active, activeKind, visibleTabs, scopeProjectId, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab, openTool, openLocalRoot, openLocalFile };
+  return { tabs, activeId, active, activeKind, visibleTabs, scopeProjectId, ensureSession, hasSession, removeSession, activateSession, openFile, closeFile, closeById, setActive, activateFileTab, openTool, openRun, openLocalRoot, openLocalFile };
 }

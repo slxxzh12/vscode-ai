@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
 import { t } from './i18n.js';
 import { pickSqliteFile } from './native-dialog.js';
 import { createZip } from './zip-writer.js';
@@ -34,6 +38,69 @@ function sendErr(res, code) {
 // /api/navicat/*：连接档案 CRUD + 测试/执行 + 连接串/导出
 export function createNavicatMount({ store, exec, ncx, pickFile = pickSqliteFile, exporter, logger = console }) {
   const exp = exporter || createNavicatExport({ exec });
+  // 异步导出任务：几十个库 × 每个库几百张表时，同步请求会超时；改为后台跑 + 轮询进度 + 完成后下载。
+  const exportJobs = new Map();
+
+  function pruneJobs() {
+    const now = Date.now();
+    for (const [id, job] of exportJobs) {
+      if (job.status === 'running') continue;
+      if (now - job.createdAt > 60 * 60 * 1000) {
+        try { if (job.file) fs.unlinkSync(job.file); } catch { /* ignore */ }
+        exportJobs.delete(id);
+      }
+    }
+  }
+
+  function startExportJob({ items, n, formats, sample, outDir }) {
+    pruneJobs();
+    const id = crypto.randomBytes(8).toString('hex');
+    const job = {
+      id, status: 'running', cancelled: false,
+      progress: { dbsDone: 0, tablesDone: 0 },
+      errors: [], error: '', file: '', outputDir: '',
+      name: `navicat-export-${stamp()}.zip`,
+      createdAt: Date.now(),
+    };
+    exportJobs.set(id, job);
+    void (async () => {
+      try {
+        const { files, errors } = await exp.build({
+          items, n, formats, sample,
+          onProgress: (p) => { job.progress = p || job.progress; },
+          shouldStop: () => job.cancelled,
+        });
+        job.errors = errors || [];
+        if (job.errors.length) files.push({ path: 'errors.txt', data: job.errors.join('\n') });
+        if (outDir) {
+          // 直接写入用户选择的目录：表很多时比下载 zip 更实用，也便于后续处理。
+          const base = path.resolve(outDir);
+          fs.mkdirSync(base, { recursive: true });
+          for (const f of files) {
+            const abs = path.resolve(base, f.path);
+            const rel = path.relative(base, abs);
+            if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue;
+            fs.mkdirSync(path.dirname(abs), { recursive: true });
+            fs.writeFileSync(abs, f.data);
+          }
+          job.outputDir = base;
+          job.status = 'done';
+          return;
+        }
+        const zip = createZip(files);
+        const file = path.join(os.tmpdir(), `df-navicat-export-${id}.zip`);
+        fs.writeFileSync(file, zip);
+        job.file = file;
+        job.status = 'done';
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        job.status = msg === 'cancelled' ? 'cancelled' : 'error';
+        job.error = job.status === 'error' ? msg : '';
+        if (job.status === 'error') logger?.warn?.('navicat export failed', msg);
+      }
+    })();
+    return job;
+  }
 
   function stamp() {
     const d = new Date();
@@ -90,6 +157,37 @@ export function createNavicatMount({ store, exec, ncx, pickFile = pickSqliteFile
       return sendJson(res, 200, { xml: ncx.buildNcx(entries) });
     }
 
+    if (head === 'export' && seg[1] === 'jobs') {
+      const job = exportJobs.get(String(seg[2] || ''));
+      if (!job) return sendJson(res, 404, { error: 'not-found' });
+      if (seg[3] === 'download' && m === 'GET') {
+        if (job.status !== 'done' || !job.file) return sendJson(res, 409, { error: job.status || 'not-ready' });
+        const stream = fs.createReadStream(job.file);
+        res.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="${job.name}"`,
+        });
+        stream.pipe(res);
+        stream.on('close', () => {
+          try { fs.unlinkSync(job.file); } catch { /* ignore */ }
+          exportJobs.delete(job.id);
+        });
+        return undefined;
+      }
+      if (seg[3] === 'cancel' && m === 'POST') {
+        job.cancelled = true;
+        return sendJson(res, 200, { ok: true });
+      }
+      return sendJson(res, 200, {
+        status: job.status,
+        progress: job.progress,
+        errors: job.errors.slice(0, 20),
+        errorsCount: job.errors.length,
+        error: job.error,
+        outputDir: job.outputDir || '',
+      });
+    }
+
     if (head === 'export' && m === 'POST') {
       const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
       if (!ids.length) return sendErr(res, 'bad-request');
@@ -97,11 +195,22 @@ export function createNavicatMount({ store, exec, ncx, pickFile = pickSqliteFile
       const formats = (Array.isArray(body.formats) ? body.formats : ['sql', 'csv'])
         .filter((f) => f === 'sql' || f === 'csv');
       if (!formats.length) return sendErr(res, 'bad-request');
+      const sample = body.sample !== false;
+      const outDir = typeof body.outDir === 'string' ? body.outDir.trim() : '';
+      // databases: { [profileId]: dbName }；显式给空串表示导出该连接的全部数据库。
+      const dbSel = body.databases && typeof body.databases === 'object' ? body.databases : {};
       const items = ids.map((id) => {
         const p = store.get(id);
-        return { profile: p, password: store.password(p.id) };
+        const profile = Object.prototype.hasOwnProperty.call(dbSel, id)
+          ? { ...p, database: String(dbSel[id] ?? '').trim() }
+          : p;
+        return { profile, password: store.password(p.id) };
       });
-      const { files, errors } = await exp.build({ items, n, formats });
+      if (body.async === true) {
+        const job = startExportJob({ items, n, formats, sample, outDir });
+        return sendJson(res, 200, { ok: true, jobId: job.id });
+      }
+      const { files, errors } = await exp.build({ items, n, formats, sample });
       if (errors.length) files.push({ path: 'errors.txt', data: errors.join('\n') });
       const zip = createZip(files);
       const name = `navicat-export-${stamp()}.zip`;

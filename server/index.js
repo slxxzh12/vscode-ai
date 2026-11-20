@@ -24,6 +24,7 @@ import { createComposerPrefs } from './composer-prefs.js';
 import { createSessionProjects } from './session-projects.js';
 import { createWindowState } from './window-state.js';
 import { createStartupPrefs } from './startup-prefs.js';
+import { createCurrentProjectStore } from './current-project.js';
 import { createSessionLedger } from './session-ledger.js';
 import { restoreSessions, restoreRecord } from './session-restore.js';
 import { discoverAgentSessionId } from './agent-resume.js';
@@ -477,6 +478,7 @@ function buildWorkspace({ paths, port }) {
   const sessionProjects = createSessionProjects({ file: paths.sessionProjectsFile, logger: log });
   const windowState = createWindowState({ file: paths.windowStateFile, logger: log });
   const startupPrefs = createStartupPrefs({ file: paths.startupPrefsFile, logger: log });
+  const currentProject = createCurrentProjectStore({ file: path.join(paths.dir, 'current-project.json') });
   const sessionLedger = createSessionLedger({ file: paths.sessionsFile, logsDir: paths.sessionLogsDir, logDirFor: (projectId) => path.join(projectDataDirOf(projectId), 'session-logs'), sessionsDirs: listProjectDataDirs, sessionsDirFor: projectDataDirOf, logger: log });
   // 一次性迁移：老单文件 message-history.jsonc 搬到按项目分目录的位置（按 sessionId 归属，无归属落 _global）
   function migrateHistoryToProjects() {
@@ -958,7 +960,8 @@ function buildWorkspace({ paths, port }) {
   });
   const httpApi = createHttpApi({
     projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'),
-    codeGroups, codePrefs, docUpdateStore, composerPrefs, sessionProjects, windowState, startupPrefs,
+    codeGroups, codePrefs, docUpdateStore, composerPrefs, sessionProjects, windowState, startupPrefs, currentProjectStore: currentProject,
+    scanCacheDir: path.join(paths.dir, 'scan-repos'),
     startupAvailable: () => process.platform === 'win32' && fs.existsSync(path.join(APP_DIR, 'start.bat')),
     sessionManager, sessionLedger, postmanHistory, notepadStore, fileStores,
   });
@@ -972,7 +975,7 @@ function buildWorkspace({ paths, port }) {
     isLocal: isLocalReq,
     projectRoots: () => projects.listProjects().map((p) => p.root),
   });
-  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, pipelineMount, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, resumeJobSession, navicatMount, proxyStore, proxyEngine, proxyMount, aiSite, diskCleanStore, diskCleanMount, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats };
+  return { projects, saveProjects, workflowStore, sessionManager, workflowRunner, engine, collabMount, usageMount, usageReporter, scheduler, pipelineMount, httpApi, llmMount, translateMount, llmVault, usageStore, inputStats, taskStore, workflowSeedStore, sessionLedger, historyFile: paths.historyFile, paths, restoreSessionById, discoverForRecord, resumeJobSession, navicatMount, proxyStore, proxyEngine, proxyMount, aiSite, diskCleanStore, diskCleanMount, opencodeMount, projectDataDirOf, historyFileFor, readHistoryAll, writeHistorySplit, historyStats, currentProject };
 }
 
 // ---- 工作区（端口档案）----

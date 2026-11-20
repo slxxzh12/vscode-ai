@@ -50,9 +50,9 @@ export async function restoreRecord({
   return { session, resumed: !!resumeCmd };
 }
 
-// 启动时最多自动恢复的会话数（按最近活跃时间取最新，默认 8）。其余标记为 exited，
+// 启动时最多自动恢复的会话数（按最近活跃时间取最新，默认 5）。其余标记为 exited，
 // 需要时从历史里按需恢复，避免一次拉起几十个 Agent 把内存和 CPU 打满。
-export const MAX_AUTO_RESTORE = 8;
+export const MAX_AUTO_RESTORE = 5;
 // 超过这个时间没活跃过的会话不随启动自动恢复（久远历史只在历史面板里按需打开）。
 export const MAX_AUTO_RESTORE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -60,13 +60,15 @@ export const MAX_AUTO_RESTORE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export async function restoreSessions({
   ledger, sessionManager, agents = [], logger = console, resumeDelayMs = 1500, exists = fs.existsSync,
   discover = null, maxRestore = MAX_AUTO_RESTORE, maxAgeMs = MAX_AUTO_RESTORE_AGE_MS,
-  now = Date.now,
+  projectId = '', now = Date.now,
 } = {}) {
   const raw = ledger.read().sessions || [];
+  // 指定了当前选中目录时，只恢复该目录的会话；其它目录不自动拉起进程。
+  const scoped = projectId ? raw.filter((r) => String(r?.projectId || '') === String(projectId)) : raw;
   // 按“最近活跃时间”（日志 mtime 优先）排序，确保恢复的是最近用的 3 个，
   // 而不是账本里 updatedAt 恰好比较新的那些。
-  const activity = new Map(raw.map((r) => [r.id, lastActiveAtOf(r, ledger)]));
-  const records = [...raw].sort((a, b) => (activity.get(b.id) || 0) - (activity.get(a.id) || 0));
+  const activity = new Map(scoped.map((r) => [r.id, lastActiveAtOf(r, ledger)]));
+  const records = [...scoped].sort((a, b) => (activity.get(b.id) || 0) - (activity.get(a.id) || 0));
   const limit = Number.isFinite(maxRestore) ? Math.max(0, Math.floor(maxRestore)) : Infinity;
   const ageLimit = Number.isFinite(maxAgeMs) ? Math.max(0, maxAgeMs) : Infinity;
   const result = { restored: 0, skipped: [], deferred: [] };

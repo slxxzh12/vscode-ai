@@ -21,7 +21,9 @@ describe('WelcomeView', () => {
 
   it('点工具卡片 emit open-tool 带 id', async () => {
     const w = mount();
-    await w.findAll('.tcard')[5].trigger('click');
+    const tile = w.findAll('.tcard').find((x) => x.find('.ticon').text() === '🧾');
+    expect(tile).toBeTruthy();
+    await tile!.trigger('click');
     expect(w.emitted('open-tool')?.[0]).toEqual(['yaml']);
   });
 });

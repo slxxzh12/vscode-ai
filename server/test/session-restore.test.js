@@ -30,19 +30,18 @@ test('恢复：复用 id/cwd/name、预填回滚、agent 注入续会话命令',
   assert.equal(instances[1].pty.writes.includes('opencode\r'), true);                   // s_b 无 id：退化重开 agent
 });
 
-test('恢复：默认最多自动恢复 8 个（按 updatedAt 取最新），其余标记 exited', async () => {
+test('恢复：默认最多自动恢复 5 个（按 updatedAt 取最新），其余标记 exited', async () => {
   const instances = [];
   const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
   const sessions = Array.from({ length: 10 }, (_, i) => rec(`s_${i + 1}`, { updatedAt: NOW + (i + 1) * 100 }));
   const updates = [];
   const ledger = { read: () => ({ sessions }), readLog: () => null, upsert: (e) => updates.push(e) };
   const res = await restoreSessions({ ledger, sessionManager: sm, agents: [], resumeDelayMs: 0, exists: () => true });
-  assert.equal(res.restored, 8);
-  assert.deepEqual(res.deferred.sort(), ['s_1', 's_2']);
-  for (let i = 3; i <= 10; i++) assert.notEqual(sm.get(`s_${i}`), null);
-  assert.equal(sm.get('s_2'), null);
-  assert.equal(sm.get('s_1'), null);
-  assert.deepEqual(updates.map((u) => u.id).sort(), ['s_1', 's_2']);
+  assert.equal(res.restored, 5);
+  assert.deepEqual(res.deferred.sort(), ['s_1', 's_2', 's_3', 's_4', 's_5']);
+  for (let i = 6; i <= 10; i++) assert.notEqual(sm.get(`s_${i}`), null);
+  for (let i = 1; i <= 5; i++) assert.equal(sm.get(`s_${i}`), null);
+  assert.deepEqual(updates.map((u) => u.id).sort(), ['s_1', 's_2', 's_3', 's_4', 's_5']);
   assert.ok(updates.every((u) => u.state === 'exited'));
 });
 
@@ -208,4 +207,22 @@ test('恢复：久远会话超过 maxAgeMs 不自动恢复，并标记 exited', 
   assert.notEqual(sm.get('s_fresh'), null);
   assert.equal(sm.get('s_ancient'), null);
   assert.ok(updates.some((u) => u.id === 's_ancient' && u.state === 'exited'));
+});
+
+test('恢复：指定 projectId 时只恢复该目录的会话，其它目录不动', async () => {
+  const instances = [];
+  const sm = new SessionManager({ ptyFactory: async () => makeFakePtyFactory(instances)({ cwd: process.cwd() }) });
+  const sessions = [
+    rec('s_p1_a', { projectId: 'p1', updatedAt: NOW - 100 }),
+    rec('s_p2_a', { projectId: 'p2', updatedAt: NOW - 50 }),
+    rec('s_p1_b', { projectId: 'p1', updatedAt: NOW - 10 }),
+  ];
+  const ledger = { read: () => ({ sessions }), readLog: () => null, logMtime: () => 0, upsert: () => {} };
+  const res = await restoreSessions({
+    ledger, sessionManager: sm, agents: [], resumeDelayMs: 0, exists: () => true, projectId: 'p1',
+  });
+  assert.equal(res.restored, 2);
+  assert.notEqual(sm.get('s_p1_a'), null);
+  assert.notEqual(sm.get('s_p1_b'), null);
+  assert.equal(sm.get('s_p2_a'), null);
 });

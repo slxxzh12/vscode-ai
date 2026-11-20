@@ -3,7 +3,7 @@ import { navicatTreeSource } from './navicatTreeSource';
 import type { NavicatProfile } from './useNavicat';
 import type { SearchEvent } from '../../tree/treeSource';
 
-const MYSQL: NavicatProfile = { id: '1', name: 'Alpha', type: 'mysql', host: 'h', port: '3306', user: 'u', database: 'd' };
+const MYSQL: NavicatProfile = { id: '1', name: 'Alpha', type: 'mysql', host: 'h', port: '3306', user: 'u', database: '' };
 const SQLITE: NavicatProfile = { id: '2', name: 'Sqlite', type: 'sqlite', host: '', port: '', user: '', database: 'f.db' };
 
 function make(over: Record<string, unknown> = {}) {
@@ -38,6 +38,14 @@ describe('navicatTreeSource', () => {
       { key: 't:2\u0000f.db\u0000users', name: 'users', kind: 'item' },
       { key: 't:2\u0000f.db\u0000orders', name: 'orders', kind: 'item' },
     ]);
+  });
+
+  it('连接指定了数据库时只展示该库，不再查询全部库', async () => {
+    const BOUND: NavicatProfile = { id: '3', name: 'Bound', type: 'mysql', host: 'h', port: '3306', user: 'u', database: 'only' };
+    const databases = vi.fn(async () => ['a', 'b']);
+    const { src } = make({ profiles: () => [BOUND], profileById: (id: string) => (id === '3' ? BOUND : null), databases });
+    expect(await src.loadChildren('c:3')).toEqual([{ key: 'd:3\u0000only', name: 'only', kind: 'dir' }]);
+    expect(databases).not.toHaveBeenCalled();
   });
 
   it('open 表 → pickTable；search/openHit → 选中连接', async () => {

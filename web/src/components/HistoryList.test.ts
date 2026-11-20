@@ -16,7 +16,7 @@ function mount(over: Record<string, unknown> = {}) {
 }
 
 describe('HistoryList', () => {
-  it('文件页签：空态、分组与日期分隔、点击打开/删除', async () => {
+  it('文件页签：空态、日期分隔、全部平铺，点击打开/删除', async () => {
     const w = mount({ items: [] });
     expect(w.find('.empty').text()).toBeTruthy();
 
@@ -27,10 +27,11 @@ describe('HistoryList', () => {
     ];
     const w2 = mount({ items });
     await w2.vm.$nextTick();
-    expect(w2.findAll('.gname').map((x) => x.text())).toEqual(['Other', 'Proj']);
-    expect(w2.findAll('.daysep')).toHaveLength(3);   // 09-10 / 09-10 / 09-09
+    expect(w2.findAll('.gname')).toHaveLength(0);
+    expect(w2.findAll('.daysep')).toHaveLength(2);   // 09-10 / 09-09
     const rows = w2.findAll('.row');
     expect(rows).toHaveLength(3);
+    expect(rows[0].find('.sub').text()).toContain('Other');
     await rows[0].trigger('click');
     expect(w2.emitted('open')).toHaveLength(1);
     await rows[0].find('.x').trigger('click');

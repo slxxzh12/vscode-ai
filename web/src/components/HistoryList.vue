@@ -94,17 +94,6 @@ const noMatch = computed(() => {
   return props.messages.length > 0 && filteredMessages.value.length === 0;
 });
 
-const grouped = computed(() => {
-  const list = [...shownItems.value];
-  const out: { proj: string; recs: HistoryEntry[] }[] = [];
-  for (const it of list) {
-    let g = out.find((x) => x.proj === it.projName);
-    if (!g) { g = { proj: it.projName, recs: [] }; out.push(g); }
-    g.recs.push(it);
-  }
-  return out;
-});
-
 function onScroll(e: Event) {
   const el = e.target as HTMLElement;
   if (el.scrollTop + el.clientHeight < el.scrollHeight - 40) return;
@@ -161,7 +150,7 @@ function withDaySeps<T>(items: T[], getTs: (x: T) => number): DayRow<T>[] {
   return out;
 }
 const msgRows = computed(() => withDaySeps(shownMessages.value, (m) => m.ts));
-const fileGroups = computed(() => grouped.value.map((g) => ({ proj: g.proj, rows: withDaySeps(g.recs, (r) => r.ts) })));
+const fileRows = computed(() => withDaySeps(shownItems.value, (r) => r.ts));
 
 // —— 全部会话：会话两级目录 ——
 const liveSet = computed(() => new Set(props.liveSessionIds || []));
@@ -235,21 +224,18 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
       <template v-if="tab === 'files'">
         <div v-if="items.length === 0" class="empty">{{ $t('hist.empty_files') }}</div>
         <div v-else-if="noMatch" class="empty">{{ $t('hist.no_match') }}</div>
-        <div v-for="g in fileGroups" :key="g.proj" class="grp">
-          <div class="gname">{{ g.proj }}</div>
-          <template v-for="(row, i) in g.rows" :key="i">
-            <div v-if="'sep' in row" class="daysep">{{ row.sep }}</div>
-            <button v-else class="row" :class="dayClass(row.item.ts)" @click="emit('open', row.item)">
-              <span class="ic">📄</span>
-              <span class="tx">
-                <span class="nm">{{ row.item.name }}</span>
-                <span class="sub">{{ row.item.path }}</span>
-                <span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span>
-              </span>
-              <span class="x" :title="$t('hist.remove')" @click.stop="emit('remove', row.item.projectId, row.item.path)">×</span>
-            </button>
-          </template>
-        </div>
+        <template v-for="(row, i) in fileRows" :key="i">
+          <div v-if="'sep' in row" class="daysep">{{ row.sep }}</div>
+          <button v-else class="row" :class="dayClass(row.item.ts)" @click="emit('open', row.item)">
+            <span class="ic">📄</span>
+            <span class="tx">
+              <span class="nm">{{ row.item.name }}</span>
+              <span class="sub">{{ row.item.projName }} · {{ row.item.path }}</span>
+              <span v-if="row.item.ts" class="mdate">{{ fmtBelow(row.item.ts) }}</span>
+            </span>
+            <span class="x" :title="$t('hist.remove')" @click.stop="emit('remove', row.item.projectId, row.item.path)">×</span>
+          </button>
+        </template>
       </template>
 
       <template v-else>
@@ -332,8 +318,6 @@ function editNode(n: SessionNode) { if (n.sessionId) emit('edit-session', n.sess
 .searchinput { flex: 1 1 auto; min-width: 0; box-sizing: border-box; background: var(--bg3); color: var(--tx1); border: 1px solid var(--bd); border-radius: 4px; padding: 4px 8px; font-size: 12px; font-family: inherit; }
 .searchinput:focus { outline: none; border-color: var(--ac2); }
 .list { flex: 1; min-height: 0; overflow-y: auto; }
-.grp { flex: none; }
-.gname { color: var(--ac2); font-size: 11px; text-transform: uppercase; padding: 10px 10px 2px; }
 .daysep { display: flex; align-items: center; gap: 8px; padding: 8px 10px 4px; color: var(--tx5); font-size: 11px; font-family: Consolas, monospace; user-select: none; }
 .daysep::before, .daysep::after { content: ''; flex: 1; height: 1px; background: var(--bd); }
 .row { display: flex; align-items: flex-start; gap: 8px; width: 100%; background: none; border: none; text-align: left; padding: 6px 8px; cursor: pointer; }

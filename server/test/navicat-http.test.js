@@ -200,3 +200,71 @@ test('export：无 ids → 400', async (t) => {
   const r = await call(A.port, 'POST', '/api/navicat/export', { ids: [] });
   assert.equal(r.status, 400);
 });
+
+test('export：databases 覆盖指定库，空串表示全部库', async (t) => {
+  let got = null;
+  const A = await start({
+    exporter: { build: async ({ items }) => { got = items; return { files: [{ path: 'a.txt', data: 'x' }], errors: [] }; } },
+  });
+  t.after(() => A.server.close());
+  const id = (await call(A.port, 'POST', '/api/navicat/profiles', PROFILE)).body.item.id;
+  const send = (databases) => fetch(`http://127.0.0.1:${A.port}/api/navicat/export`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: [id], n: 5, formats: ['sql'], databases }),
+  });
+  await send({ [id]: 'picked' });
+  assert.equal(got[0].profile.database, 'picked');
+  await send({ [id]: '' });
+  assert.equal(got[0].profile.database, '');
+  await send({});
+  assert.equal(got[0].profile.database, 'd');
+});
+
+test('export async：后台任务进度与下载', async (t) => {
+  const A = await start({
+    exporter: {
+      build: async ({ onProgress }) => {
+        onProgress?.({ dbIndex: 1, dbTotal: 1, tablesDone: 3, tableIndex: 3, tableTotal: 3, db: 'app' });
+        return { files: [{ path: 'a.txt', data: 'hi' }], errors: [] };
+      },
+    },
+  });
+  t.after(() => A.server.close());
+  const id = (await call(A.port, 'POST', '/api/navicat/profiles', PROFILE)).body.item.id;
+  const started = await call(A.port, 'POST', '/api/navicat/export', { ids: [id], n: 5, formats: ['sql'], async: true });
+  const jobId = started.body.jobId;
+  assert.ok(jobId);
+  let st = null;
+  for (let i = 0; i < 50; i += 1) {
+    st = await call(A.port, 'GET', `/api/navicat/export/jobs/${jobId}`);
+    if (st.body.status === 'done') break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(st.body.status, 'done');
+  assert.equal(st.body.progress.tablesDone, 3);
+  const dl = await fetch(`http://127.0.0.1:${A.port}/api/navicat/export/jobs/${jobId}/download`);
+  assert.equal(dl.status, 200);
+  const files = await unzip(Buffer.from(await dl.arrayBuffer()));
+  assert.equal(files['a.txt'], 'hi');
+});
+
+test('export async：指定输出目录时直接写入文件', async (t) => {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'df-exp-'));
+  const A = await start({
+    exporter: { build: async () => ({ files: [{ path: 'app/schema.sql', data: 'SCHEMA' }], errors: [] }) },
+  });
+  t.after(() => A.server.close());
+  t.after(() => { try { fs.rmSync(out, { recursive: true, force: true }); } catch { /* ignore */ } });
+  const id = (await call(A.port, 'POST', '/api/navicat/profiles', PROFILE)).body.item.id;
+  const started = await call(A.port, 'POST', '/api/navicat/export', { ids: [id], n: 5, formats: ['sql'], async: true, outDir: out });
+  const jobId = started.body.jobId;
+  let st = null;
+  for (let i = 0; i < 50; i += 1) {
+    st = await call(A.port, 'GET', `/api/navicat/export/jobs/${jobId}`);
+    if (st.body.status === 'done') break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(st.body.status, 'done');
+  assert.equal(path.resolve(st.body.outputDir), path.resolve(out));
+  assert.equal(fs.readFileSync(path.join(out, 'app', 'schema.sql'), 'utf8'), 'SCHEMA');
+});

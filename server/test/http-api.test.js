@@ -8,8 +8,10 @@ import crypto from 'node:crypto';
 import { Projects } from '../projects.js';
 import { createHttpApi } from '../http-api.js';
 import { createStartupPrefs } from '../startup-prefs.js';
+import { createDocUpdateStore } from '../doc-update-store.js';
+import { createCurrentProjectStore } from '../current-project.js';
 import { readZip } from '../collaboration/zip.js';
-import { seedRepo } from './helpers/git-fixture.js';
+import { seedRepo, makeRepo, commit, git } from './helpers/git-fixture.js';
 
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'dfapi-')); }
 
@@ -95,6 +97,20 @@ test('/api/projects 返回列表', async (t) => {
   const r = await request(server, '/api/projects');
   assert.equal(r.status, 200);
   assert.deepEqual(JSON.parse(r.body).projects, [{ id: 'a', name: 'A', root: dir }]);
+});
+
+test('/api/projects/current：读写当前选中项目', async (t) => {
+  const dir = tmpDir();
+  const store = createCurrentProjectStore({ file: path.join(dir, 'current-project.json') });
+  const server = await start(new Projects({ projects: [{ id: 'a', name: 'A', root: dir }] }), { currentProjectStore: store });
+  t.after(() => server.close());
+  const before = await request(server, '/api/projects/current');
+  assert.equal(JSON.parse(before.body).projectId, '');
+  const saved = await post(server, '/api/projects/current', { projectId: 'a' });
+  assert.equal(saved.status, 200);
+  assert.equal(JSON.parse(saved.body).projectId, 'a');
+  const after = await request(server, '/api/projects/current');
+  assert.equal(JSON.parse(after.body).projectId, 'a');
 });
 
 test('/api/tree 正常返回 items', async (t) => {
@@ -474,6 +490,41 @@ test('/api/git/changes POST 非仓库 400、坏日期 400、路径不存在 404'
   assert.equal(bd.status, 400);
   const nf = await post(server, '/api/git/changes', { repo: path.join(empty, 'nope'), since: '2026-09-01', until: '2026-09-10' });
   assert.equal(nf.status, 404);
+});
+
+test('/api/git/branches 与 checkout：列出并切换分支', async (t) => {
+  const repo = makeRepo();
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'a');
+  commit(repo, 'init', '2026-09-01T10:00:00');
+  git(repo, ['branch', 'feature/x']);
+  const server = await start(new Projects({ projects: [{ id: 'p', name: 'P', root: repo }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/git/branches?project=p');
+  const j = JSON.parse(r.body);
+  assert.ok(j.current);
+  assert.ok(j.branches.includes('feature/x'));
+  const co = await post(server, '/api/git/checkout', { project: 'p', branch: 'feature/x' });
+  assert.equal(JSON.parse(co.body).ok, true);
+  const r2 = await request(server, '/api/git/branches?project=p');
+  assert.equal(JSON.parse(r2.body).current, 'feature/x');
+  const bad = await post(server, '/api/git/checkout', { project: 'p', branch: '-x' });
+  assert.equal(bad.status, 400);
+});
+
+test('/api/git/branches 含远端分支，checkout 远端分支会建同名本地分支', async (t) => {
+  const repo = makeRepo();
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'a');
+  commit(repo, 'init', '2026-09-01T10:00:00');
+  git(repo, ['update-ref', 'refs/remotes/origin/feat/remote', 'HEAD']);
+  const server = await start(new Projects({ projects: [{ id: 'p', name: 'P', root: repo }] }));
+  t.after(() => server.close());
+  const r = await request(server, '/api/git/branches?project=p');
+  const j = JSON.parse(r.body);
+  assert.ok(j.branches.includes('feat/remote'), '远端分支以短名列出');
+  const co = await post(server, '/api/git/checkout', { project: 'p', branch: 'feat/remote' });
+  assert.equal(JSON.parse(co.body).ok, true);
+  const r2 = await request(server, '/api/git/branches?project=p');
+  assert.equal(JSON.parse(r2.body).current, 'feat/remote');
 });
 
 test('/api/open-file 项目内文件返回 projectId/rel', async (t) => {
@@ -916,4 +967,28 @@ test('PATCH /api/postman/folder 重命名；PATCH /api/postman/history 改标题
   assert.equal(conflict.status, 400);
   assert.equal(JSON.parse(conflict.body).error, 'exists');
   assert.equal((await patch(server, '/api/postman/history', { id: '../evil.json', title: 'x' })).status, 404);
+});
+
+test('/api/doc-update/init-samples 槽位被设成根目录时纠正到默认子目录', async (t) => {
+  const root = tmpDir();
+  const store = createDocUpdateStore({ file: path.join(root, 'doc-update.json') });
+  store.write({
+    code: { path: root, selected: true },
+    solution: { path: root, selected: true },
+    knowledge: { path: root, selected: true },
+  });
+  const server = await start(new Projects({ projects: [{ id: 'p', name: 'P', root }] }), { docUpdateStore: store });
+  t.after(() => server.close());
+
+  const res = await post(server, '/api/doc-update/init-samples', {});
+  assert.equal(res.status, 200);
+
+  const solutionDir = path.join(root, 'docs', 'version');
+  assert.ok(fs.existsSync(solutionDir), '方案目录按默认建到 docs/version');
+  assert.ok(fs.readdirSync(solutionDir).some((n) => n.startsWith('US')), '样例方案写入方案目录');
+  assert.equal(fs.readdirSync(root).filter((n) => n.startsWith('US')).length, 0, '根目录不再出现方案文件夹');
+
+  const saved = store.read();
+  assert.equal(path.resolve(saved.solution.path), path.resolve(solutionDir));
+  assert.equal(path.resolve(saved.knowledge.path), path.resolve(path.join(root, 'docs', 'knowledge')));
 });

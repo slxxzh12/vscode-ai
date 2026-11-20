@@ -52,10 +52,15 @@ export function useNavicat(): {
   reveal: (id: string) => Promise<string>;
   connstr: (id: string, withPassword: boolean) => Promise<string>;
   exportNcx: (ids: string[]) => Promise<string>;
-  exportData: (ids: string[], n: number, formats: string[]) => Promise<Blob>;
+  exportData: (ids: string[], n: number, formats: string[], databases?: Record<string, string>, sample?: boolean) => Promise<Blob>;
+  startExport: (ids: string[], n: number, formats: string[], databases?: Record<string, string>, sample?: boolean, outDir?: string) => Promise<string>;
+  exportJob: (id: string) => Promise<{ status: string; progress: any; errors: string[]; errorsCount: number; error: string; outputDir: string }>;
+  cancelExport: (id: string) => Promise<void>;
+  downloadExport: (id: string) => Promise<Blob>;
   listDatabases: (id: string) => Promise<string[]>;
   listTables: (id: string, database: string) => Promise<string[]>;
   pickFile: () => Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }>;
+  pickFolder: () => Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }>;
 } {
   const profiles = ref<NavicatProfile[]>([]);
 
@@ -111,15 +116,49 @@ export function useNavicat(): {
     return String(j.xml || '');
   }
 
-  async function exportData(ids: string[], n: number, formats: string[]): Promise<Blob> {
+  async function exportData(ids: string[], n: number, formats: string[], databases: Record<string, string> = {}, sample = true): Promise<Blob> {
     const res = await fetch('/api/navicat/export', {
       method: 'POST',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ ids, n, formats }),
+      body: JSON.stringify({ ids, n, formats, databases, sample }),
     });
     if (!res.ok) {
       const j: any = await res.json().catch(() => ({}));
       throw new Error(String(j?.message || j?.error || `HTTP ${res.status}`));
+    }
+    return res.blob();
+  }
+
+  async function startExport(ids: string[], n: number, formats: string[], databases: Record<string, string> = {}, sample = true, outDir = ''): Promise<string> {
+    const j = await jfetch('/api/navicat/export', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ ids, n, formats, databases, sample, outDir, async: true }),
+    });
+    return String(j?.jobId || '');
+  }
+
+  async function exportJob(id: string): Promise<{ status: string; progress: any; errors: string[]; errorsCount: number; error: string; outputDir: string }> {
+    const j = await jfetch(`/api/navicat/export/jobs/${encodeURIComponent(id)}`);
+    return {
+      status: String(j?.status || ''),
+      progress: j?.progress || {},
+      errors: Array.isArray(j?.errors) ? j.errors.map(String) : [],
+      errorsCount: Number(j?.errorsCount) || 0,
+      error: String(j?.error || ''),
+      outputDir: String(j?.outputDir || ''),
+    };
+  }
+
+  async function cancelExport(id: string): Promise<void> {
+    await jfetch(`/api/navicat/export/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+  }
+
+  async function downloadExport(id: string): Promise<Blob> {
+    const res = await fetch(`/api/navicat/export/jobs/${encodeURIComponent(id)}/download`);
+    if (!res.ok) {
+      const j: any = await res.json().catch(() => ({}));
+      throw new Error(String(j?.error || `HTTP ${res.status}`));
     }
     return res.blob();
   }
@@ -139,5 +178,9 @@ export function useNavicat(): {
     return jfetch('/api/navicat/pick-file', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
   }
 
-  return { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx, exportData, listDatabases, listTables, pickFile };
+  async function pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
+    return jfetch('/api/projects/pick', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+  }
+
+  return { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx, exportData, startExport, exportJob, cancelExport, downloadExport, listDatabases, listTables, pickFile, pickFolder };
 }

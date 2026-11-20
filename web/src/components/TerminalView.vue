@@ -22,6 +22,7 @@ import TextToolBody from '../tools/text/TextToolBody.vue';
 import Base64Tool from '../tools/base64/Base64Tool.vue';
 import SecurityTool from '../tools/security/SecurityTool.vue';
 import DiskCleanTool from '../tools/disk-clean/DiskCleanTool.vue';
+import AiRunView from '../ai-run/AiRunView.vue';
 import { useTheme } from '../theme';
 import { nodeFp } from '../nodeKey';
 import { useMessageHistory } from '../useMessageHistory';
@@ -49,7 +50,7 @@ import { createReadyGate, paletteOffersRename, renameDialogOpen, waitForScreen }
 import TabRenameDialog from './TabRenameDialog.vue';
 import { setTabDescription } from './tabDescriptions';
 import WelcomeView from './WelcomeView.vue';
-import { pendingStartAgent, clearPendingStartAgent, requestTool, requestToolTab, requestProxyTab } from '../uiIntents';
+import { pendingStartAgent, clearPendingStartAgent, requestTool, requestToolTab, requestProxyTab, pendingRun, clearPendingRun, pendingAgentPrompt, clearPendingAgentPrompt } from '../uiIntents';
 import type { ToolId } from '../tools/catalog';
 
 const props = defineProps<{
@@ -84,6 +85,13 @@ let copySelTimer: ReturnType<typeof setTimeout> | null = null;
 
 const activeFile = computed(() => (props.center.active.value?.kind === 'file' ? props.center.active.value : null));
 const activeTool = computed(() => (props.center.active.value?.kind === 'tool' ? props.center.active.value : null));
+const activeRun = computed(() => (props.center.active.value?.kind === 'run' ? props.center.active.value : null));
+const activeRunId = computed(() => (activeRun.value?.id.startsWith('r:') ? activeRun.value.id.slice(2) : ''));
+watch(pendingRun, (v) => {
+  if (!v) return;
+  props.center.openRun(v.runId, v.label);
+  clearPendingRun();
+}, { immediate: true });
 // 本地来源页签（拖入文件/文件夹）
 const local = useLocalSources();
 const activeLocal = computed(() => (props.center.active.value?.kind === 'local' ? props.center.active.value : null));
@@ -443,6 +451,15 @@ function closeOverload() {
   overloadOpen.value = false;
 }
 function endActiveAgent(s: SessionSummary) { props.terminal.killSession(s.id); }
+// 活动 Agent 列表点击：关掉弹层，切到该会话页签并同步终端输出
+function openActiveAgent(s: SessionSummary) {
+  if (!s || !s.id) return;
+  settingsOpen.value = false;
+  overloadOpen.value = false;
+  props.center.ensureSession(s.id, tabLabel(s.id), s.state || 'running', s.projectId ?? null);
+  props.center.activateSession(s.id, s.projectId ?? null);
+  props.terminal.switchTo(s.id);
+}
 async function clearActiveAgents() {
   if (!activeAgents.value.length) return;
   try {
@@ -888,6 +905,22 @@ watch(pendingStartAgent, () => {
   clearPendingStartAgent();
   onWelcomeNewAgent();
 }, { immediate: true });
+// 敏感信息扫描 → 新开 Agent 并把提示词发进去
+const queuedAgentPrompt = ref('');
+function flushQueuedAgentPrompt() {
+  if (!queuedAgentPrompt.value || !agentSid.value || !agentActive()) return;
+  const text = queuedAgentPrompt.value;
+  queuedAgentPrompt.value = '';
+  setTimeout(() => { if (agentSid.value && agentActive()) sendAgentText(text); }, 400);
+}
+watch(pendingAgentPrompt, async (v) => {
+  if (!v) return;
+  clearPendingAgentPrompt();
+  queuedAgentPrompt.value = v;
+  await nextTick();
+  await startAgent(true);
+});
+watch(agentCliReady, (ready) => { if (ready) flushQueuedAgentPrompt(); });
 function sendAgentText(text: string) {
   if (!agentSid.value || !agentActive()) return;
   props.terminal.input(text);
@@ -1385,6 +1418,7 @@ function init() {
 }
 
 // 刷新恢复：只给「最近点击的 N 个」会话自动建页签；其余会话仍由历史面板按需打开。
+// 服务端本次启动恢复出来的会话（restored）不受最近页签与工作目录限制，直接建页签。
 // null = 无历史，不限制。当前活动会话始终建页签（新建/历史打开时由 activeSessionId watcher 兜底）。
 const visibleSessionSet = computed(() => (props.visibleSessionIds == null ? null : new Set(props.visibleSessionIds)));
 // 会话列表 → 统一页签栏同步（保证顺序：会话在前，文件在后）
@@ -1392,8 +1426,9 @@ const knownSessions = ref<string[]>([]);
 watch(() => props.terminal.state.sessions.map((s) => s.id), (ids) => {
   const visible = visibleSessionSet.value;
   const active = props.terminal.state.activeSessionId;
+  const restored = new Set(props.terminal.state.sessions.filter((s) => s.restored).map((s) => s.id));
   for (const id of ids) {
-    if (visible && !visible.has(id) && id !== active) continue;
+    if (visible && !visible.has(id) && id !== active && !restored.has(id)) continue;
     props.center.ensureSession(id, tabLabel(id), sessionState(id), sessionProjectId(id));
   }
   for (const old of knownSessions.value) if (!ids.includes(old)) props.center.removeSession(old);
@@ -1690,6 +1725,7 @@ onBeforeUnmount(() => {
                 :sessions="activeAgents"
                 :memory-by-session="memoryBySession"
                 :clearing="clearingAgents"
+                @open="openActiveAgent"
                 @end="endActiveAgent"
                 @cleanup="clearActiveAgents"
               />
@@ -1752,7 +1788,8 @@ onBeforeUnmount(() => {
         :sessions="activeAgents"
         :memory-by-session="memoryBySession"
         :clearing="clearingAgents"
-        @end="endActiveAgent"
+        @open="openActiveAgent"
+                @end="endActiveAgent"
         @cleanup="clearActiveAgents"
       />
       <template #footer>
@@ -1770,6 +1807,7 @@ onBeforeUnmount(() => {
         :class="{ active: center.activeId.value === t.id }" @click="onTabClick(t.id)"
         @dblclick="t.kind === 'session' && openTabDialog(t.id)">
         <span v-if="t.kind === 'session'" :class="['dot', sessionState(t.id.slice(2))]" />
+        <span v-else-if="t.kind === 'run'" class="file-ic">▶</span>
         <span v-else class="file-ic">▤</span>
         <span class="nm" :title="t.kind === 'file' ? t.path : (tabDisplayLabel(t) + ' — ' + $t('term.tab_rename'))">{{ tabDisplayLabel(t) }}</span>
         <span class="x" @click="onTabClose(t.id, $event)" @dblclick.stop>×</span>
@@ -1792,6 +1830,9 @@ onBeforeUnmount(() => {
         :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine"
         :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive"
         @open-link="onProjectLink" />
+    </div>
+    <div v-show="props.center.activeKind.value === 'run'" class="run-layer">
+      <AiRunView v-if="activeRunId" :key="activeRunId" :run-id="activeRunId" api-root="/api/ai-site" :show-back="false" />
     </div>
     <div v-show="!!activeTool" class="tool-layer">
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
@@ -2137,6 +2178,7 @@ onBeforeUnmount(() => {
 .copyfloat:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
 .copyfloat:disabled { opacity: .4; cursor: default; pointer-events: none; }
 .file-layer { flex: 1; min-height: 0; overflow: hidden; }
+.run-layer { flex: 1; min-height: 0; overflow: hidden; }
 .tool-layer { flex: 1; min-height: 0; overflow: hidden; }
 .local-layer { flex: 1; min-height: 0; overflow: hidden; }
 .local-empty { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--tx4); font-size: 13px; }

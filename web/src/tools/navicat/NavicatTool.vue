@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, shallowRef } from 'vue';
+import type { EditorView } from '@codemirror/view';
 import { useNavicatWorkbench } from './useNavicatWorkbench';
 import NavicatExportDialog from './NavicatExportDialog.vue';
 import CodeEditor from '../../components/CodeEditor.vue';
@@ -22,6 +23,17 @@ const ssl = computed({
 
 const exporting = ref(false);
 async function onExport() { exporting.value = true; try { await doExport(); } finally { exporting.value = false; } }
+
+const cmView = shallowRef<EditorView | null>(null);
+function onEditorReady(v: EditorView) { cmView.value = v; }
+// 有选中文本时只执行选中部分，否则执行整个编辑器内容
+function runSql() {
+  const v = cmView.value;
+  const sel = v && !v.state.selection.main.empty
+    ? v.state.sliceDoc(v.state.selection.main.from, v.state.selection.main.to)
+    : '';
+  void doExec(sel || undefined);
+}
 
 function exportCsv() {
   if (!result.value) return;
@@ -53,10 +65,10 @@ onMounted(() => { void load(); });
 
       <div class="nvmsgrow"><div v-if="msg" class="nvmsg">{{ msg }}</div></div>
 
-      <CodeEditor v-model="sql" class="nv-sql" language="query.sql" :placeholder="$t('nv.sql_ph')" />
+      <CodeEditor v-model="sql" class="nv-sql" language="query.sql" :placeholder="$t('nv.sql_ph')" @ready="onEditorReady" />
 
       <div class="nvresbar">
-        <button class="nvbtn primary nv-run" :disabled="busy" @click="doExec">{{ busy ? $t('nv.running') : $t('nv.exec') }}</button>
+        <button class="nvbtn primary nv-run" :disabled="busy" :title="$t('nv.exec_hint')" @click="runSql">{{ busy ? $t('nv.running') : $t('nv.exec') }}</button>
         <button class="nvbtn" @click="sql = ''; result = null; msg = ''">{{ $t('nv.clear') }}</button>
         <span class="nv-meta">
           <template v-if="result">
@@ -117,6 +129,10 @@ onMounted(() => { void load(); });
                 <el-input v-model="form.password" size="small" type="password" show-password class="nv-pw"
                           :placeholder="form.hasPassword && !form.password ? '••••••' : ''" />
               </label>
+              <label class="nvrow">
+                <span class="nvlbl">{{ isRedis ? $t('nv.db_index') : $t('nv.database_name') }}</span>
+                <el-input v-model="form.database" size="small" class="nv-db" :placeholder="isRedis ? '' : $t('nv.database_ph')" />
+              </label>
             </template>
           </div>
         </el-tab-pane>
@@ -142,8 +158,8 @@ onMounted(() => { void load(); });
 </template>
 
 <style scoped>
-.nvbody { display: flex; flex-direction: row; gap: 12px; height: calc(100vh - 150px); }
-.nvmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.nvbody { display: flex; flex-direction: row; gap: 12px; height: 100%; min-height: 0; }
+.nvmain { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 .nvtoolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .nvactive { color: var(--tx); font-size: 13px; font-weight: 600; }
 .nvactivedb { color: var(--tx4); font-size: 12px; }

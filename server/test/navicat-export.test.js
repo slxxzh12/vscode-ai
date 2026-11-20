@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createNavicatExport, csvRow, pickIdColumn, safeName, sqlValue } from '../navicat-export.js';
+import { createNavicatExport, csvRow, pickIdColumn, pickIdColumns, safeName, sqlValue } from '../navicat-export.js';
 
 const MYSQL = { id: '1', name: 'C1', type: 'mysql', host: 'h', port: '3306', user: 'u', database: 'app' };
 
@@ -69,9 +69,7 @@ test('build：结构 DDL + 首尾抽样，输出 SQL 与 CSV', async () => {
   assert.match(byPath['C1/app/data.sql'], /VALUES \(4, 'Dora'\);/);
 
   const schemaCsvText = byPath['C1/app/csv/users.schema.csv'];
-  assert.ok(schemaCsvText.startsWith('\uFEFFdatabase,table,column'));
-  assert.match(schemaCsvText, /app,users,id,1,int,NO,,YES/);
-  assert.match(schemaCsvText, /app,users,name,2,varchar\(50\),NO,,NO/);
+  assert.equal(schemaCsvText, undefined, '不再导出 schema CSV');
 
   const dataCsvText = byPath['C1/app/csv/users.data.csv'];
   const lines = dataCsvText.replace(/^\uFEFF/, '').trim().split('\r\n');
@@ -92,4 +90,66 @@ test('build：redis 跳过并记入 errors', async () => {
   assert.deepEqual(files, []);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /redis/);
+});
+
+test('pickIdColumns：联合主键直接使用全部主键列', () => {
+  assert.deepEqual(pickIdColumns([{ name: 'a', pk: true }, { name: 'b', pk: true }, { name: 'id' }]), ['a', 'b']);
+  assert.deepEqual(pickIdColumns([{ name: 'x' }, { name: 'ID' }]), ['ID']);
+  assert.deepEqual(pickIdColumns([]), []);
+});
+
+function fakeFullExec() {
+  return {
+    listDatabases: async () => ['app'],
+    listTables: async () => ['users'],
+    exec: async (_p, _pw, sql) => {
+      if (sql.includes('information_schema.columns')) {
+        return { columns: ['column_name', 'column_type', 'is_nullable', 'column_default', 'column_key', 'ordinal_position'],
+          rows: [['id', 'int', 'NO', null, 'PRI', 1], ['name', 'varchar(50)', 'NO', null, '', 2]] };
+      }
+      if (sql.startsWith('SHOW CREATE TABLE')) {
+        return { columns: ['Table', 'Create Table'], rows: [['users', 'CREATE TABLE `users` (`id` int NOT NULL, `name` varchar(50) NOT NULL);']] };
+      }
+      if (sql.includes('SELECT * FROM')) return { columns: ['id', 'name'], rows: [[1, 'A'], [2, 'B'], [3, 'C']] };
+      return { columns: [], rows: [] };
+    },
+  };
+}
+
+test('build：不抽样时导出整表（不带 ORDER BY / LIMIT）', async () => {
+  const exp = createNavicatExport({ exec: fakeFullExec() });
+  const { files, errors } = await exp.build({ items: [{ profile: MYSQL, password: 'pw' }], n: 1, formats: ['sql'], sample: false });
+  assert.deepEqual(errors, []);
+  const data = files.find((f) => f.path === 'C1/app/data.sql').data;
+  assert.match(data, /VALUES \(1, 'A'\);/);
+  assert.match(data, /VALUES \(2, 'B'\);/);
+  assert.match(data, /VALUES \(3, 'C'\);/);
+});
+
+function fakePgExec() {
+  return {
+    listDatabases: async () => ['app', 'postgres', 'template0', 'template1'],
+    listTables: async (_p, _pw, db) => (db === 'app' ? ['users'] : []),
+    exec: async (_p, _pw, sql) => {
+      if (sql.includes('pg_attribute a')) {
+        return { columns: ['attname', 'type', 'notnull', 'def'], rows: [['id', 'integer', true, null], ['name', 'text', true, null]] };
+      }
+      if (sql.includes('indisprimary')) return { columns: ['attname'], rows: [['id']] };
+      if (sql.includes('ORDER BY') && sql.includes('DESC')) return { columns: ['id', 'name'], rows: [[2, 'B']] };
+      if (sql.includes('ORDER BY')) return { columns: ['id', 'name'], rows: [[1, 'A']] };
+      return { columns: [], rows: [] };
+    },
+  };
+}
+
+test('build：PostgreSQL 未指定库时遍历全部业务库', async () => {
+  const PG = { id: '2', name: 'PG', type: 'postgres', host: 'h', port: '5432', user: 'u', database: '' };
+  const exp = createNavicatExport({ exec: fakePgExec() });
+  const { files, errors } = await exp.build({ items: [{ profile: PG, password: 'pw' }], n: 1, formats: ['sql'] });
+  assert.deepEqual(errors, []);
+  const paths = files.map((f) => f.path);
+  assert.ok(paths.includes('PG/app/schema.sql'));
+  assert.ok(!paths.some((p) => p.includes('/postgres/') || p.includes('/template')));
+  const data = files.find((f) => f.path === 'PG/app/data.sql').data;
+  assert.match(data, /INSERT INTO "users" \("id", "name"\) VALUES \(1, 'A'\);/);
 });

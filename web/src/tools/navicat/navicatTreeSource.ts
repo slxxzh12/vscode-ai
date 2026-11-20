@@ -49,6 +49,9 @@ export function navicatTreeSource(deps: NavicatTreeDeps): TreeSource {
           const list = await deps.tables(pl.id, p.database || '');
           return list.map((t) => ({ key: tKey(pl.id, p.database || '', t), name: t, kind: 'item' as const }));
         }
+        // 连接里指定了数据库：只展示该库（展开看表），不再列全部库。
+        const fixedDb = String(p.database || '').trim();
+        if (fixedDb) return [{ key: dKey(pl.id, fixedDb), name: fixedDb, kind: p.type === 'redis' ? 'item' as const : 'dir' as const }];
         const list = await deps.databases(pl.id);
         if (p.type === 'redis') return list.map((db) => ({ key: dKey(pl.id, db), name: db, kind: 'item' as const }));
         return list.map((db) => ({ key: dKey(pl.id, db), name: db, kind: 'dir' as const }));

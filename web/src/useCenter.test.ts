@@ -202,16 +202,16 @@ test('closeById 关闭本地根页签卸载根且不影响单文件页签', () =
   expect(c.tabs.value.some((t) => t.id === `l:f:${keys[0]}`)).toBe(true);
 });
 
-test('visibleTabs 按 scopeProjectId 过滤会话页签，文件/工具始终可见', () => {
+test('visibleTabs 不再按 scopeProjectId 过滤会话页签（启动恢复跨目录也全部展示）', () => {
   const c = useCenter();
   c.ensureSession('a', 'A', 'running', 'p1');
   c.ensureSession('b', 'B', 'running', 'p2');
   c.openFile('p1', 'x.ts', 'x.ts');
   c.openTool('notepad');
   c.scopeProjectId.value = 'p1';
-  expect(c.visibleTabs.value.map((t) => t.id)).toEqual(['s:a', 'f:p1|x.ts', 't:notepad']);
+  expect(c.visibleTabs.value.map((t) => t.id)).toEqual(['s:a', 's:b', 'f:p1|x.ts', 't:notepad']);
   c.scopeProjectId.value = 'p2';
-  expect(c.visibleTabs.value.map((t) => t.id)).toEqual(['s:b', 'f:p1|x.ts', 't:notepad']);
+  expect(c.visibleTabs.value.map((t) => t.id)).toEqual(['s:a', 's:b', 'f:p1|x.ts', 't:notepad']);
 });
 
 test('visibleTabs：null 与空串视为同作用域', () => {

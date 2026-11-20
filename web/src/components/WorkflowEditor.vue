@@ -3,6 +3,7 @@ import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue';
 import { t } from '../i18n';
 import type { Workflow } from '../workflowModel';
 import WorkflowPreviewTab from './WorkflowPreviewTab.vue';
+import WorkflowFilesTab from './WorkflowFilesTab.vue';
 
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>();
 const model = ref<Workflow[]>([]);
@@ -13,6 +14,7 @@ const refreshing = ref(false);
 const promptsDir = ref('');
 const promptsPath = ref('');
 const promptsLoading = ref(false);
+const dirOpen = ref(false);
 
 const currentId = ref('');
 const current = computed<Workflow | null>(() => model.value.find((w) => w.id === currentId.value) || model.value[0] || null);
@@ -134,6 +136,8 @@ async function openPromptsDir() {
 }
 
 function close() { emit('close'); }
+function toggleDir() { dirOpen.value = !dirOpen.value; }
+function onDirDeleted() { void refreshFromFiles(); }
 let timer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
   void load();
@@ -147,7 +151,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
     <div class="webox">
       <header class="weh">
         <span class="wtitle">{{ $t('wfe.title') }}</span>
-        <button class="weopen" :title="$t('wfe.open_prompts_hint')" @click="openPromptsDir">{{ $t('wfe.open_dir') }}</button>
+        <button class="weopen" :class="{ on: dirOpen }" :title="$t('wfe.open_prompts_hint')" @click="toggleDir">{{ $t('wfe.open_dir') }}</button>
         <button class="weopen wrefresh" :disabled="refreshing" :title="$t('wfe.refresh_from_files_hint')" @click="refreshFromFiles">{{ $t('wfe.refresh_from_files') }}</button>
         <button class="wex" @click="close">×</button>
       </header>
@@ -164,13 +168,24 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
           </div>
         </aside>
         <div class="wemain">
-          <div class="wepathbar">
-            <div class="wepathlabel">{{ $t('wfe.prompts_dir') }}</div>
-            <button v-if="promptsDir" class="wepath" :title="$t('wfe.open_dir_hint')" @click="openPromptsDir">{{ promptsDir }}</button>
-            <span v-else class="wepath empty">{{ promptsLoading ? $t('wfe.loading') : $t('wfe.prompts_dir_empty') }}</span>
-            <div class="wepathhint">{{ $t('wfe.prompts_edit_hint') }}</div>
+          <div v-if="dirOpen" class="wedir">
+            <div class="wedirhead">
+              <span class="wedirttl">{{ $t('wfe.prompts_dir') }}</span>
+              <button v-if="promptsDir" class="wedirpath" :title="$t('wfe.open_dir_hint')" @click="openPromptsDir">{{ promptsDir }}</button>
+              <span v-else class="wedirpath empty">{{ promptsLoading ? $t('wfe.loading') : $t('wfe.prompts_dir_empty') }}</span>
+              <button class="wedirx" :title="$t('common.close')" @click="dirOpen = false">×</button>
+            </div>
+            <WorkflowFilesTab v-if="currentId" :workflow-id="currentId" @deleted="onDirDeleted" />
           </div>
-          <WorkflowPreviewTab :model="model" />
+          <template v-else>
+            <div class="wepathbar">
+              <div class="wepathlabel">{{ $t('wfe.prompts_dir') }}</div>
+              <button v-if="promptsDir" class="wepath" :title="$t('wfe.open_dir_hint')" @click="openPromptsDir">{{ promptsDir }}</button>
+              <span v-else class="wepath empty">{{ promptsLoading ? $t('wfe.loading') : $t('wfe.prompts_dir_empty') }}</span>
+              <div class="wepathhint">{{ $t('wfe.prompts_edit_hint') }}</div>
+            </div>
+            <WorkflowPreviewTab :model="model" />
+          </template>
         </div>
       </div>
       <footer class="wef">
@@ -192,8 +207,10 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
 .tab.on { background: var(--bg1); border-color: var(--bd); color: var(--tx1); }
 .weopen { background: none; border: 1px solid var(--bd); color: var(--tx2); border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .weopen:hover:not(:disabled) { border-color: var(--ac2); color: var(--ac2); }
+.weopen.on { border-color: var(--ac2); color: var(--ac2); }
 .weopen:disabled { opacity: .5; cursor: default; }
-.wex { background: none; border: none; color: var(--tx3); font-size: 18px; cursor: pointer; }
+.wex { margin-left: auto; background: none; border: none; color: var(--tx3); font-size: 18px; cursor: pointer; }
+.wex:hover { color: var(--tx1); }
 .web { flex: 1; min-height: 0; display: flex; padding: 12px 14px; gap: 12px; }
 .wenav { flex: none; width: 200px; display: flex; flex-direction: column; border: 1px solid var(--bd); border-radius: 6px; overflow: hidden; background: var(--bg2); }
 .wnhead { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid var(--bd2); }
@@ -205,6 +222,14 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); timer = null; });
 .wnname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wnempty { color: var(--tx6); font-size: 12px; padding: 12px 6px; }
 .wemain { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+.wedir { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.wedirhead { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--bd); border-radius: 6px; background: var(--bg2); }
+.wedirttl { flex: none; font-size: 11px; text-transform: uppercase; color: var(--ac2); }
+.wedirpath { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; border: none; padding: 0; color: var(--ac2); font: 12px ui-monospace, Consolas, monospace; text-align: left; cursor: pointer; }
+.wedirpath:hover { text-decoration: underline; }
+.wedirpath.empty { color: var(--tx6); cursor: default; }
+.wedirx { flex: none; background: none; border: none; color: var(--tx3); font-size: 18px; line-height: 1; cursor: pointer; }
+.wedirx:hover { color: var(--tx1); }
 .wepathbar { flex: none; display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--bd); border-radius: 6px; background: var(--bg2); }
 .wepathlabel { font-size: 11px; text-transform: uppercase; color: var(--ac2); }
 .wepath { align-self: flex-start; max-width: 100%; background: none; border: none; padding: 0; color: var(--ac2); font: 12px ui-monospace, Consolas, monospace; text-align: left; word-break: break-all; cursor: pointer; }

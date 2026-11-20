@@ -6,7 +6,7 @@
         {{ clearing ? $t('term.active_clearing') : $t('term.active_clear_all') }}
       </el-button>
     </div>
-    <el-table :data="sessions" row-key="id" size="small" border stripe :empty-text="$t('term.active_empty')" style="width: 100%">
+    <el-table :data="sessions" row-key="id" size="small" border stripe :empty-text="$t('term.active_empty')" style="width: 100%" @row-click="(row: SessionSummary) => $emit('open', row)">
       <el-table-column prop="name" :label="$t('term.active_name')" min-width="150" show-overflow-tooltip />
       <el-table-column :label="$t('term.active_agent')" width="100">
         <template #default="{ row }">
@@ -25,7 +25,7 @@
       </el-table-column>
       <el-table-column :label="$t('term.active_actions')" width="72" align="right">
         <template #default="{ row }">
-          <el-button link type="danger" size="small" @click="$emit('end', row)">{{ $t('term.active_end') }}</el-button>
+          <el-button link type="danger" size="small" @click.stop="$emit('end', row)">{{ $t('term.active_end') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -47,7 +47,7 @@ const props = withDefaults(defineProps<{
   showCleanup: true,
 });
 
-defineEmits<{ (e: 'end', s: SessionSummary): void; (e: 'cleanup'): void }>();
+defineEmits<{ (e: 'end', s: SessionSummary): void; (e: 'open', s: SessionSummary): void; (e: 'cleanup'): void }>();
 
 function activeAgentType(s: SessionSummary) { return s.agentId || 'agent'; }
 function activeAgentStarted(ts?: number) { return ts ? new Date(ts).toLocaleString() : '-'; }
@@ -69,6 +69,7 @@ function memoryText(id: string) {
   color: var(--tx2);
   margin-bottom: 8px;
 }
+:deep(.el-table__row) { cursor: pointer; }
 .active-hint {
   margin-top: 8px;
   font-size: 11px;

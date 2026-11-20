@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { transformSync } from 'esbuild';
-import { collectGitChanges } from './git-log.js';
+import { collectGitChanges, runGitRaw } from './git-log.js';
 import { updateGitDirs } from './git-update.js';
 import { initDocSamples, SAMPLE_SLOTS } from './doc-samples.js';
 import { ensureDocsAgents, docsRepoRootOf } from './docs-agents.js';
@@ -23,7 +23,27 @@ import { runScript, RUNNABLE_EXT } from './run-script.js';
 import { runCurl } from './curl-run.js';
 import { streamProject, replaceProject } from './project-search.js';
 
-export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反�?Token 后在此实�?
+export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反向代理 Token 后在此实现
+
+// —— git 分支列表：本地分支在前，远端分支去掉 remote 前缀后去重补齐 ——
+function parseBranchRefs(out) {
+  return String(out || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+}
+function shortRemoteRef(ref) {
+  const i = ref.indexOf('/');
+  return i >= 0 ? ref.slice(i + 1) : ref;
+}
+async function listLocalBranches(root) {
+  return parseBranchRefs(await runGitRaw(['-C', root, 'branch', '--format=%(refname:short)'], { timeout: 10000 }));
+}
+async function listRemoteBranches(root) {
+  try {
+    const out = await runGitRaw(['-C', root, 'branch', '-r', '--format=%(refname:short)'], { timeout: 10000 });
+    return parseBranchRefs(out).filter((r) => r && !r.endsWith('/HEAD'));
+  } catch {
+    return [];
+  }
+}
 
 const RAW_MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -51,7 +71,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), docUpdateStore = null, composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), startupPrefs = createStartupPrefs({}), startupAvailable = () => false, sessionManager = null, sessionMemory = collectSessionMemory, sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), scanCacheDir = '', docUpdateStore = null, composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), startupPrefs = createStartupPrefs({}), currentProjectStore = null, startupAvailable = () => false, sessionManager = null, sessionMemory = collectSessionMemory, sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -163,6 +183,19 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       if (url.pathname === '/api/projects' && req.method === 'GET') {
         sendJson(res, 200, { projects: projects.listProjects() });
         return;
+      }
+      if (url.pathname === '/api/projects/current') {
+        if (req.method === 'GET') {
+          sendJson(res, 200, { projectId: currentProjectStore?.read?.() || '' });
+          return;
+        }
+        if (req.method === 'POST') {
+          let body;
+          try { body = await readJsonBody(req); } catch { sendJson(res, 400, { error: 'bad body' }); return; }
+          const id = currentProjectStore?.write?.(String(body.projectId || '')) || '';
+          sendJson(res, 200, { ok: true, projectId: id });
+          return;
+        }
       }
       if (url.pathname === '/api/open-file' && req.method === 'POST') {
         const body = await readJsonBody(req);
@@ -416,6 +449,71 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         fs.createReadStream(file).pipe(res);
         return;
       }
+      if (url.pathname === '/api/git/branches' && req.method === 'GET') {
+        const project = String(url.searchParams.get('project') || '');
+        let root = '';
+        try { root = projects.rootOf(project); } catch { return sendJson(res, 404, { error: 'not-found' }); }
+        if (!root) return sendJson(res, 404, { error: 'not-found' });
+        try {
+          const inside = (await runGitRaw(['-C', root, 'rev-parse', '--is-inside-work-tree'], { timeout: 10000 })).trim();
+          if (inside !== 'true') return sendJson(res, 200, { current: '', branches: [] });
+          let current = (await runGitRaw(['-C', root, 'rev-parse', '--abbrev-ref', 'HEAD'], { timeout: 10000 })).trim();
+          if (current === 'HEAD') current = '';
+          const locals = await listLocalBranches(root);
+          const remotes = (await listRemoteBranches(root)).map(shortRemoteRef);
+          const seen = new Set(locals);
+          const branches = [...locals];
+          for (const b of remotes) {
+            if (!b || seen.has(b)) continue;
+            seen.add(b);
+            branches.push(b);
+          }
+          return sendJson(res, 200, { current, branches });
+        } catch (e) {
+          return sendJson(res, 200, { current: '', branches: [], error: (e && e.code) || 'git-failed' });
+        }
+      }
+      if (url.pathname === '/api/git/checkout' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const project = String(body.project || '');
+        const branch = String(body.branch || '').trim();
+        if (!branch || branch.startsWith('-')) return sendJson(res, 400, { error: 'bad-branch' });
+        let root = '';
+        try { root = projects.rootOf(project); } catch { return sendJson(res, 404, { error: 'not-found' }); }
+        if (!root) return sendJson(res, 404, { error: 'not-found' });
+        try {
+          const locals = await listLocalBranches(root);
+          if (locals.includes(branch)) {
+            await runGitRaw(['-C', root, 'checkout', branch], { timeout: 30000 });
+            return sendJson(res, 200, { ok: true, branch });
+          }
+          // 本地没有：允许从远端分支创建同名本地分支（同名远端多个时优先 origin）
+          const remotes = await listRemoteBranches(root);
+          const matches = remotes.filter((r) => shortRemoteRef(r) === branch);
+          if (!matches.length) return sendJson(res, 400, { error: 'unknown-branch' });
+          const target = matches.find((r) => r.startsWith('origin/')) || matches[0];
+          await runGitRaw(['-C', root, 'checkout', '-b', branch, target], { timeout: 30000 });
+          try { await runGitRaw(['-C', root, 'branch', `--set-upstream-to=${target}`, branch], { timeout: 10000 }); } catch { /* 无 remote 配置时忽略 */ }
+          return sendJson(res, 200, { ok: true, branch, tracking: target });
+        } catch (e) {
+          return sendJson(res, 200, { ok: false, error: (e && e.code) || 'checkout-failed', message: String((e && e.message) || '') });
+        }
+      }
+      if (url.pathname === '/api/git/branch' && req.method === 'GET') {
+        const project = String(url.searchParams.get('project') || '');
+        let root = '';
+        try { root = projects.rootOf(project); } catch { return sendJson(res, 404, { error: 'not-found' }); }
+        if (!root) return sendJson(res, 404, { error: 'not-found' });
+        try {
+          const inside = (await runGitRaw(['-C', root, 'rev-parse', '--is-inside-work-tree'], { timeout: 10000 })).trim();
+          if (inside !== 'true') return sendJson(res, 200, { branch: '' });
+          let branch = (await runGitRaw(['-C', root, 'rev-parse', '--abbrev-ref', 'HEAD'], { timeout: 10000 })).trim();
+          if (branch === 'HEAD') branch = '';
+          return sendJson(res, 200, { branch });
+        } catch (e) {
+          return sendJson(res, 200, { branch: '', error: (e && e.code) || 'git-failed' });
+        }
+      }
       if (url.pathname === '/api/git/changes' && req.method === 'POST') {
         const body = await readJsonBody(req);
         sendJson(res, 200, await collectGitChanges({ repo: body.repo, since: body.since, until: body.until, filter: body.filter }));
@@ -455,14 +553,21 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       }
       if (url.pathname === '/api/doc-update/init-samples' && req.method === 'POST') {
         let state = docUpdateStore ? docUpdateStore.read() : null;
+        let createdDirs = 0;
         if (state && docUpdateStore) {
-          const root = String(state.code?.path || state.solution?.path || '').trim();
+          const root = String(state.code?.path || state.solution?.path || docsRepoRootOf(state) || '').trim();
           if (root) {
             const d = detectDocDefaults(root, { create: true });
             if (!d.error) {
+              createdDirs = Array.isArray(d.created) ? d.created.length : 0;
               let changed = false;
+              const rootNorm = path.resolve(root);
               for (const slot of SAMPLE_SLOTS) {
-                if (!state[slot].path.trim()) {
+                if (!state[slot] || typeof state[slot] !== 'object') state[slot] = { path: '', selected: false };
+                const cur = String(state[slot].path || '').trim();
+                // 槽位目录被误设成文档仓/代码仓根目录时，样例会散落到根目录；按默认子目录纠正。
+                const atRoot = !!cur && path.resolve(cur) === rootNorm;
+                if (!cur || atRoot) {
                   state[slot].path = d.paths[slot];
                   state[slot].selected = true;
                   changed = true;
@@ -472,7 +577,8 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
             }
           }
         }
-        const out = initDocSamples(state);
+        const out = initDocSamples(state, { includeUnselected: true });
+        out.createdDirs = createdDirs;
         out.agents = ensureDocsAgents(docsRepoRootOf(state || {}));
         sendJson(res, 200, out);
         return;
@@ -531,7 +637,7 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
       }
       if (url.pathname === '/api/code/secret-scan' && req.method === 'POST') {
         const body = await readJsonBody(req);
-        sendJson(res, 200, await scanSecrets({ dir: body.dir, excludeDirs: body.excludeDirs }));
+        sendJson(res, 200, await scanSecrets({ dir: body.dir, excludeDirs: body.excludeDirs, keywords: body.keywords, categories: body.categories, cacheDir: scanCacheDir }));
         return;
       }
       if (url.pathname === '/api/export/zip' && req.method === 'POST') {

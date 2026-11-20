@@ -130,14 +130,19 @@ describe('useNavicatWorkbench', () => {
     expect(wb.exportDlg.value).toBe(true);
   });
 
-  it('doExportData：调用 /api/navicat/export 并触发下载', async () => {
+  it('doExportData：启动异步导出、轮询进度并下载', async () => {
     const bodies: any[] = [];
     vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
-      if (String(u) === '/api/navicat/profiles') return okJson({ items: [P] });
-      if (String(u) === '/api/navicat/export') {
+      const s = String(u);
+      if (s === '/api/navicat/profiles') return okJson({ items: [P] });
+      if (s === '/api/navicat/export') {
         bodies.push(JSON.parse(String(init?.body)));
-        return { ok: true, status: 200, blob: async () => new Blob(['zip']) };
+        return okJson({ ok: true, jobId: 'j1' });
       }
+      if (s === '/api/navicat/export/jobs/j1') {
+        return okJson({ status: 'done', progress: { dbIndex: 1, dbTotal: 1, tablesDone: 2 }, errors: [], errorsCount: 0, error: '' });
+      }
+      if (s === '/api/navicat/export/jobs/j1/download') return { ok: true, status: 200, blob: async () => new Blob(['zip']) };
       return okJson({});
     }));
     if (!URL.createObjectURL) (URL as any).createObjectURL = () => 'blob:x';
@@ -151,8 +156,10 @@ describe('useNavicatWorkbench', () => {
     wb.exportN.value = 5;
     wb.exportSql.value = false;
     wb.exportCsv.value = true;
+    wb.exportDbs.value = { '1': 'db1' };
+    wb.exportOutDir.value = 'out';
     await wb.doExportData();
-    expect(bodies).toEqual([{ ids: ['1'], n: 5, formats: ['csv'] }]);
+    expect(bodies).toEqual([{ ids: ['1'], n: 5, formats: ['csv'], databases: { '1': 'db1' }, sample: true, outDir: 'out', async: true }]);
     expect(create).toHaveBeenCalled();
     expect(revoke).toHaveBeenCalled();
     expect(click).toHaveBeenCalled();
