@@ -1209,6 +1209,7 @@ export const messages = {
   'term.composer_placeholder': '输入内容，回车送入上方当前会话；Shift+Enter 换行',
   'term.history': '🕘 历史',
   'term.pick_file': '📎 选择文件',
+  'term.paste_image_failed': '粘贴图片失败：{msg}',
   'term.clear_prompt': '清空提示词',
   'term.copy_sel': '复制选中',
   'term.copied': '已复制',

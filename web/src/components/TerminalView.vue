@@ -1051,6 +1051,37 @@ async function pickFileForPrompt() {
   } catch (e) { alert(t('sched.pick_failed', { msg: (e as Error).message || String(e) })); }
 }
 
+// 粘贴图片：把剪贴板图片交给后端落成临时文件，再把路径插到输入框。
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+async function onComposerPaste(e: ClipboardEvent) {
+  const items = e.clipboardData ? Array.from(e.clipboardData.items || []) : [];
+  const imgItem = items.find((it) => it.kind === 'file' && it.type.startsWith('image/'));
+  if (!imgItem) return;   // 无图片则保留默认文本粘贴
+  e.preventDefault();
+  const file = imgItem.getAsFile();
+  if (!file) return;
+  try {
+    const dataUrl = await fileToDataUrl(file);
+    const res = await fetch('/api/file/paste-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl }),
+    });
+    const j: any = await res.json().catch(() => ({}));
+    if (!res.ok || !j.path) throw new Error(j.message || j.error || `HTTP ${res.status}`);
+    insertComposerPath(j.path);
+  } catch (err) {
+    alert(t('term.paste_image_failed', { msg: (err as Error).message || String(err) }));
+  }
+}
+
 // —— 英文翻译模式的翻译/倒计时/自动发送逻辑见 useEnglishComposer ——
 
 // 底部框高度（可上下拖动）+ 最小化
@@ -1935,6 +1966,7 @@ onBeforeUnmount(() => {
               class="cinput"
               :placeholder="$t('term.composer_placeholder')"
               @keydown="onComposerKey"
+              @paste="onComposerPaste"
             />
             <div class="ctools">
               <input v-if="editingDesc" ref="descInputEl" v-model="descDraft" class="cdsc cdsc-edit"

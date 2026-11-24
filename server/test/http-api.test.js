@@ -832,6 +832,24 @@ test('/api/file/pick-path 只回路径：成功/取消/错误', async (t) => {
   assert.deepEqual(JSON.parse((await post(errored, '/api/file/pick-path', {})).body), { error: 'unsupported', message: null });
 });
 
+test('/api/file/paste-image 落地临时文件并回路径', async (t) => {
+  const dir = tmpDir();
+  const server = await start(new Projects({ projects: [] }), { uploadDir: dir });
+  t.after(() => server.close());
+  const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const r = await post(server, '/api/file/paste-image', { dataUrl });
+  assert.equal(r.status, 200);
+  const body = JSON.parse(r.body);
+  assert.ok(path.isAbsolute(body.path));
+  assert.equal(path.dirname(body.path), dir);
+  assert.match(path.basename(body.path), /^pasted-\d{8}-\d{6}-[0-9a-f]+\.png$/);
+  assert.equal(fs.existsSync(body.path), true);
+  assert.equal(body.mime, 'image/png');
+
+  const bad = await post(server, '/api/file/paste-image', { dataUrl: 'nope' });
+  assert.equal(bad.status, 400);
+});
+
 test('GET /api/session-projects 默认空对象', async (t) => {
   const server = await start(new Projects({ projects: [] }));
   t.after(() => server.close());

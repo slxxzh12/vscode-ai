@@ -962,6 +962,7 @@ function buildWorkspace({ paths, port }) {
     projects, saveProjects, logger: log, repoRoot: path.join(__dirname, '..'),
     codeGroups, codePrefs, docUpdateStore, composerPrefs, sessionProjects, windowState, startupPrefs, currentProjectStore: currentProject,
     scanCacheDir: path.join(paths.dir, 'scan-repos'),
+    uploadDir: paths.uploadDir,
     startupAvailable: () => process.platform === 'win32' && fs.existsSync(path.join(APP_DIR, 'start.bat')),
     sessionManager, sessionLedger, postmanHistory, notepadStore, fileStores,
   });

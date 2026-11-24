@@ -1209,6 +1209,7 @@ export const messages = {
   'term.composer_placeholder': 'Type here; Enter sends to the active session; Shift+Enter for newline',
   'term.history': '🕘 History',
   'term.pick_file': '📎 File',
+  'term.paste_image_failed': 'Failed to paste image: {msg}',
   'term.clear_prompt': 'Clear prompt',
   'term.copy_sel': 'Copy selection',
   'term.copied': 'Copied',

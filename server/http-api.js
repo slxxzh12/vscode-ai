@@ -22,6 +22,7 @@ import { revealInOs } from './reveal.js';
 import { runScript, RUNNABLE_EXT } from './run-script.js';
 import { runCurl } from './curl-run.js';
 import { streamProject, replaceProject } from './project-search.js';
+import { savePastedImage } from './paste-image.js';
 
 export const requireAuthHttp = async () => true; // TODO(安全): 认证暂缓，接入反向代理 Token 后在此实现
 
@@ -71,7 +72,7 @@ function readAbsText(abs, maxBytes = 1024 * 1024) {
   return { ...base, binary: false, content: fs.readFileSync(abs, 'utf8') };
 }
 
-export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), scanCacheDir = '', docUpdateStore = null, composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), startupPrefs = createStartupPrefs({}), currentProjectStore = null, startupAvailable = () => false, sessionManager = null, sessionMemory = collectSessionMemory, sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null }) {
+export function createHttpApi({ projects, saveProjects = null, logger = console, repoRoot = process.cwd(), codeGroups = createCodeGroups({}), codePrefs = createCodePrefs({}), scanCacheDir = '', docUpdateStore = null, composerPrefs = createComposerPrefs({}), sessionProjects = createSessionProjects({}), windowState = createWindowState({}), startupPrefs = createStartupPrefs({}), currentProjectStore = null, startupAvailable = () => false, sessionManager = null, sessionMemory = collectSessionMemory, sessionLedger = null, pickFolderFn = pickFolder, pickAnyFileFn = pickAnyFile, remoteCoder = null, remoteCoderGit = undefined, remoteCoderIsGitRepo = undefined, revealInOsFn = revealInOs, runScriptFn = runScript, runCurlFn = runCurl, postmanHistory = null, notepadStore = null, fileStores = null, uploadDir = '' }) {
   const remoteCoderFn = remoteCoder || createRemoteCoder({ repoRoot, logger, git: remoteCoderGit, isGitRepoFn: remoteCoderIsGitRepo });
   const sendJson = (res, status, obj) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -327,12 +328,21 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         sendJson(res, 200, readAbsText(r.path));
         return;
       }
-      // 只返回所选文件路径（不读内容），供终端输入框插入「文�?图片路径」用
+      // 只返回所选文件路径（不读内容），供终端输入框插入「文本/图片路径」用
       if (url.pathname === '/api/file/pick-path' && req.method === 'POST') {
         const r = await pickAnyFileFn();
         if (r.error) return sendJson(res, 200, { error: r.error, message: r.message || null });
         if (r.cancelled || !r.path) return sendJson(res, 200, { cancelled: true });
         sendJson(res, 200, { path: r.path });
+        return;
+      }
+      // 粘贴图片：把剪贴板图片落地为临时文件并返回路径，供终端输入框插入。
+      if (url.pathname === '/api/file/paste-image' && req.method === 'POST') {
+        if (!uploadDir) return sendJson(res, 500, { error: 'no-upload-dir' });
+        let body;
+        try { body = await readJsonBody(req, 25 * 1024 * 1024); } catch { return sendJson(res, 400, { error: 'bad body' }); }
+        const saved = savePastedImage({ dataUrl: body.dataUrl, dir: uploadDir });
+        sendJson(res, 200, saved);
         return;
       }
       if (url.pathname === '/api/file/meta' && req.method === 'GET') {
