@@ -19,7 +19,7 @@
 
 ## 文档仓默认结构
 
-点击「套用文档仓默认结构」会探测所选仓库根目录，缺失的目录会自动创建并回填到各槽位（含工作流目录）：
+点击「初始化文档仓与样例」会探测所选仓库根目录，把下面 6 个目录全部建好（未勾选也建），空路径回填默认路径、已有自定义路径不覆盖；随后在每个目录写入 README 骨架与示例（已存在文件跳过），并在文档仓根写/追加 `AGENTS.md`（说明文档仓与代码仓的区别、各目录定位与归档位置）：
 
 - 知识库：`docs/knowledge`
 - 方案仓：`docs/version`
@@ -27,6 +27,8 @@
 - 经验库：`docs/memory`
 - skills：优先 `.opencode/skills`、`.opencode/skill`、`.claude/skills`、`.void/skills`，都没有时用 `skills`
 - rules：优先 `.opencode/rules`、`.opencode/rule`、`.claude/rules`、`.void/rules`，都没有时用 `docs/rules`
+
+「套用文档仓默认结构」按钮仍然只建目录、不做样例初始化。
 
 ## 查看进度
 
