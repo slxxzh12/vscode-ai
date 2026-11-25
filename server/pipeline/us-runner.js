@@ -9,8 +9,10 @@ const AI_TIMEOUT_MS = 30 * 60 * 1000;
 const CMD_TIMEOUT_MS = 10 * 60 * 1000;
 
 function commitSubject(us) {
-  const code = (String(us).match(/^(US\d{6})/) || [])[1] || String(us);
-  const title = String(us).replace(/^US\d{6}-\d{4}-/, '') || String(us);
+  // us 可能是 US000001-...，也可能是 F0001-特性/US000001-...；统一取最后一段。
+  const base = String(us).split(/[\\/]/).pop() || String(us);
+  const code = (base.match(/US\d{6}/i) || [])[0]?.toUpperCase() || base;
+  const title = base.replace(/^US\d{6}-(?:\d{8}|\d{4})-/i, '') || base;
   return { code, title };
 }
 

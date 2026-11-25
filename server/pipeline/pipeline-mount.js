@@ -40,6 +40,16 @@ function inside(base, target) {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
+// 合法的方案引用：US000001-... 或 F0001-特性/US000001-...（最多两级）。
+function isUsRef(v) {
+  const parts = String(v || '').split('/');
+  if (!parts.length || parts.length > 2) return false;
+  const base = parts[parts.length - 1];
+  if (!US_RE.test(base)) return false;
+  if (parts.length === 2 && !/^F\d{4}-/i.test(parts[0])) return false;
+  return true;
+}
+
 export function createPipelineMount({
   dir, docsState = () => ({}), scheduler, logger = console,
   runDirFor = (jobId) => scheduler.store.runDirFor('auto_docs_update', jobId),
@@ -97,7 +107,7 @@ export function createPipelineMount({
       if (url.pathname === '/api/pipeline/retry' && req.method === 'POST') {
         const body = await readBody(req);
         const us = String(body.us || '');
-        if (!US_RE.test(us)) return sendJson(res, 400, { error: 'bad-us' });
+        if (!isUsRef(us)) return sendJson(res, 400, { error: 'bad-us' });
         const current = state.read();
         if (!current.items[us]) return sendJson(res, 404, { error: 'not-found' });
         current.items[us].status = 'pending';
@@ -110,7 +120,7 @@ export function createPipelineMount({
         const jobId = String(url.searchParams.get('jobId') || '');
         const us = String(url.searchParams.get('us') || '');
         const file = String(url.searchParams.get('file') || '');
-        if (!JOB_RE.test(jobId) || !US_RE.test(us) || !LOG_FILES.has(file)) return sendJson(res, 400, { error: 'bad-args' });
+        if (!JOB_RE.test(jobId) || !isUsRef(us) || !LOG_FILES.has(file)) return sendJson(res, 400, { error: 'bad-args' });
         const runDir = path.resolve(runDirFor(jobId));
         const target = path.resolve(runDir, 'us', us, file);
         if (!inside(runDir, target) || !fs.existsSync(target)) return sendJson(res, 404, { error: 'not-found' });

@@ -65,8 +65,9 @@ function copyTaskLog(scheduler, taskId, jobId, logPath) {
 export async function runAiViaTask({ scheduler, machineId, us, cwd, prompt, timeoutMs, logPath, resumeSessionId }) {
   if (!scheduler?.store || !scheduler?.queue) return { ok: false, error: 'missing-scheduler' };
   const id = await resolveAiTaskId(scheduler, us);
+  const label = String(us).split(/[\\/]/).pop() || String(us);
   const input = {
-    name: t('sched.pipeline.codegen_name', { us }),
+    name: t('sched.pipeline.codegen_name', { us: label }),
     enabled: true,
     once: true,
     deleteAfter: Date.now() + AI_TASK_KEEP_MS,

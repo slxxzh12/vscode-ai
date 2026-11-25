@@ -25,6 +25,20 @@ test('us-detect：只识别 US+6位编号+4位年份的一级目录并排序', (
   assert.deepEqual(listUsDirs(path.join(root, 'missing')), []);
 });
 
+test('us-detect：支持一层特性文件夹（F0001-.../US...）', () => {
+  const root = tmpRoot();
+  fs.mkdirSync(path.join(root, 'US000001-2021-A'));
+  fs.mkdirSync(path.join(root, 'F0001-用户管理', 'US000003-2023-C'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'F0001-用户管理', 'not-us'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'F0002-混合', 'US000002-2022-B'), { recursive: true });
+  assert.deepEqual(listUsDirs(root), [
+    'F0001-用户管理/US000003-2023-C',
+    'F0002-混合/US000002-2022-B',
+    'US000001-2021-A',
+  ]);
+  assert.deepEqual(listUsDirs(path.join(root, 'missing')), []);
+});
+
 test('us-state：基线之外的新 US 进入 pending，已有结果不重复', () => {
   const state = resetBaseline('D:/sol', ['US000001-2021-A']);
   assert.equal(selectPending(state, ['US000001-2021-A']).length, 0);

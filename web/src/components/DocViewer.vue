@@ -270,10 +270,16 @@ function parseFeatures(text: string): FeatureRow[] {
   return out;
 }
 function featureOfPath(p: string): FeatureRow | null {
-  const segs = String(p || '').replace(/\\/g, '/').split('/').filter(Boolean);
-  const i = segs.lastIndexOf('docs');
-  if (i < 0 || segs[i + 1] !== 'version' || !segs[i + 2]) return null;
-  return features.value.find((f) => f.dirs.includes(segs[i + 2])) || null;
+  const norm = String(p || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  for (const f of features.value) {
+    for (const dirRaw of f.dirs) {
+      const dir = String(dirRaw || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      if (!dir) continue;
+      const base = `docs/version/${dir}`;
+      if (norm === base || norm.startsWith(`${base}/`)) return f;
+    }
+  }
+  return null;
 }
 function syncFeatureFromPath() {
   const hit = featureOfPath(props.path);

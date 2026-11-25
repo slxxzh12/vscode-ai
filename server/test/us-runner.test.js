@@ -21,6 +21,31 @@ function fixtures() {
 
 const template = 'US={{us}} B={{branch}} C={{cwd}}\n{{docs}}';
 
+test('us-runner：特性文件夹下的 US 提交正确编号', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'df-us-runner-'));
+  const solutionDir = path.join(root, 'solution');
+  const codeDir = path.join(root, 'code');
+  const us = 'F0001-用户管理/US000009-2022-Z';
+  const usDir = path.join(solutionDir, 'F0001-用户管理', 'US000009-2022-Z');
+  fs.mkdirSync(usDir, { recursive: true });
+  fs.mkdirSync(codeDir, { recursive: true });
+  fs.writeFileSync(path.join(usDir, 'pipeline.json'), JSON.stringify({ build: 'b', test: 't' }));
+  let message = '';
+  const git = {
+    prepareUserBranch: async () => ({ branch: 'feature/z' }),
+    commitAll: async (_cwd, msg) => { message = msg; return { commit: 'c' }; },
+    pushBranch: async () => ({ ok: true }),
+  };
+  const item = await runOneUs({
+    us, solutionDir, codeDir, user: 'z',
+    logDir: path.join(root, 'logs', 'us', us), runId: 'j_test', template, git,
+    exec: async () => ({ ok: true, exitCode: 0 }),
+    runAi: async () => ({ ok: true, exitCode: 0 }),
+  });
+  assert.equal(item.status, 'success');
+  assert.equal(message, 'feat(US000009): Z');
+});
+
 test('us-runner：成功时提交 feat 并推送', async () => {
   const f = fixtures();
   const calls = [];

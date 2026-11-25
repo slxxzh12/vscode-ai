@@ -90,6 +90,29 @@ test('pipeline-mount：重试把 failed 置回 pending 并触发 docs', async ()
   assert.equal(state.items['US000002-2022-B'].status, 'pending');
 });
 
+test('pipeline-mount：特性文件夹下的 US 可重试', async () => {
+  const dir = tmpDir();
+  const pipeline = path.join(dir, 'pipeline');
+  fs.mkdirSync(pipeline, { recursive: true });
+  fs.writeFileSync(path.join(pipeline, 'config.json'), '{"autoDev":true}');
+  const us = 'F0001-用户管理/US000002-2022-B';
+  fs.writeFileSync(path.join(pipeline, 'us-state.json'), JSON.stringify({
+    solutionDir: 'D:/sol', baseline: [], items: { [us]: { status: 'failed' } },
+  }));
+  let ran = 0;
+  const mount = createPipelineMount({
+    dir: pipeline,
+    docsState: () => ({}),
+    scheduler: { engine: { manualRun: async () => { ran++; return {}; } } },
+  });
+  const res = fakeRes();
+  await mount(fakeReq('POST', '/api/pipeline/retry', JSON.stringify({ us })), res);
+  assert.equal(res.out.status, 200);
+  assert.equal(ran, 1);
+  const state = JSON.parse(fs.readFileSync(path.join(pipeline, 'us-state.json'), 'utf8'));
+  assert.equal(state.items[us].status, 'pending');
+});
+
 test('pipeline-mount：识别仓库里的 skills/rules 配置目录', async () => {
   const dir = tmpDir();
   const root = path.join(dir, 'repo');
