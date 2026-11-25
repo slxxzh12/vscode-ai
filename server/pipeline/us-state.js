@@ -4,7 +4,7 @@ import path from 'node:path';
 export const US_STATUSES = ['pending', 'running', 'success', 'failed'];
 
 export function emptyUsState(solutionDir = '') {
-  return { solutionDir, baseline: [], items: {} };
+  return { solutionDir, baseline: [], revs: {}, items: {} };
 }
 
 function normalizeItem(v) {
@@ -22,6 +22,8 @@ function normalizeItem(v) {
     prUrl: typeof it.prUrl === 'string' ? it.prUrl : null,
     mergeStatus: typeof it.mergeStatus === 'string' ? it.mergeStatus : null,
     mergeProvider: typeof it.mergeProvider === 'string' ? it.mergeProvider : null,
+    docRev: typeof it.docRev === 'string' ? it.docRev : null,
+    docAuthor: typeof it.docAuthor === 'string' ? it.docAuthor : null,
   };
 }
 
@@ -31,9 +33,14 @@ export function normalizeUsState(raw) {
   if (src.items && typeof src.items === 'object') {
     for (const [us, it] of Object.entries(src.items)) items[us] = normalizeItem(it);
   }
+  const revs = {};
+  if (src.revs && typeof src.revs === 'object') {
+    for (const [us, r] of Object.entries(src.revs)) if (typeof r === 'string') revs[us] = r;
+  }
   return {
     solutionDir: typeof src.solutionDir === 'string' ? src.solutionDir : '',
     baseline: Array.isArray(src.baseline) ? src.baseline.filter((x) => typeof x === 'string') : [],
+    revs,
     items,
   };
 }
@@ -62,16 +69,34 @@ export function createUsStateStore({ file, logger = console } = {}) {
 }
 
 export function resetBaseline(solutionDir, current) {
-  return { solutionDir, baseline: [...current], items: {} };
+  return { solutionDir, baseline: [...current], revs: {}, items: {} };
 }
 
-export function selectPending(state, current) {
+// revs 可选：{ [us]: 最近一次文档提交 hash }。传入时：
+// - 首次接管把基线 US 的当前修订记录下来，不触发；
+// - 之后基线/已处理 US 的修订变化会重新置为 pending（文档内容变更触发）。
+export function selectPending(state, current, revs = null) {
   const base = new Set(state.baseline || []);
-  for (const us of current) {
-    if (base.has(us)) continue;
-    if (!state.items[us]) state.items[us] = normalizeItem({ status: 'pending' });
+  const revsMap = revs && typeof revs === 'object' ? revs : null;
+  if (revsMap) {
+    for (const us of current) {
+      if (base.has(us) && state.revs[us] === undefined) state.revs[us] = String(revsMap[us] || '');
+    }
   }
-  return current.filter((us) => !base.has(us) && state.items[us]?.status === 'pending');
+  for (const us of current) {
+    const rev = revsMap ? String(revsMap[us] || '') : '';
+    const prev = state.revs[us];
+    const changed = !!(revsMap && rev && prev !== undefined && rev !== prev);
+    if (base.has(us)) {
+      if (!changed) continue;
+      if (!state.items[us]) state.items[us] = normalizeItem({ status: 'pending' });
+      else if (state.items[us].status !== 'running') state.items[us].status = 'pending';
+      continue;
+    }
+    if (!state.items[us]) state.items[us] = normalizeItem({ status: 'pending' });
+    else if (changed && state.items[us].status !== 'running') state.items[us].status = 'pending';
+  }
+  return current.filter((us) => state.items[us]?.status === 'pending');
 }
 
 export function markInterrupted(state) {

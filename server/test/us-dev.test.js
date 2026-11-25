@@ -125,3 +125,56 @@ test('us-dev：合并失败标记 US 失败但继续', async () => {
   assert.equal(state.items['US000002-2022-B'].error, 'gitee-merge-failed');
 });
 
+test('us-dev：分支用文档提交人（工号优先）', async () => {
+  const f = setup();
+  fs.mkdirSync(path.join(f.solution, 'US000001-2021-A'));
+  const dir = path.join(f.root, 'pipeline');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ autoDev: true }));
+  fs.writeFileSync(path.join(dir, 'us-state.json'), JSON.stringify({
+    solutionDir: f.solution, baseline: ['US000001-2021-A'], revs: {}, items: {},
+  }));
+  fs.mkdirSync(path.join(f.solution, 'US000002-2022-B'));
+  const seen = [];
+  const dev = createUsDev({
+    dir,
+    templateFile: path.join(f.root, 'template.md'),
+    docsState: () => ({ solution: { selected: true, path: f.solution }, code: { selected: true, path: f.code } }),
+    git: { getGitUserName: async () => 'localuser' },
+    docRevOf: async () => 'rev1',
+    docAuthorOf: async () => ({ name: 'zhangsan', email: 'z@corp.com' }),
+    runOne: async ({ us, user }) => { seen.push({ us, user }); return { us, status: 'success', branch: `feature/${user}`, commit: 'c' }; },
+  });
+  const r = await dev({ logDir: path.join(f.root, 'run'), runId: 'j6', docResults: [], resolveBranchUser: () => 'E123' });
+  assert.deepEqual(seen, [{ us: 'US000002-2022-B', user: 'E123' }]);
+  assert.equal(r.failed, 0);
+  const state = JSON.parse(fs.readFileSync(path.join(dir, 'us-state.json'), 'utf8'));
+  assert.equal(state.revs['US000002-2022-B'], 'rev1');
+  assert.equal(state.items['US000002-2022-B'].docAuthor, 'zhangsan');
+});
+
+test('us-dev：无工号映射时分支用作者名', async () => {
+  const f = setup();
+  fs.mkdirSync(path.join(f.solution, 'US000001-2021-A'));
+  const dir = path.join(f.root, 'pipeline');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ autoDev: true }));
+  fs.writeFileSync(path.join(dir, 'us-state.json'), JSON.stringify({
+    solutionDir: f.solution, baseline: ['US000001-2021-A'], revs: {}, items: {},
+  }));
+  fs.mkdirSync(path.join(f.solution, 'US000002-2022-B'));
+  const seen = [];
+  const dev = createUsDev({
+    dir,
+    templateFile: path.join(f.root, 'template.md'),
+    docsState: () => ({ solution: { selected: true, path: f.solution }, code: { selected: true, path: f.code } }),
+    git: { getGitUserName: async () => 'localuser' },
+    docRevOf: async () => 'rev1',
+    docAuthorOf: async () => ({ name: 'zhangsan', email: 'z@corp.com' }),
+    runOne: async ({ us, user }) => { seen.push({ us, user }); return { us, status: 'success', branch: `feature/${user}`, commit: 'c' }; },
+  });
+  const r = await dev({ logDir: path.join(f.root, 'run'), runId: 'j7', docResults: [], resolveBranchUser: () => '' });
+  assert.deepEqual(seen, [{ us: 'US000002-2022-B', user: 'zhangsan' }]);
+  assert.equal(r.failed, 0);
+});
+

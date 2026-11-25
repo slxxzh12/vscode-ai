@@ -701,12 +701,13 @@ function buildWorkspace({ paths, port }) {
   const identityKeyFile = NODE ? null : path.join(dataHome(), 'identity.json');
   const identity = loadIdentity({ file: paths.identityFile, keyFile: identityKeyFile, employeeId: detectEmployeeId(), host: HOST, port });
   const eventBus = createEventBus();
+  const collabDb = createCollabDb({ file: usageDbFile, logger: log });
   const engine = new CollabEngine({
     store: new CollabStore({ file: paths.storeFile, logger: log }),
     identity,
     peers: new UsagePeersStore({ file: paths.usagePeersFile, usageStore, logger: log }),
     seedStore: createSeedStore({ file: usageDbFile, logger: log }),
-    collabDb: createCollabDb({ file: usageDbFile, logger: log }),
+    collabDb,
     taskStore,
     downloadStore,
     syncStore,
@@ -837,6 +838,22 @@ function buildWorkspace({ paths, port }) {
           if (!findLiveByAgentSessionId(row.agentSessionId, row.id)) return row.agentSessionId;
         }
         return '';
+      },
+      // 代码分支用「文档提交人」：优先映射到协作成员工号，否则用 git 作者名。
+      resolveBranchUser: (name, email) => {
+        const n = String(name || '').trim();
+        const addr = String(email || '').trim();
+        const local = addr ? addr.split('@')[0] : '';
+        const key = (s) => String(s || '').trim().toLowerCase();
+        let members = [];
+        try { members = collabDb.listMembers(); } catch { members = []; }
+        const byEmp = members.find((m) => m.employeeId
+          && (key(m.employeeId) === key(n) || (local && key(m.employeeId) === key(local))));
+        if (byEmp) return String(byEmp.employeeId);
+        const byName = members.find((m) => m.username
+          && (key(m.username) === key(n) || (local && key(m.username) === key(local))));
+        if (byName && byName.employeeId) return String(byName.employeeId);
+        return n || local;
       },
     }),
     onJobEvent: (evt, payload) => {

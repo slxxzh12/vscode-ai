@@ -13,6 +13,7 @@ import {
 import { runOneUs } from './us-runner.js';
 import { mergeUsBranch } from './us-merge.js';
 import * as defaultGit from './us-git.js';
+import { docRevOf as defaultDocRevOf, docAuthorOf as defaultDocAuthorOf } from './us-doc-git.js';
 
 // 代码生成改为「在定时任务列表里新增一条 AI 任务并运行」：
 // - auto_docs_update 仍负责定时 git pull 与新增 US 探测；
@@ -133,6 +134,7 @@ function makeRunAi(ctx) {
 export function createUsDev({
   dir, docsState = () => ({}), templateFile, logger = console,
   git = defaultGit, runOne = runOneUs, merge = mergeUsBranch, now = Date.now,
+  docRevOf = defaultDocRevOf, docAuthorOf = defaultDocAuthorOf,
 }) {
   const configStore = createUsConfigStore({ file: path.join(dir, 'config.json'), logger });
   const stateStore = createUsStateStore({ file: path.join(dir, 'us-state.json'), logger });
@@ -163,8 +165,12 @@ export function createUsDev({
       return { skipped: 'baseline', items: [], failed: 0 };
     }
 
+    // 每个 US 记录方案目录最近一次提交，用于「文档内容变更 → 重跑」。
+    const revs = {};
+    for (const us of current) revs[us] = await docRevOf(solutionDir, us);
+
     markInterrupted(state);
-    const pending = selectPending(state, current);
+    const pending = selectPending(state, current, revs);
     if (!pending.length) {
       stateStore.write(state);
       return { items: [], failed: 0 };
@@ -175,25 +181,32 @@ export function createUsDev({
       return { items: pending.map((us) => state.items[us]), failed: pending.length };
     }
 
-    const user = await git.getGitUserName(codeDir);
-    if (!user) {
-      failAll(state, pending, 'missing-user-name');
-      return { items: pending.map((us) => state.items[us]), failed: pending.length };
-    }
+    // 本地 git 用户名只作为「文档提交人信息缺失」时的兜底。
+    const localUser = await git.getGitUserName(codeDir);
 
     const template = fs.readFileSync(templateFile, 'utf8');
     const runAi = makeRunAi(ctx);
     const items = [];
     for (const us of pending) {
+      const rev = revs[us] || '';
+      state.revs[us] = rev;   // 记录本次处理的修订（含空：未提交的目录后续提交后仍能触发一次）
+      const author = await docAuthorOf(solutionDir, us);
+      const branchUser = (ctx.resolveBranchUser ? ctx.resolveBranchUser(author.name, author.email) : '')
+        || author.name || localUser;
+      if (!branchUser) {
+        failAll(state, [us], 'missing-user-name');
+        items.push(state.items[us]);
+        continue;
+      }
       state.items[us] = {
         ...state.items[us], status: 'running', attempts: (state.items[us].attempts || 0) + 1,
-        lastJobId: ctx.runId || null,
+        lastJobId: ctx.runId || null, docRev: rev || null, docAuthor: author.name || null,
       };
       stateStore.write(state);
       const item = await (async () => {
         try {
           return await runOne({
-            us, solutionDir, codeDir, user,
+            us, solutionDir, codeDir, user: branchUser,
             logDir: path.join(ctx.logDir, 'us', us),
             runId: ctx.runId, template, git, runAi, now,
             runner: ctx.runner, aiBin: ctx.aiBin, opencodeDataDir: ctx.opencodeDataDir,

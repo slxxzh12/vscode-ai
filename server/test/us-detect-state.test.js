@@ -39,6 +39,26 @@ test('us-detect：支持一层特性文件夹（F0001-.../US...）', () => {
   assert.deepEqual(listUsDirs(path.join(root, 'missing')), []);
 });
 
+test('us-state：基线 US 首次记录修订不触发，修订变化后重跑', () => {
+  const state = resetBaseline('D:/sol', ['US000001-2021-A']);
+  assert.deepEqual(selectPending(state, ['US000001-2021-A'], { 'US000001-2021-A': 'r1' }), []);
+  assert.equal(state.revs['US000001-2021-A'], 'r1');
+  assert.deepEqual(selectPending(state, ['US000001-2021-A'], { 'US000001-2021-A': 'r2' }), ['US000001-2021-A']);
+  assert.equal(state.items['US000001-2021-A'].status, 'pending');
+});
+
+test('us-state：已处理 US 文档修订变化才重跑，未变不重跑', () => {
+  const state = resetBaseline('D:/sol', []);
+  state.items['US000002-2022-B'] = { status: 'success' };
+  state.revs['US000002-2022-B'] = 'r1';
+  assert.deepEqual(selectPending(state, ['US000002-2022-B'], { 'US000002-2022-B': 'r1' }), []);
+  assert.deepEqual(selectPending(state, ['US000002-2022-B'], { 'US000002-2022-B': 'r2' }), ['US000002-2022-B']);
+  assert.equal(state.items['US000002-2022-B'].status, 'pending');
+  state.items['US000002-2022-B'] = { status: 'failed' };
+  state.revs['US000002-2022-B'] = 'r2';
+  assert.deepEqual(selectPending(state, ['US000002-2022-B'], { 'US000002-2022-B': 'r2' }), []);
+});
+
 test('us-state：基线之外的新 US 进入 pending，已有结果不重复', () => {
   const state = resetBaseline('D:/sol', ['US000001-2021-A']);
   assert.equal(selectPending(state, ['US000001-2021-A']).length, 0);
