@@ -5,9 +5,10 @@ import { nodeFp } from '../nodeKey';
 import { useProjects } from '../useProjects';
 import { useCodePrefs } from '../codePrefs';
 import { useCodeGroups } from '../codeGroups';
-import { t } from '../i18n';
+import { t, locale } from '../i18n';
 import { loadPipelineConfig, savePipelineConfig } from '../pipeline';
 import { detectDocDefaults } from '../docDefaults';
+import { pickErrorText } from '../pickFolder';
 import GitStat from './GitStat.vue';
 import RealCodeStat from './RealCodeStat.vue';
 import SecretScan from './SecretScan.vue';
@@ -56,6 +57,7 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | undefined;
 const docState = ref<DocState>(createDocState(''));
 let docKey = 'devflow-codestat-doc-dirs';
 let docSaveTimer: ReturnType<typeof setTimeout> | undefined;
+let lastPromptedRoot = '';
 const docRunning = ref(false);
 const docError = ref('');
 const autoDev = ref(false);
@@ -70,7 +72,6 @@ const docResults = ref<DocResult[]>([]);
 const docHint = ref('');
 const docInitRunning = ref(false);
 const docInitHint = ref('');
-const SAMPLE_SLOTS: DocSlot[] = ['knowledge', 'solution', 'workflow', 'experience', 'skills', 'rules'];
 function saveDocState() { void persistDocState(); }
 async function persistDocState() {
   try { localStorage.setItem(docKey, JSON.stringify(docState.value)); } catch { /* ignore */ }
@@ -81,15 +82,45 @@ async function persistDocState() {
   } catch { /* 离线时保留本地，下次修改再同步 */ }
 }
 watch(docState, () => { clearTimeout(docSaveTimer); docSaveTimer = setTimeout(saveDocState, 400); }, { deep: true });
+
+// 选中代码仓后：若代码仓下已存在对应文档目录，提示是否直接把它们作为文档仓。
+async function autoFillFromCode(root: string) {
+  if (!root || root === lastPromptedRoot) return;
+  let r;
+  try { r = await detectDocDefaults(root, { create: false }); } catch { return; }
+  const hits = DOC_SLOTS.filter((s) => s !== 'code' && r.detected?.[s] && r.paths?.[s]);
+  if (!hits.length) return;   // 没有已存在的文档目录，不打扰
+  lastPromptedRoot = root;
+  const already = hits.every((s) => String(docState.value[s].path || '').trim() === r.paths[s]);
+  if (already) {
+    for (const s of hits) docState.value[s].selected = true;
+    return;
+  }
+  const names = hits.map((s) => t('codestat.docs.' + s)).join(locale.value === 'en' ? ', ' : '、');
+  if (!window.confirm(t('codestat.docs.adopt_code_docs_confirm', { dirs: names }))) return;
+  let filled = 0;
+  for (const s of hits) {
+    if (String(docState.value[s].path || '').trim() !== r.paths[s]) filled += 1;
+    docState.value[s].path = r.paths[s];
+    docState.value[s].selected = true;
+  }
+  if (filled) docHint.value = t('codestat.docs.autofill_done', { n: filled });
+}
+function onDocPathChange(s: DocSlot) {
+  if (s === 'code') void autoFillFromCode(docState.value.code.path.trim());
+}
 async function pickDocDir(slot: DocSlot) {
   docError.value = '';
   try {
     const r = await projectsApi.pickFolder();
     if (r.error) {
-      docError.value = r.error === 'unsupported' ? t('top.pick_unsupported') : t('top.add_failed', { msg: r.message || r.error });
+      docError.value = pickErrorText(r);
       return;
     }
-    if (r.path) docState.value[slot].path = r.path;
+    if (r.path) {
+      docState.value[slot].path = r.path;
+      if (slot === 'code') void autoFillFromCode(r.path);
+    }
   } catch (e: any) {
     docError.value = t('top.add_failed', { msg: e?.message || String(e) });
   }
@@ -190,9 +221,8 @@ onMounted(() => {
   watchTimer = setInterval(() => { void loadWatch(); }, 5000);
 });
 async function runInitSamples() {
-  const hasSample = SAMPLE_SLOTS.some((s) => docState.value[s].selected && docState.value[s].path.trim());
-  const hasRoot = !!(docState.value.code.path.trim() || docState.value.solution.path.trim());
-  if (!hasSample && !hasRoot) { docError.value = t('codestat.docs.init_need'); return; }
+  const hasPath = DOC_SLOTS.some((s) => docState.value[s].path.trim());
+  if (!hasPath) { docError.value = t('codestat.docs.init_need'); return; }
   docInitRunning.value = true;
   docError.value = '';
   docInitHint.value = '';
@@ -201,7 +231,7 @@ async function runInitSamples() {
     const res = await fetch('/api/doc-update/init-samples', { method: 'POST' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const r = await res.json();
-    docInitHint.value = t('codestat.docs.init_done', { created: r?.created || 0, skipped: r?.skipped || 0 }) + agentsHint(r);
+    docInitHint.value = t('codestat.docs.init_done', { dirs: r?.createdDirs || 0, created: r?.created || 0, skipped: r?.skipped || 0 }) + agentsHint(r);
     if (r?.failed) docError.value = t('codestat.docs.init_failed', { failed: r.failed });
     try {
       const st = await fetch('/api/doc-update').then((x) => (x.ok ? x.json() : null));
@@ -334,7 +364,7 @@ async function browsePick() {
   try {
     const r = await projectsApi.pickFolder();
     if (r.error) {
-      pickError.value = r.error === 'unsupported' ? t('top.pick_unsupported') : t('top.add_failed', { msg: r.message || r.error });
+      pickError.value = pickErrorText(r);
       return;
     }
     if (r.path) pickPath.value = r.path;
@@ -435,7 +465,7 @@ function remember(p: string) {
             <input type="checkbox" v-model="docState[s].selected" />
             <span>{{ $t('codestat.docs.' + s) }}</span>
           </label>
-          <input class="docinput" v-model="docState[s].path" :placeholder="$t('codestat.docs.placeholder')" />
+          <input class="docinput" v-model="docState[s].path" :placeholder="$t('codestat.docs.placeholder')" @change="onDocPathChange(s)" />
           <button class="pick" @click="pickDocDir(s)">{{ $t('top.choose') }}</button>
         </div>
         <div class="docbigbtns">

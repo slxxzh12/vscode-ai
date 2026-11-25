@@ -244,6 +244,76 @@ function onGlobalKey(e: KeyboardEvent) {
   e.preventDefault();
   saveNow();
 }
+
+// —— 保存到特性对应的方案目录（仅项目来源；读取 docs/version/features.md） ——
+interface FeatureRow { code: string; dirs: string[]; name: string; desc: string }
+const FEATURES_FILE = 'docs/version/features.md';
+const features = ref<FeatureRow[]>([]);
+const featureSel = ref('');
+const featureDirSel = ref('');
+const featureBusy = ref(false);
+const featureDirs = computed(() => features.value.find((f) => f.code === featureSel.value)?.dirs || []);
+function baseNameOf(p: string): string {
+  const s = String(p || '').replace(/\\/g, '/');
+  return s.slice(s.lastIndexOf('/') + 1);
+}
+function parseFeatures(text: string): FeatureRow[] {
+  const out: FeatureRow[] = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const s = line.trim();
+    if (!s.startsWith('|')) continue;
+    const cells = s.replace(/^\|/, '').replace(/\|$/, '').split('|').map((x) => x.trim());
+    if (cells.length < 2 || !/^F\d{4}$/.test(cells[0])) continue;
+    const dirs = cells[1].split(/[,，]/).map((x) => x.trim()).filter(Boolean);
+    if (dirs.length) out.push({ code: cells[0], dirs, name: cells[2] || '', desc: cells[3] || '' });
+  }
+  return out;
+}
+function featureOfPath(p: string): FeatureRow | null {
+  const segs = String(p || '').replace(/\\/g, '/').split('/').filter(Boolean);
+  const i = segs.lastIndexOf('docs');
+  if (i < 0 || segs[i + 1] !== 'version' || !segs[i + 2]) return null;
+  return features.value.find((f) => f.dirs.includes(segs[i + 2])) || null;
+}
+function syncFeatureFromPath() {
+  const hit = featureOfPath(props.path);
+  if (hit) { featureSel.value = hit.code; featureDirSel.value = hit.dirs[0] || ''; }
+}
+async function loadFeatures() {
+  features.value = [];
+  if (props.source.kind !== 'project') return;
+  try {
+    const f = await props.source.read(FEATURES_FILE);
+    features.value = parseFeatures(f.content);
+  } catch { features.value = []; }
+  syncFeatureFromPath();
+}
+async function saveToFeature() {
+  const f = features.value.find((x) => x.code === featureSel.value);
+  if (!f) { setToolMsg(t('fp.feature.need'), false); return; }
+  const dir = f.dirs.length > 1 ? featureDirSel.value : f.dirs[0];
+  if (!dir) { setToolMsg(t('fp.feature.need_dir'), false); return; }
+  const file = baseNameOf(props.path);
+  if (!file) { setToolMsg(t('fp.feature.need_file'), false); return; }
+  const target = `docs/version/${dir}/${file}`;
+  if (String(props.path).replace(/\\/g, '/').replace(/^\/+/, '') === target) { setToolMsg(t('fp.feature.same')); return; }
+  featureBusy.value = true;
+  try {
+    let exists = false;
+    try { await props.source.read(target); exists = true; } catch { exists = false; }
+    if (exists && !window.confirm(t('fp.feature.overwrite', { path: target }))) return;
+    if (exists) await props.source.write(target, raw.value);
+    else if (props.source.create) await props.source.create(target, raw.value);
+    else await props.source.write(target, raw.value);
+    setToolMsg(t('fp.feature.saved', { path: target }));
+    flashFmt(`✓ ${t('fp.feature.saved', { path: target })}`);
+  } catch (e: any) {
+    setToolMsg(t('fp.feature.failed', { msg: e?.message || e }), false);
+  } finally {
+    featureBusy.value = false;
+  }
+}
+watch([() => props.path, () => props.source], () => { void loadFeatures(); });
 function docChanged() {
   if (!view) return;
   raw.value = view.state.doc.toString();   // 供 md 预览实时使用
@@ -902,6 +972,7 @@ onMounted(() => {
   window.addEventListener('keydown', onGlobalKey);
   nextTick(() => mdBodyRef.value?.addEventListener('df-edit-flowchart', onEditFlowchart));
   loadDiffH();
+  void loadFeatures();
 });
 
 onBeforeUnmount(() => {
@@ -977,6 +1048,16 @@ onBeforeUnmount(() => {
           </span>
           <span v-if="runMsg" class="save runmsg">{{ runMsg }}</span>
           <button v-if="status === 'ok' && capMeta" class="fmt-btn" :class="{ on: detailOpen }" :title="$t('fp.detail.title')" @click="toggleDetail()">{{ $t('fp.detail') }}</button>
+          <span v-if="features.length" class="featwrap">
+            <select v-model="featureSel" class="featsel" :title="$t('fp.feature.pick')">
+              <option value="">{{ $t('fp.feature.pick') }}</option>
+              <option v-for="f in features" :key="f.code" :value="f.code">{{ f.name ? f.code + ' · ' + f.name : f.code }}</option>
+            </select>
+            <select v-if="featureDirs.length > 1" v-model="featureDirSel" class="featsel">
+              <option v-for="d in featureDirs" :key="d" :value="d">{{ d }}</option>
+            </select>
+            <button class="fmt-btn" :disabled="!featureSel || featureBusy || status !== 'ok' || isBinary || !showEditor" :title="$t('fp.feature.save')" @click="saveToFeature">{{ featureBusy ? $t('fp.feature.saving') : $t('fp.feature.save') }}</button>
+          </span>
           <button class="fmt-btn savebtn" :disabled="!(status === 'ok' && showEditor && !isBinary && dirty)" :title="$t('fp.save') + ' (Ctrl+S)'" @click="saveNow">{{ $t('fp.save') }}{{ dirty ? ' *' : '' }}</button>
         </div>
       </div>
@@ -1139,6 +1220,8 @@ onBeforeUnmount(() => {
 .savebtn { border-color: var(--ac2); color: var(--ac2); font-weight: 600; }
 .savebtn:hover:not(:disabled) { background: color-mix(in srgb, var(--ac) 12%, transparent); }
 .savebtn:disabled { opacity: .45; }
+.featwrap { display: inline-flex; align-items: center; gap: 4px; }
+.featsel { background: var(--bg4); color: var(--tx); border: 1px solid var(--bd); border-radius: 4px; padding: 1px 4px; font-size: 11px; max-width: 200px; }
 .save { font-size: 11px; line-height: 1; white-space: nowrap; }
 .save.saveing { color: var(--warn); }
 .save.saveok { color: var(--ok); }

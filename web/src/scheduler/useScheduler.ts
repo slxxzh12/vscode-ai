@@ -1,6 +1,7 @@
 import { reactive } from 'vue';
 import { SchedulerS2C } from '@devflow/shared/scheduler';
 import type { SchedulerTask, SchedulerJob, SchedulerSummary } from '@devflow/shared/scheduler';
+import { requestPickFolder } from '../pickFolder';
 
 export interface TaskView extends SchedulerTask {
   nextRunAt: number | null;
@@ -103,7 +104,7 @@ export function useScheduler(terminal?: TerminalLike) {
     return api('POST', '/api/scheduler/pick-file');
   }
   function pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
-    return api('POST', '/api/scheduler/pick-folder');
+    return requestPickFolder('/api/scheduler/pick-folder');
   }
   async function importManifests(dir: string): Promise<{ imported: number; overwritten: number; failed: { path: string; error: string }[] }> {
     const d = await api('POST', '/api/scheduler/import', { dir });

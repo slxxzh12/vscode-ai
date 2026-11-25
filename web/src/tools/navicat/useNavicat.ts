@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue';
+import { requestPickFolder } from '../../pickFolder';
 
 export type NavicatType = 'mysql' | 'postgres' | 'sqlite' | 'redis';
 
@@ -179,7 +180,7 @@ export function useNavicat(): {
   }
 
   async function pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
-    return jfetch('/api/projects/pick', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+    return requestPickFolder('/api/projects/pick');
   }
 
   return { profiles, load, save, remove, rename, test, exec, reveal, connstr, exportNcx, exportData, startExport, exportJob, cancelExport, downloadExport, listDatabases, listTables, pickFile, pickFolder };

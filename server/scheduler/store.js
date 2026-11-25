@@ -105,6 +105,7 @@ export class SchedulerStore {
       deleteAfter: Number(input.deleteAfter) > 0 ? Number(input.deleteAfter) : null,
       projectId: input.projectId || null,
       cwd: input.cwd || null,
+      runCwd: input.runCwd || null,
       filePath: toAbs(input.filePath, input.cwd),
       type: input.type,
       command: input.type === 'shell' ? input.command : undefined,

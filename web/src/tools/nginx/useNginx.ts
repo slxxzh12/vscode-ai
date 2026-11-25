@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue';
 import { NGINX_DEFAULT_PORT, NGINX_SAMPLE_REWRITES } from '@devflow/shared';
+import { requestPickFolder } from '../../pickFolder';
 
 export type NginxMode = 'port' | 'path';
 export interface NginxHeader { name: string; value: string }
@@ -157,7 +158,7 @@ export function useNginx(): NginxApi {
   }
 
   function pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
-    return jfetch('/api/projects/pick', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+    return requestPickFolder('/api/projects/pick');
   }
 
   return { rules, status, load, save, remove, start, stop, log, captures, capture, clearCaptures, pickFolder };

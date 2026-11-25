@@ -173,7 +173,7 @@ export function createConsumer({
       });
       return;
     }
-    const cwd = task.cwd || projectResolver(task.projectId) || process.cwd();
+    const cwd = task.runCwd || task.cwd || projectResolver(task.projectId) || process.cwd();
     const logPath = store.logPath(logFile);
     const deadline = job.maxRunMilliSecond > 0 ? startedAt + job.maxRunMilliSecond : Infinity;
     const remaining = () => Math.max(1, deadline - now());

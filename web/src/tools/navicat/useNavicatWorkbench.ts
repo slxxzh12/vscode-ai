@@ -1,6 +1,7 @@
 import { computed, ref, type ComputedRef, type Ref } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { t } from '../../i18n';
+import { pickErrorText } from '../../pickFolder';
 import { quoteIdent, useNavicat, type ExecResult, type NavicatProfile, type NavicatType } from './useNavicat';
 import { navicatTreeSource } from './navicatTreeSource';
 import { uniqueConnName } from './sqliteFile';
@@ -34,6 +35,7 @@ export interface NavicatWorkbench {
   importHostMapped: ComputedRef<boolean>;
   importPreview(): CsvParseResult;
   failedIds: Ref<Set<string>>;
+  connStatus: Ref<Record<string, 'pass' | 'fail'>>;
   exportDlg: Ref<boolean>;
   exportIds: Ref<string[]>;
   exportDbs: Ref<Record<string, string>>;
@@ -107,6 +109,7 @@ export function useNavicatWorkbench(): NavicatWorkbench {
   const importMap = ref<Record<number, ImportField | null>>({});
   const importError = ref('');
   const failedIds = ref<Set<string>>(new Set());
+  const connStatus = ref<Record<string, 'pass' | 'fail'>>({});
   const exportDlg = ref(false);
   const exportIds = ref<string[]>([]);
   const exportDbs = ref<Record<string, string>>({});
@@ -203,8 +206,12 @@ export function useNavicatWorkbench(): NavicatWorkbench {
     try {
       if (form.value.id && !form.value.password) await nav.test({ id: form.value.id });
       else await nav.test({ profile: form.value });
+      if (form.value.id) connStatus.value = { ...connStatus.value, [String(form.value.id)]: 'pass' };
       dlgMsg.value = t('nv.test_ok');
-    } catch (e) { dlgMsg.value = (e as Error).message; } finally { testing.value = false; }
+    } catch (e) {
+      if (form.value.id) connStatus.value = { ...connStatus.value, [String(form.value.id)]: 'fail' };
+      dlgMsg.value = (e as Error).message;
+    } finally { testing.value = false; }
   }
 
   const importHostMapped = computed(() => Object.values(importMap.value).includes('host'));
@@ -241,9 +248,13 @@ export function useNavicatWorkbench(): NavicatWorkbench {
       try {
         await nav.test({ id: String(c.id || '') });
         pass += 1;
+        if (c.id) connStatus.value = { ...connStatus.value, [String(c.id)]: 'pass' };
       } catch (e) {
         fail += 1;
-        if (c.id) failedIds.value.add(String(c.id));
+        if (c.id) {
+          failedIds.value.add(String(c.id));
+          connStatus.value = { ...connStatus.value, [String(c.id)]: 'fail' };
+        }
         testFailLines.push(t('nv.import_fail_line', { name: c.name, msg: (e as Error).message }));
       }
     }
@@ -391,7 +402,7 @@ export function useNavicatWorkbench(): NavicatWorkbench {
   async function pickExportOutDir(): Promise<void> {
     try {
       const r = await nav.pickFolder();
-      if (r?.error) { exportMsg.value = t('nv.pick_failed'); return; }
+      if (r?.error) { exportMsg.value = pickErrorText(r); return; }
       if (r?.cancelled || !r?.path) return;
       exportOutDir.value = r.path;
     } catch (e) {
@@ -409,7 +420,7 @@ export function useNavicatWorkbench(): NavicatWorkbench {
     try { await ElMessageBox.confirm(t('nv.delete_confirm'), t('nv.delete'), { type: 'warning' }); }
     catch { return; }
     await nav.remove(p.id!);
-    if (p.id) failedIds.value.delete(p.id);
+    if (p.id) { failedIds.value.delete(p.id); const next = { ...connStatus.value }; delete next[String(p.id)]; connStatus.value = next; }
     if (activeId.value === p.id) { activeId.value = ''; activeDatabase.value = ''; activeFolder.value = ''; result.value = null; }
   }
 
@@ -453,6 +464,7 @@ export function useNavicatWorkbench(): NavicatWorkbench {
     profiles: () => nav.profiles.value,
     profileById,
     failedIds: () => failedIds.value,
+    statusOf: (id) => connStatus.value[String(id)],
     databases: (id) => nav.listDatabases(id),
     tables: (id, db) => nav.listTables(id, db),
     openConnection: (id) => { const p = profileById(id); if (p) selectConn(p); },
@@ -464,7 +476,7 @@ export function useNavicatWorkbench(): NavicatWorkbench {
 
   cache = {
     profiles: nav.profiles, activeId, activeFolder, activeDatabase, activeProfile, sql, result, busy, msg,
-    dlg, dlgTab, dlgMsg, form, saving, testing, importing, failedIds,
+    dlg, dlgTab, dlgMsg, form, saving, testing, importing, failedIds, connStatus,
     importOpen, importName, importRows, importHasHeader, importMap, importError, importHostMapped, importPreview,
     exportDlg, exportIds, exportDbs, exportDbOptions, exportN, exportSample, exportOutDir, exportSql, exportCsv, exporting, exportMsg, treeSource,
     load: nav.load, onFolder, onTypeChange, pickTable, openNew, openEdit, doSave, doTest, importCsv,

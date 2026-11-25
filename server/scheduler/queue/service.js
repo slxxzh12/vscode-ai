@@ -14,7 +14,7 @@ export function buildSnapshot(task, trigger, scheduledAt, createMachineId) {
   return {
     task: {
       id: task.id, name: task.name, type: task.type, enabled: task.enabled !== false,
-      projectId: task.projectId || null, cwd: task.cwd || null, filePath: task.filePath || null,
+      projectId: task.projectId || null, cwd: task.cwd || null, runCwd: task.runCwd || null, filePath: task.filePath || null,
       command: task.command, ai: task.ai,
       approvalRequired: !!task.approvalRequired, onlyLocal: !!task.onlyLocal,
       uniqueKey: task.uniqueKey || null, weight: Number(task.weight) || 0,

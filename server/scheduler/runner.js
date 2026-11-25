@@ -34,22 +34,25 @@ export function buildSpawnSpec(task, { cwd, aiBin = 'opencode', aiPrompt = null,
     return withContext({ bin: '/bin/sh', args: ['-c', task.command], cwd });
   }
   if (task.type === 'ai') {
+    // 续接已存在的 agent 会话：opencode / nga 均使用 run --session <id>
+    const sid = task.ai && task.ai.sessionId ? String(task.ai.sessionId) : '';
+    const sessionArgs = sid ? ['--session', sid] : [];
     if (task.ai && task.ai.source === 'command' && task.ai.commandName) {
       const name = String(task.ai.commandName).replace(/\.md$/i, '');
-      return withContext({ bin: aiBin, args: ['run', '--command', name, ...jsonArgs], cwd, env: ocEnv });
+      return withContext({ bin: aiBin, args: ['run', '--command', name, ...sessionArgs, ...jsonArgs], cwd, env: ocEnv });
     }
     if (task.ai && task.ai.source === 'file' && task.filePath) {
       // 注意：--file 是数组型，会把其后的位置参数也当成文件；消息必须放在 --file 之前
       const msg = String(task.ai.prompt || '').trim();
-      const args = ['run'];
+      const args = ['run', ...sessionArgs];
       if (msg) args.push(msg);
       args.push('--file', task.filePath, ...jsonArgs);
       return withContext({ bin: aiBin, args, cwd, env: ocEnv });
     }
     if (task.ai && task.ai.source === 'prompt' && promptFilePath) {
-      return withContext({ bin: aiBin, args: ['run', t('sched.ai.prompt_file_message'), '--file', promptFilePath, ...jsonArgs], cwd, env: ocEnv });
+      return withContext({ bin: aiBin, args: ['run', ...sessionArgs, t('sched.ai.prompt_file_message'), '--file', promptFilePath, ...jsonArgs], cwd, env: ocEnv });
     }
-    return withContext({ bin: aiBin, args: ['run', stripFrontmatter(aiPrompt ?? ''), ...jsonArgs], cwd, env: ocEnv });
+    return withContext({ bin: aiBin, args: ['run', ...sessionArgs, stripFrontmatter(aiPrompt ?? ''), ...jsonArgs], cwd, env: ocEnv });
   }
   throw Object.assign(new Error('unknown task type'), { code: 'bad-task' });
 }

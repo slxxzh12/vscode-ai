@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue';
+import { requestPickFolder } from '../../pickFolder';
 
 export interface AiSiteConfig {
   pluginRoot: string;
@@ -14,7 +15,12 @@ export interface AiSiteConfig {
 }
 export interface AiSiteStatus { status: 'running' | 'stopped' | 'error'; error: string | null; mode?: string; enabled?: boolean }
 export interface AiSiteUser { id: string; username: string; jwt: string; jti: string; iat: number; exp: number; revoked: boolean; enabled: boolean; uses: number; lastLoginAt: number; lastRunAt: number }
-export interface AiSitePlugin { name: string; title: string; description: string; hasLogo: boolean; fields: unknown[]; error: string | null }
+export interface AiSitePluginField {
+  key: string; label: string; type: string; required?: boolean;
+  options?: string[]; default?: string; placeholder?: string;
+  min?: number; max?: number; step?: number;
+}
+export interface AiSitePlugin { name: string; title: string; description: string; hasLogo: boolean; fields: AiSitePluginField[]; error: string | null }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
@@ -107,7 +113,7 @@ export function useAiSite(): AiSiteApi {
   }
 
   function pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
-    return jfetch('/api/projects/pick', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+    return requestPickFolder('/api/projects/pick');
   }
 
   return { config, status, users, plugins, load, save, start, stop, createUser, updateUser, revokeUser, removeUser, pickFolder };

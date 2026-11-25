@@ -8,6 +8,7 @@ import { formatNgaEvents } from './ngaProcess';
 import { pendingSchedulerPrompt, clearSchedulerPrompt, pendingSchedulerEdit, clearSchedulerEdit } from './schedulerIntent';
 import { scheduleSummary, formatTime, runStatusLabel, recentJobsOf, typeLabel } from './format';
 import { t } from '../i18n';
+import { pickErrorText } from '../pickFolder';
 import CodeEditor from '../components/CodeEditor.vue';
 import { renderRemoteMarkdown } from '../markdown';
 import { useMarkdownEnhance } from '../markdown-enhance/useEnhance';
@@ -131,7 +132,7 @@ async function browseImportDir() {
   state.error = '';
   try {
     const r = await sched.pickFolder();
-    if (r.error) { state.error = r.error === 'unsupported' ? t('sched.import.unsupported') : t('sched.import.pick_failed', { msg: r.message || r.error }); return; }
+    if (r.error) { state.error = pickErrorText(r); return; }
     if (r.cancelled || !r.path) return;
     importDir.value = r.path;
   } catch (e: any) { state.error = String(e?.message || e); }

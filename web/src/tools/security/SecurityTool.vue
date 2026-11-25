@@ -1,6 +1,7 @@
 ﻿<script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { t } from '../../i18n';
+import { pickErrorText } from '../../pickFolder';
 import { useProjects } from '../../useProjects';
 
 interface Finding {
@@ -36,7 +37,7 @@ async function pickDir(i: number) {
   error.value = '';
   try {
     const r = await projects.pickFolder();
-    if (r.error) { error.value = r.error === 'unsupported' ? t('top.pick_unsupported') : t('top.add_failed', { msg: r.message || r.error }); return; }
+    if (r.error) { error.value = pickErrorText(r); return; }
     if (r.path) dirs.value[i] = r.path;
   } catch (e: any) {
     error.value = t('top.add_failed', { msg: e?.message || String(e) });

@@ -1,4 +1,5 @@
 import type { ProjectInfo, TreeItem } from '@devflow/shared';
+import { requestPickFolder } from './pickFolder';
 
 export interface FileText { name: string; path: string; size: number; content: string; mtime?: number; abs?: string; binary?: boolean; }
 export interface FileMeta { name: string; path: string; abs: string; size: number; mtime: number; isDir: boolean; sqlite?: boolean; }
@@ -15,6 +16,19 @@ export function useProjects() {
     async list(): Promise<ProjectInfo[]> {
       const r = await get<{ projects: ProjectInfo[] }>('/api/projects');
       return r.projects;
+    },
+    async current(): Promise<string> {
+      const r = await get<{ projectId: string }>('/api/projects/current');
+      return String(r.projectId || '');
+    },
+    async setCurrent(projectId: string): Promise<void> {
+      try {
+        await fetch('/api/projects/current', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId }),
+        });
+      } catch { /* 记录失败不阻塞 UI */ }
     },
     async add(path: string, name?: string): Promise<ProjectInfo> {
       const res = await fetch('/api/projects', {
@@ -52,8 +66,7 @@ export function useProjects() {
       return res.json();
     },
     async pickFolder(): Promise<{ path?: string; cancelled?: boolean; error?: string; message?: string }> {
-      const res = await fetch('/api/projects/pick', { method: 'POST' });
-      return res.json();
+      return requestPickFolder('/api/projects/pick');
     },
     async pickTextFile(): Promise<FileText | { cancelled: true } | { error: string; message?: string | null }> {
       const res = await fetch('/api/file/pick', { method: 'POST' });
@@ -63,6 +76,34 @@ export function useProjects() {
         throw new Error(msg);
       }
       return res.json();
+    },
+    async branch(project: string): Promise<string> {
+      try {
+        const r = await get<{ branch?: string }>(`/api/git/branch?project=${encodeURIComponent(project)}`);
+        return String(r.branch || '');
+      } catch { return ''; }
+    },
+    async branches(project: string): Promise<{ current: string; branches: string[] }> {
+      try {
+        const r = await get<{ current?: string; branches?: string[] }>(`/api/git/branches?project=${encodeURIComponent(project)}`);
+        return {
+          current: String(r.current || ''),
+          branches: Array.isArray(r.branches) ? r.branches.map(String) : [],
+        };
+      } catch { return { current: '', branches: [] }; }
+    },
+    async checkout(project: string, branch: string): Promise<{ ok: boolean; error?: string; message?: string }> {
+      try {
+        const res = await fetch('/api/git/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project, branch }),
+        });
+        const j: any = await res.json().catch(() => ({}));
+        return { ok: !!j.ok, error: j.error, message: j.message };
+      } catch (e) {
+        return { ok: false, error: 'checkout-failed', message: String((e as Error)?.message || e) };
+      }
     },
     async tree(project: string, rel: string): Promise<TreeItem[]> {
       const r = await get<{ items: TreeItem[] }>(`/api/tree?project=${encodeURIComponent(project)}&path=${encodeURIComponent(rel)}`);

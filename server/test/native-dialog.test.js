@@ -49,6 +49,19 @@ test('pickFolder: 脚本强制 UTF-8 输出（中文路径不乱码）', async (
   assert.match(script, /\[Console\]::OutputEncoding\s*=\s*\[System\.Text\.Encoding\]::UTF8/);
 });
 
+test('pickFolder: 使用 Vista 原生文件夹选择器（支持手动输入路径）', async () => {
+  const child = fakeChild();
+  const rec = [];
+  const p = pickFolder({ platform: 'win32', spawnFn: spawnOnce(child, rec) });
+  child.emit('close');
+  await p;
+  const script = rec[0].args[rec[0].args.length - 1];
+  assert.match(script, /IFileOpenDialog/);
+  assert.match(script, /FOS_PICKFOLDERS/);
+  assert.match(script, /\[FolderPicker\]::Pick/);
+  assert.equal(/FolderBrowserDialog/.test(script), false);
+});
+
 test('pickAnyFile: 无输出视为取消', async () => {
   const child = fakeChild();
   const p = pickAnyFile({ platform: 'win32', spawnFn: spawnOnce(child) });

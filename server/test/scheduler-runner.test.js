@@ -136,3 +136,12 @@ test('buildSpawnSpec：AI prompt 任务使用临时 prompt.md 启动', () => {
   assert.ok(spec.args[1]);
   assert.deepEqual(spec.args.slice(2), ['--file', 'C:/data/tasks/t/r/prompt.md']);
 });
+
+test('buildSpawnSpec：AI 任务带 sessionId 时追加 --session 续接会话', () => {
+  const spec = buildSpawnSpec(
+    { type: 'ai', ai: { source: 'prompt', sessionId: 'ses_x' } },
+    { cwd: 'C:/p', aiBin: 'opencode', aiPrompt: 'hi', promptFilePath: 'C:/d/p.md' },
+  );
+  assert.equal(spec.args[0], 'run');
+  assert.deepEqual(spec.args.slice(1, 3), ['--session', 'ses_x']);
+});

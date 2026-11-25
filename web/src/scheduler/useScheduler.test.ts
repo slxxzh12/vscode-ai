@@ -15,7 +15,7 @@ beforeEach(() => {
     if (url.startsWith('/api/scheduler/jobs?')) {
       return { ok: true, text: async () => JSON.stringify({ jobs: [{ jobId: 'j1', status: 1 }] }) } as any;
     }
-    return { ok: true, text: async () => JSON.stringify({}) } as any;
+    return { ok: true, text: async () => JSON.stringify({}), json: async () => ({}) } as any;
   }));
 });
 

@@ -17,6 +17,7 @@ export interface DocSource {
   kind: 'project' | 'tool' | 'local';
   read(path: string): Promise<DocReadResult>;
   write(path: string, content: string): Promise<void>;
+  create?(path: string, content: string): Promise<void>;
   rawUrl?(path: string): string;
   list?(dir: string): Promise<TreeItem[]>;
   meta?(path: string): Promise<FileMeta>;

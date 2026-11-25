@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import { translate } from '@devflow/shared/i18n';
 import { t } from '../../i18n';
+import { pickErrorText } from '../../pickFolder';
 import { copyText } from '../../clipboard';
 import {
   emptyRule, type NginxApi, type NginxRule, type NginxStatus,
@@ -95,7 +96,7 @@ async function pickDir() {
   msg.value = '';
   try {
     const r = await props.api.pickFolder();
-    if (r.error) { msg.value = r.error === 'unsupported' ? t('nginx.pick_unsupported') : t('nginx.pick_failed', { msg: r.message || r.error }); return; }
+    if (r.error) { msg.value = pickErrorText(r); return; }
     if (r.cancelled || !r.path) return;
     form.value = { ...form.value, staticDir: r.path };
   } catch (e) { msg.value = String((e as Error)?.message || e); }

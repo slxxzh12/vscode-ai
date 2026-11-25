@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { t } from '../../i18n';
+import { pickErrorText } from '../../pickFolder';
 import { copyText } from '../../clipboard';
 import AiRunView from '../../ai-run/AiRunView.vue';
 import { useAiSite, type AiSiteConfig, type AiSiteUser, type AiSitePlugin } from './useAiSite';
@@ -81,7 +82,7 @@ onMounted(async () => {
 async function pickDir() {
   try {
     const r = await api.pickFolder();
-    if (r.error) { msg.value = r.error === 'unsupported' ? t('nginx.pick_unsupported') : t('nginx.pick_failed', { msg: r.message || r.error }); return; }
+    if (r.error) { msg.value = pickErrorText(r); return; }
     if (r.cancelled || !r.path || !form.value) return;
     form.value = { ...form.value, pluginRoot: r.path, pluginRootDefault: false };
   } catch (e) { msg.value = String((e as Error)?.message || e); }

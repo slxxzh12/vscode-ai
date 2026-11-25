@@ -62,6 +62,7 @@ export function toManifest(task, dir, runtime = null) {
     deleteAfter: Number(task.deleteAfter) > 0 ? Number(task.deleteAfter) : null,
     schedule: task.schedule,
   };
+  if (task.runCwd) m.runCwd = toRel(task.runCwd, dir);
   if (task.type === 'shell') m.command = task.command;
   if (task.type === 'ai') {
     m.ai = { ...(task.ai || {}) };
@@ -84,6 +85,7 @@ export function fromManifest(obj, dir) {
     schedule: obj.schedule,
     cwd: dir,
   };
+  if (obj.runCwd) task.runCwd = toAbs(obj.runCwd, dir);
   if (obj.type === 'shell') task.command = obj.command;
   if (obj.type === 'ai') {
     task.ai = { ...(obj.ai || {}) };

@@ -18,6 +18,7 @@ const source = computed<DocSource>(() => ({
     return { name: f.name || props.name, content: f.content, size: f.size, mtime: f.mtime, abs: f.abs, binary: f.binary };
   },
   write: (p, c) => api.write(props.projectId, p, c).then(() => undefined),
+  create: (p, c) => api.createFile(props.projectId, p, c).then(() => undefined),
   rawUrl: (p) => api.rawUrl(props.projectId, p),
   list: (dir) => api.tree(props.projectId, dir),
   meta: (p) => api.fileMeta(props.projectId, p),

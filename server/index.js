@@ -824,7 +824,21 @@ function buildWorkspace({ paths, port }) {
     }),
     defaultOperator: { createIP: '127.0.0.1', employeeId: String(engine.pub.employeeId || identity.employeeId || engine.pub.username || identity.username || '') },
     docDirs: () => selectedDocDirs(docUpdateStore.read()),
-    runUsDev: usDev,
+    runUsDev: (ctx) => usDev({
+      ...ctx, scheduler, machineId: engine.pub.machineId,
+      // 按 US 编号匹配历史开发会话（session.name === US 编号且同一代码仓），取未在运行中的 agentSessionId 续接。
+      findSessionByUs: (us, cwd) => {
+        const norm = (p) => path.resolve(String(p || '')).replace(/\\/g, '/').toLowerCase();
+        const target = norm(cwd);
+        const rows = (sessionLedger.read().sessions || [])
+          .filter((s) => s.name === String(us) && s.agentSessionId && (!cwd || norm(s.cwd) === target))
+          .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        for (const row of rows) {
+          if (!findLiveByAgentSessionId(row.agentSessionId, row.id)) return row.agentSessionId;
+        }
+        return '';
+      },
+    }),
     onJobEvent: (evt, payload) => {
       broadcastSched(evt === 'run-end' ? SchedulerS2C.SCHED_RUN_END : SchedulerS2C.SCHED_RUN_START, payload);
     },

@@ -48,7 +48,7 @@ export async function runOneUs({
   const aiLog = path.join(logDir, 'ai.log');
   let aiOk = false;
   if (runAi) {
-    const ai = await runAi({ cwd: codeDir, prompt, logPath: aiLog, timeoutMs: AI_TIMEOUT_MS });
+    const ai = await runAi({ us, cwd: codeDir, prompt, logPath: aiLog, timeoutMs: AI_TIMEOUT_MS });
     item.logFiles.push('ai.log');
     aiOk = !!ai?.ok;
     if (!aiOk) item.error = ai?.error || 'ai-failed';

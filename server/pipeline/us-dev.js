@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { buildSpawnSpec } from '../scheduler/runner.js';
+import { hashPartition } from '../scheduler/queue/partition.js';
+import { SchedulerJobStatus as S } from '@devflow/shared/scheduler';
+import { t } from '../i18n.js';
 import { createUsConfigStore } from './us-config.js';
 import { listUsDirs } from './us-detect.js';
 import {
@@ -9,6 +13,18 @@ import {
 import { runOneUs } from './us-runner.js';
 import { mergeUsBranch } from './us-merge.js';
 import * as defaultGit from './us-git.js';
+
+// 代码生成改为「在定时任务列表里新增一条 AI 任务并运行」：
+// - auto_docs_update 仍负责定时 git pull 与新增 US 探测；
+// - 每个 US 对应一条固定 id 的 AI 任务（幂等复用），执行完保留一段时间供查看；
+// - 这里同步等待该 AI 作业结束，再回到原有 test/build/commit/push/merge 流程。
+const AI_TASK_SCHEDULE = { mode: 'interval', interval: { every: 365, unit: 'day' } };
+const AI_TASK_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+const AI_TASK_POLL_MS = 1500;
+
+function sleep(ms) {
+  return new Promise((resolve) => { const timer = setTimeout(resolve, ms); timer.unref?.(); });
+}
 
 function isDir(p) {
   try { return fs.statSync(p).isDirectory(); } catch { return false; }
@@ -19,8 +35,79 @@ function samePath(a, b) {
   return norm(a) === norm(b);
 }
 
+function aiTaskBaseId(us) {
+  return 'pipeline_' + crypto.createHash('sha1').update(String(us)).digest('hex').slice(0, 12);
+}
+
+// 选一个不会和 auto_docs_update 落在同一分区的任务 id，避免同分区循环被阻塞导致相互等待。
+async function resolveAiTaskId(scheduler, us) {
+  const store = scheduler.store;
+  const queue = scheduler.queue;
+  const count = await queue.partitionCount();
+  const topic = queue.topic;
+  const avoid = hashPartition(topic, 'auto_docs_update', count);
+  const ids = Array.from({ length: count }, (_, i) => {
+    const base = aiTaskBaseId(us);
+    return i === 0 ? base : `${base}_${i}`;
+  });
+  const reusable = ids.find((id) => store.getTask(id) && hashPartition(topic, id, count) !== avoid);
+  if (reusable) return reusable;
+  return ids.find((id) => !store.getTask(id) && hashPartition(topic, id, count) !== avoid) || ids[0];
+}
+
+function copyTaskLog(scheduler, taskId, jobId, logPath) {
+  try {
+    const src = scheduler.store.logPath(scheduler.store.logFileFor(taskId, jobId));
+    if (src && fs.existsSync(src) && logPath) fs.copyFileSync(src, logPath);
+  } catch { /* best-effort */ }
+}
+
+export async function runAiViaTask({ scheduler, machineId, us, cwd, prompt, timeoutMs, logPath, resumeSessionId }) {
+  if (!scheduler?.store || !scheduler?.queue) return { ok: false, error: 'missing-scheduler' };
+  const id = await resolveAiTaskId(scheduler, us);
+  const input = {
+    name: t('sched.pipeline.codegen_name', { us }),
+    enabled: true,
+    once: true,
+    deleteAfter: Date.now() + AI_TASK_KEEP_MS,
+    type: 'ai',
+    // 只把代码仓作为「运行目录」，cwd 保持空：避免把 void_manifest.json 写进代码仓、也避免同目录任务冲突。
+    runCwd: cwd,
+    ai: { source: 'prompt', prompt, ...(resumeSessionId ? { sessionId: String(resumeSessionId) } : {}) },
+    schedule: AI_TASK_SCHEDULE,
+    onlyLocal: true,
+    maxRunMilliSecond: timeoutMs,
+  };
+  const saved = scheduler.store.getTask(id)
+    ? scheduler.store.updateTask(id, input)
+    : scheduler.store.ensureTask(id, input);
+  if (!saved || saved.error) return { ok: false, error: `ai-task-${saved?.error || 'failed'}` };
+  const enq = await scheduler.queue.enqueueTask(saved.task, { trigger: 'pipeline', createMachineId: machineId || null });
+  if (!enq || enq.error || !enq.job) return { ok: false, error: `ai-enqueue-${enq?.error || 'failed'}` };
+  const jobId = enq.job.jobId;
+  const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 0);
+  while (Date.now() < deadline) {
+    await sleep(AI_TASK_POLL_MS);
+    const job = await scheduler.queue.getJob(jobId).catch(() => null);
+    if (!job) continue;
+    if (job.status === S.SUCCESS) { copyTaskLog(scheduler, saved.task.id, jobId, logPath); return { ok: true, jobId, taskId: saved.task.id }; }
+    if (job.status === S.FAILED) { copyTaskLog(scheduler, saved.task.id, jobId, logPath); return { ok: false, jobId, taskId: saved.task.id, error: 'ai-failed' }; }
+  }
+  copyTaskLog(scheduler, saved.task.id, jobId, logPath);
+  return { ok: false, jobId, taskId: saved.task.id, error: 'timeout' };
+}
+
 function makeRunAi(ctx) {
-  return async ({ cwd, prompt, logPath, timeoutMs }) => {
+  return async ({ us, cwd, prompt, logPath, timeoutMs }) => {
+    const budget = Math.min(timeoutMs, ctx.remaining ? ctx.remaining() : timeoutMs);
+    if (ctx.scheduler?.store && ctx.scheduler?.queue) {
+      return runAiViaTask({
+        scheduler: ctx.scheduler, machineId: ctx.machineId,
+        us, cwd, prompt, timeoutMs: budget, logPath,
+        resumeSessionId: ctx.findSessionByUs ? ctx.findSessionByUs(us, cwd) : '',
+      });
+    }
+    // 没有调度器（单测/独立调用）时回退为直接运行，避免功能不可用。
     const promptFile = path.join(path.dirname(logPath), 'prompt.md');
     fs.mkdirSync(path.dirname(promptFile), { recursive: true });
     fs.writeFileSync(promptFile, prompt, 'utf8');
@@ -31,7 +118,7 @@ function makeRunAi(ctx) {
         promptFilePath: promptFile, jsonFormat: true,
       }),
       logPath,
-      timeoutMs: Math.min(timeoutMs, ctx.remaining ? ctx.remaining() : timeoutMs),
+      timeoutMs: budget,
     });
     return {
       ok: !r.spawnError && !r.timedOut && r.exitCode === 0,
