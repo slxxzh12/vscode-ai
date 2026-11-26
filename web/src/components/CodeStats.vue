@@ -6,7 +6,7 @@ import { useProjects } from '../useProjects';
 import { useCodePrefs } from '../codePrefs';
 import { useCodeGroups } from '../codeGroups';
 import { t, locale } from '../i18n';
-import { loadPipelineConfig, savePipelineConfig } from '../pipeline';
+import { loadPipelineConfig, savePipelineConfig, loadPipelinePrompt, savePipelinePrompt, resetPipelinePrompt } from '../pipeline';
 import { detectDocDefaults } from '../docDefaults';
 import { pickErrorText } from '../pickFolder';
 import GitStat from './GitStat.vue';
@@ -67,6 +67,12 @@ const watchBusy = ref(false);
 const watchPending = ref(0);
 const watchLastScan = ref(0);
 let watchTimer: ReturnType<typeof setInterval> | undefined;
+// 目标分支（默认 master）+ 可编辑的 AI 任务提示词（可恢复默认）
+const baseBranch = ref('master');
+const promptText = ref('');
+const promptIsDefault = ref(true);
+const promptBusy = ref(false);
+const promptHint = ref('');
 interface DocResult { dir: string; ok: boolean; code?: string; message?: string }
 const docResults = ref<DocResult[]>([]);
 const docHint = ref('');
@@ -130,9 +136,56 @@ async function loadAutoDev() {
     const cfg = await loadPipelineConfig();
     autoDev.value = cfg.autoDev;
     autoMerge.value = cfg.autoMerge;
+    baseBranch.value = cfg.baseBranch || 'master';
   } catch {
     autoDev.value = false;
     autoMerge.value = false;
+  }
+  await loadPrompt();
+}
+async function loadPrompt() {
+  try {
+    const r = await loadPipelinePrompt();
+    promptText.value = r.template || '';
+    promptIsDefault.value = !!r.isDefault;
+  } catch { /* ignore */ }
+}
+async function savePrompt() {
+  promptBusy.value = true;
+  promptHint.value = '';
+  try {
+    const r = await savePipelinePrompt(promptText.value);
+    promptText.value = r.template || '';
+    promptIsDefault.value = !!r.isDefault;
+    promptHint.value = t('pipeline.prompt_saved');
+  } catch {
+    promptHint.value = t('pipeline.prompt_failed');
+  } finally {
+    promptBusy.value = false;
+  }
+}
+async function resetPrompt() {
+  promptBusy.value = true;
+  promptHint.value = '';
+  try {
+    const r = await resetPipelinePrompt();
+    promptText.value = r.template || '';
+    promptIsDefault.value = !!r.isDefault;
+    promptHint.value = t('pipeline.prompt_reset_done');
+  } catch {
+    promptHint.value = t('pipeline.prompt_failed');
+  } finally {
+    promptBusy.value = false;
+  }
+}
+async function saveBaseBranch() {
+  const v = String(baseBranch.value || '').trim() || 'master';
+  baseBranch.value = v;
+  try {
+    const cfg = await savePipelineConfig({ autoDev: autoDev.value, autoMerge: autoMerge.value, baseBranch: v });
+    baseBranch.value = cfg.baseBranch || v;
+  } catch {
+    docError.value = t('pipeline.config_failed');
   }
 }
 async function loadWatch() {
@@ -456,6 +509,11 @@ function remember(p: string) {
         </label>
         <div class="dochint">{{ $t('pipeline.auto_dev_hint') }}</div>
         <div v-if="autoMerge" class="dochint">{{ $t('pipeline.auto_merge_hint') }}</div>
+        <div class="docrow branchrow">
+          <label class="docchk"><span>{{ $t('pipeline.target_branch') }}</span></label>
+          <input class="docinput" v-model="baseBranch" :placeholder="$t('pipeline.target_branch_ph')" @change="saveBaseBranch" />
+        </div>
+        <div class="dochint">{{ $t('pipeline.target_branch_hint') }}</div>
         <div class="docdefaults">
           <button class="pick" @click="applyDocDefaults">{{ $t('codestat.docs.apply_defaults') }}</button>
           <span class="dochint">{{ $t('codestat.docs.defaults_hint') }}</span>
@@ -480,6 +538,19 @@ function remember(p: string) {
           {{ $t('codestat.docs.watch_running') }}
           <template v-if="watchPending"> · {{ $t('codestat.docs.watch_pending', { count: watchPending }) }}</template>
           <template v-if="watchLastScan"> · {{ $t('codestat.docs.watch_last', { time: new Date(watchLastScan).toLocaleTimeString() }) }}</template>
+        </div>
+        <div class="promptbox">
+          <div class="prompthead">
+            <span class="prompttitle">{{ $t('pipeline.prompt_title') }}</span>
+            <span class="dochint">{{ promptIsDefault ? $t('pipeline.prompt_default') : $t('pipeline.prompt_custom') }}</span>
+          </div>
+          <div class="dochint">{{ $t('pipeline.prompt_hint') }}</div>
+          <textarea v-model="promptText" class="promptarea" spellcheck="false"></textarea>
+          <div class="promptbtns">
+            <button class="bigbtn" :disabled="promptBusy" @click="savePrompt">{{ $t('pipeline.prompt_save') }}</button>
+            <button class="pick" :disabled="promptBusy" @click="resetPrompt">{{ $t('pipeline.prompt_reset') }}</button>
+            <span class="dochint">{{ promptHint }}</span>
+          </div>
         </div>
         <div v-if="docError" class="docerr">{{ docError }}</div>
         <div v-if="docInitHint" class="docdone">{{ docInitHint }}</div>
@@ -568,6 +639,14 @@ function remember(p: string) {
 .bigbtn:disabled { opacity: .6; cursor: default; }
 .bigbtn.watching { background: #16a34a; border-color: #16a34a; color: #fff; }
 .bigbtn.watching:hover:not(:disabled) { border-color: #15803d; color: #fff; }
+.branchrow .docchk { min-width: 90px; }
+.promptbox { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; padding-top: 12px; border-top: 1px dashed var(--bd); }
+.prompthead { display: flex; align-items: baseline; gap: 10px; }
+.prompttitle { font-size: 13px; font-weight: 600; color: var(--tx1); }
+.promptarea { width: 100%; box-sizing: border-box; min-height: 240px; resize: vertical; background: var(--bg4); color: var(--tx1); border: 1px solid var(--bd); border-radius: 6px; padding: 10px 12px; font-size: 12.5px; line-height: 1.55; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; outline: none; }
+.promptarea:focus { border-color: var(--ac2); }
+.promptbtns { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.promptbtns .bigbtn { flex: 0 0 auto; max-width: none; padding: 8px 18px; }
 .docdone { color: var(--tx3); font-size: 12px; line-height: 1.6; }
 .docerr { color: var(--err); font-size: 12px; }
 .docres { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--bd2); padding-top: 8px; }

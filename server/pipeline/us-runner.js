@@ -18,7 +18,7 @@ function commitSubject(us) {
 
 export async function runOneUs({
   us, solutionDir, codeDir, user, logDir, runId,
-  template, git = defaultGit, exec = defaultExec, runAi = null,
+  template, baseBranch = 'master', git = defaultGit, exec = defaultExec, runAi = null,
   now = Date.now,
 }) {
   fs.mkdirSync(logDir, { recursive: true });
@@ -45,7 +45,7 @@ export async function runOneUs({
   }
 
   const prompt = renderUsPrompt(template, {
-    us, branch: prepared.branch, cwd: codeDir, docs: collected.docs, commands,
+    us, branch: prepared.branch, base: baseBranch, cwd: codeDir, docs: collected.docs, commands,
   });
   const aiLog = path.join(logDir, 'ai.log');
   let aiOk = false;

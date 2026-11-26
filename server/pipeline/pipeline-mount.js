@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createUsConfigStore } from './us-config.js';
+import { readEffectiveTemplate, writeCustomTemplate, resetCustomTemplate } from './us-prompt.js';
 import { createUsStateStore, resetBaseline } from './us-state.js';
 import { US_RE, listUsDirs } from './us-detect.js';
 import { detectDocDefaults } from './doc-defaults.js';
@@ -52,7 +53,7 @@ function isUsRef(v) {
 }
 
 export function createPipelineMount({
-  dir, docsState = () => ({}), scheduler, logger = console,
+  dir, docsState = () => ({}), scheduler, logger = console, templateFile = '',
   runDirFor = (jobId) => scheduler.store.runDirFor('auto_docs_update', jobId),
 }) {
   const config = createUsConfigStore({ file: path.join(dir, 'config.json'), logger });
@@ -92,6 +93,21 @@ export function createPipelineMount({
         if (!before.autoDev && next.autoDev) await resetWatchBaseline();
         watch.sync();
         return sendJson(res, 200, next);
+      }
+      if (url.pathname === '/api/pipeline/prompt' && req.method === 'GET') {
+        const { template, isDefault } = readEffectiveTemplate({ dir, templateFile });
+        return sendJson(res, 200, { template, isDefault });
+      }
+      if (url.pathname === '/api/pipeline/prompt' && req.method === 'POST') {
+        const body = await readBody(req);
+        writeCustomTemplate(dir, body?.template);
+        const { template, isDefault } = readEffectiveTemplate({ dir, templateFile });
+        return sendJson(res, 200, { template, isDefault });
+      }
+      if (url.pathname === '/api/pipeline/prompt/reset' && req.method === 'POST') {
+        resetCustomTemplate(dir);
+        const { template, isDefault } = readEffectiveTemplate({ dir, templateFile });
+        return sendJson(res, 200, { template, isDefault });
       }
       if (url.pathname === '/api/pipeline/watch' && req.method === 'GET') {
         return sendJson(res, 200, watch.status());

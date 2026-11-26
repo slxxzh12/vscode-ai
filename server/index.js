@@ -911,6 +911,7 @@ function buildWorkspace({ paths, port }) {
     dir: path.join(paths.dir, 'pipeline'),
     docsState: () => docUpdateStore.read(),
     scheduler,
+    templateFile: path.join(__dirname, '..', 'config', 'pipeline', 'us-prompt-template.md'),
     logger: log,
   });
   pipelineMount.syncWatch?.();   // 上次开启的「监控方案变化」在重启后继续运行

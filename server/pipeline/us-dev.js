@@ -7,6 +7,7 @@ import { SchedulerJobStatus as S } from '@devflow/shared/scheduler';
 import { t } from '../i18n.js';
 import { createUsConfigStore } from './us-config.js';
 import { listUsDirs } from './us-detect.js';
+import { readEffectiveTemplate } from './us-prompt.js';
 import {
   createUsStateStore, resetBaseline, selectPending, markInterrupted,
 } from './us-state.js';
@@ -241,7 +242,7 @@ export function createUsDev({
     // 本地 git 用户名只作为「文档提交人信息缺失」时的兜底。
     const localUser = await git.getGitUserName(codeDir);
 
-    const template = fs.readFileSync(templateFile, 'utf8');
+    const template = readEffectiveTemplate({ dir, templateFile }).template;
     const runAi = makeRunAi(ctx);
     const items = [];
     for (const us of pending) {
@@ -265,7 +266,7 @@ export function createUsDev({
           return await runOne({
             us, solutionDir, codeDir, user: branchUser,
             logDir: path.join(ctx.logDir, 'us', us),
-            runId: ctx.runId, template, git, runAi, now,
+            runId: ctx.runId, template, baseBranch: cfg.baseBranch, git, runAi, now,
             runner: ctx.runner, aiBin: ctx.aiBin, opencodeDataDir: ctx.opencodeDataDir,
           });
         } catch (e) {
@@ -274,7 +275,7 @@ export function createUsDev({
       })();
       if (cfg.autoMerge && item.status === 'success' && item.commit) {
         try {
-          const m = await merge({ codeDir, branch: item.branch, us, logger });
+          const m = await merge({ codeDir, branch: item.branch, us, base: cfg.baseBranch, logger });
           item.merge = m;
           item.prUrl = m.url || null;
           item.mergeProvider = m.provider || null;
