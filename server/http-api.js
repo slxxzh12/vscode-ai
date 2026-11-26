@@ -6,7 +6,6 @@ import { updateGitDirs } from './git-update.js';
 import { initDocSamples, SAMPLE_SLOTS } from './doc-samples.js';
 import { ensureDocsAgents, docsRepoRootOf } from './docs-agents.js';
 import { detectDocDefaults } from './pipeline/doc-defaults.js';
-import { scanSecurityDirs } from './security/scan.js';
 import { collectCodeStats } from './code-count.js';
 import { scanSecrets } from './secret-scan.js';
 import { createCodeGroups } from './code-groups.js';
@@ -591,12 +590,6 @@ export function createHttpApi({ projects, saveProjects = null, logger = console,
         out.createdDirs = createdDirs;
         out.agents = ensureDocsAgents(docsRepoRootOf(state || {}));
         sendJson(res, 200, out);
-        return;
-      }
-      if (url.pathname === '/api/security/scan' && req.method === 'POST') {
-        const body = await readJsonBody(req);
-        const dirs = Array.isArray(body.dirs) ? body.dirs : (body.dir ? [body.dir] : []);
-        sendJson(res, 200, scanSecurityDirs(dirs));
         return;
       }
       if (url.pathname === '/api/composer/prefs' && req.method === 'GET') {
