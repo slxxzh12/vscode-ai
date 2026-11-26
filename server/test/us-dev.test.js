@@ -178,3 +178,32 @@ test('us-dev：无工号映射时分支用作者名', async () => {
   assert.equal(r.failed, 0);
 });
 
+test('us-dev：以监控提交为基准，按变更先后顺序执行', async () => {
+  const f = setup();
+  const dir = path.join(f.root, 'pipeline');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ autoDev: true }));
+  fs.writeFileSync(path.join(dir, 'us-state.json'), JSON.stringify({
+    solutionDir: f.solution, baseline: [], revs: {}, items: {},
+  }));
+  const order = [];
+  const writes = [];
+  const dev = createUsDev({
+    dir,
+    templateFile: path.join(f.root, 'template.md'),
+    docsState: () => ({ solution: { selected: true, path: f.solution }, code: { selected: true, path: f.code } }),
+    git: { getGitUserName: async () => 'localuser' },
+    docHeadOf: async () => 'head1',
+    readMonitor: () => ({ lastCommit: 'base1' }),
+    changedUsSince: async () => ['F0001-用户管理/US000003-2023-C', 'US000002-2022-B'],
+    writeMonitor: async (_d, s) => { writes.push(s); },
+    docAuthorOf: async () => ({ name: 'zhangsan', email: 'z@x' }),
+    runOne: async ({ us }) => { order.push(us); return { us, status: 'success', branch: 'feature/zhangsan', commit: 'c' }; },
+  });
+  const r = await dev({ logDir: path.join(f.root, 'run'), runId: 'j8', docResults: [] });
+  assert.deepEqual(order, ['F0001-用户管理/US000003-2023-C', 'US000002-2022-B']);
+  assert.equal(r.failed, 0);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].commit, 'head1');
+});
+

@@ -20,6 +20,15 @@ export function createEngine({ store, queue, logger = console, now = () => Date.
   function reschedule(task) { scheduleTask(task); }
   function notifyTasksChanged() { emit('tasks-changed', {}); }
 
+  // 同一任务已有排队/调度中/待审作业时视为活跃，避免重复入队。
+  async function hasActiveJob(taskId) {
+    try {
+      if (typeof queue.listJobs !== 'function') return false;
+      const rows = await queue.listJobs({ taskIds: [taskId], status: [0, 3, 4], limit: 1 });
+      return Array.isArray(rows) && rows.length > 0;
+    } catch { return false; }
+  }
+
   async function tick() {
     if (ticking) return;
     ticking = true;
@@ -30,6 +39,7 @@ export function createEngine({ store, queue, logger = console, now = () => Date.
         if (!nextAt.has(task.id)) { scheduleTask(task, t); continue; }
         if (nextAt.get(task.id) > t) continue;
         scheduleTask(task, t);
+        if (await hasActiveJob(task.id)) continue;
         try {
           const r = await queue.enqueueTask(task, { trigger: 'schedule', scheduledAt: t, createMachineId });
           if (r && r.error && r.error !== 'unique-conflict') logger.warn?.('scheduler enqueue failed', r.error);
@@ -37,9 +47,10 @@ export function createEngine({ store, queue, logger = console, now = () => Date.
       }
     } finally { ticking = false; }
   }
-  function manualRun(taskId) {
+  async function manualRun(taskId) {
     const task = store.getTask(taskId);
-    if (!task) return Promise.resolve({ error: 'not-found' });
+    if (!task) return { error: 'not-found' };
+    if (await hasActiveJob(taskId)) return { error: 'active-job' };
     return queue.enqueueTask(task, { trigger: 'manual', createMachineId });
   }
   function stop(taskId) { return onStop ? onStop(taskId) : Promise.resolve(false); }

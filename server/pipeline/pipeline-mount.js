@@ -5,6 +5,7 @@ import { createUsStateStore, resetBaseline } from './us-state.js';
 import { US_RE, listUsDirs } from './us-detect.js';
 import { detectDocDefaults } from './doc-defaults.js';
 import { createSolutionWatch } from './solution-watch.js';
+import { docHeadOf, writeMonitorState } from './us-monitor-state.js';
 import { ensureDocsAgents, docsRepoRootOf } from '../docs-agents.js';
 
 const LOG_FILES = new Set(['ai.log', 'test.log', 'build.log', 'package.log']);
@@ -58,10 +59,16 @@ export function createPipelineMount({
   const state = createUsStateStore({ file: path.join(dir, 'us-state.json'), logger });
   const watch = createSolutionWatch({ configStore: config, stateStore: state, docsState, scheduler, logger });
 
-  function resetWatchBaseline() {
+  async function resetWatchBaseline() {
     const ds = docsState() || {};
     const solutionDir = ds.solution?.selected ? String(ds.solution.path || '').trim() : '';
-    if (solutionDir && fs.existsSync(solutionDir)) state.write(resetBaseline(solutionDir, listUsDirs(solutionDir)));
+    if (!solutionDir || !fs.existsSync(solutionDir)) return;
+    state.write(resetBaseline(solutionDir, listUsDirs(solutionDir)));
+    // 同时把当前文档仓 HEAD 记为监控基线，后续只处理该提交之后的变化。
+    try {
+      const head = await docHeadOf(solutionDir);
+      if (head) writeMonitorState(solutionDir, { commit: head });
+    } catch { /* best-effort */ }
   }
 
   async function mount(req, res) {
@@ -82,7 +89,7 @@ export function createPipelineMount({
         const body = await readBody(req);
         const before = config.read();
         const next = config.write({ ...before, ...body });
-        if (!before.autoDev && next.autoDev) resetWatchBaseline();
+        if (!before.autoDev && next.autoDev) await resetWatchBaseline();
         watch.sync();
         return sendJson(res, 200, next);
       }
@@ -97,9 +104,9 @@ export function createPipelineMount({
           watch.stop();
           return sendJson(res, 200, { ...watch.status(), config: next });
         }
-        // 启动监控：同时开启自动编码，并把当前已有方案记为基线（只处理之后新增的方案）。
+        // 启动监控：同时开启自动编码，并把当前已有方案记为基线（只处理之后新增/变更的方案）。
         const next = config.write({ ...cfg, autoDev: true, watch: true });
-        resetWatchBaseline();
+        await resetWatchBaseline();
         watch.start();
         await watch.scan();
         return sendJson(res, 200, { ...watch.status(), config: next });

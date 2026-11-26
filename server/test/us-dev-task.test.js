@@ -9,7 +9,7 @@ function tmpRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'df-us-task-'));
 }
 
-function fakeScheduler({ status = 1 } = {}) {
+function fakeScheduler({ status = 1, activeJobs = [] } = {}) {
   const tasks = new Map();
   const enqueued = [];
   const store = {
@@ -22,6 +22,7 @@ function fakeScheduler({ status = 1 } = {}) {
   const queue = {
     topic: 'scheduler.jobs',
     partitionCount: async () => 16,
+    listJobs: async () => activeJobs,
     enqueueTask: async (task) => { enqueued.push(task); return { job: { jobId: 'j_test' } }; },
     getJob: async () => ({ status }),
   };
@@ -59,4 +60,16 @@ test('us-dev：AI 任务失败时返回失败', async () => {
   });
   assert.equal(r.ok, false);
   assert.equal(r.error, 'ai-failed');
+});
+
+test('us-dev：已有活跃 AI 作业时复用，不重复入队', async () => {
+  const { scheduler, enqueued } = fakeScheduler({ status: 1, activeJobs: [{ jobId: 'j_active' }] });
+  const cwd = tmpRoot();
+  const r = await runAiViaTask({
+    scheduler, machineId: 'm1', us: 'US000004-2024-D',
+    cwd, prompt: 'x', timeoutMs: 3000, logPath: path.join(cwd, 'ai.log'),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.jobId, 'j_active');
+  assert.equal(enqueued.length, 0);
 });

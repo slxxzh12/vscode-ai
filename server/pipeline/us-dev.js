@@ -14,6 +14,10 @@ import { runOneUs } from './us-runner.js';
 import { mergeUsBranch } from './us-merge.js';
 import * as defaultGit from './us-git.js';
 import { docRevOf as defaultDocRevOf, docAuthorOf as defaultDocAuthorOf } from './us-doc-git.js';
+import {
+  docHeadOf as defaultDocHeadOf, readMonitorState as defaultReadMonitor,
+  writeMonitorState as defaultWriteMonitor, changedUsSince as defaultChangedUsSince,
+} from './us-monitor-state.js';
 
 // 代码生成改为「在定时任务列表里新增一条 AI 任务并运行」：
 // - auto_docs_update 仍负责定时 git pull 与新增 US 探测；
@@ -84,9 +88,19 @@ export async function runAiViaTask({ scheduler, machineId, us, cwd, prompt, time
     ? scheduler.store.updateTask(id, input)
     : scheduler.store.ensureTask(id, input);
   if (!saved || saved.error) return { ok: false, error: `ai-task-${saved?.error || 'failed'}` };
-  const enq = await scheduler.queue.enqueueTask(saved.task, { trigger: 'pipeline', createMachineId: machineId || null });
-  if (!enq || enq.error || !enq.job) return { ok: false, error: `ai-enqueue-${enq?.error || 'failed'}` };
-  const jobId = enq.job.jobId;
+  // 已有排队/运行中的同名作业时复用，避免重复入队。
+  let jobId = '';
+  try {
+    if (typeof scheduler.queue.listJobs === 'function') {
+      const active = await scheduler.queue.listJobs({ taskIds: [saved.task.id], status: [0, 3, 4], limit: 1 });
+      if (Array.isArray(active) && active.length) jobId = active[0].jobId;
+    }
+  } catch { jobId = ''; }
+  if (!jobId) {
+    const enq = await scheduler.queue.enqueueTask(saved.task, { trigger: 'pipeline', createMachineId: machineId || null });
+    if (!enq || enq.error || !enq.job) return { ok: false, error: `ai-enqueue-${enq?.error || 'failed'}` };
+    jobId = enq.job.jobId;
+  }
   const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 0);
   while (Date.now() < deadline) {
     await sleep(AI_TASK_POLL_MS);
@@ -135,6 +149,8 @@ export function createUsDev({
   dir, docsState = () => ({}), templateFile, logger = console,
   git = defaultGit, runOne = runOneUs, merge = mergeUsBranch, now = Date.now,
   docRevOf = defaultDocRevOf, docAuthorOf = defaultDocAuthorOf,
+  docHeadOf = defaultDocHeadOf, readMonitor = defaultReadMonitor,
+  writeMonitor = defaultWriteMonitor, changedUsSince = defaultChangedUsSince,
 }) {
   const configStore = createUsConfigStore({ file: path.join(dir, 'config.json'), logger });
   const stateStore = createUsStateStore({ file: path.join(dir, 'us-state.json'), logger });
@@ -155,30 +171,71 @@ export function createUsDev({
     const codeDir = ds.code?.selected ? String(ds.code.path || '').trim() : '';
     if (!solutionDir || !isDir(solutionDir)) return { skipped: 'no-solution', items: [], failed: 0 };
 
+    const finish = async (result) => {
+      try {
+        const head = await docHeadOf(solutionDir);
+        if (head) await writeMonitor(solutionDir, { commit: head });
+      } catch { /* best-effort */ }
+      return result;
+    };
+
     const solutionPull = (ctx.docResults || []).find((r) => samePath(r.dir, solutionDir));
-    if (solutionPull && !solutionPull.ok) return { skipped: 'solution-pull-failed', items: [], failed: 0 };
+    if (solutionPull && !solutionPull.ok) return finish({ skipped: 'solution-pull-failed', items: [], failed: 0 });
 
     const current = listUsDirs(solutionDir);
     let state = stateStore.read();
     if (!state.solutionDir || state.solutionDir !== solutionDir) {
       stateStore.write(resetBaseline(solutionDir, current));
-      return { skipped: 'baseline', items: [], failed: 0 };
+      return finish({ skipped: 'baseline', items: [], failed: 0 });
     }
 
-    // 每个 US 记录方案目录最近一次提交，用于「文档内容变更 → 重跑」。
-    const revs = {};
-    for (const us of current) revs[us] = await docRevOf(solutionDir, us);
-
-    markInterrupted(state);
-    const pending = selectPending(state, current, revs);
+    // 以方案目录里的 .devflow-monitor.json 记录的提交为基准：处理之后变更的方案，
+    // 按提交先后顺序（旧→新）执行；取不到 git 信息时回退到目录/修订扫描。
+    let revs = {};
+    let pending = null;
+    const head = await docHeadOf(solutionDir);
+    if (head) {
+      const mon = readMonitor(solutionDir);
+      const base = String(mon?.lastCommit || '').trim();
+      if (!base) {
+        // 首次接管：当前 HEAD 作为基线，已有方案不补跑（finish 会写入时间戳与 HEAD）
+        stateStore.write(state);
+        return finish({ skipped: 'baseline', items: [], failed: 0 });
+      }
+      let changed = null;
+      try { changed = await changedUsSince(solutionDir, base); } catch { changed = null; }
+      if (changed) {
+        markInterrupted(state);
+        const seen = new Set();
+        const ordered = [];
+        for (const us of changed) {
+          if (seen.has(us)) continue;
+          seen.add(us);
+          ordered.push(us);
+        }
+        // 手动重试的 pending 排在变更方案之后
+        for (const [us, it] of Object.entries(state.items || {})) {
+          if (it.status === 'pending' && !seen.has(us)) { seen.add(us); ordered.push(us); }
+        }
+        for (const us of ordered) state.items[us] = { ...(state.items[us] || {}), status: 'pending', error: null };
+        pending = ordered;
+      }
+    }
+    if (!pending) {
+      const revsMap = {};
+      for (const us of current) revsMap[us] = await docRevOf(solutionDir, us);
+      revs = revsMap;
+      markInterrupted(state);
+      pending = selectPending(state, current, revsMap);
+    }
     if (!pending.length) {
       stateStore.write(state);
-      return { items: [], failed: 0 };
+      return finish({ items: [], failed: 0 });
     }
 
     if (!codeDir || !isDir(codeDir)) {
       failAll(state, pending, 'code-dir-missing');
-      return { items: pending.map((us) => state.items[us]), failed: pending.length };
+      return finish({ items: pending.map((us) => state.items[us]), failed: pending.length });
     }
 
     // 本地 git 用户名只作为「文档提交人信息缺失」时的兜底。
@@ -188,8 +245,8 @@ export function createUsDev({
     const runAi = makeRunAi(ctx);
     const items = [];
     for (const us of pending) {
-      const rev = revs[us] || '';
-      state.revs[us] = rev;   // 记录本次处理的修订（含空：未提交的目录后续提交后仍能触发一次）
+      const rev = Object.prototype.hasOwnProperty.call(revs, us) ? (revs[us] || '') : '';
+      if (rev) state.revs[us] = rev;
       const author = await docAuthorOf(solutionDir, us);
       const branchUser = (ctx.resolveBranchUser ? ctx.resolveBranchUser(author.name, author.email) : '')
         || author.name || localUser;
@@ -242,9 +299,9 @@ export function createUsDev({
       items.push(state.items[us]);
     }
 
-    return {
+    return finish({
       items,
       failed: items.filter((x) => x.status !== 'success').length,
-    };
+    });
   };
 }
