@@ -21,3 +21,16 @@ export function clearPendingProxyTab() { pendingProxyTab.value = null; }
 
 export function requestStartAgent() { pendingStartAgent.value = true; }
 export function clearPendingStartAgent() { pendingStartAgent.value = false; }
+
+// 在中心区以「执行页签」打开 AI 工具运行（TerminalView 消费）
+export const pendingRun = ref<{ runId: string; label: string } | null>(null);
+export function requestRunTab(runId: string, label: string) { pendingRun.value = { runId, label }; }
+export function clearPendingRun() { pendingRun.value = null; }
+
+// 敏感信息扫描 → 用提示词启动 Agent：App 负责把目录加成项目并选中，TerminalView 负责新开 Agent 并发送提示词
+export const pendingAgentRun = ref<{ dir: string; prompt: string } | null>(null);
+export function requestAgentRun(dir: string, prompt: string) { pendingAgentRun.value = { dir, prompt }; }
+export function clearPendingAgentRun() { pendingAgentRun.value = null; }
+export const pendingAgentPrompt = ref('');
+export function requestAgentPrompt(text: string) { pendingAgentPrompt.value = text; }
+export function clearPendingAgentPrompt() { pendingAgentPrompt.value = ''; }

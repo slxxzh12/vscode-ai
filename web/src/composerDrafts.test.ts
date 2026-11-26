@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { clearComposerDrafts, draftKey, getComposerDraft, setComposerDraft } from './composerDrafts';
+import { clearComposerDrafts, draftKey, getComposerDraft, setComposerDraft, getLastComposerSid, setLastComposerSid } from './composerDrafts';
 
 beforeEach(() => {
   const map = new Map<string, string>();
@@ -35,5 +35,24 @@ describe('composerDrafts', () => {
     setComposerDraft('s', long);
     expect(getComposerDraft('s')).toHaveLength(100_000);
     expect(getComposerDraft('s')).toBe(long.slice(-100_000));
+  });
+
+  it('记住最后使用的会话（刷新后用来恢复草稿）', () => {
+    expect(getLastComposerSid()).toBeNull();
+    setLastComposerSid('s1');
+    expect(getLastComposerSid()).toBe('s1');
+    setLastComposerSid('s2');
+    expect(getLastComposerSid()).toBe('s2');
+    setLastComposerSid(null);
+    expect(getLastComposerSid()).toBe('s2');
+  });
+
+  it('最后使用的会话与会话草稿互不覆盖', () => {
+    setLastComposerSid('s1');
+    setComposerDraft('s1', 'hello');
+    setComposerDraft('s2', 'world');
+    expect(getLastComposerSid()).toBe('s1');
+    expect(getComposerDraft('s1')).toBe('hello');
+    expect(getComposerDraft('s2')).toBe('world');
   });
 });

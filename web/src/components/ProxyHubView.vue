@@ -12,7 +12,7 @@ function loadTab(): ProxyTab {
     const v = sessionStorage.getItem(KEY);
     if (v === 'ai' || v === 'nginx' || v === 'static' || v === 'llm') return v;
   } catch { /* ignore */ }
-  return 'static';
+  return 'ai';
 }
 const tab = ref<ProxyTab>(loadTab());
 
@@ -30,27 +30,19 @@ watch(pendingProxyTab, (v) => {
 
 <template>
   <div class="hub">
-    <header class="hubbar">
-      <button class="hubtab" :class="{ on: tab === 'ai' }" @click="setTab('ai')">{{ $t('proxy.tabs.ai') }}</button>
-      <button class="hubtab" :class="{ on: tab === 'static' }" @click="setTab('static')">{{ $t('proxy.tabs.static') }}</button>
-      <button class="hubtab" :class="{ on: tab === 'nginx' }" @click="setTab('nginx')">{{ $t('proxy.tabs.nginx') }}</button>
-      <button class="hubtab" :class="{ on: tab === 'llm' }" @click="setTab('llm')">{{ $t('proxy.tabs.llm') }}</button>
-    </header>
-    <div class="hubbody">
-      <AiSiteView v-show="tab === 'ai'" />
-      <StaticSitesView v-show="tab === 'static'" />
-      <NginxTool v-show="tab === 'nginx'" />
-      <LlmProxyView v-show="tab === 'llm'" />
-    </div>
+    <el-tabs :model-value="tab" class="hubtabs" @tab-change="(n: string | number) => setTab(n as ProxyTab)">
+      <el-tab-pane :label="$t('proxy.tabs.ai')" name="ai"><AiSiteView /></el-tab-pane>
+      <el-tab-pane :label="$t('proxy.tabs.static')" name="static"><StaticSitesView /></el-tab-pane>
+      <el-tab-pane :label="$t('proxy.tabs.nginx')" name="nginx"><NginxTool /></el-tab-pane>
+      <el-tab-pane :label="$t('proxy.tabs.llm')" name="llm"><LlmProxyView /></el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <style scoped>
 .hub { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.hubbar { display: flex; gap: 4px; padding: 6px 10px 0; border-bottom: 1px solid var(--bd); flex: none; }
-.hubtab { background: none; border: none; color: var(--tx2); padding: 7px 14px; cursor: pointer; border-bottom: 2px solid transparent; font-size: 13px; }
-.hubtab:hover { color: var(--ac2); }
-.hubtab.on { color: var(--ac2); border-bottom-color: var(--ac2); }
-.hubbody { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.hubbody > * { flex: 1; min-height: 0; }
+.hubtabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.hubtabs :deep(.el-tabs__header) { margin: 0; padding: 4px 10px 0; flex: none; }
+.hubtabs :deep(.el-tabs__content) { flex: 1; min-height: 0; overflow: hidden; }
+.hubtabs :deep(.el-tab-pane) { height: 100%; }
 </style>

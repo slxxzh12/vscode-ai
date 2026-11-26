@@ -98,7 +98,6 @@ const base = ${JSON.stringify(base)};
 const form = document.getElementById('f');
 const statusEl = document.getElementById('status');
 const RUNNING = ${JSON.stringify(t('ai_site.form.running'))};
-const OPENED = ${JSON.stringify(t('ai_site.run.opened'))};
 const btn = form.querySelector('button[type=submit]');
 form.addEventListener('submit', async (ev) => {
   ev.preventDefault();
@@ -108,20 +107,15 @@ form.addEventListener('submit', async (ev) => {
     if (el.type === 'checkbox') { if (el.checked) values[el.name] = '1'; }
     else values[el.name] = el.value;
   }
-  const runTab = window.open('', '_blank');
   btn.disabled = true; statusEl.textContent = RUNNING;
   try {
     const res = await fetch(base + '/__api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plugin: ${JSON.stringify(plugin.name)}, values }) });
     const j = await res.json();
     if (!res.ok || !j.runId) throw new Error(j.error || ('HTTP ' + res.status));
-    const url = base + '/__run/' + encodeURIComponent(j.runId);
-    if (runTab) runTab.location.href = new URL(url, location.href).href;
-    else { location.href = url; return; }
-    statusEl.textContent = OPENED;
+    // 同页签内跳转，不新开窗口
+    location.href = new URL(base + '/__run/' + encodeURIComponent(j.runId), location.href).href;
   } catch (e) {
-    if (runTab) { try { runTab.close(); } catch (err) { /* ignore */ } }
     statusEl.textContent = String(e && e.message || e);
-  } finally {
     btn.disabled = false;
   }
 });

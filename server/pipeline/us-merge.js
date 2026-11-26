@@ -70,7 +70,7 @@ function firstUrl(text) {
   return (String(text || '').match(/https?:\/\/[^\s]+/) || [])[0] || '';
 }
 
-async function mergeGithub({ codeDir, branch, base, title, body, run }) {
+async function mergeGithub({ codeDir, branch, base, title, body, run, doMerge = true }) {
   let url = '';
   const list = await run(codeDir, 'gh', ['pr', 'list', '--head', branch, '--json', 'number,url,state']);
   if (list.code === 0) {
@@ -86,12 +86,13 @@ async function mergeGithub({ codeDir, branch, base, title, body, run }) {
     url = firstUrl(created.stdout);
     if (!url) return { ok: false, provider: 'github', error: 'gh-create-failed', message: created.stdout.trim() };
   }
+  if (!doMerge) return { ok: true, provider: 'github', url, base, merged: false };
   const merged = await run(codeDir, 'gh', ['pr', 'merge', url, '--merge']);
   if (merged.code !== 0) return { ok: false, provider: 'github', url, error: 'gh-merge-failed', message: merged.stderr.trim() };
-  return { ok: true, provider: 'github', url, base };
+  return { ok: true, provider: 'github', url, base, merged: true };
 }
 
-async function mergeGitlab({ codeDir, branch, base, title, body, run }) {
+async function mergeGitlab({ codeDir, branch, base, title, body, run, doMerge = true }) {
   let url = '';
   const list = await run(codeDir, 'glab', ['mr', 'list', '--source-branch', branch]);
   if (list.code === 0) url = firstUrl(list.stdout);
@@ -101,12 +102,13 @@ async function mergeGitlab({ codeDir, branch, base, title, body, run }) {
     url = firstUrl(created.stdout);
     if (!url) return { ok: false, provider: 'gitlab', error: 'glab-create-failed', message: created.stdout.trim() };
   }
+  if (!doMerge) return { ok: true, provider: 'gitlab', url, base, merged: false };
   const merged = await run(codeDir, 'glab', ['mr', 'merge', url, '--yes']);
   if (merged.code !== 0) return { ok: false, provider: 'gitlab', url, error: 'glab-merge-failed', message: merged.stderr.trim() };
-  return { ok: true, provider: 'gitlab', url, base };
+  return { ok: true, provider: 'gitlab', url, base, merged: true };
 }
 
-async function mergeGitee({ codeDir, info, branch, base, title, body, run, credential, fetchFn }) {
+async function mergeGitee({ codeDir, info, branch, base, title, body, run, credential, fetchFn, doMerge = true }) {
   const cred = await credential(codeDir, info.host, `${info.owner}/${info.repo}.git`);
   if (!cred || !cred.password) return { ok: false, provider: 'gitee', error: 'gitee-credentials-missing' };
   const token = cred.password;

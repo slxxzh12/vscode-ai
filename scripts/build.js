@@ -161,7 +161,7 @@ fs.writeFileSync(
   "utf8",
 );
 
-// server 整树 .js/.json（跳过 test/、node_modules/ 与协作运行时 JSON）
+// server 整树 .js/.json/.ps1（跳过 test/、node_modules/ 与协作运行时 JSON）
 function copyServerTree(from, to, rel = "") {
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
@@ -174,7 +174,7 @@ function copyServerTree(from, to, rel = "") {
     }
     // server/collaboration/*.json 是本机运行时身份/群数据（含 Ed25519 私钥），禁止入包。
     if (rel === "collaboration" && /\.json$/i.test(entry.name)) continue;
-    if (/\.(js|json)$/.test(entry.name))
+    if (/\.(js|json|ps1)$/.test(entry.name))
       fs.copyFileSync(s, path.join(to, entry.name));
   }
 }
@@ -328,6 +328,7 @@ for (const dir of ["env", "data", "logs"]) {
 const entries = [
   ["node", "runtime/node.exe"],
   ["server", "server/index.js"],
+  ["disk-clean-helper", "server/disk-clean/helper.ps1"],
   ["static", "web/dist/index.html"],
   ["version", "version.txt"],
   ["pty", "node_modules/node-pty/prebuilds/win32-" + WIN_ARCH + "/conpty.node"],

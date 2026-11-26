@@ -31,6 +31,23 @@ export function draftKey(sessionId: string | null | undefined): string {
   return sessionId || '__none__';
 }
 
+// 记录「最后正在使用的会话」：刷新后据此优先恢复到同一个会话，输入框草稿才对得上号。
+// 否则只按「最近发过消息」挑会话，非 agent / 多个 agent 会话时会打开别的会话，草稿看着就像丢了。
+const LAST_SID_KEY = '__last__';
+
+export function getLastComposerSid(): string | null {
+  const v = getStore()[LAST_SID_KEY];
+  return v || null;
+}
+
+export function setLastComposerSid(sessionId: string | null | undefined): void {
+  if (!sessionId) return;
+  const s = getStore();
+  if (s[LAST_SID_KEY] === sessionId) return;
+  s[LAST_SID_KEY] = sessionId;
+  persist();
+}
+
 export function getComposerDraft(sessionId: string | null | undefined): string {
   return getStore()[draftKey(sessionId)] || '';
 }

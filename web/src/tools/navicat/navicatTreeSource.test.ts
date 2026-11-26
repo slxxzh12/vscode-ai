@@ -69,6 +69,12 @@ describe('navicatTreeSource', () => {
     expect(remove).toHaveBeenCalledWith('1');
   });
 
+  it('statusOf 给连接节点标绿/红（可连接/不可连接）', async () => {
+    const { src } = make({ statusOf: (id: string) => (id === '1' ? 'pass' : id === '2' ? 'fail' : undefined) });
+    const roots = await src.loadChildren('');
+    expect(roots.map((n) => n.status)).toEqual(['pass', 'fail']);
+  });
+
   it('failedIds 命中的连接根节点带 fail 状态', async () => {
     const { src } = make({ failedIds: () => new Set(['1']) });
     const roots = await src.loadChildren('');

@@ -29,7 +29,7 @@ function inside(base, target) {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-export function initDocSamples(state, { templateDir = DEFAULT_TEMPLATE_DIR } = {}) {
+export function initDocSamples(state, { templateDir = DEFAULT_TEMPLATE_DIR, includeUnselected = false } = {}) {
   const results = [];
   let created = 0;
   let skipped = 0;
@@ -37,7 +37,8 @@ export function initDocSamples(state, { templateDir = DEFAULT_TEMPLATE_DIR } = {
 
   for (const slot of SAMPLE_SLOTS) {
     const dir = String(state?.[slot]?.path || '').trim();
-    if (!state?.[slot]?.selected || !dir) continue;
+    if (!dir) continue;
+    if (!includeUnselected && !state?.[slot]?.selected) continue;
 
     const res = { slot, dir, ok: true, created: [], skipped: [], createdDir: false };
     if (!isDir(dir)) {

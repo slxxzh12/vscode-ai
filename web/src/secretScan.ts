@@ -5,18 +5,24 @@ export interface SecretFinding {
   line: number;
   rule: string;
   severity: SecretSeverity;
+  category?: string;
   match: string;
+  branch?: string;
 }
 export interface SecretRuleTally { rule: string; severity: SecretSeverity; count: number }
+export interface SecretCategoryTally { category: string; count: number; high: number }
 export interface SecretScanResult {
   dir: string;
   scanned: number;
   findings: SecretFinding[];
   byRule: SecretRuleTally[];
+  byCategory?: SecretCategoryTally[];
   totals: { files: number; findings: number; scanned: number };
   truncated?: boolean;
+  branches?: { branch: string; scanned: number; findings: number }[];
+  failures?: { branch: string; error: string }[];
 }
-export interface SecretScanParams { dir: string; excludeDirs?: string[] }
+export interface SecretScanParams { dir: string; excludeDirs?: string[]; keywords?: string[]; categories?: string[] }
 
 export interface SecretFileGroup {
   rel: string;

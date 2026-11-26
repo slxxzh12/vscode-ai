@@ -70,6 +70,24 @@ test('初始化样例：目录不存在时自动创建，其余继续', () => {
   assert.ok(fs.existsSync(path.join(dirs.experience, 'demo', '01-经验-权限校验.md')));
 });
 
+test('初始化样例：includeUnselected 时未勾选目录也建立 README 与样例', () => {
+  const root = tmpRoot();
+  const state = {};
+  for (const slot of ['knowledge', 'solution', 'workflow', 'experience', 'skills', 'rules']) {
+    state[slot] = { path: path.join(root, 'docs', slot), selected: false };
+  }
+  const out = initDocSamples(state, { includeUnselected: true });
+  assert.equal(out.failed, 0);
+  for (const slot of ['knowledge', 'solution', 'workflow', 'experience', 'skills', 'rules']) {
+    const dir = state[slot].path;
+    assert.ok(fs.statSync(dir).isDirectory());
+    assert.ok(fs.existsSync(path.join(dir, 'README.md')));
+  }
+  assert.ok(fs.existsSync(path.join(state.knowledge.path, 'demo', '01-术语表.md')));
+  assert.ok(fs.existsSync(path.join(state.solution.path, 'US000001-20260315-增加一个用户管理系统', '02-方案设计.md')));
+  assert.ok(out.created > 0);
+});
+
 test('初始化样例：没有勾选任何样例目录时返回空结果', () => {
   const root = tmpRoot();
   const dirs = mkdirs(root, ['code']);

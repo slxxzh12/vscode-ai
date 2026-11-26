@@ -39,7 +39,7 @@ import UpdateCheckDialog from './UpdateCheckDialog.vue';
 import { usePromptCollect } from '../prompts/usePromptCollect';
 import PromptCollectAddon from '../prompts/PromptCollectAddon.vue';
 import { useEnglishComposer } from '../useEnglishComposer';
-import { getComposerDraft, setComposerDraft } from '../composerDrafts';
+import { getComposerDraft, setComposerDraft, getLastComposerSid, setLastComposerSid } from '../composerDrafts';
 import { captureToPngDataUrl } from '../snapshot';
 import { pickRestoredAgent, restoredAgentIds, latestMessageBySession } from '../sessionRestore';
 import { needsSelectedAgentSession, needsAgentStart, canReuseAgentSession, isRetiredAgent, resolveAgentSelection } from '../agentTarget';
@@ -668,12 +668,13 @@ function onOpenSettings(e: Event) {
   }
 }
 
-// 新建会话：先输入会话名（默认当前文件夹名）再选择要执行的命令；不再倒计时自动创建
+// 新建会话：输入会话名（Agent 必填、默认空，可点「生成名字」）再选择要执行的命令；不再倒计时自动创建
 const newOpen = ref(false);
 const newAgentOnly = ref(false);   // 从「新建 Agent」进入：只列 Agent，创建固定 Agent 会话
 const newSelected = ref('cmd');
 const newName = ref('');
 const newNameEl = ref<HTMLInputElement | null>(null);
+const newNameError = ref('');
 const newChoices = computed(() => {
   const list = [
     { id: 'cmd', label: t('term.new_cmd'), cmd: '' },
@@ -681,25 +682,46 @@ const newChoices = computed(() => {
   ];
   return newAgentOnly.value ? list.filter((c) => c.id !== 'cmd') : list;
 });
-// 会话名默认取当前项目文件夹名：用户不填也用它（只做本地关联，不改 opencode 内会话名）
-function defaultSessionName() {
-  return (props.projectFolderName || '').trim();
+// 生成会话名：日期在最前 + 文件夹名 + 时间戳（如 20261126-devflow-1530）
+function pad2(n: number) { return String(n).padStart(2, '0'); }
+function dateStamp(d = new Date()): string {
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+}
+// 名字最前面没有日期时自动补当天日期（如 修复登录 → 20261126-修复登录）
+function withDatePrefix(name: string): string {
+  const n = name.trim();
+  if (!n) return '';
+  if (/^\d{4}-?\d{2}-?\d{2}/.test(n)) return n;
+  return `${dateStamp()}-${n}`;
+}
+function generateSessionName(): string {
+  const base = (props.projectFolderName || '').trim() || 'agent';
+  const d = new Date();
+  return `${dateStamp(d)}-${base}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+}
+function generateName() {
+  newName.value = generateSessionName();
+  newNameError.value = '';
+  void nextTick(() => { newNameEl.value?.focus(); newNameEl.value?.select(); });
 }
 function openNew() {
   newAgentOnly.value = false;
   const ids = newChoices.value.map((c) => c.id);
   newSelected.value = ids.includes(agentId.value) ? agentId.value : (ids[0] || 'cmd');
-  newName.value = defaultSessionName();
+  newName.value = '';
+  newNameError.value = '';
   newOpen.value = true;
-  void nextTick(() => { newNameEl.value?.focus(); newNameEl.value?.select(); });
+  void nextTick(() => newNameEl.value?.focus());
 }
 function openNewAgent() {
   newAgentOnly.value = true;
   newSelected.value = agentId.value;
-  newName.value = defaultSessionName();
+  newName.value = '';
+  newNameError.value = '';
   newOpen.value = true;
-  void nextTick(() => { newNameEl.value?.focus(); newNameEl.value?.select(); });
+  void nextTick(() => newNameEl.value?.focus());
 }
+watch(newName, () => { if (newNameError.value) newNameError.value = ''; });
 function closeNew() { newOpen.value = false; }
 // 名字留空时创建后的短暂提示
 const renameHint = ref('');
@@ -721,36 +743,43 @@ function createErrorText(e: unknown): string {
   return t('term.create_failed', { msg: err?.message || String(e) });
 }
 async function createNew(id: string) {
-  newOpen.value = false;
   const c = newChoices.value.find((x) => x.id === id) || newChoices.value[0];
-  // 会话名：用户没填则回退到当前文件夹名（再没有才用默认标签）
-  const name = newName.value.trim() || defaultSessionName();
+  // 「cmd」是 shell，其余都是 Agent；Agent 会话名必填（默认空，可点「生成名字」）
+  const isAgent = newAgentOnly.value || (c && c.id !== 'cmd');
+  const name = newName.value.trim();
+  if (isAgent && !name) {
+    newNameError.value = t('term.name_required');
+    void nextTick(() => newNameEl.value?.focus());
+    return;
+  }
+  const finalName = withDatePrefix(name);
+  newOpen.value = false;
   newName.value = '';
   // 从「新建 Agent」进入：走固定 Agent 会话创建，只带会话名做本地关联
   if (newAgentOnly.value) {
     if (c && agents.value.some((a) => a.id === c.id)) { agentId.value = c.id; saveCfg(); }
-    await startAgent(true, name);
+    await startAgent(true, finalName);
     return;
   }
   let s: SessionSummary;
   try {
     s = await props.terminal.createSession({
       projectId: props.projectId, cols: 80, rows: 24,
-      kind: c.cmd ? 'agent' : 'shell', agentId: c.cmd ? c.id : null, agentCmd: c.cmd || null,
+      kind: isAgent ? 'agent' : 'shell', agentId: isAgent ? c.id : null, agentCmd: isAgent ? (c.cmd || null) : null,
     });
   } catch (e) {
     alert(createErrorText(e));
     return;
   }
-  if (c.cmd) markAgent(s.id);
-  const label = c.cmd ? `◈ ${c.label}` : c.label;
-  props.center.ensureSession(s.id, name || label, s.state || 'running', s.projectId ?? null);
-  if (name) {
+  if (isAgent) markAgent(s.id);
+  const label = isAgent ? `◈ ${c.label}` : c.label;
+  props.center.ensureSession(s.id, finalName || label, s.state || 'running', s.projectId ?? null);
+  if (finalName) {
     const next = { ...tabNames.value };
-    next[s.id] = name;
+    next[s.id] = finalName;
     tabNames.value = next;
     persistTabNames();
-    msgHistory.renameTab(s.id, name);
+    msgHistory.renameTab(s.id, finalName);
   }
   props.terminal.switchTo(s.id);
   if (c.cmd) setTimeout(() => {
@@ -1006,10 +1035,12 @@ const {
 // 提示词草稿按会话恢复：切换页签/会话、切换活动栏再回来都不丢
 let draftSid: string | null = props.terminal.state.activeSessionId;
 composerText.value = getComposerDraft(draftSid);
+if (draftSid) setLastComposerSid(draftSid);
 watch(composerText, (v) => { setComposerDraft(draftSid, v); });
 watch(() => props.terminal.state.activeSessionId, (id, oldId) => {
   setComposerDraft(oldId ?? null, composerText.value);
   draftSid = id;
+  if (id) setLastComposerSid(id);
   composerText.value = getComposerDraft(id);
 });
 
@@ -1434,6 +1465,24 @@ function init() {
     // 避免多个恢复会话时按创建时间/日志输出误选到另一个窗口。
     void msgHistory.load().then(() => {
       if (props.phone || props.terminal.state.activeSessionId) return;
+      // 优先回到刷新前正在使用的会话，保证输入框里没发出去的草稿能对上号；
+      // 否则只会按「最近发过消息」挑，非 agent 会话 / 多个 agent 会话时会打开别的会话，草稿就像丢了。
+      const lastSid = getLastComposerSid();
+      const last = lastSid ? props.terminal.state.sessions.find((s) => s.id === lastSid) : null;
+      if (last) {
+        if (agentSids.value.has(last.id) || isAgentSession(last)) {
+          agentSid.value = last.id;
+          agentProjectId.value = last.projectId ?? null;
+          markAgent(last.id);
+          if (last.restored) {
+            agentAtStart.value = last.agentId || agentId.value;
+            agentStarted.value = true;
+            agentCliReady.value = true;
+          }
+        }
+        props.terminal.switchTo(last.id);
+        return;
+      }
       const adopted = pickRestoredAgent(
         props.terminal.state.sessions,
         latestMessageBySession(msgHistory.messages.value),
@@ -1646,8 +1695,12 @@ onBeforeUnmount(() => {
       <div class="newmodal">
         <header class="seth"><span>{{ newAgentOnly ? $t('welcome.new_agent') : $t('term.new_session') }}</span><button class="setx" @click="closeNew">×</button></header>
         <div class="newname">
-          <input ref="newNameEl" v-model="newName" class="newname-input" :placeholder="$t('term.new_task_name')" @keyup.enter="createNew(newSelected)" />
-          <div class="newname-hint">{{ $t('term.new_task_name_hint') }}</div>
+          <div class="newname-row">
+            <input ref="newNameEl" v-model="newName" class="newname-input" :placeholder="$t('term.new_task_name')" @keyup.enter="createNew(newSelected)" />
+            <button type="button" class="genname" @click="generateName">{{ $t('term.gen_name') }}</button>
+          </div>
+          <div v-if="newNameError" class="newname-err">{{ newNameError }}</div>
+          <div v-else class="newname-hint">{{ $t('term.new_task_name_hint') }}</div>
         </div>
         <div class="newlist">
           <button v-for="c in newChoices" :key="c.id" class="newitem" :class="{ on: newSelected === c.id }" @click="createNew(c.id)">
@@ -2202,9 +2255,14 @@ onBeforeUnmount(() => {
 .newitem:hover { border-color: var(--ac2); background: color-mix(in srgb, var(--ac) 8%, transparent); }
 .newitem.on { border-color: var(--ac); background: color-mix(in srgb, var(--ac) 16%, transparent); }
 .newname { padding: 10px 12px 0; }
+.newname-row { display: flex; gap: 8px; }
 .newname-input { width: 100%; box-sizing: border-box; background: var(--bg4); color: var(--tx1); border: 1px solid var(--bd); border-radius: 6px; padding: 7px 10px; font-size: 13px; outline: none; }
+.newname-row .newname-input { flex: 1 1 auto; width: auto; }
 .newname-input:focus { border-color: var(--ac2); }
+.genname { flex: 0 0 auto; background: var(--bg4); border: 1px solid var(--bd); color: var(--tx2); border-radius: 6px; padding: 0 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.genname:hover { border-color: var(--ac2); color: var(--ac2); }
 .newname-hint { margin-top: 6px; color: var(--tx6); font-size: 11px; }
+.newname-err { margin-top: 6px; color: var(--err); font-size: 11px; }
 .renamehint { position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 3000; background: var(--bg1); border: 1px solid var(--bd2); color: var(--tx1); border-radius: 6px; padding: 8px 16px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
 .ni-label { font-size: 13px; font-weight: 600; }
 .ni-cmd { color: var(--tx6); font-family: Consolas, monospace; font-size: 11px; }

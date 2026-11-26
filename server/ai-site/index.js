@@ -70,7 +70,7 @@ export function createAiSite({ dir, logger = console, isPrefixTaken = () => fals
   async function apply() { await start(); }
 
   const mount = createAiSiteMount({
-    configStore, users, apply,
+    configStore, users, apply, runner,
     status: () => ({ ...state, mode: configStore.get().mode, enabled: configStore.get().enabled }),
     pluginsRoot: () => configStore.get().pluginRoot,
   });

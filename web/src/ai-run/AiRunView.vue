@@ -5,10 +5,12 @@ import { t } from '../i18n';
 
 interface RunFile { path: string; size: number }
 
-const pathMatch = location.pathname.match(/^(.*?)\/__run\/([^/]+)$/);
-const siteBase = pathMatch ? pathMatch[1] : '';
-const runId = pathMatch ? decodeURIComponent(pathMatch[2]) : '';
-const apiBase = `${siteBase}/__api/runs/${encodeURIComponent(runId)}`;
+const props = withDefaults(defineProps<{ runId: string; apiRoot?: string; showBack?: boolean }>(), {
+  apiRoot: '/__api',
+  showBack: true,
+});
+const apiBase = `${props.apiRoot}/runs/${encodeURIComponent(props.runId)}`;
+const siteBase = props.apiRoot.replace(/\/__api$/, '');
 
 const tab = ref<'term' | 'out'>('term');
 const log = ref('');
@@ -44,11 +46,11 @@ function fmtSize(n: number): string {
   return `${(v / 1024 / 1024).toFixed(1)} MB`;
 }
 function fileUrl(f: RunFile, download = false): string {
-  return `${siteBase}/__api/runs/${encodeURIComponent(runId)}/file?path=${encodeURIComponent(f.path)}${download ? '&download=1' : ''}`;
+  return `${props.apiRoot}/runs/${encodeURIComponent(props.runId)}/file?path=${encodeURIComponent(f.path)}${download ? '&download=1' : ''}`;
 }
 function openFile(f: RunFile) { window.open(fileUrl(f), '_blank', 'noopener'); }
 function downloadFile(f: RunFile) { window.open(fileUrl(f, true), '_blank', 'noopener'); }
-function downloadZip() { window.open(`${siteBase}/__api/runs/${encodeURIComponent(runId)}/zip`, '_blank', 'noopener'); }
+function downloadZip() { window.open(`${props.apiRoot}/runs/${encodeURIComponent(props.runId)}/zip`, '_blank', 'noopener'); }
 
 async function loadFiles() {
   if (filesLoaded) return;
@@ -110,7 +112,7 @@ watch(log, async () => {
 });
 
 onMounted(() => {
-  document.title = `${t('ai_site.run.title')} · ${runId}`;
+  if (props.showBack) document.title = `${t('ai_site.run.title')} · ${props.runId}`;
   void tick();
   timer = setInterval(() => { void tick(); }, 700);
 });
@@ -124,7 +126,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); });
       <b class="title">{{ plugin || t('ai_site.run.title') }}</b>
       <el-tag size="small" :type="tagType" effect="plain">{{ statusLabel }}</el-tag>
       <span class="spacer" />
-      <a class="back" :href="siteBase ? siteBase + '/' : '/'">{{ t('ai_site.title') }}</a>
+      <a v-if="props.showBack" class="back" :href="siteBase ? siteBase + '/' : '/'">{{ t('ai_site.title') }}</a>
     </header>
 
     <main class="run-main">
@@ -172,8 +174,8 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); });
 </template>
 
 <style scoped>
-.run { height: 100%; display: flex; flex-direction: column; background: #eef1f5; color: #26303c; font: 14px/1.6 ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
-.top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #ccd4de; background: #dfe5ec; flex: none; }
+.run { height: 100%; display: flex; flex-direction: column; background: var(--bg3, #eef1f5); color: var(--tx1, #26303c); font: 14px/1.6 ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
+.top { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--bd, #ccd4de); background: var(--bg1, #dfe5ec); flex: none; }
 .title { font-size: 15px; }
 .spacer { flex: 1; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: #94a3b8; flex: none; }
@@ -181,7 +183,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); });
 .dot.success { background: #22c55e; }
 .dot.error { background: #ef4444; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-.back { color: #2563eb; text-decoration: none; font-size: 13px; }
+.back { color: var(--ac2, #2563eb); text-decoration: none; font-size: 13px; }
 .back:hover { text-decoration: underline; }
 .run-main { flex: 1; min-height: 0; padding: 10px 14px 12px; display: flex; flex-direction: column; }
 .run-tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }

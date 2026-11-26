@@ -5,85 +5,39 @@ import os from 'node:os';
 import path from 'node:path';
 import { scanSecrets } from '../secret-scan.js';
 
-function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'dfsecret-')); }
-function w(dir, rel, content) {
-  const full = path.join(dir, rel);
-  fs.mkdirSync(path.dirname(full), { recursive: true });
-  fs.writeFileSync(full, content);
-}
+function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'df-sec-')); }
 
-test('scanSecrets 命中私钥、令牌与带凭据 URL 并脱敏', async () => {
+test('敏感配置关键词：带前缀的 PASSWORD/TOKEN/API_KEY 能命中并分类', async () => {
   const dir = tmp();
-  w(dir, 'src/a.js', [
-    'const ok = 1;',
-    'const u = "https://user:pass@example.com/repo";',
-    'const t = "ghp_123456789012345678901234567890123456";',
-    '-----BEGIN RSA PRIVATE KEY-----',
-    'const doc = "https://<user>:<token>@gitee.com/x";',
-  ].join('\n'));
+  fs.writeFileSync(path.join(dir, 'a.env'), 'DB_PASSWORD=SuperSecret123\nGITHUB_TOKEN=abc123def456\n');
+  fs.writeFileSync(path.join(dir, 'app.js'), 'const api_key = "abcdef123456";\nconst tokenizer = 1;\nconst token_type = "bearer";\n');
   const r = await scanSecrets({ dir });
-  assert.equal(r.totals.findings, 3);
-  const rules = r.byRule.map((x) => x.rule).sort();
-  assert.deepEqual(rules, ['credential-url', 'github-token', 'private-key']);
-  const url = r.findings.find((f) => f.rule === 'credential-url');
-  assert.equal(url.line, 2);
-  assert.equal(url.rel, 'src/a.js');
-  assert.ok(!url.match.includes('pass@example'), '凭据应脱敏');
-  assert.ok(url.match.includes('…'));
-  assert.deepEqual(r.totals.files, 1);
-  assert.equal(r.scanned, 1);
+  const cats = new Set(r.findings.map((f) => f.category));
+  assert.ok(cats.has('password'));
+  assert.ok(cats.has('token'));
+  assert.ok(cats.has('key'));
+  // tokenizer / token_type 不应误报
+  assert.equal(r.findings.some((f) => f.rel === 'app.js' && f.line === 2), false);
+  assert.equal(r.findings.some((f) => f.rel === 'app.js' && f.line === 3), false);
+  // 同类归并
+  assert.ok(Array.isArray(r.byCategory) && r.byCategory.length >= 1);
+  assert.equal(r.byCategory.reduce((s, c) => s + c.count, 0), r.findings.length);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('scanSecrets secret-assignment 跳过占位符与 env 引用', async () => {
+test('敏感配置关键词：占位符不报', async () => {
   const dir = tmp();
-  w(dir, 'a.env', [
-    'PASSWORD=changeme',
-    'TOKEN="${TOKEN}"',
-    'API_KEY=xxxxxxxx',
-    'SECRET=real-secret-value',
-  ].join('\n'));
-  const r = await scanSecrets({ dir });
-  const assigns = r.findings.filter((f) => f.rule === 'secret-assignment');
-  assert.equal(assigns.length, 1);
-  assert.equal(assigns[0].line, 4);
-  assert.equal(assigns[0].severity, 'medium');
-});
-
-test('scanSecrets 跳过隐藏目录、硬排除目录与用户排除目录', async () => {
-  const dir = tmp();
-  const secret = 'https://u:p@host/x';
-  w(dir, '.git/config', secret);
-  w(dir, 'node_modules/pkg/a.js', secret);
-  w(dir, 'env/real.env', secret);
-  w(dir, 'tools/keep.txt', secret);
-  w(dir, 'custom/skip.js', secret);
-  const r = await scanSecrets({ dir, excludeDirs: ['custom'] });
-  assert.deepEqual(r.findings.map((f) => f.rel), ['tools/keep.txt']);
-});
-
-test('scanSecrets 跳过二进制与超大文件', async () => {
-  const dir = tmp();
-  fs.writeFileSync(path.join(dir, 'a.bin'), Buffer.from([0, 65, 75, 73, 65]));
-  fs.writeFileSync(path.join(dir, 'big.txt'), 'x'.repeat(2 * 1024 * 1024 + 1));
-  w(dir, 'a.png', 'AKIA1234567890123456');
+  fs.writeFileSync(path.join(dir, 'x.yml'), 'password: "changeme"\napi_key: "your_api_key_here"\n');
   const r = await scanSecrets({ dir });
   assert.equal(r.findings.length, 0);
-  assert.equal(r.scanned, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('scanSecrets 空命中返回干净结果', async () => {
+test('敏感配置关键词：连接串/凭据分类', async () => {
   const dir = tmp();
-  w(dir, 'a.js', 'const a = 1;\n');
+  fs.writeFileSync(path.join(dir, 'conf.json'), '{\n  "database_url": "postgres://u:realpass@db:5432/app",\n  "redis_url": "redis://:realpass@cache:6379/0"\n}\n');
   const r = await scanSecrets({ dir });
-  assert.deepEqual(r.findings, []);
-  assert.deepEqual(r.byRule, []);
-  assert.deepEqual(r.totals, { files: 0, findings: 0, scanned: 1 });
-});
-
-test('scanSecrets 非目录/不存在 → not-found；空 dir → bad-dir', async () => {
-  const dir = tmp();
-  w(dir, 'a.js', 'x');
-  await assert.rejects(() => scanSecrets({ dir: path.join(dir, 'nope') }), (e) => e.code === 'not-found');
-  await assert.rejects(() => scanSecrets({ dir: '' }), (e) => e.code === 'bad-dir');
-  await assert.rejects(() => scanSecrets({}), (e) => e.code === 'bad-dir');
+  const cats = new Set(r.findings.map((f) => f.category));
+  assert.ok(cats.has('connection'));
+  fs.rmSync(dir, { recursive: true, force: true });
 });

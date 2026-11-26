@@ -73,7 +73,7 @@ function cpDir(from, to, filter, rel = "") {
   }
 }
 
-// server 整树 .js/.json（跳过 test/）
+// server 整树 .js/.json/.ps1（跳过 test/）
 function copyServerTree(from, to) {
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
@@ -83,7 +83,7 @@ function copyServerTree(from, to) {
       copyServerTree(s, path.join(to, entry.name));
       continue;
     }
-    if (/\.(js|json)$/.test(entry.name)) fs.copyFileSync(s, path.join(to, entry.name));
+    if (/\.(js|json|ps1)$/.test(entry.name)) fs.copyFileSync(s, path.join(to, entry.name));
   }
 }
 

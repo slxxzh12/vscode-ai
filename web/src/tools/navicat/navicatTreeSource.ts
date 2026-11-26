@@ -6,6 +6,7 @@ export interface NavicatTreeDeps {
   profiles: () => NavicatProfile[];
   profileById: (id: string) => NavicatProfile | null;
   failedIds?: () => Set<string>;
+  statusOf?: (id: string) => 'pass' | 'fail' | undefined;
   databases: (id: string) => Promise<string[]>;
   tables: (id: string, db: string) => Promise<string[]>;
   openConnection: (id: string) => void;
@@ -38,7 +39,8 @@ export function navicatTreeSource(deps: NavicatTreeDeps): TreeSource {
         const failed = deps.failedIds?.() ?? new Set<string>();
         return deps.profiles().map((p) => {
           const id = String(p.id);
-          return { key: cKey(id), name: p.name, kind: 'dir' as const, ...(failed.has(id) ? { status: 'fail' as const } : {}) };
+          const status = deps.statusOf?.(id) || (failed.has(id) ? 'fail' : undefined);
+          return { key: cKey(id), name: p.name, kind: 'dir' as const, ...(status ? { status } : {}) };
         });
       }
       const pl = parse(dirKey);
