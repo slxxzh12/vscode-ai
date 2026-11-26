@@ -20,7 +20,6 @@ import { localRootDocSource, localFileDocSource } from '../local/localDocSource'
 import type { DocSource } from '../tools/doc/docSource';
 import TextToolBody from '../tools/text/TextToolBody.vue';
 import Base64Tool from '../tools/base64/Base64Tool.vue';
-import SecurityTool from '../tools/security/SecurityTool.vue';
 import DiskCleanTool from '../tools/disk-clean/DiskCleanTool.vue';
 import AiRunView from '../ai-run/AiRunView.vue';
 import { useTheme } from '../theme';
@@ -896,7 +895,7 @@ function onWelcomeAddDirectory() {
 }
 function onWelcomeOpenTool(id: ToolId) {
   if (id === 'nginx') { requestProxyTab('nginx'); return; }
-  if (id === 'notepad' || id === 'yaml' || id === 'translate' || id === 'markdown' || id === 'js' || id === 'base64' || id === 'security') { requestToolTab(id); return; }
+  if (id === 'notepad' || id === 'yaml' || id === 'translate' || id === 'markdown' || id === 'js' || id === 'base64') { requestToolTab(id); return; }
   requestTool(id);
   window.location.hash = '#mobile';
 }
@@ -1869,7 +1868,6 @@ onBeforeUnmount(() => {
       <ToolDocPane v-if="activeDocTool" :key="activeDocTool" :tool="activeDocTool" />
       <TextToolBody v-else-if="activeToolName === 'translate'" />
       <Base64Tool v-else-if="activeToolName === 'base64'" />
-      <SecurityTool v-else-if="activeToolName === 'security'" />
       <DiskCleanTool v-else-if="activeToolName === 'disk-clean'" />
       <PostmanTool v-else-if="activeToolName === 'postman'" />
       <NavicatTool v-else-if="activeToolName === 'navicat'" />

@@ -1,4 +1,4 @@
-export type ToolId = 'translate' | 'yaml' | 'notepad' | 'postman' | 'navicat' | 'nginx' | 'markdown' | 'js' | 'base64' | 'security' | 'disk-clean';
+export type ToolId = 'translate' | 'yaml' | 'notepad' | 'postman' | 'navicat' | 'nginx' | 'markdown' | 'js' | 'base64' | 'disk-clean';
 
 export type MiniToolGroup = 'text' | 'data' | 'ops';
 
@@ -22,7 +22,6 @@ export const MINI_TOOLS: MiniToolMeta[] = [
   { id: 'markdown', icon: '📘', labelKey: 'tools.markdown', descKey: 'tools.desc.markdown', group: 'text' },
   { id: 'js', icon: '🟨', labelKey: 'tools.js', descKey: 'tools.desc.js', group: 'text' },
   { id: 'base64', icon: '🔤', labelKey: 'tools.base64', descKey: 'tools.desc.base64', group: 'text' },
-  { id: 'security', icon: '🔐', labelKey: 'tools.security', descKey: 'tools.desc.security', group: 'ops' },
   { id: 'disk-clean', icon: '🧹', labelKey: 'tools.disk-clean', descKey: 'tools.desc.disk-clean', group: 'ops' },
 ];
 
