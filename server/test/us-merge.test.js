@@ -76,3 +76,28 @@ test('us-merge：远端不受支持时返回错误', async () => {
   assert.equal(r.ok, false);
   assert.equal(r.error, 'unsupported-remote');
 });
+
+test('us-merge：autoMerge=false 只发起 PR，不调用合并接口', async () => {
+  const requests = [];
+  const run = async (_cwd, bin, args) => {
+    if (bin === 'git' && args[0] === 'remote') return { code: 0, stdout: 'https://gitee.com/wglj/devflow.git\n', stderr: '' };
+    return { code: 1, stdout: '', stderr: '' };
+  };
+  const credential = async () => ({ username: 'wglj', password: 'tok' });
+  const fetchFn = async (url, init = {}) => {
+    requests.push({ url, method: init.method || 'GET' });
+    if (String(url).includes('/pulls?') && !init.method) return { ok: true, json: async () => [] };
+    if (String(url).endsWith('/pulls') && init.method === 'POST') {
+      return { ok: true, json: async () => ({ number: 9, html_url: 'https://gitee.com/wglj/devflow/pulls/9' }) };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  const r = await mergeUsBranch({
+    codeDir: '/repo', branch: 'feature/zhangsan', us: 'US000001-2021-A',
+    title: 'feat(US000001): A', body: 'body', base: 'master', run, credential, fetchFn, autoMerge: false,
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.merged, false);
+  assert.equal(r.url, 'https://gitee.com/wglj/devflow/pulls/9');
+  assert.ok(!requests.some((x) => x.method === 'PUT'));
+});

@@ -273,23 +273,36 @@ export function createUsDev({
           return { us, status: 'failed', error: String(e?.message || e), finishedAt: now() };
         }
       })();
-      if (cfg.autoMerge && item.status === 'success' && item.commit) {
+      // 自测通过且有提交：分支已在 runOne 里推送；这里单独发起 PR/MR 到目标分支。
+      // 默认只发起 PR（需人工审核后在远端合入）；仅当开启 autoMerge 才自动合并。
+      if (item.status === 'success' && item.commit) {
         try {
-          const m = await merge({ codeDir, branch: item.branch, us, base: cfg.baseBranch, logger });
-          item.merge = m;
+          const m = await merge({ codeDir, branch: item.branch, us, base: cfg.baseBranch, logger, autoMerge: cfg.autoMerge });
           item.prUrl = m.url || null;
           item.mergeProvider = m.provider || null;
-          if (!m.ok) {
-            item.status = 'failed';
-            item.error = m.error || 'merge-failed';
+          if (cfg.autoMerge) {
+            item.merge = m;
+            if (!m.ok) {
+              item.status = 'failed';
+              item.error = m.error || 'merge-failed';
+            } else {
+              item.mergeStatus = 'merged';
+              if (git.syncBranchToRemote) await git.syncBranchToRemote(codeDir, item.branch, m.base);
+            }
+          } else if (!m.ok) {
+            // 发起 PR 失败不改变“编码成功”，仅记录原因供人工处理
+            item.error = m.error || 'pr-failed';
           } else {
-            item.mergeStatus = 'merged';
-            if (git.syncBranchToRemote) await git.syncBranchToRemote(codeDir, item.branch, m.base);
+            item.mergeStatus = 'opened';   // 已发起 PR，待人工审核合入
           }
         } catch (e) {
-          item.status = 'failed';
-          item.error = 'merge-failed';
-          item.merge = { ok: false, error: 'merge-failed', message: String(e?.message || e) };
+          if (cfg.autoMerge) {
+            item.status = 'failed';
+            item.error = 'merge-failed';
+            item.merge = { ok: false, error: 'merge-failed', message: String(e?.message || e) };
+          } else {
+            item.error = 'pr-failed';
+          }
         }
       }
       state.items[us] = {

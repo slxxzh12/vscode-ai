@@ -138,6 +138,8 @@ async function mergeGitee({ codeDir, info, branch, base, title, body, run, crede
     if (!url || !number) return { ok: false, provider: 'gitee', error: 'gitee-create-failed' };
   }
 
+  if (!doMerge) return { ok: true, provider: 'gitee', url, base, merged: false };
+
   const merged = await fetchFn(`${api}/pulls/${number}/merge`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -150,7 +152,7 @@ async function mergeGitee({ codeDir, info, branch, base, title, body, run, crede
 }
 
 export async function mergeUsBranch({
-  codeDir, branch, us, title, body, base,
+  codeDir, branch, us, title, body, base, autoMerge = true,
   run = runProcess, credential = null, fetchFn = fetch, logger = console,
 }) {
   const remote = await run(codeDir, 'git', ['remote', 'get-url', 'origin']);
@@ -164,10 +166,10 @@ export async function mergeUsBranch({
   const subject = String(title || `feat(${String(us).split('-')[0]}): ${us}`);
   const text = String(body || `US: ${us}\nBranch: ${branch}\n`);
   try {
-    if (info.provider === 'github') return await mergeGithub({ codeDir, branch, base: target, title: subject, body: text, run });
-    if (info.provider === 'gitlab') return await mergeGitlab({ codeDir, branch, base: target, title: subject, body: text, run });
+    if (info.provider === 'github') return await mergeGithub({ codeDir, branch, base: target, title: subject, body: text, run, doMerge: autoMerge });
+    if (info.provider === 'gitlab') return await mergeGitlab({ codeDir, branch, base: target, title: subject, body: text, run, doMerge: autoMerge });
     const credFn = credential || ((cwd, host, p) => defaultCredential(cwd, host, p, { run }));
-    return await mergeGitee({ codeDir, info, branch, base: target, title: subject, body: text, run, credential: credFn, fetchFn });
+    return await mergeGitee({ codeDir, info, branch, base: target, title: subject, body: text, run, credential: credFn, fetchFn, doMerge: autoMerge });
   } catch (e) {
     logger?.warn?.('us merge failed', (e && e.name) || 'error');
     return { ok: false, provider: info.provider, error: 'merge-failed' };

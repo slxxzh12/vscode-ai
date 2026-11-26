@@ -207,3 +207,30 @@ test('us-dev：以监控提交为基准，按变更先后顺序执行', async ()
   assert.equal(writes[0].commit, 'head1');
 });
 
+test('us-dev：未开自动合并时成功后只发起 PR（不合并）', async () => {
+  const f = setup();
+  fs.mkdirSync(path.join(f.solution, 'US000001-2021-A'));
+  const dir = path.join(f.root, 'pipeline');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ autoDev: true }));
+  fs.writeFileSync(path.join(dir, 'us-state.json'), JSON.stringify({ solutionDir: f.solution, baseline: ['US000001-2021-A'], items: {} }));
+  fs.mkdirSync(path.join(f.solution, 'US000002-2022-B'));
+  let mergedCalls = 0;
+  const dev = createUsDev({
+    dir,
+    templateFile: path.join(f.root, 'template.md'),
+    docsState: () => ({ solution: { selected: true, path: f.solution }, code: { selected: true, path: f.code } }),
+    git: { getGitUserName: async () => 'zhangsan', syncBranchToRemote: async () => ({ ok: true }) },
+    runOne: async ({ us }) => ({ us, status: 'success', branch: 'feature/zhangsan', commit: 'c' }),
+    merge: async () => { mergedCalls++; return { ok: true, provider: 'gitee', url: 'https://gitee.com/o/r/pulls/2', base: 'master', merged: false }; },
+  });
+  const r = await dev({ logDir: path.join(f.root, 'run'), runId: 'j9', docResults: [] });
+  assert.equal(mergedCalls, 1);
+  assert.equal(r.failed, 0);
+  const state = JSON.parse(fs.readFileSync(path.join(dir, 'us-state.json'), 'utf8'));
+  const it = state.items['US000002-2022-B'];
+  assert.equal(it.status, 'success');
+  assert.equal(it.prUrl, 'https://gitee.com/o/r/pulls/2');
+  assert.equal(it.mergeStatus, 'opened');
+});
+
