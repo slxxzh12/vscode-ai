@@ -46,7 +46,7 @@ import { needsSelectedAgentSession, needsAgentStart, canReuseAgentSession, isRet
 import { copyText } from '../clipboard';
 import { MAX_RESTORE_TABS, restoreTabs, setRestoreTabs } from '../restorePrefs';
 import { isAgentSession, phoneHintKey } from '../remote-coder/phoneMode';
-import { createReadyGate, paletteOffersRename, renameDialogOpen, waitForScreen } from './sessionNaming';
+import { paletteOffersRename, renameDialogOpen, waitForScreen } from './sessionNaming';
 import TabRenameDialog from './TabRenameDialog.vue';
 import { setTabDescription } from './tabDescriptions';
 import WelcomeView from './WelcomeView.vue';
@@ -66,6 +66,7 @@ const props = defineProps<{
   locateCaseSensitive?: boolean;
   visibleSessionIds?: string[] | null;   // 非 null 时只自动建这些会话的页签（刷新恢复最近 N 个）
   phone?: boolean;                       // 手机页（/?phone=1）：不自动建会话、无会话显示空态
+  projectFolderName?: string;            // 当前项目文件夹名：新建 Agent 时的默认会话名
 }>();
 const { theme, isDark } = useTheme();
 
@@ -667,19 +668,37 @@ function onOpenSettings(e: Event) {
   }
 }
 
-// 新建会话：先输入任务名（可选）再选择要执行的命令；不再倒计时自动创建
+// 新建会话：先输入会话名（默认当前文件夹名）再选择要执行的命令；不再倒计时自动创建
 const newOpen = ref(false);
+const newAgentOnly = ref(false);   // 从「新建 Agent」进入：只列 Agent，创建固定 Agent 会话
 const newSelected = ref('cmd');
 const newName = ref('');
-const newChoices = computed(() => [
-  { id: 'cmd', label: t('term.new_cmd'), cmd: '' },
-  ...agents.value.map((a) => ({ id: a.id, label: a.name, cmd: a.cmd })),
-]);
+const newNameEl = ref<HTMLInputElement | null>(null);
+const newChoices = computed(() => {
+  const list = [
+    { id: 'cmd', label: t('term.new_cmd'), cmd: '' },
+    ...agents.value.map((a) => ({ id: a.id, label: a.name, cmd: a.cmd })),
+  ];
+  return newAgentOnly.value ? list.filter((c) => c.id !== 'cmd') : list;
+});
+// 会话名默认取当前项目文件夹名：用户不填也用它（只做本地关联，不改 opencode 内会话名）
+function defaultSessionName() {
+  return (props.projectFolderName || '').trim();
+}
 function openNew() {
+  newAgentOnly.value = false;
   const ids = newChoices.value.map((c) => c.id);
   newSelected.value = ids.includes(agentId.value) ? agentId.value : (ids[0] || 'cmd');
-  newName.value = '';
+  newName.value = defaultSessionName();
   newOpen.value = true;
+  void nextTick(() => { newNameEl.value?.focus(); newNameEl.value?.select(); });
+}
+function openNewAgent() {
+  newAgentOnly.value = true;
+  newSelected.value = agentId.value;
+  newName.value = defaultSessionName();
+  newOpen.value = true;
+  void nextTick(() => { newNameEl.value?.focus(); newNameEl.value?.select(); });
 }
 function closeNew() { newOpen.value = false; }
 // 名字留空时创建后的短暂提示
@@ -704,8 +723,15 @@ function createErrorText(e: unknown): string {
 async function createNew(id: string) {
   newOpen.value = false;
   const c = newChoices.value.find((x) => x.id === id) || newChoices.value[0];
-  const name = newName.value.trim();
+  // 会话名：用户没填则回退到当前文件夹名（再没有才用默认标签）
+  const name = newName.value.trim() || defaultSessionName();
   newName.value = '';
+  // 从「新建 Agent」进入：走固定 Agent 会话创建，只带会话名做本地关联
+  if (newAgentOnly.value) {
+    if (c && agents.value.some((a) => a.id === c.id)) { agentId.value = c.id; saveCfg(); }
+    await startAgent(true, name);
+    return;
+  }
   let s: SessionSummary;
   try {
     s = await props.terminal.createSession({
@@ -725,31 +751,12 @@ async function createNew(id: string) {
     tabNames.value = next;
     persistTabNames();
     msgHistory.renameTab(s.id, name);
-  } else {
-    showRenameHint(t('term.rename_hint'));
   }
   props.terminal.switchTo(s.id);
   if (c.cmd) setTimeout(() => {
     props.terminal.input(`${c.cmd}`);
     setTimeout(() => props.terminal.input('\r'), 200);
-    if (name) void syncNewAgentName(s.id, name);
   }, 1200);
-}
-// 新 Agent 会话就绪后同步对话名：最短 3s + 输出静默 1.2s，超时 30s 放弃
-async function syncNewAgentName(sid: string, name: string) {
-  const gate = createReadyGate({ now: () => Date.now() });
-  const unsub = props.terminal.on(S2C.OUTPUT, (msg: any) => { if (msg.sessionId === sid) gate.output(); });
-  const ok = await new Promise<boolean>((resolve) => {
-    const timer = setInterval(() => {
-      if (props.terminal.state.activeSessionId !== sid) { clearInterval(timer); unsub(); resolve(false); return; }
-      const st = gate.poll();
-      if (st === 'waiting') return;
-      clearInterval(timer);
-      unsub();
-      resolve(st === 'ready');
-    }, 200);
-  });
-  if (ok) syncAgentRename(sid, name);
 }
 let cfgKey = 'devflow-agent-cfg-none';
 let cfgLoaded = false;
@@ -805,7 +812,7 @@ function ensureAgentOrder() {
 function agentActive() {
   return !!agentSid.value && props.terminal.state.sessions.some((s) => s.id === agentSid.value && s.state === 'running');
 }
-async function startAgent(forceNew = false) {
+async function startAgent(forceNew = false, name = '') {
   const reusable = props.terminal.state.sessions.find((s) => s.id === agentSid.value) || null;
   if (reusable && agentActive() && canReuseAgentSession(reusable, agentId.value, props.projectId, forceNew)) {
     props.terminal.switchTo(reusable.id);
@@ -831,7 +838,16 @@ async function startAgent(forceNew = false) {
   agentCliReady.value = false;
   agentLaunching = false;
   agentAtStart.value = agentId.value;
-  props.center.ensureSession(s.id, `◈ ${currentAgent.value.name}`, s.state || 'running', s.projectId ?? null);
+  // 会话名只做本地关联（页签/历史消息），不再调用 opencode 的 /rename 改内部会话名
+  const display = name.trim() || `◈ ${currentAgent.value.name}`;
+  props.center.ensureSession(s.id, display, s.state || 'running', s.projectId ?? null);
+  if (name.trim()) {
+    const next = { ...tabNames.value };
+    next[s.id] = name.trim();
+    tabNames.value = next;
+    persistTabNames();
+    msgHistory.renameTab(s.id, name.trim());
+  }
   ensureAgentOrder();
   props.terminal.switchTo(s.id);
   if (props.projectId !== pid) { void restartAgentForProject(); return; }   // 创建期间项目已切换：再来一次
@@ -888,7 +904,7 @@ const showWelcome = computed(() => !props.phone && props.center.visibleTabs.valu
 function onWelcomeNewAgent() {
   if (props.phone) return;
   if (!props.projectId) { window.dispatchEvent(new CustomEvent('df-add-folder')); return; }
-  void startAgent(true);   // 显式「新建 Agent」：不复用已有会话，不做数量限制
+  openNewAgent();   // 显式「新建 Agent」：弹框输入会话名（默认当前文件夹名），不复用已有会话
 }
 function onWelcomeAddDirectory() {
   if (props.phone) return;
@@ -1628,9 +1644,9 @@ onBeforeUnmount(() => {
 
     <div v-if="newOpen" class="setmask" @click.self="closeNew">
       <div class="newmodal">
-        <header class="seth"><span>{{ $t('term.new_session') }}</span><button class="setx" @click="closeNew">×</button></header>
+        <header class="seth"><span>{{ newAgentOnly ? $t('welcome.new_agent') : $t('term.new_session') }}</span><button class="setx" @click="closeNew">×</button></header>
         <div class="newname">
-          <input v-model="newName" class="newname-input" :placeholder="$t('term.new_task_name')" @keyup.enter="createNew(newSelected)" />
+          <input ref="newNameEl" v-model="newName" class="newname-input" :placeholder="$t('term.new_task_name')" @keyup.enter="createNew(newSelected)" />
           <div class="newname-hint">{{ $t('term.new_task_name_hint') }}</div>
         </div>
         <div class="newlist">

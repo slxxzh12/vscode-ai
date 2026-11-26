@@ -576,6 +576,12 @@ function openFromHistory(it: FileRec & { name: string; projName: string }) {
 }
 
 const currentProjectInfo = computed(() => projects.value.find((p) => p.id === currentProject.value) || null);
+// 当前项目文件夹名（取 root 的最后一段），新建 Agent 会话时作为默认会话名
+const projectFolderName = computed(() => {
+  const root = (currentProjectInfo.value?.root || '').replace(/[\\/]+$/, '');
+  const base = root.split(/[\\/]/).pop() || '';
+  return base || currentProjectInfo.value?.name || '';
+});
 // 把当前选中项目根通知服务端：用量 stats 采集从该目录向上找 .git 执行，找不到回退用户主目录
 watch(currentProjectInfo, (info) => {
   const root = info?.root || '';
@@ -1079,7 +1085,7 @@ onBeforeUnmount(() => {
         </aside>
         <div class="divider" :class="{ on: dragging }" @mousedown.prevent="onDividerDown" />
         <section class="center">
-          <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine" :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive" />
+          <TerminalView ref="termViewRef" :terminal="terminal" :center="center" :project-id="currentProject" :project-folder-name="projectFolderName" :detail-token="detailToken" :detail-path="detailPath" :visible-session-ids="visibleSessionIds" :locate-token="locateToken" :locate-path="locatePath" :locate-line="locateLine" :locate-query="locateQuery" :locate-case-sensitive="locateCaseSensitive" />
         </section>
       </template>
     </div>
