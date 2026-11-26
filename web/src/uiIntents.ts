@@ -21,3 +21,15 @@ export function clearPendingProxyTab() { pendingProxyTab.value = null; }
 
 export function requestStartAgent() { pendingStartAgent.value = true; }
 export function clearPendingStartAgent() { pendingStartAgent.value = false; }
+
+// 用一个提示词在指定目录启动 Agent（App 监听：切到项目、打开 explorer，再交给 TerminalView）
+export const pendingAgentRun = ref<{ dir: string; prompt: string } | null>(null);
+
+// 在 TerminalView 新开 Agent 并发送提示词
+export const pendingAgentPrompt = ref<string | null>(null);
+export function requestAgentPrompt(prompt: string) { pendingAgentPrompt.value = prompt; }
+export function clearPendingAgentPrompt() { pendingAgentPrompt.value = null; }
+
+// 在主区打开一个运行页签
+export const pendingRun = ref<{ runId: string; label: string } | null>(null);
+export function clearPendingRun() { pendingRun.value = null; }

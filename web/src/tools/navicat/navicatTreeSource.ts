@@ -6,6 +6,7 @@ export interface NavicatTreeDeps {
   profiles: () => NavicatProfile[];
   profileById: (id: string) => NavicatProfile | null;
   failedIds?: () => Set<string>;
+  statusOf?: (id: string) => 'pass' | 'fail' | undefined;
   databases: (id: string) => Promise<string[]>;
   tables: (id: string, db: string) => Promise<string[]>;
   openConnection: (id: string) => void;
